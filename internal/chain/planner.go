@@ -57,6 +57,24 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 			entrySpec.ClientID = defaultClientID
 		}
 		clientID := entrySpec.ClientID
+		hopPort := entrySpec.Port // default 443 for entries; hops/exit override
+
+		// For hop/exit, parse HopSpec for port override
+		if node.Role == "hop" || node.Role == "exit" {
+			hop, _ := ParseHopSpec(node.InboundSpec)
+			if hop.ClientID != "" {
+				clientID = hop.ClientID
+			}
+			if hop.Port != 0 {
+				hopPort = hop.Port
+			}
+		}
+
+		// Determine next node's inbound port for outbound
+		nextPort := 443
+		if i+1 < len(chain.Nodes) {
+			nextPort = getInboundPort(chain.Nodes[i+1])
+		}
 
 		switch node.Role {
 		case "entry":
@@ -69,7 +87,7 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 				}
 				outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
 				batch.Outbounds = append(batch.Outbounds,
-					xraycfg.VLESSOutbound(outTag, nextSrv.Host, 443, clientID))
+					xraycfg.VLESSOutbound(outTag, nextSrv.Host, nextPort, clientID))
 				batch.Routing = append(batch.Routing, backend.RoutingRule{
 					Type:        "field",
 					InboundTag:  []string{fmt.Sprintf("lucx-%s-entry", chainID)},
@@ -79,7 +97,7 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 
 		case "hop":
 			inTag := fmt.Sprintf("lucx-%s-hop%d", chainID, i)
-			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID))
+			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID, hopPort))
 			if i+1 < len(chain.Nodes) {
 				next := chain.Nodes[i+1]
 				nextSrv, err := lookup(next.ServerID)
@@ -88,7 +106,7 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 				}
 				outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
 				batch.Outbounds = append(batch.Outbounds,
-					xraycfg.VLESSOutbound(outTag, nextSrv.Host, 443, clientID))
+					xraycfg.VLESSOutbound(outTag, nextSrv.Host, nextPort, clientID))
 				batch.Routing = append(batch.Routing, backend.RoutingRule{
 					Type:        "field",
 					InboundTag:  []string{inTag},
@@ -98,7 +116,7 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 
 		case "exit":
 			inTag := fmt.Sprintf("lucx-%s-exit", chainID)
-			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID))
+			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID, hopPort))
 		}
 	}
 
@@ -112,12 +130,29 @@ func buildEntry(node store.ChainNode, chainID string, s EntrySpec) json.RawMessa
 	tag := fmt.Sprintf("lucx-%s-entry", chainID)
 	switch {
 	case node.Protocol == "trojan":
-		return xraycfg.TrojanEntry(tag, s.Password, s.ServerName)
+		return xraycfg.TrojanEntry(tag, s.Password, s.ServerName, s.Port)
 	case s.Security == "reality":
-		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey)
+		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey, s.Port)
 	default:
-		return xraycfg.VLESSEntryTLS(tag, s.ClientID, s.ServerName)
+		return xraycfg.VLESSEntryTLS(tag, s.ClientID, s.ServerName, s.Port)
 	}
+}
+
+// getInboundPort extracts the inbound port from a node's spec.
+func getInboundPort(node store.ChainNode) int {
+	switch node.Role {
+	case "entry":
+		s, _ := ParseEntrySpec(node.InboundSpec)
+		if s.Port != 0 {
+			return s.Port
+		}
+	case "hop", "exit":
+		s, _ := ParseHopSpec(node.InboundSpec)
+		if s.Port != 0 {
+			return s.Port
+		}
+	}
+	return 443
 }
 
 func genClientID() string {

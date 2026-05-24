@@ -5,17 +5,19 @@ import "encoding/json"
 // EntrySpec defines protocol parameters for an entry node's inbound.
 // Stored as JSON in ChainNode.InboundSpec.
 type EntrySpec struct {
-	ClientID   string `json:"client_id"`            // VLESS UUID (generated if empty)
-	Security   string `json:"security,omitempty"`   // "reality" or "tls" (default: "reality")
+	ClientID   string `json:"client_id"`             // VLESS UUID (generated if empty)
+	Security   string `json:"security,omitempty"`    // "reality" or "tls" (default: "reality")
 	RealityKey string `json:"reality_key,omitempty"` // Reality private key
 	ServerName string `json:"server_name,omitempty"` // TLS/Reality camouflage host (default: "discord.com")
 	Password   string `json:"password,omitempty"`    // Trojan password
+	Port       int    `json:"port,omitempty"`        // inbound port (default: 443)
 }
 
 // HopSpec defines protocol parameters for a hop or exit node.
 // Stored as JSON in ChainNode.InboundSpec.
 type HopSpec struct {
 	ClientID string `json:"client_id"` // VLESS UUID
+	Port     int    `json:"port"`      // inbound port (default: 443)
 }
 
 // OutboundSpec defines protocol parameters for an outbound to the next hop.
@@ -30,6 +32,7 @@ func DefaultEntrySpec() EntrySpec {
 	return EntrySpec{
 		Security:   "reality",
 		ServerName: "discord.com",
+		Port:       443,
 	}
 }
 
@@ -47,6 +50,9 @@ func ParseEntrySpec(raw string) (EntrySpec, error) {
 	}
 	if s.ServerName == "" {
 		s.ServerName = "discord.com"
+	}
+	if s.Port == 0 {
+		s.Port = 443
 	}
 	return s, nil
 }

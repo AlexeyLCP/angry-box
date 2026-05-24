@@ -1,13 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/google/uuid"
+
 	"github.com/alexeylcp/lucx-core/internal/api"
+	"github.com/alexeylcp/lucx-core/internal/backend"
 	"github.com/alexeylcp/lucx-core/internal/chain"
 	"github.com/alexeylcp/lucx-core/internal/config"
 	"github.com/alexeylcp/lucx-core/internal/ssh"
@@ -37,6 +41,19 @@ func main() {
 		return sshFactory.Dial(srv)
 	})
 
+	// CLI mode: setup-test
+	if cfg.SetupTest {
+		runSetupTest(s, engine, sshFactory)
+		return
+	}
+
+	// CLI mode: apply-chain
+	if cfg.ApplyChain != "" {
+		runApplyChain(s, engine, cfg.ApplyChain)
+		return
+	}
+
+	// HTTP server mode
 	handlers := &api.Handlers{
 		Store:      s,
 		Engine:     engine,
@@ -56,4 +73,150 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("LucX Core shutting down")
+}
+
+// runApplyChain applies a chain by ID and prints the result.
+func runApplyChain(s *store.Store, engine *chain.Engine, chainID string) {
+	c, err := s.GetChain(chainID)
+	if err != nil {
+		log.Fatalf("chain not found: %v", err)
+	}
+	log.Printf("Applying chain %q (%s) with %d nodes", c.Name, c.ID, len(c.Nodes))
+	for i, n := range c.Nodes {
+		srv, _ := s.GetServer(n.ServerID)
+		host := "?"
+		if srv != nil {
+			host = srv.Host
+		}
+		log.Printf("  node %d: role=%s protocol=%s server=%s backend=%s",
+			i, n.Role, n.Protocol, host, n.BackendType)
+	}
+
+	if err := engine.Apply(nil, c); err != nil {
+		log.Fatalf("APPLY FAILED: %v", err)
+	}
+
+	log.Printf("Chain %q applied successfully", c.Name)
+
+	// Generate client config
+	if len(c.Nodes) > 0 {
+		exitNode := c.Nodes[len(c.Nodes)-1]
+		srv, err := s.GetServer(exitNode.ServerID)
+		if err != nil {
+			log.Printf("  (cannot generate client config: server not found)")
+			return
+		}
+		client, err := ssh.NewFactory(s).Dial(srv)
+		if err != nil {
+			log.Printf("  (cannot connect for client config: %v)", err)
+			return
+		}
+		defer client.Close()
+
+		be, err := getBackend(exitNode.BackendType)
+		if err != nil {
+			log.Printf("  (backend lookup: %v)", err)
+			return
+		}
+		config, err := be.BuildClientConfig(nil, client, fmt.Sprintf("lucx-%s-exit", c.ID))
+		if err != nil {
+			log.Printf("  (client config: %v)", err)
+			return
+		}
+		log.Printf("Client config: %s", config)
+	}
+}
+
+// runSetupTest creates and applies a test 2-hop chain.
+func runSetupTest(s *store.Store, engine *chain.Engine, sshFactory *ssh.Factory) {
+	// Look for an existing server to use as both entry and exit
+	servers, err := s.ListServers()
+	if err != nil || len(servers) == 0 {
+		log.Fatal("No servers configured. Add a server first via HTTP API or manual DB insert.")
+	}
+
+	srv := &servers[0]
+	log.Printf("Using server: %s (%s)", srv.Name, srv.Host)
+
+	// Check Xray is running
+	client, err := sshFactory.Dial(srv)
+	if err != nil {
+		log.Fatalf("SSH to %s failed: %v", srv.Host, err)
+	}
+	be, err := getBackend("xray")
+	if err != nil {
+		log.Fatalf("backend: %v", err)
+	}
+	status, err := be.Status(nil, client)
+	client.Close()
+	if err != nil || !status.Running {
+		log.Fatal("Xray is not running on the server. Install it first via HTTP API.")
+	}
+	log.Printf("Xray status: running (version=%s)", status.Version)
+
+	// Create test chain: Entry (VLESS+Reality:443) + Exit (VLESS:8443)
+	chainID := uuid.New().String()
+	testChain := &store.Chain{
+		ID:   chainID,
+		Name: "Test 2-hop",
+		Nodes: []store.ChainNode{
+			{
+				ChainID:     chainID,
+				ServerID:    srv.ID,
+				BackendType: "xray",
+				Protocol:    "vless",
+				Position:    0,
+				Role:        "entry",
+				InboundSpec: chain.MustJSON(chain.EntrySpec{
+					Security: "reality",
+					Port:     443,
+				}),
+			},
+			{
+				ChainID:     chainID,
+				ServerID:    srv.ID,
+				BackendType: "xray",
+				Protocol:    "vless",
+				Position:    1,
+				Role:        "exit",
+				InboundSpec: chain.MustJSON(chain.HopSpec{
+					Port: 8443,
+				}),
+			},
+		},
+	}
+	testChain.Status = "draft"
+
+	if err := s.CreateChain(testChain); err != nil {
+		log.Fatalf("Create chain: %v", err)
+	}
+	log.Printf("Created test chain %q (%s)", testChain.Name, testChain.ID)
+
+	// Apply it
+	log.Println("Applying chain...")
+	gotChain, _ := s.GetChain(chainID)
+	if err := engine.Apply(nil, gotChain); err != nil {
+		log.Fatalf("APPLY FAILED: %v", err)
+	}
+
+	log.Println("Chain applied successfully!")
+
+	// Generate client config
+	client, err = sshFactory.Dial(srv)
+	if err != nil {
+		log.Printf("Cannot connect for client config: %v", err)
+		return
+	}
+	defer client.Close()
+
+	config, err := be.BuildClientConfig(nil, client, fmt.Sprintf("lucx-%s-exit", chainID))
+	if err != nil {
+		log.Printf("Client config error: %v", err)
+		return
+	}
+	log.Printf("\n===== CLIENT CONFIG =====\n%s\n==========================", config)
+}
+
+func getBackend(bt string) (backend.ProxyBackend, error) {
+	return backend.Get(backend.BackendType(bt))
 }

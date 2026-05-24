@@ -18,14 +18,14 @@ func (x *XrayBackend) GetConfig(ctx context.Context, client backend.SSHClient) (
 
 // ApplyConfig applies a batch of LucX config changes to the server.
 // Uses config.Manager: backup → merge → atomic write → test → restart → verify.
+// Returns the backup path for rollback on failure.
 func (x *XrayBackend) ApplyConfig(
 	ctx context.Context,
 	client *ssh.Client,
 	inbounds, outbounds []json.RawMessage,
 	routing []backend.RoutingRule,
-) error {
+) (backupPath string, err error) {
 	tm := xraycfg.NewTagManager("") // chain ID not needed — tags already built
 	mgr := xraycfg.NewManager(client)
-	_, err := mgr.Apply(ctx, tm, inbounds, outbounds, routing, nil)
-	return err
+	return mgr.Apply(ctx, tm, inbounds, outbounds, routing, nil)
 }

@@ -10,11 +10,11 @@ import (
 
 // VLESSEntryReality returns an inbound spec for a VLESS+Reality+XHTTP entry node.
 // This is the external-facing inbound that clients connect to.
-func VLESSEntryReality(tag string, clientID string, realityKey string) json.RawMessage {
+func VLESSEntryReality(tag string, clientID string, realityKey string, port int) json.RawMessage {
 	return mustJSON(map[string]interface{}{
 		"tag":      tag,
 		"protocol": "vless",
-		"port":     443,
+		"port":     port,
 		"listen":   "0.0.0.0",
 		"settings": map[string]interface{}{
 			"clients": []map[string]string{
@@ -45,11 +45,11 @@ func VLESSEntryReality(tag string, clientID string, realityKey string) json.RawM
 }
 
 // VLESSEntryTLS returns an inbound spec for VLESS+TLS+XHTTP (alternative to Reality).
-func VLESSEntryTLS(tag string, clientID string, serverName string) json.RawMessage {
+func VLESSEntryTLS(tag string, clientID string, serverName string, port int) json.RawMessage {
 	return mustJSON(map[string]interface{}{
 		"tag":      tag,
 		"protocol": "vless",
-		"port":     443,
+		"port":     port,
 		"listen":   "0.0.0.0",
 		"settings": map[string]interface{}{
 			"clients":    []map[string]string{{"id": clientID}},
@@ -72,11 +72,11 @@ func VLESSEntryTLS(tag string, clientID string, serverName string) json.RawMessa
 
 // VLESSHop returns an inbound spec for a VLESS+XHTTP intermediate hop node.
 // Hops use NO security (internal traffic between your own servers).
-func VLESSHop(tag string, clientID string) json.RawMessage {
+func VLESSHop(tag string, clientID string, port int) json.RawMessage {
 	return mustJSON(map[string]interface{}{
 		"tag":      tag,
 		"protocol": "vless",
-		"port":     443,
+		"port":     port,
 		"listen":   "0.0.0.0",
 		"settings": map[string]interface{}{
 			"clients":    []map[string]string{{"id": clientID}},
@@ -119,11 +119,11 @@ func VLESSOutbound(tag string, nextServerAddr string, nextServerPort int, client
 }
 
 // TrojanEntry returns an inbound spec for Trojan+TLS+XHTTP (alternative protocol).
-func TrojanEntry(tag string, password string, serverName string) json.RawMessage {
+func TrojanEntry(tag string, password string, serverName string, port int) json.RawMessage {
 	return mustJSON(map[string]interface{}{
 		"tag":      tag,
 		"protocol": "trojan",
-		"port":     443,
+		"port":     port,
 		"listen":   "0.0.0.0",
 		"settings": map[string]interface{}{
 			"clients": []map[string]string{{"password": password}},
