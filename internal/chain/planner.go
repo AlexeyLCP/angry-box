@@ -132,7 +132,7 @@ func buildEntry(node store.ChainNode, chainID string, s EntrySpec) json.RawMessa
 	case node.Protocol == "trojan":
 		return xraycfg.TrojanEntry(tag, s.Password, s.ServerName, s.Port)
 	case s.Security == "reality":
-		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey, s.Port)
+		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey, s.RealityPub, s.Port)
 	default:
 		return xraycfg.VLESSEntryTLS(tag, s.ClientID, s.ServerName, s.Port)
 	}

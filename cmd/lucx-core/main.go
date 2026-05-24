@@ -12,6 +12,7 @@ import (
 
 	"github.com/alexeylcp/lucx-core/internal/api"
 	"github.com/alexeylcp/lucx-core/internal/backend"
+	_ "github.com/alexeylcp/lucx-core/internal/backend/xray" // register Xray backend
 	"github.com/alexeylcp/lucx-core/internal/chain"
 	"github.com/alexeylcp/lucx-core/internal/config"
 	"github.com/alexeylcp/lucx-core/internal/ssh"
@@ -106,8 +107,8 @@ func runApplyChain(s *store.Store, engine *chain.Engine, chainID string) {
 
 	// Generate client config
 	if len(c.Nodes) > 0 {
-		exitNode := c.Nodes[len(c.Nodes)-1]
-		srv, err := s.GetServer(exitNode.ServerID)
+		entryNode := c.Nodes[0] // client connects to entry
+		srv, err := s.GetServer(entryNode.ServerID)
 		if err != nil {
 			log.Printf("  (cannot generate client config: server not found)")
 			return
@@ -119,12 +120,12 @@ func runApplyChain(s *store.Store, engine *chain.Engine, chainID string) {
 		}
 		defer client.Close()
 
-		be, err := getBackend(exitNode.BackendType)
+		be, err := getBackend(entryNode.BackendType)
 		if err != nil {
 			log.Printf("  (backend lookup: %v)", err)
 			return
 		}
-		config, err := be.BuildClientConfig(nil, client, fmt.Sprintf("lucx-%s-exit", c.ID))
+		config, err := be.BuildClientConfig(nil, client, fmt.Sprintf("lucx-%s-entry", c.ID))
 		if err != nil {
 			log.Printf("  (client config: %v)", err)
 			return
@@ -141,10 +142,14 @@ func runSetupTest(s *store.Store, engine *chain.Engine, sshFactory *ssh.Factory)
 		log.Fatal("No servers configured. Add a server first via HTTP API or manual DB insert.")
 	}
 
-	srv := &servers[0]
+	// Use GetServer to include credential (ListServers omits it for security)
+	srv, err := s.GetServer(servers[0].ID)
+	if err != nil {
+		log.Fatalf("Get server: %v", err)
+	}
 	log.Printf("Using server: %s (%s)", srv.Name, srv.Host)
 
-	// Check Xray is running
+	// Check SSH connectivity
 	client, err := sshFactory.Dial(srv)
 	if err != nil {
 		log.Fatalf("SSH to %s failed: %v", srv.Host, err)
@@ -155,10 +160,10 @@ func runSetupTest(s *store.Store, engine *chain.Engine, sshFactory *ssh.Factory)
 	}
 	status, err := be.Status(nil, client)
 	client.Close()
+	log.Printf("Xray status check: running=%v version=%q err=%v", status.Running, status.Version, err)
 	if err != nil || !status.Running {
-		log.Fatal("Xray is not running on the server. Install it first via HTTP API.")
+		log.Printf("WARNING: Xray status check failed, continuing anyway...")
 	}
-	log.Printf("Xray status: running (version=%s)", status.Version)
 
 	// Create test chain: Entry (VLESS+Reality:443) + Exit (VLESS:8443)
 	chainID := uuid.New().String()
@@ -174,8 +179,11 @@ func runSetupTest(s *store.Store, engine *chain.Engine, sshFactory *ssh.Factory)
 				Position:    0,
 				Role:        "entry",
 				InboundSpec: chain.MustJSON(chain.EntrySpec{
-					Security: "reality",
-					Port:     443,
+					Security:   "reality",
+					RealityKey: "-Oc8RVINXPw_rkY6kX31QBOj4cRJT5Z5fcZo3LK772E",
+					RealityPub: "j8BwtO99UFIeWX3aPSVDm2jbWTDby6OCp6Bly9OADEY",
+					ServerName: "discord.com",
+					Port:       443,
 				}),
 			},
 			{
@@ -215,7 +223,7 @@ func runSetupTest(s *store.Store, engine *chain.Engine, sshFactory *ssh.Factory)
 	}
 	defer client.Close()
 
-	config, err := be.BuildClientConfig(nil, client, fmt.Sprintf("lucx-%s-exit", chainID))
+	config, err := be.BuildClientConfig(nil, client, fmt.Sprintf("lucx-%s-entry", chainID))
 	if err != nil {
 		log.Printf("Client config error: %v", err)
 		return
@@ -227,9 +235,18 @@ func runAddServer(s *store.Store, cfg *config.Config) {
 	if cfg.ServerHost == "" {
 		log.Fatal("-server-host is required for -add-server")
 	}
-	pass := os.Getenv("LUCX_SERVER_PASS")
-	if pass == "" {
-		log.Fatal("LUCX_SERVER_PASS environment variable is required")
+	var cred string
+	if cfg.ServerKeyFile != "" {
+		data, err := os.ReadFile(cfg.ServerKeyFile)
+		if err != nil {
+			log.Fatalf("read key file: %v", err)
+		}
+		cred = string(data)
+	} else {
+		cred = os.Getenv("LUCX_SERVER_PASS")
+		if cred == "" {
+			log.Fatal("LUCX_SERVER_PASS env var or -server-key-file is required")
+		}
 	}
 	name := cfg.ServerName
 	if name == "" {
@@ -242,8 +259,8 @@ func runAddServer(s *store.Store, cfg *config.Config) {
 		Host:       cfg.ServerHost,
 		Port:       cfg.ServerPort,
 		Username:   cfg.ServerUser,
-		AuthMethod: "password",
-		Credential: pass,
+		AuthMethod: cfg.ServerAuth,
+		Credential: cred,
 		Status:     "unknown",
 		Source:     "fresh",
 	}

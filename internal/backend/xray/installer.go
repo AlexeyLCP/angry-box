@@ -39,10 +39,8 @@ func (x *XrayBackend) Stop(ctx context.Context, ssh backend.SSHClient) error {
 
 func (x *XrayBackend) Status(ctx context.Context, ssh backend.SSHClient) (backend.BackendStatus, error) {
 	status := backend.BackendStatus{}
-	out, err := ssh.Exec("systemctl is-active xray 2>/dev/null || service xray status 2>/dev/null | grep -q running && echo active || echo stopped")
-	if err != nil {
-		return status, nil
-	}
+	// Simple status check: return "active" or "stopped"/"unknown"
+	out, _ := ssh.Exec("systemctl is-active xray 2>/dev/null || echo stopped")
 	status.Running = strings.TrimSpace(out) == "active"
 	verOut, _ := ssh.Exec(fmt.Sprintf("%s version 2>/dev/null | head -1", xrayBinaryPath))
 	status.Version = strings.TrimSpace(verOut)

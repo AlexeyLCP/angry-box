@@ -43,10 +43,11 @@ func (s *Store) CreateServer(srv *Server) error {
 }
 
 // GetServer returns a single server by id, or sql.ErrNoRows.
+// NOTE: Includes credential in the result — caller must not expose it (json:"-" on field).
 func (s *Store) GetServer(id string) (*Server, error) {
 	srv := &Server{}
-	err := s.db.QueryRow(`SELECT id, name, host, port, username, auth_method, os, arch, status, source, tags, last_seen, created_at FROM servers WHERE id = ?`, id).
-		Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &srv.Username, &srv.AuthMethod, &srv.OS, &srv.Arch, &srv.Status, &srv.Source, &srv.Tags, &srv.LastSeen, &srv.CreatedAt)
+	err := s.db.QueryRow(`SELECT id, name, host, port, username, auth_method, credential, os, arch, status, source, tags, last_seen, created_at FROM servers WHERE id = ?`, id).
+		Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &srv.Username, &srv.AuthMethod, &srv.Credential, &srv.OS, &srv.Arch, &srv.Status, &srv.Source, &srv.Tags, &srv.LastSeen, &srv.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

@@ -5,3 +5,4 @@
 # Built binaries
 lucx-core
 lucx-core.exe
+*.db

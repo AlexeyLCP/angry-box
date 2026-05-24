@@ -145,8 +145,8 @@ func (h *Handlers) handleGetChainConfig() http.HandlerFunc {
 			http.Error(w, `{"error":"chain has no nodes"}`, 400)
 			return
 		}
-		exitNode := c.Nodes[len(c.Nodes)-1]
-		srv, err := h.Store.GetServer(exitNode.ServerID)
+		entryNode := c.Nodes[0] // client connects to entry, not exit
+		srv, err := h.Store.GetServer(entryNode.ServerID)
 		if err != nil {
 			http.Error(w, `{"error":"exit server not found"}`, 404)
 			return
@@ -157,12 +157,12 @@ func (h *Handlers) handleGetChainConfig() http.HandlerFunc {
 			return
 		}
 		defer client.Close()
-		be, err := backend.Get(backend.BackendType(exitNode.BackendType))
+		be, err := backend.Get(backend.BackendType(entryNode.BackendType))
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		config, err := be.BuildClientConfig(r.Context(), client, fmt.Sprintf("lucx-%s-exit", id))
+		config, err := be.BuildClientConfig(r.Context(), client, fmt.Sprintf("lucx-%s-entry", id))
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), 500)
 			return

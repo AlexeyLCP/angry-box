@@ -17,6 +17,8 @@ type Config struct {
 	ServerUser    string // server username for -add-server (default: root)
 	ServerName    string // server display name for -add-server
 	ServerPort    int    // server SSH port for -add-server (default: 22)
+	ServerAuth    string // SSH auth method: "password" or "key" (default: "key")
+	ServerKeyFile string // path to SSH private key for -add-server
 }
 
 // Parse reads configuration from command-line flags and returns a populated Config.
@@ -34,6 +36,8 @@ func Parse() *Config {
 	fs.StringVar(&cfg.ServerUser, "server-user", "root", "SSH username for -add-server")
 	fs.StringVar(&cfg.ServerName, "server-name", "", "Display name for -add-server")
 	fs.IntVar(&cfg.ServerPort, "server-port", 22, "SSH port for -add-server")
+	fs.StringVar(&cfg.ServerAuth, "server-auth", "key", "SSH auth method: password or key")
+	fs.StringVar(&cfg.ServerKeyFile, "server-key-file", "", "Path to SSH private key for -add-server")
 	fs.Parse(os.Args[1:])
 	return cfg
 }

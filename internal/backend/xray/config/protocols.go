@@ -10,7 +10,20 @@ import (
 
 // VLESSEntryReality returns an inbound spec for a VLESS+Reality+XHTTP entry node.
 // This is the external-facing inbound that clients connect to.
-func VLESSEntryReality(tag string, clientID string, realityKey string, port int) json.RawMessage {
+func VLESSEntryReality(tag string, clientID string, realityKey string, realityPub string, port int) json.RawMessage {
+	rs := map[string]interface{}{
+		"serverName":  "discord.com",
+		"serverNames": []string{"discord.com"},
+		"privateKey":  realityKey,
+		"shortId":     "6ba85179",
+		"shortIds":    []string{"6ba85179"},
+		"fingerprint": "chrome",
+		"dest":        "discord.com:443",
+		"show":        true,
+	}
+	if realityPub != "" {
+		rs["publicKey"] = realityPub
+	}
 	return mustJSON(map[string]interface{}{
 		"tag":      tag,
 		"protocol": "vless",
@@ -25,16 +38,7 @@ func VLESSEntryReality(tag string, clientID string, realityKey string, port int)
 		"streamSettings": map[string]interface{}{
 			"network":  "xhttp",
 			"security": "reality",
-			"realitySettings": map[string]interface{}{
-				"serverName":  "discord.com",
-				"serverNames": []string{"discord.com"},
-				"privateKey":  realityKey,
-				"shortId":     "6ba85179",
-				"shortIds":    []string{"6ba85179"},
-				"fingerprint": "chrome",
-				"dest":        "discord.com:443",
-				"show":        true,
-			},
+			"realitySettings": rs,
 			"xhttpSettings": map[string]interface{}{
 				"host": "discord.com",
 				"path": "/download",

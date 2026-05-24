@@ -7,8 +7,9 @@ import "encoding/json"
 type EntrySpec struct {
 	ClientID   string `json:"client_id"`             // VLESS UUID (generated if empty)
 	Security   string `json:"security,omitempty"`    // "reality" or "tls" (default: "reality")
-	RealityKey string `json:"reality_key,omitempty"` // Reality private key
-	ServerName string `json:"server_name,omitempty"` // TLS/Reality camouflage host (default: "discord.com")
+	RealityKey  string `json:"reality_key,omitempty"`  // Reality private key
+	RealityPub  string `json:"reality_pub,omitempty"`  // Reality public key (for client config)
+	ServerName  string `json:"server_name,omitempty"`  // TLS/Reality camouflage host (default: "discord.com")
 	Password   string `json:"password,omitempty"`    // Trojan password
 	Port       int    `json:"port,omitempty"`        // inbound port (default: 443)
 }
