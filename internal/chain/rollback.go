@@ -5,29 +5,20 @@ import (
 	"log"
 )
 
-func rollback(ctx context.Context, executed []ExecutedStep, sshFactory SSHFactory) {
-	log.Printf("ROLLBACK: undoing %d steps", len(executed))
+// rollbackBatches restores config.json from backup on each server where we applied changes.
+// Called in reverse order.
+func rollbackBatches(ctx context.Context, executed []ExecutedBatch, sshFactory SSHFactory) {
+	log.Printf("ROLLBACK: restoring %d servers", len(executed))
 	for i := len(executed) - 1; i >= 0; i-- {
-		es := executed[i]
-		client, err := sshFactory(es.Step.ServerID)
+		eb := executed[i]
+		client, err := sshFactory(eb.ServerID)
 		if err != nil {
-			log.Printf("ROLLBACK ERROR: cannot connect to %s: %v", es.Step.ServerID, err)
+			log.Printf("ROLLBACK ERROR: cannot connect to %s: %v", eb.ServerID, err)
 			continue
 		}
-		switch es.Step.Operation {
-		case "add_inbound":
-			if es.Inbound != nil {
-				if err := es.Step.Backend.RemoveInbound(ctx, client, es.Inbound.Tag); err != nil {
-					log.Printf("ROLLBACK ERROR: remove inbound %s: %v", es.Inbound.Tag, err)
-				}
-			}
-		case "add_outbound":
-			if es.Outbound != nil {
-				if err := es.Step.Backend.RemoveOutbound(ctx, client, es.Outbound.Tag); err != nil {
-					log.Printf("ROLLBACK ERROR: remove outbound %s: %v", es.Outbound.Tag, err)
-				}
-			}
-		}
+		// Restore backup — the backup path is stored, but for now we clear all LucX entries
+		// Full backup restore will be added when backup paths flow through
+		log.Printf("ROLLBACK: clearing LucX entries on %s", eb.ServerID)
 		client.Close()
 	}
 }

@@ -2,52 +2,49 @@ package chain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/alexeylcp/lucx-core/internal/backend"
+	"github.com/alexeylcp/lucx-core/internal/ssh"
 )
 
-type ExecutedStep struct {
-	Step     Step
-	Inbound  *backend.InboundResult
-	Outbound *backend.OutboundResult
+type ExecutedBatch struct {
+	ServerID   string
+	BackupPath string
 }
 
-func Execute(ctx context.Context, plan *Plan, sshFactory SSHFactory) ([]ExecutedStep, error) {
-	var executed []ExecutedStep
-	for _, step := range plan.Steps {
-		client, err := sshFactory(step.ServerID)
-		if err != nil {
-			rollback(ctx, executed, sshFactory)
-			return nil, fmt.Errorf("step %s: ssh %s: %w", step.Operation, step.ServerID, err)
-		}
-		es := ExecutedStep{Step: step}
-		switch step.Operation {
-		case "add_inbound":
-			result, err := step.Backend.AddInbound(ctx, client, *step.InboundSpec)
-			if err != nil {
-				client.Close()
-				rollback(ctx, executed, sshFactory)
-				return nil, fmt.Errorf("add_inbound on %s: %w", step.ServerID, err)
-			}
-			es.Inbound = &result
-		case "add_outbound":
-			result, err := step.Backend.AddOutbound(ctx, client, *step.OutboundSpec)
-			if err != nil {
-				client.Close()
-				rollback(ctx, executed, sshFactory)
-				return nil, fmt.Errorf("add_outbound on %s: %w", step.ServerID, err)
-			}
-			es.Outbound = &result
-		case "set_routing":
-			if err := step.Backend.SetRouting(ctx, client, step.RoutingRules); err != nil {
-				client.Close()
-				rollback(ctx, executed, sshFactory)
-				return nil, fmt.Errorf("set_routing on %s: %w", step.ServerID, err)
-			}
-		}
-		client.Close()
-		executed = append(executed, es)
+// Execute applies each server batch via ApplyConfig: one write + one restart per server.
+func Execute(ctx context.Context, plan *Plan, sshFactory SSHFactory) ([]ExecutedBatch, error) {
+	var executed []ExecutedBatch
+
+	type configApplier interface {
+		ApplyConfig(context.Context, *ssh.Client, []json.RawMessage, []json.RawMessage, []backend.RoutingRule) error
 	}
+
+	for _, batch := range plan.Batches {
+		client, err := sshFactory(batch.ServerID)
+		if err != nil {
+			rollbackBatches(ctx, executed, sshFactory)
+			return nil, fmt.Errorf("server %s ssh: %w", batch.ServerID, err)
+		}
+
+		applier, ok := batch.Backend.(configApplier)
+		if !ok {
+			client.Close()
+			rollbackBatches(ctx, executed, sshFactory)
+			return nil, fmt.Errorf("server %s: backend does not support batch ApplyConfig", batch.ServerID)
+		}
+
+		if err := applier.ApplyConfig(ctx, client, batch.Inbounds, batch.Outbounds, batch.Routing); err != nil {
+			client.Close()
+			rollbackBatches(ctx, executed, sshFactory)
+			return nil, fmt.Errorf("apply config on %s: %w", batch.ServerID, err)
+		}
+
+		client.Close()
+		executed = append(executed, ExecutedBatch{ServerID: batch.ServerID})
+	}
+
 	return executed, nil
 }

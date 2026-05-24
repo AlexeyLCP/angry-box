@@ -10,35 +10,22 @@ import (
 type SSHFactory func(serverID string) (*ssh.Client, error)
 
 func Validate(ctx context.Context, plan *Plan, sshFactory SSHFactory) error {
-	serverSet := make(map[string]bool)
-	for _, step := range plan.Steps {
-		serverSet[step.ServerID] = true
-	}
-	for serverID := range serverSet {
-		client, err := sshFactory(serverID)
+	for _, batch := range plan.Batches {
+		client, err := sshFactory(batch.ServerID)
 		if err != nil {
-			return fmt.Errorf("server %s SSH: %w", serverID, err)
+			return fmt.Errorf("server %s SSH: %w", batch.ServerID, err)
 		}
 		if _, err := client.Exec("echo ok"); err != nil {
 			client.Close()
-			return fmt.Errorf("server %s unreachable: %w", serverID, err)
+			return fmt.Errorf("server %s unreachable: %w", batch.ServerID, err)
 		}
-		status, err := stepForServer(plan, serverID).Backend.Status(ctx, client)
+		status, err := batch.Backend.Status(ctx, client)
 		client.Close()
 		if err != nil {
-			return fmt.Errorf("server %s status: %w", serverID, err)
+			return fmt.Errorf("server %s status: %w", batch.ServerID, err)
 		}
 		if !status.Running {
-			return fmt.Errorf("server %s: backend not running", serverID)
-		}
-	}
-	return nil
-}
-
-func stepForServer(plan *Plan, serverID string) *Step {
-	for _, s := range plan.Steps {
-		if s.ServerID == serverID {
-			return &s
+			return fmt.Errorf("server %s: backend not running", batch.ServerID)
 		}
 	}
 	return nil

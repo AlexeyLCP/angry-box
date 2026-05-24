@@ -1,107 +1,98 @@
 package chain
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/alexeylcp/lucx-core/internal/backend"
 	"github.com/alexeylcp/lucx-core/internal/store"
 )
 
-type Step struct {
-	NodeIndex    int
-	Operation    string
-	ServerID     string
-	Backend      backend.ProxyBackend
-	InboundSpec  *backend.InboundSpec
-	OutboundSpec *backend.OutboundSpec
-	RoutingRules []backend.RoutingRule
+// ServerBatch collects all mutations for a single server.
+// Applied in ONE config write + ONE restart.
+type ServerBatch struct {
+	ServerID  string
+	Inbounds  []json.RawMessage
+	Outbounds []json.RawMessage
+	Routing   []backend.RoutingRule
+	Backend   backend.ProxyBackend
 }
 
 type Plan struct {
-	Steps []Step
+	Batches []ServerBatch // one batch per server, ordered
 }
 
 func BuildPlan(chain *store.Chain) (*Plan, error) {
 	plan := &Plan{}
 	chainID := chain.ID
+	batchMap := make(map[string]*ServerBatch)
+	var serverOrder []string
+
+	getOrCreateBatch := func(serverID string, be backend.ProxyBackend) *ServerBatch {
+		if b, ok := batchMap[serverID]; ok {
+			return b
+		}
+		b := &ServerBatch{ServerID: serverID, Backend: be}
+		batchMap[serverID] = b
+		serverOrder = append(serverOrder, serverID)
+		return b
+	}
 
 	for i, node := range chain.Nodes {
 		be, err := backend.Get(backend.BackendType(node.BackendType))
 		if err != nil {
 			return nil, fmt.Errorf("node %d: %w", i, err)
 		}
+		batch := getOrCreateBatch(node.ServerID, be)
 
-		if node.Role == "entry" {
-			plan.Steps = append(plan.Steps, Step{
-				NodeIndex: i,
-				Operation: "add_inbound",
-				ServerID:  node.ServerID,
-				Backend:   be,
-				InboundSpec: &backend.InboundSpec{
-					Tag:      fmt.Sprintf("lucx-%s-entry", chainID),
-					Protocol: node.Protocol,
-					Port:     443,
-					Listen:   "0.0.0.0",
-				},
+		switch node.Role {
+		case "entry":
+			b, _ := json.Marshal(map[string]interface{}{
+				"tag": fmt.Sprintf("lucx-%s-entry", chainID),
+				"protocol": node.Protocol, "port": 443, "listen": "0.0.0.0",
 			})
-		}
-
-		if node.Role != "exit" && i+1 < len(chain.Nodes) {
-			outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
-			plan.Steps = append(plan.Steps, Step{
-				NodeIndex: i,
-				Operation: "add_outbound",
-				ServerID:  node.ServerID,
-				Backend:   be,
-				OutboundSpec: &backend.OutboundSpec{
-					Tag:      outTag,
-					Protocol: node.Protocol,
-				},
-			})
-			inTag := fmt.Sprintf("lucx-%s-entry", chainID)
-			if node.Role == "hop" {
-				inTag = fmt.Sprintf("lucx-%s-hop%d", chainID, i)
+			batch.Inbounds = append(batch.Inbounds, b)
+			if i+1 < len(chain.Nodes) {
+				b, _ := json.Marshal(map[string]interface{}{
+					"tag": fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
+					"protocol": node.Protocol,
+				})
+				batch.Outbounds = append(batch.Outbounds, b)
+				batch.Routing = append(batch.Routing, backend.RoutingRule{
+					Type: "field",
+					InboundTag:  []string{fmt.Sprintf("lucx-%s-entry", chainID)},
+					OutboundTag: fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
+				})
 			}
-			plan.Steps = append(plan.Steps, Step{
-				NodeIndex: i,
-				Operation: "set_routing",
-				ServerID:  node.ServerID,
-				Backend:   be,
-				RoutingRules: []backend.RoutingRule{
-					{Type: "field", InboundTag: []string{inTag}, OutboundTag: outTag},
-				},
+		case "hop":
+			b, _ := json.Marshal(map[string]interface{}{
+				"tag": fmt.Sprintf("lucx-%s-hop%d", chainID, i),
+				"protocol": node.Protocol, "port": 443, "listen": "0.0.0.0",
 			})
+			batch.Inbounds = append(batch.Inbounds, b)
+			if i+1 < len(chain.Nodes) {
+				b, _ := json.Marshal(map[string]interface{}{
+					"tag": fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
+					"protocol": node.Protocol,
+				})
+				batch.Outbounds = append(batch.Outbounds, b)
+				batch.Routing = append(batch.Routing, backend.RoutingRule{
+					Type: "field",
+					InboundTag:  []string{fmt.Sprintf("lucx-%s-hop%d", chainID, i)},
+					OutboundTag: fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
+				})
+			}
+		case "exit":
+			b, _ := json.Marshal(map[string]interface{}{
+				"tag": fmt.Sprintf("lucx-%s-exit", chainID),
+				"protocol": node.Protocol, "port": 443, "listen": "0.0.0.0",
+			})
+			batch.Inbounds = append(batch.Inbounds, b)
 		}
+	}
 
-		if node.Role == "hop" {
-			plan.Steps = append(plan.Steps, Step{
-				NodeIndex: i,
-				Operation: "add_inbound",
-				ServerID:  node.ServerID,
-				Backend:   be,
-				InboundSpec: &backend.InboundSpec{
-					Tag:      fmt.Sprintf("lucx-%s-hop%d", chainID, i),
-					Protocol: node.Protocol,
-					Port:     443,
-					Listen:   "0.0.0.0",
-				},
-			})
-		}
-
-		if node.Role == "exit" && i != 0 {
-			plan.Steps = append(plan.Steps, Step{
-				NodeIndex: i,
-				Operation: "add_inbound",
-				ServerID:  node.ServerID,
-				Backend:   be,
-				InboundSpec: &backend.InboundSpec{
-					Tag:      fmt.Sprintf("lucx-%s-exit", chainID),
-					Protocol: node.Protocol,
-					Port:     443,
-					Listen:   "0.0.0.0",
-				},
-			})
-		}
+	for _, serverID := range serverOrder {
+		plan.Batches = append(plan.Batches, *batchMap[serverID])
 	}
 	return plan, nil
 }
