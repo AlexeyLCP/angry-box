@@ -41,6 +41,12 @@ func main() {
 		return sshFactory.Dial(srv)
 	})
 
+	// CLI mode: add-server
+	if cfg.AddServer {
+		runAddServer(s, cfg)
+		return
+	}
+
 	// CLI mode: setup-test
 	if cfg.SetupTest {
 		runSetupTest(s, engine, sshFactory)
@@ -215,6 +221,36 @@ func runSetupTest(s *store.Store, engine *chain.Engine, sshFactory *ssh.Factory)
 		return
 	}
 	log.Printf("\n===== CLIENT CONFIG =====\n%s\n==========================", config)
+}
+
+func runAddServer(s *store.Store, cfg *config.Config) {
+	if cfg.ServerHost == "" {
+		log.Fatal("-server-host is required for -add-server")
+	}
+	pass := os.Getenv("LUCX_SERVER_PASS")
+	if pass == "" {
+		log.Fatal("LUCX_SERVER_PASS environment variable is required")
+	}
+	name := cfg.ServerName
+	if name == "" {
+		name = cfg.ServerHost
+	}
+
+	srv := &store.Server{
+		ID:         uuid.New().String(),
+		Name:       name,
+		Host:       cfg.ServerHost,
+		Port:       cfg.ServerPort,
+		Username:   cfg.ServerUser,
+		AuthMethod: "password",
+		Credential: pass,
+		Status:     "unknown",
+		Source:     "fresh",
+	}
+	if err := s.CreateServer(srv); err != nil {
+		log.Fatalf("Add server: %v", err)
+	}
+	log.Printf("Server added: id=%s name=%s host=%s:%d user=%s", srv.ID, srv.Name, srv.Host, srv.Port, srv.Username)
 }
 
 func getBackend(bt string) (backend.ProxyBackend, error) {
