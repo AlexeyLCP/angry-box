@@ -18,7 +18,7 @@ func NewEngine(s *store.Store, sshFactory SSHFactory) *Engine {
 
 func (e *Engine) Apply(ctx context.Context, chain *store.Chain) error {
 	// 1. Build per-server batched plan
-	plan, err := BuildPlan(chain)
+	plan, err := BuildPlan(chain, e.store.GetServer)
 	if err != nil {
 		return fmt.Errorf("plan: %w", err)
 	}

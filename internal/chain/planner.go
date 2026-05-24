@@ -1,10 +1,12 @@
 package chain
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 
 	"github.com/alexeylcp/lucx-core/internal/backend"
+	xraycfg "github.com/alexeylcp/lucx-core/internal/backend/xray/config"
 	"github.com/alexeylcp/lucx-core/internal/store"
 )
 
@@ -22,11 +24,16 @@ type Plan struct {
 	Batches []ServerBatch // one batch per server, ordered
 }
 
-func BuildPlan(chain *store.Chain) (*Plan, error) {
+// ServerLookup resolves a server ID to its connection details.
+type ServerLookup func(serverID string) (*store.Server, error)
+
+func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 	plan := &Plan{}
 	chainID := chain.ID
 	batchMap := make(map[string]*ServerBatch)
 	var serverOrder []string
+
+	defaultClientID := genClientID()
 
 	getOrCreateBatch := func(serverID string, be backend.ProxyBackend) *ServerBatch {
 		if b, ok := batchMap[serverID]; ok {
@@ -45,49 +52,53 @@ func BuildPlan(chain *store.Chain) (*Plan, error) {
 		}
 		batch := getOrCreateBatch(node.ServerID, be)
 
+		entrySpec, _ := ParseEntrySpec(node.InboundSpec)
+		if entrySpec.ClientID == "" {
+			entrySpec.ClientID = defaultClientID
+		}
+		clientID := entrySpec.ClientID
+
 		switch node.Role {
 		case "entry":
-			b, _ := json.Marshal(map[string]interface{}{
-				"tag": fmt.Sprintf("lucx-%s-entry", chainID),
-				"protocol": node.Protocol, "port": 443, "listen": "0.0.0.0",
-			})
-			batch.Inbounds = append(batch.Inbounds, b)
+			batch.Inbounds = append(batch.Inbounds, buildEntry(node, chainID, entrySpec))
 			if i+1 < len(chain.Nodes) {
-				b, _ := json.Marshal(map[string]interface{}{
-					"tag": fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
-					"protocol": node.Protocol,
-				})
-				batch.Outbounds = append(batch.Outbounds, b)
+				next := chain.Nodes[i+1]
+				nextSrv, err := lookup(next.ServerID)
+				if err != nil {
+					return nil, fmt.Errorf("node %d next server: %w", i, err)
+				}
+				outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
+				batch.Outbounds = append(batch.Outbounds,
+					xraycfg.VLESSOutbound(outTag, nextSrv.Host, 443, clientID))
 				batch.Routing = append(batch.Routing, backend.RoutingRule{
-					Type: "field",
+					Type:        "field",
 					InboundTag:  []string{fmt.Sprintf("lucx-%s-entry", chainID)},
-					OutboundTag: fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
+					OutboundTag: outTag,
 				})
 			}
+
 		case "hop":
-			b, _ := json.Marshal(map[string]interface{}{
-				"tag": fmt.Sprintf("lucx-%s-hop%d", chainID, i),
-				"protocol": node.Protocol, "port": 443, "listen": "0.0.0.0",
-			})
-			batch.Inbounds = append(batch.Inbounds, b)
+			inTag := fmt.Sprintf("lucx-%s-hop%d", chainID, i)
+			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID))
 			if i+1 < len(chain.Nodes) {
-				b, _ := json.Marshal(map[string]interface{}{
-					"tag": fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
-					"protocol": node.Protocol,
-				})
-				batch.Outbounds = append(batch.Outbounds, b)
+				next := chain.Nodes[i+1]
+				nextSrv, err := lookup(next.ServerID)
+				if err != nil {
+					return nil, fmt.Errorf("node %d next server: %w", i, err)
+				}
+				outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
+				batch.Outbounds = append(batch.Outbounds,
+					xraycfg.VLESSOutbound(outTag, nextSrv.Host, 443, clientID))
 				batch.Routing = append(batch.Routing, backend.RoutingRule{
-					Type: "field",
-					InboundTag:  []string{fmt.Sprintf("lucx-%s-hop%d", chainID, i)},
-					OutboundTag: fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1),
+					Type:        "field",
+					InboundTag:  []string{inTag},
+					OutboundTag: outTag,
 				})
 			}
+
 		case "exit":
-			b, _ := json.Marshal(map[string]interface{}{
-				"tag": fmt.Sprintf("lucx-%s-exit", chainID),
-				"protocol": node.Protocol, "port": 443, "listen": "0.0.0.0",
-			})
-			batch.Inbounds = append(batch.Inbounds, b)
+			inTag := fmt.Sprintf("lucx-%s-exit", chainID)
+			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID))
 		}
 	}
 
@@ -95,4 +106,25 @@ func BuildPlan(chain *store.Chain) (*Plan, error) {
 		plan.Batches = append(plan.Batches, *batchMap[serverID])
 	}
 	return plan, nil
+}
+
+func buildEntry(node store.ChainNode, chainID string, s EntrySpec) json.RawMessage {
+	tag := fmt.Sprintf("lucx-%s-entry", chainID)
+	switch {
+	case node.Protocol == "trojan":
+		return xraycfg.TrojanEntry(tag, s.Password, s.ServerName)
+	case s.Security == "reality":
+		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey)
+	default:
+		return xraycfg.VLESSEntryTLS(tag, s.ClientID, s.ServerName)
+	}
+}
+
+func genClientID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

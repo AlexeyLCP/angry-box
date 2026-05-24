@@ -34,6 +34,9 @@ func (h *Handlers) handleCreateChain() http.HandlerFunc {
 			c.Nodes[i].Position = i
 			if i == 0 {
 				c.Nodes[i].Role = "entry"
+				if c.Nodes[i].InboundSpec == "" || c.Nodes[i].InboundSpec == "{}" {
+					c.Nodes[i].InboundSpec = chain.MustJSON(chain.DefaultEntrySpec())
+				}
 			} else if i == len(c.Nodes)-1 {
 				c.Nodes[i].Role = "exit"
 			} else {
@@ -77,7 +80,7 @@ func (h *Handlers) handleValidateChain() http.HandlerFunc {
 			http.Error(w, `{"error":"not found"}`, 404)
 			return
 		}
-		plan, err := chain.BuildPlan(c)
+		plan, err := chain.BuildPlan(c, h.Store.GetServer)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"plan: %s"}`, err.Error()), 500)
 			return
