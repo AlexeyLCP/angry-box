@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/alexeylcp/lucx-core/internal/backend"
+	"github.com/alexeylcp/lucx-core/internal/ssh"
 )
 
 type XrayBackend struct{}
@@ -27,7 +28,7 @@ func (x *XrayBackend) AddInbound(ctx context.Context, ssh backend.SSHClient, spe
 		"streamSettings": json.RawMessage(spec.Stream),
 	})
 	cfg, _ := x.GetConfig(ctx, ssh)
-	if err := x.ApplyConfig(ctx, ssh, appendLucXInbounds(cfg.Inbounds, inb), cfg.Outbounds, nil); err != nil {
+	if err := x.ApplyConfig(ctx, toSSH(ssh),appendLucXInbounds(cfg.Inbounds, inb), cfg.Outbounds, nil); err != nil {
 		return backend.InboundResult{}, err
 	}
 	return backend.InboundResult{Tag: spec.Tag, Port: spec.Port}, nil
@@ -43,7 +44,7 @@ func (x *XrayBackend) RemoveInbound(ctx context.Context, ssh backend.SSHClient, 
 		}
 		filtered = append(filtered, raw)
 	}
-	return x.ApplyConfig(ctx, ssh, filtered, cfg.Outbounds, nil)
+	return x.ApplyConfig(ctx, toSSH(ssh),filtered, cfg.Outbounds, nil)
 }
 
 func (x *XrayBackend) AddOutbound(ctx context.Context, ssh backend.SSHClient, spec backend.OutboundSpec) (backend.OutboundResult, error) {
@@ -54,7 +55,7 @@ func (x *XrayBackend) AddOutbound(ctx context.Context, ssh backend.SSHClient, sp
 	})
 	cfg, _ := x.GetConfig(ctx, ssh)
 	newOutbounds := append(cfg.Outbounds, outb)
-	if err := x.ApplyConfig(ctx, ssh, cfg.Inbounds, newOutbounds, nil); err != nil {
+	if err := x.ApplyConfig(ctx, toSSH(ssh),cfg.Inbounds, newOutbounds, nil); err != nil {
 		return backend.OutboundResult{}, err
 	}
 	return backend.OutboundResult{Tag: spec.Tag}, nil
@@ -70,14 +71,16 @@ func (x *XrayBackend) RemoveOutbound(ctx context.Context, ssh backend.SSHClient,
 		}
 		filtered = append(filtered, raw)
 	}
-	return x.ApplyConfig(ctx, ssh, cfg.Inbounds, filtered, nil)
+	return x.ApplyConfig(ctx, toSSH(ssh),cfg.Inbounds, filtered, nil)
 }
 
 func (x *XrayBackend) SetRouting(ctx context.Context, ssh backend.SSHClient, rules []backend.RoutingRule) error {
 	cfg, _ := x.GetConfig(ctx, ssh)
-	return x.ApplyConfig(ctx, ssh, cfg.Inbounds, cfg.Outbounds, rules)
+	return x.ApplyConfig(ctx, toSSH(ssh),cfg.Inbounds, cfg.Outbounds, rules)
 }
 
 func appendLucXInbounds(existing []json.RawMessage, newInbound json.RawMessage) []json.RawMessage {
 	return append(existing, newInbound)
 }
+
+func toSSH(sshClient backend.SSHClient) *ssh.Client { return sshClient.(*ssh.Client) }
