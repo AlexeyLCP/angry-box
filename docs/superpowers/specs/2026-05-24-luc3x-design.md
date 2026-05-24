@@ -14,7 +14,7 @@ LucX is a personal tool for visually constructing multi-hop proxy chains and gen
 - **Zero damage** — never overwrite existing services without explicit confirmation. Detect and import existing Xray installations.
 - **Protocol-agnostic** — architecture abstracts proxy backends behind a single interface. v1 = Xray, v2 = AWG, Hysteria2, Sing-box, TUIC.
 - **Transactions** — chain application is atomic. Pre-flight → execute → commit or full rollback.
-- **gRPC-first** — Xray configuration via gRPC HandlerService. Config file as fallback only.
+- **Config-file only** — all Xray configuration via config.json (read→modify→atomic write→restart). gRPC HandlerService not functional in v26+.
 
 ## 2. Architecture Decision
 
@@ -62,7 +62,7 @@ LucX Core runs in three modes, selected by CLI flag and resource auto-detection:
 
 5. **No background monitor** — in Router mode, monitor is completely disabled. Status only on explicit refresh.
 
-6. **Config file preferred over gRPC** — on routers, avoid gRPC dependency if Xray gRPC port is not accessible. Fallback to config.json write + SIGHUP.
+6. **Config file only** — all Xray management via config.json. No gRPC dependency at all.
 
 7. **Comfortable on 128-512 MB RAM** — Core process targets <20 MB RSS. Remaining RAM for OS and Xray.
 
@@ -94,7 +94,7 @@ CI produces 5 Linux binaries per release. All compiled with CGO_ENABLED=0 (pure 
               │ LucX    │   Go Binary (~12MB desktop, ~8MB router)
               │ Core    │   Pure-Go SQLite (modernc.org/sqlite)
               └────┬────┘
-                   │ SSH + gRPC (or config file)
+                   │ SSH + config.json
      ┌─────────────┼─────────────────────┐
      │             │                     │
 ┌────┴────┐  ┌────┴────┐  ┌──────┐  ┌──────────┐
@@ -122,7 +122,7 @@ type ProxyBackend interface {
     Stop(ctx, ssh) error
     Status(ctx, ssh) (BackendStatus, error) // running/stopped/error + version + PID
 
-    // Configuration — backend chooses gRPC, REST, or config-file internally
+    // Configuration — via config.json (read→modify→atomic write→restart→verify)
     AddInbound(ctx, ssh, InboundSpec) (InboundResult, error)
     RemoveInbound(ctx, ssh, tag string) error
     AddOutbound(ctx, ssh, OutboundSpec) (OutboundResult, error)
@@ -136,27 +136,24 @@ type ProxyBackend interface {
 }
 ```
 
-### XrayBackend (v1): gRPC-first with fallback
+### XrayBackend (v1): Config-File Only
 
 ```
-┌─────────────────────────────┐
-│        XrayBackend          │
-│                             │
-│  ┌───────────────────────┐  │
-│  │ XrayGRPC (priority)   │  │  HandlerService.AddInbound
-│  │ gRPC HandlerService   │──┤  .AddOutbound .RemoveInbound
-│  │ (no restart needed)   │  │
-│  └───────────────────────┘  │
-│             │               │
-│             │ fallback       │
-│  ┌───────────────────────┐  │
-│  │ XrayConfigFile         │  │  read config.json → modify →
-│  │ (requires restart)     │  │  write → restart Xray
-│  └───────────────────────┘  │
-└─────────────────────────────┘
+┌───────────────────────────────┐
+│         XrayBackend           │
+│                               │
+│  ┌─────────────────────────┐  │
+│  │ XrayConfigManager        │  │  read config.json via SSH
+│  │   Backup → Modify        │──┤  → backup to .bak
+│  │   → Atomic Write         │  │  → modify in memory
+│  │   → Restart → Verify     │  │  → atomic write (tmp+rename)
+│  └─────────────────────────┘  │  → restart Xray
+│                               │  → verify port listening
+│  Tag namespace: lucx-{chain}  │
+└───────────────────────────────┘
 ```
 
-Auto-detect at Install: try gRPC → if unavailable, use config file. gRPC port configured in systemd unit (--format=json on :10085 by default).
+gRPC HandlerService tested and found non-functional in Xray v26.3.27. Config.json is the ONLY method.
 
 ### Plugin Registry
 
@@ -231,8 +228,8 @@ github.com/alexeylcp/lucx-core/
 │   │   ├── types.go                # InboundSpec, OutboundSpec, RoutingRule, BackendStatus
 │   │   ├── xray/                   # Xray backend (v1)
 │   │   │   ├── backend.go          # XrayBackend struct, implements ProxyBackend
-│   │   │   ├── grpc.go             # gRPC HandlerService client
-│   │   │   ├── configfile.go       # config.json reader/writer (fallback — used in Router mode)
+│   │   │   ├── configfile.go       # config.json ONLY: backup→modify→atomic write→restart→verify
+│   │   │   ├── configfile.go       # config.json ONLY: backup→modify→atomic write→restart→verify
 │   │   │   ├── installer.go        # Download binary, create systemd/init.d unit
 │   │   │   └── config_gen.go       # BuildClientConfig: vless:// link generation
 │   │   ├── awg/                    # AWG backend (v2, stub in v1)
@@ -244,7 +241,7 @@ github.com/alexeylcp/lucx-core/
 │   │   ├── engine.go               # Apply(chain) — orchestrates full flow
 │   │   ├── planner.go              # Builds execution plan from chain graph
 │   │   ├── executor.go             # Executes plan, collects created resources
-│   │   ├── validator.go            # Pre-flight: SSH + gRPC + tag/port conflicts
+│   │   ├── validator.go            # Pre-flight: SSH + port conflicts + LucX tag conflicts
 │   │   └── rollback.go             # Undo created resources in reverse order
 │   │
 │   ├── scanner/                    # Server safety scanner
@@ -323,7 +320,7 @@ func DetectMode() RunMode {
 | version | TEXT | "1.8.23" |
 | status | TEXT DEFAULT 'stopped' | 'running', 'stopped', 'error' |
 | config_path | TEXT | /usr/local/etc/xray/config.json |
-| api_endpoint | TEXT | gRPC: "localhost:10085" |
+| api_endpoint | TEXT | not used (config.json only) |
 | config_managed | BOOLEAN DEFAULT true | false = imported, don't auto-modify |
 | installed_at | DATETIME | |
 | PK | (server_id, backend_type) | |
@@ -405,45 +402,102 @@ Base: `/api/v1/`
 | GET | /map | Topology map: servers + chains as graph JSON |
 | WS | /ws/events | Real-time: apply progress, status changes |
 
-## 9. Chain Transaction Flow
+## 9. Config File Management
+
+### Principles
+
+1. **Backup before every mutation** — current config.json copied to config.json.lucx.bak.{timestamp}
+2. **Atomic write** — write to config.json.tmp → mv config.json.tmp config.json
+3. **Batched changes** — all changes for one server collected, applied in single write+restart
+4. **Verify after restart** — check port is listening via `ss -tlnp`
+5. **Rollback = restore backup** — on any failure, copy .bak back and restart
+
+### Tag Namespace
+
+All LucX-managed tags are namespaced: `lucx-{chainID}-{role}`
+
+Examples:
+- `lucx-abc123-entry` — Entry inbound on Finland
+- `lucx-abc123-to-hop1` — Outbound from Entry to Hop1
+- `lucx-abc123-hop1` — Hop1 inbound on Netherlands
+- `lucx-abc123-exit` — Exit inbound on Germany
+
+### Config Merge
+
+When modifying config.json, LucX does NOT regenerate the entire file. It:
+1. Reads current config.json
+2. Finds existing LucX-managed inbounds/outbounds (by tag prefix `lucx-`)
+3. Removes old LucX entries, keeps user's manual entries untouched
+4. Adds new LucX entries
+5. Merges routing rules (removes old `lucx-*` rules, adds new ones)
+
+This preserves any manual configuration the user has outside LucX.
+
+### One Restart Per Server
+
+For a 3-hop chain (Finland → Netherlands → Germany):
+- Finland: needs inbound + outbound + routing → 1 config write → 1 restart
+- Netherlands: needs inbound + outbound + routing → 1 config write → 1 restart
+- Germany: needs inbound → 1 config write → 1 restart
+- **Total: 3 writes, 3 restarts** (not 7)
+
+Changes per server are batched: plan collects all mutations for server X, applies them all at once.
+
+## 10. Chain Transaction Flow
 
 ### Apply Chain: "Finland → Netherlands → Germany (Exit)"
 
 ```
 1. PRE-FLIGHT (validator.go)
    ├─ Check SSH connectivity to all 3 servers
-   ├─ Check backend Status() on all 3 (Xray running?)
-   ├─ Check no existing inbounds with conflicting tags/ports
-   └─ Build execution plan: ordered list of operations
+   ├─ Read current config.json from each server
+   ├─ Check no LucX tags already present (clean state)
+   ├─ Verify ports available (not occupied by non-LucX inbounds)
+   └─ Build execution plan: per-server batch of changes
 
-2. EXECUTE (executor.go, sequential, stops on first error)
-   ├─ Finland: AddInbound (VLESS+Reality, :443, tag="chain-xxx-entry")
-   ├─ Finland: AddOutbound (VLESS, → Netherlands, tag="chain-xxx-to-nl")
-   ├─ Finland: SetRouting (inbound:"chain-xxx-entry" → outbound:"chain-xxx-to-nl")
-   ├─ Netherlands: AddInbound (VLESS, tag="chain-xxx-hop1")
-   ├─ Netherlands: AddOutbound (VLESS, → Germany, tag="chain-xxx-to-de")
-   ├─ Netherlands: SetRouting (inbound:"chain-xxx-hop1" → outbound:"chain-xxx-to-de")
-   └─ Germany: AddInbound (VLESS+Reality, tag="chain-xxx-exit")
+2. BACKUP (configfile.go)
+   ├─ Finland:   cp config.json → config.json.lucx.bak.{ts}
+   ├─ Netherlands: cp config.json → config.json.lucx.bak.{ts}
+   └─ Germany:   cp config.json → config.json.lucx.bak.{ts}
 
-3. COMMIT
+3. EXECUTE (executor.go, per-server batches)
+   ├─ Finland batch:
+   │   ├─ Read config.json
+   │   ├─ Remove old lucx-* inbounds/outbounds/rules
+   │   ├─ Add inbound:  {tag:"lucx-{id}-entry", protocol:"vless", port:443, stream:{xhttp+reality}}
+   │   ├─ Add outbound: {tag:"lucx-{id}-to-hop1", protocol:"vless", → Netherlands}
+   │   ├─ Add routing:  inbound:"lucx-{id}-entry" → outbound:"lucx-{id}-to-hop1"
+   │   ├─ Atomic write: config.json.tmp → rename → config.json
+   │   └─ Restart Xray + Verify: ss -tlnp | grep :443
+   │
+   ├─ Netherlands batch:
+   │   ├─ Add inbound:  {tag:"lucx-{id}-hop1", protocol:"vless", port:443}
+   │   ├─ Add outbound: {tag:"lucx-{id}-to-exit", protocol:"vless", → Germany}
+   │   ├─ Add routing:  inbound:"lucx-{id}-hop1" → outbound:"lucx-{id}-to-exit"
+   │   ├─ Atomic write + Restart + Verify
+   │
+   └─ Germany batch:
+       ├─ Add inbound:  {tag:"lucx-{id}-exit", protocol:"vless", port:443, stream:{xhttp+reality}}
+       ├─ Atomic write + Restart + Verify
+
+4. COMMIT
    ├─ Save chain + chain_nodes to SQLite
-   ├─ Store created inbound/outbound details in chain_nodes (for rollback)
+   ├─ Store backup file paths in chain_nodes (for rollback)
    └─ chain.status = 'active'
 
-4. GENERATE CLIENT CONFIG
+5. GENERATE CLIENT CONFIG
    └─ BuildClientConfig on Germany → vless://uuid@germany-ip:443?...
 
 ON ERROR (e.g., Netherlands step fails):
-   → ROLLBACK (reverse order):
-     ├─ Finland: RemoveInbound("chain-xxx-entry")
-     ├─ Finland: RemoveOutbound("chain-xxx-to-nl")
+   → ROLLBACK (per-server, reverse order):
+     ├─ Finland: restore config.json from config.json.lucx.bak.{ts} → restart Xray
      └─ chain.status = 'draft'
    → All servers returned to pre-apply state
 ```
 
 ### Rollback Guarantee
 
-Every Add* operation stores its result before the next operation. On failure, rollback iterates the collected results in reverse and calls the corresponding Remove*.
+Each server's original config.json is backed up BEFORE any modification. Rollback simply restores the backup and restarts Xray. No need to "undo" individual inbounds/outbounds — the entire config is restored atomically.
 
 ## 10. Key Screens
 
@@ -521,35 +575,31 @@ All builds: `CGO_ENABLED=0` (pure-Go SQLite, no libc dependency — compatible w
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| gRPC HandlerService fails with Reality + uTLS + fallback configs | HIGH | Phase 0 tests this first. Fallback: config-file strategy for Reality chains. |
-| gRPC requires Xray restart for certain settings (streamSettings changes) | MEDIUM | Phase 0 identifies which settings need restart. Document as known limitation. |
+| Config format changes between Xray versions | MEDIUM | Pin tested Xray version (v26.3.27). Config generator version-aware. |
+| Xray restart interrupts active connections | MEDIUM | Batch all per-server changes into single restart. Graceful restart (SIGTERM→start) if SIGHUP unreliable. |
+| Config merge clobbers user's manual changes | HIGH | LucX tags are namespaced (`lucx-{chainID}-*`). Only LucX tags are modified. User's entries untouched. |
 | Multi-distro SSH installer (apt/dnf/pacman, systemd/openrc, paths differ) | MEDIUM | Dedicated `distro.go` — detect OS/init/pkg-manager before install. Test on top 5 distros in MVP. |
-| Xray version incompatibility (config format changes between 1.8.x versions) | LOW | Pin tested Xray version. Installer downloads specific version, not "latest". Auto-update in v2. |
-| User has existing production Xray — LucX overwrites config | HIGH | Pre-flight scanner MUST detect before install. Import mode for standalone Xray. Never overwrite without explicit user approval. |
-| SSH connection drops during chain apply | MEDIUM | Transaction engine: each step must succeed before next. Rollback on any failure. SSH pool with retry (3 attempts). |
+| User has existing production Xray — LucX overwrites config | HIGH | Pre-flight scanner MUST detect before install. Import mode for standalone Xray. Backup before ANY mutation. |
+| SSH connection drops during chain apply | MEDIUM | Transaction engine: backup config → modify → atomic write → restart → verify. Rollback: restore backup. |
 
 ## 14. Development Phases
 
-### Phase 0 — API Verification (1-2 days)
+### Phase 0 — Complete (2026-05-24)
 
-**Critical path — must verify before any code:**
+**Results documented in `docs/api-audit.md`:**
 
-1. Deploy test Xray 1.8.x+ instance, enable gRPC HandlerService.
-2. Test AddInbound with VLESS+Reality+uTLS fingerprint+fallback — verify it works without Xray restart.
-3. Test AddOutbound with same parameters.
-4. Test AddRoutingRule — verify routing is applied correctly.
-5. Test RemoveInbound/RemoveOutbound — verify cleanup.
-6. Test config.json fallback path: write complex config, restart Xray, verify handshake works.
-7. Document findings in `docs/api-audit.md`.
-8. If gRPC is flaky with Reality+uTLS: document exact limitations, plan fallback strategy.
-
-**Go/No-Go:** If gRPC API cannot handle Reality+uTLS configurations, v1 will use config-file strategy exclusively for Reality chains.
+1. ✅ Deployed Xray v26.3.27 on test server (Debian 12, x86_64)
+2. ❌ gRPC HandlerService: NOT functional in v26. Connections routed to `direct` outbound.
+3. ✅ Config.json approach: VERIFIED — VLESS+TCP works
+4. ✅ XHTTP transport: WORKS in v26 (`network: "xhttp"`, `mode: "packet-up"`)
+5. ⚠️ Reality v26 format: requires BOTH `serverName`+`serverNames`, `shortId`+`shortIds`
+6. ✅ Decision: config.json is the ONLY method for v1
 
 ### Phase 1 — MVP (4-6 weeks)
 
 **Scope:**
 - Go Core: basic HTTP server, SQLite, server CRUD, SSH client pool
-- XrayBackend: gRPC config API, installer (download binary + systemd unit)
+- XrayBackend: config.json management (backup→modify→atomic write→restart→verify), installer
 - Chain engine: single-protocol (VLESS+Reality), 2-hop max, transaction with rollback
 - Pre-flight scanner: detect existing services, import standalone Xray config
 - Flutter Desktop: server list, simple chain builder (2 nodes), config export as vless:// link
@@ -561,7 +611,7 @@ All builds: `CGO_ENABLED=0` (pure-Go SQLite, no libc dependency — compatible w
 
 **Scope:**
 - Full chain builder: N hops, all Xray protocols (VLESS, VMess, Trojan, Shadowsocks)
-- All transports (TCP, WS, gRPC, H2, QUIC) and security (Reality, TLS)
+- All transports (XHTTP, WS, gRPC, H2, QUIC, TCP) and security (Reality, TLS)
 - Spider web topology dashboard
 - Mobile wizard mode
 - Routing rule editor (explicit routing between hops)
@@ -590,7 +640,7 @@ All builds: `CGO_ENABLED=0` (pure-Go SQLite, no libc dependency — compatible w
 |-------|-----------|
 | Backend Core | Go 1.23+, chi router, modernc.org/sqlite (pure-Go, no CGo), golang-jwt, golang.org/x/crypto |
 | Frontend (all platforms) | Flutter 3.x, drift (SQLite cache), riverpod |
-| Xray config API | gRPC (HandlerService) → fallback: config.json write + SIGHUP |
+| Xray config | config.json ONLY: backup→modify→atomic write→systemctl restart→verify (ss -tlnp) |
 | SSH | golang.org/x/crypto/ssh |
 | Communication | REST (JSON) + WebSocket |
 | Encryption | AES-256-GCM, Argon2id |
