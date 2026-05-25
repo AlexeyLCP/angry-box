@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://pkg.go.dev/github.com/alexeylcp/lucx-core"><img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26"></a>
   <a href="https://vuejs.org"><img src="https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3.5"></a>
-  <a href="https://github.com/alexeylcp/lucx-core/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial-8b5cf6" alt="License"></a>
+  <a href="https://github.com/AlexeyLCP/lucx/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial-8b5cf6" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/build-single%20binary-10b981" alt="Single Binary"></a>
   <a href="#"><img src="https://img.shields.io/badge/database-SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite"></a>
 </p>
@@ -73,8 +73,8 @@ Requirements: a Linux machine (VPS, home server, or router) with Go 1.24+ and No
 
 ```bash
 # Clone
-git clone https://github.com/AlexeyLCP/lucx-core.git
-cd lucx-core
+git clone https://github.com/AlexeyLCP/lucx.git
+cd lucx
 
 # Build (runs Go tests, builds Vue SPA, compiles binary)
 ./scripts/build.sh
@@ -412,7 +412,7 @@ The author assumes no liability for how you use this software. Know your local l
 ### Быстрый старт
 
 ```bash
-git clone https://github.com/AlexeyLCP/lucx-core.git && cd lucx-core
+git clone https://github.com/AlexeyLCP/lucx.git && cd lucx
 ./scripts/build.sh
 ./build/lucx-core -listen :80 -db ./lucx.db
 # Открыть http://<ваш-сервер> в браузере, пароль: lucx-dev-secret-change-me
@@ -470,7 +470,7 @@ LucX — **инструмент для личных исследований**. 
 ### 快速开始
 
 ```bash
-git clone https://github.com/AlexeyLCP/lucx-core.git && cd lucx-core
+git clone https://github.com/AlexeyLCP/lucx.git && cd lucx
 ./scripts/build.sh
 ./build/lucx-core -listen :80 -db ./lucx.db
 # 浏览器打开 http://<你的服务器IP>，密码: lucx-dev-secret-change-me
