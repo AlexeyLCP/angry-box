@@ -136,24 +136,114 @@ WantedBy=multi-user.target
 
 Then put nginx or Caddy in front with TLS. The binary itself doesn't handle HTTPS — proxy it.
 
-### OpenWrt / Keenetic
+### OpenWrt
 
 Build for your router's architecture and copy:
 
 ```bash
-# For MIPS-based routers (Keenetic, some OpenWrt)
-make cross-mipsle
-scp build/lucx-core-linux-mipsle root@192.168.1.1:/opt/bin/lucx-core
-
 # For ARMv7 routers
 make cross-armv7
-scp build/lucx-core-linux-armv7 root@192.168.1.1:/opt/bin/lucx-core
+scp build/lucx-core-linux-armv7 root@192.168.1.1:/usr/bin/lucx-core
+
+# For MIPS Big Endian (older OpenWrt)
+make cross-mips
+scp build/lucx-core-openwrt-mips root@192.168.1.1:/usr/bin/lucx-core
 
 # Compress with UPX for storage-constrained devices
 make router-builds
 ```
 
 The binary needs ~15-20 MB of storage. With UPX `--best`, it compresses to ~8-10 MB.
+
+### Keenetic Routers
+
+Keenetic runs NDMS (Network Device Management System) with OPKG/Entware for user packages. LucX provides pre-built binaries for both MIPSel (primary) and MIPS Big Endian architectures, plus `.ipk` packages for native OPKG installation.
+
+**Architecture mapping:**
+
+| Keenetic Model | Architecture | Target |
+|---------------|-------------|--------|
+| Ultra, Giga, Hopper | MIPSel | `keenetic-mipsel` |
+| Older models (pre-2021) | MIPS BE | `openwrt-mips` |
+| Speedster, Skipper | ARMv7 | `linux-armv7` |
+
+**Build for Keenetic:**
+
+```bash
+# Build both MIPS targets + UPX compression
+make keenetic
+
+# Or build with .ipk package
+make keenetic-package
+```
+
+**Installation methods:**
+
+*Method 1 — OPKG (.ipk package, recommended):*
+
+```bash
+# Copy .ipk to router
+scp build/lucx-core_*_mipsel.ipk root@<keenetic>:/opt/tmp/
+
+# SSH to router and install
+ssh root@<keenetic>
+opkg install /opt/tmp/lucx-core_*_mipsel.ipk
+/opt/etc/init.d/S99lucx start
+```
+
+*Method 2 — Manual binary copy:*
+
+```bash
+scp build/lucx-core-keenetic-mipsel root@<keenetic>:/opt/bin/lucx-core
+ssh root@<keenetic>
+chmod +x /opt/bin/lucx-core
+
+# Run manually
+/opt/bin/lucx-core -listen :8744 -db /opt/var/run/lucx.db &
+
+# Auto-start: add to /opt/etc/init.d/S99lucx
+```
+
+*Method 3 — Tarball with install script:*
+
+```bash
+scp build/lucx-core-*-keenetic-mipsel.tar.gz root@<keenetic>:/opt/tmp/
+ssh root@<keenetic>
+cd /opt/tmp && tar xzf lucx-core-*-keenetic-mipsel.tar.gz
+cd lucx-core-*-keenetic-mipsel && chmod +x install.sh && ./install.sh
+```
+
+**NDMS-specific paths:**
+
+| Path | Purpose |
+|------|---------|
+| `/opt/bin/` | User binaries (in `$PATH` by default) |
+| `/opt/etc/init.d/` | Startup scripts (`S99*` = start on boot) |
+| `/opt/var/run/` | Runtime data — database, sockets, PID files |
+| `/opt/tmp/` | Temporary files (package staging) |
+
+**MIPS-specific ldflags:**
+
+For Keenetic builds, additional linker flags reduce binary size and improve stability:
+
+| Flag | Effect |
+|------|--------|
+| `-s` | Strip debug info |
+| `-w` | Strip DWARF symbol table |
+| `-buildid=` | Remove Go build ID |
+| `-trimpath` | Reproducible builds |
+| `GOMIPS=softfloat` | Software FPU emulation (no hardware float on MIPS) |
+
+**Resource usage on Keenetic:**
+
+| Metric | Typical |
+|--------|---------|
+| Binary size (upx) | ~8-10 MB |
+| RAM at idle | ~15-25 MB |
+| CPU usage idle | <1% |
+| Storage (binary + DB) | ~12-15 MB |
+
+> **Note:** LucX on Keenetic works best with an external USB drive (Entware on `/opt`). The built-in flash may be too small for the binary. Ensure `/opt` has at least 30 MB free.
 
 ### Docker
 
@@ -332,9 +422,19 @@ go run ./cmd/lucx-core/ -listen :8744 -db ./lucx.db
 cd lucx-web && npm run dev
 
 # Tests
-make test        # go vet + go test
-make cross       # cross-compile all targets
-make router-builds  # cross-compile + UPX compression
+make test            # go vet + go test
+make cross           # cross-compile 4 targets (amd64, arm64, armv7, mipsle)
+make build-all       # all 5 targets including MIPS Big Endian
+make keenetic        # Keenetic-specific: mipsle + mips + UPX
+make keenetic-package  # Keenetic .ipk + tarball
+make release         # full pipeline: test + web + build-all + packages
+
+# Individual targets
+make cross-amd64     # linux/amd64
+make cross-arm64     # linux/arm64
+make cross-armv7     # linux/arm/v7
+make cross-mipsle    # linux/mipsle (Keenetic primary)
+make cross-mips      # linux/mips (Big Endian)
 
 # Full CI build
 ./scripts/build.sh
@@ -433,15 +533,35 @@ ssh root@ваш-vps
 
 ### Установка на роутер (OpenWrt / Keenetic)
 
-```bash
-make cross-mipsle  # для Keenetic / MIPS-роутеров
-# или
-make cross-armv7   # для ARM-роутеров
+**Keenetic (основная цель):**
 
-scp build/lucx-core-linux-* root@192.168.1.1:/opt/bin/lucx-core
+```bash
+# Собрать бинарники для Keenetic (MIPSel + MIPS BE) с UPX-сжатием
+make keenetic-package
+
+# Способ 1: OPKG-пакет (рекомендуется)
+scp build/lucx-core_*_mipsel.ipk root@<keenetic>:/opt/tmp/
+ssh root@<keenetic>
+opkg install /opt/tmp/lucx-core_*_mipsel.ipk
+
+# Способ 2: Бинарник вручную
+scp build/lucx-core-keenetic-mipsel root@<keenetic>:/opt/bin/lucx-core
+ssh root@<keenetic> && chmod +x /opt/bin/lucx-core
+
+# Способ 3: Tarball с инсталлятором
+scp build/lucx-core-*-keenetic-mipsel.tar.gz root@<keenetic>:/opt/tmp/
+ssh root@<keenetic> && cd /opt/tmp && tar xzf lucx-core-*.tar.gz
+cd lucx-core-* && ./install.sh
 ```
 
-С UPX-сжатием бинарник занимает ~8-10 МБ.
+**OpenWrt / ARM-роутеры:**
+
+```bash
+make cross-armv7  # для ARMv7
+scp build/lucx-core-linux-armv7 root@192.168.1.1:/usr/bin/lucx-core
+```
+
+С UPX-сжатием бинарник занимает ~8-10 МБ. Для Keenetic требуется Entware на внешнем USB-накопителе. Пути NDMS: `/opt/bin/` (бинарники), `/opt/etc/init.d/` (автозапуск), `/opt/var/run/` (база данных).
 
 ### Как пользоваться
 

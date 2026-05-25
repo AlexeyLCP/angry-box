@@ -1,0 +1,353 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (leave empty for git tag)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Web UI build (shared across all Go builds) ──
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build Vue SPA
+        working-directory: lucx-web
+        run: |
+          npm ci
+          npx vue-tsc --noEmit
+          npm run build
+      - name: Copy dist for Go embed
+        run: |
+          rm -rf web/dist
+          cp -r lucx-web/dist web/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 1
+
+  # ── Matrix build: all architectures ──
+  build:
+    needs: web
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Standard server targets
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            upx: false
+            mips: false
+            keenetic: false
+
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+            upx: true
+            mips: false
+            keenetic: false
+
+          # ARMv7 routers (OpenWrt, old Raspberry Pi)
+          - target: linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: '7'
+            upx: true
+            mips: false
+            keenetic: false
+
+          # ── MIPS Big Endian (older OpenWrt, some Keenetic models) ──
+          - target: openwrt-mips
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+            upx: true
+            mips: true
+            keenetic: false
+
+          # ── MIPSel Little Endian — Keenetic primary target ──
+          - target: keenetic-mipsel
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
+            upx: true
+            mips: true
+            keenetic: true
+
+    env:
+      APP: lucx-core
+      OUT_DIR: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Compute version
+        id: ver
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          TRIGGER: ${{ github.event_name }}
+        run: |
+          if [[ "$TRIGGER" == "push" && "$REF_TYPE" == "tag" ]]; then
+            # Strip 'v' prefix for clean semver
+            V="${REF_NAME#v}"
+          elif [[ "$TRIGGER" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
+            V="$INPUT_VERSION"
+          else
+            V="$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')"
+            V="${V#v}"
+          fi
+          echo "value=$V" >> "$GITHUB_OUTPUT"
+          echo "version=$V"
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test (skip on MIPS — no emulation)
+        if: ${{ ! matrix.mips }}
+        run: go test ./... -count=1 -timeout 90s
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm || '' }}
+          GOMIPS: ${{ matrix.gomips || '' }}
+          CGO_ENABLED: '0'
+          TARGET: ${{ matrix.target }}
+          IS_MIPS: ${{ matrix.mips }}
+          VERSION: ${{ steps.ver.outputs.value }}
+        run: |
+          mkdir -p "$OUT_DIR"
+
+          LDFLAGS="-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION}"
+
+          # MIPS: strip build id for smaller binary
+          if [[ "$IS_MIPS" == "true" ]]; then
+            LDFLAGS="${LDFLAGS} -buildid="
+          fi
+
+          BIN="${OUT_DIR}/${APP}-${TARGET}"
+
+          echo "Building ${BIN} (GOOS=${GOOS} GOARCH=${GOARCH} GOARM=${GOARM} GOMIPS=${GOMIPS})"
+          go build -trimpath -ldflags="${LDFLAGS}" -o "${BIN}" ./cmd/${APP}/
+
+          ls -lh "${BIN}"
+          file "${BIN}" || true
+
+      - name: Compress with UPX (router targets)
+        if: ${{ matrix.upx }}
+        run: |
+          BIN="${OUT_DIR}/${APP}-${{ matrix.target }}"
+          if command -v upx &>/dev/null; then
+            upx --best --lzma "${BIN}"
+            ls -lh "${BIN}"
+          else
+            echo "UPX not installed — installing..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
+            upx --best --lzma "${BIN}"
+            ls -lh "${BIN}"
+          fi
+
+      - name: Package tar.gz
+        env:
+          TARGET: ${{ matrix.target }}
+          IS_KEENETIC: ${{ matrix.keenetic }}
+          VERSION: ${{ steps.ver.outputs.value }}
+        run: |
+          set -euo pipefail
+          BIN="${OUT_DIR}/${APP}-${TARGET}"
+          chmod +x "${BIN}"
+
+          TAR_NAME="${APP}-${VERSION}-${TARGET}"
+          TAR_DIR="${OUT_DIR}/${TAR_NAME}"
+          mkdir -p "${TAR_DIR}"
+
+          cp "${BIN}" "${TAR_DIR}/${APP}"
+          cp README.md "${TAR_DIR}/"
+
+          # Keenetic: add NDMS install script
+          if [[ "$IS_KEENETIC" == "true" ]]; then
+            cat > "${TAR_DIR}/install.sh" << 'SCRIPT'
+          #!/bin/sh
+          # LucX Keenetic NDMS Install Script
+          set -e
+          BIN_DIR="/opt/bin"
+          CONF_DIR="/opt/var/run"
+          INIT_DIR="/opt/etc/init.d"
+
+          echo "Installing LucX for Keenetic NDMS..."
+          mkdir -p "$BIN_DIR" "$CONF_DIR" "$INIT_DIR"
+
+          cp lucx-core "$BIN_DIR/lucx-core"
+          chmod +x "$BIN_DIR/lucx-core"
+
+          cat > "$INIT_DIR/S99lucx" << 'INIT'
+          #!/bin/sh
+          # LucX daemon for Keenetic NDMS
+          PATH="/opt/bin:/opt/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
+
+          start() {
+              echo "Starting LucX..."
+              /opt/bin/lucx-core -listen :8744 -db /opt/var/run/lucx.db &
+          }
+
+          stop() {
+              echo "Stopping LucX..."
+              killall lucx-core 2>/dev/null || true
+          }
+
+          case "$1" in
+              start) start ;;
+              stop)  stop ;;
+              restart) stop; sleep 1; start ;;
+              *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+          esac
+          INIT
+
+          chmod +x "$INIT_DIR/S99lucx"
+
+          echo ""
+          echo "LucX installed. Start with:"
+          echo "  /opt/etc/init.d/S99lucx start"
+          echo ""
+          echo "Web UI: http://<keenetic-ip>:8744"
+          echo "Default password: lucx-dev-secret-change-me"
+          SCRIPT
+            chmod +x "${TAR_DIR}/install.sh"
+          fi
+
+          tar czf "${OUT_DIR}/${TAR_NAME}.tar.gz" -C "$OUT_DIR" "$TAR_NAME"
+          echo "Package: ${OUT_DIR}/${TAR_NAME}.tar.gz"
+          ls -lh "${OUT_DIR}/${TAR_NAME}.tar.gz"
+
+      - name: Create .ipk package (Keenetic)
+        if: ${{ matrix.keenetic }}
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ steps.ver.outputs.value }}
+        run: |
+          set -euo pipefail
+          BIN="${OUT_DIR}/${APP}-${TARGET}"
+          chmod +x "${BIN}"
+
+          IPK_NAME="${APP}_${VERSION}_mipsel.ipk"
+          IPK_DIR="${OUT_DIR}/ipk"
+          rm -rf "$IPK_DIR"
+          mkdir -p "$IPK_DIR/data/opt/bin"
+          mkdir -p "$IPK_DIR/data/opt/etc/init.d"
+          mkdir -p "$IPK_DIR/data/opt/var/run"
+          mkdir -p "$IPK_DIR/control"
+
+          # Binary
+          cp "${BIN}" "$IPK_DIR/data/opt/bin/${APP}"
+
+          # init.d script
+          cat > "$IPK_DIR/data/opt/etc/init.d/S99lucx" << 'INIT'
+          #!/bin/sh
+          PATH="/opt/bin:/opt/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
+          start() {
+              echo "Starting LucX..."
+              /opt/bin/lucx-core -listen :8744 -db /opt/var/run/lucx.db &
+          }
+          stop() {
+              echo "Stopping LucX..."
+              killall lucx-core 2>/dev/null || true
+          }
+          case "$1" in
+              start) start ;;
+              stop)  stop ;;
+              restart) stop; sleep 1; start ;;
+              *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+          esac
+          INIT
+          chmod +x "$IPK_DIR/data/opt/etc/init.d/S99lucx"
+
+          # control file for opkg
+          cat > "$IPK_DIR/control/control" << EOF
+          Package: lucx-core
+          Version: ${VERSION}
+          Architecture: mipsel
+          Maintainer: LucX Project
+          Description: Personal Multi-Hop Xray Orchestrator
+          Section: net
+          Priority: optional
+          Depends: libc
+          EOF
+
+          # debian-binary
+          echo "2.0" > "$IPK_DIR/debian-binary"
+
+          # Package .ipk (ar-format tarball)
+          cd "$IPK_DIR"
+          tar czf "control.tar.gz" -C control .
+          tar czf "data.tar.gz" -C data .
+          tar czf "../${IPK_NAME}" ./debian-binary ./control.tar.gz ./data.tar.gz
+          cd -
+
+          echo ".ipk package: ${OUT_DIR}/${IPK_NAME}"
+          ls -lh "${OUT_DIR}/${IPK_NAME}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            build/*.tar.gz
+            build/*.ipk
+          retention-days: 7
+
+  # ── GitHub Release ──
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.ipk' \) -exec cp {} release-assets/ \;
+          echo "=== Release assets ==="
+          ls -lh release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: release-assets/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
