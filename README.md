@@ -21,6 +21,51 @@ Designed for one person, one operator. No multi-tenancy. No user management. No 
 
 ---
 
+## Quick Installation
+
+### Linux / VPS (systemd)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | bash
+```
+
+Installs to `/opt/lucx`, creates `systemd` service, starts on port `:8744`.
+
+**Custom port:** `curl .../install.sh | bash -s -- --port 8080`
+
+**Update:** `curl .../install.sh | bash -s -- --update`
+
+**Uninstall:** `curl .../install.sh | bash -s -- --uninstall`
+
+After install, put nginx or Caddy with TLS in front of `127.0.0.1:8744`.
+
+### Keenetic Router (NDMS)
+
+```bash
+# SSH to Keenetic as root, then:
+curl -sSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | bash
+```
+
+Auto-detects Keenetic NDMS. Installs to `/opt/bin/lucx-core`, creates `/opt/etc/init.d/S99lucx`, starts immediately.
+
+**Prerequisites:** Entware/OPKG on external USB (`/opt` partition with 30+ MB free).
+
+```bash
+# Control after install:
+/opt/etc/init.d/S99lucx status
+/opt/etc/init.d/S99lucx restart
+
+# Update to latest:
+curl .../install.sh | bash -s -- --update
+
+# Specific version:
+curl .../install.sh | bash -s -- --version v0.1.0
+```
+
+> **Note:** The install script auto-detects: architecture (amd64/arm64/armv7/mips/mipsel), Keenetic vs standard Linux, MIPS endianness. SHA256 verification on downloads. Supports `--port`, `--version`, `--update`, `--uninstall` flags.
+
+---
+
 ## Features
 
 - **Visual Chain Builder** — drag-and-drop interface to construct multi-hop proxy chains with live topology visualization

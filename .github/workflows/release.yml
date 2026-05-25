@@ -343,6 +343,13 @@ jobs:
           echo "=== Release assets ==="
           ls -lh release-assets/
 
+      - name: Generate SHA256 checksums
+        run: |
+          cd release-assets
+          sha256sum *.tar.gz *.ipk > "lucx-core-${GITHUB_REF_NAME#v}-checksums.txt"
+          cat "lucx-core-${GITHUB_REF_NAME#v}-checksums.txt"
+          ls -lh
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
