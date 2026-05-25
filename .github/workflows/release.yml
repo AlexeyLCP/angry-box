@@ -71,22 +71,25 @@ jobs:
             keenetic: false
 
           # ── MIPS Big Endian (older OpenWrt, some Keenetic models) ──
-          - target: openwrt-mips
-            goos: linux
-            goarch: mips
-            gomips: softfloat
-            upx: true
-            mips: true
-            keenetic: false
+          # DISABLED: modernc.org/libc (SQLite driver) lacks MIPS build tags.
+          # Will re-enable after migrating to zombiezen/go-sqlite (WASM-based, no CGO).
+          # - target: openwrt-mips
+          #   goos: linux
+          #   goarch: mips
+          #   gomips: softfloat
+          #   upx: true
+          #   mips: true
+          #   keenetic: false
 
           # ── MIPSel Little Endian — Keenetic primary target ──
-          - target: keenetic-mipsel
-            goos: linux
-            goarch: mipsle
-            gomips: softfloat
-            upx: true
-            mips: true
-            keenetic: true
+          # DISABLED: see openwrt-mips note above.
+          # - target: keenetic-mipsel
+          #   goos: linux
+          #   goarch: mipsle
+          #   gomips: softfloat
+          #   upx: true
+          #   mips: true
+          #   keenetic: true
 
     env:
       APP: lucx-core
