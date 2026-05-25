@@ -97,7 +97,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26'
 
       - name: Download web dist
         uses: actions/download-artifact@v4
