@@ -347,10 +347,16 @@ jobs:
           ls -lh release-assets/
 
       - name: Generate SHA256 checksums
+        env:
+          REF: ${{ github.ref_name }}
         run: |
           cd release-assets
-          sha256sum *.tar.gz *.ipk > "lucx-core-${GITHUB_REF_NAME#v}-checksums.txt"
-          cat "lucx-core-${GITHUB_REF_NAME#v}-checksums.txt"
+          shopt -s nullglob
+          FILES=( *.tar.gz *.ipk )
+          if [ ${#FILES[@]} -gt 0 ]; then
+            sha256sum "${FILES[@]}" > "lucx-core-${REF#v}-checksums.txt"
+            cat "lucx-core-${REF#v}-checksums.txt"
+          fi
           ls -lh
 
       - name: Create GitHub Release
