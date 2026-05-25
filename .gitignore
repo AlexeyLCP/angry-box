@@ -6,3 +6,6 @@
 lucx-core
 lucx-core.exe
 *.db
+
+# Node
+node_modules/

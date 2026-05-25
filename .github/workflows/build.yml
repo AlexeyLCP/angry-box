@@ -1,0 +1,52 @@
+name: Build & Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go vet ./...
+      - run: go test ./... -count=1 -timeout 60s
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: lucx-web
+        run: |
+          npm ci
+          npx vue-tsc --noEmit
+          npm run build
+
+  build:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: lucx-web
+        run: npm ci && npm run build
+      - run: cp -r lucx-web/dist web/dist
+      - run: |
+          mkdir -p build
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o build/lucx-core ./cmd/lucx-core/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lucx-core
+          path: build/lucx-core

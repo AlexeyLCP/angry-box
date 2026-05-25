@@ -57,37 +57,59 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 			entrySpec.ClientID = defaultClientID
 		}
 		clientID := entrySpec.ClientID
-		hopPort := entrySpec.Port // default 443 for entries; hops/exit override
 
-		// For hop/exit, parse HopSpec for port override
+		// Default transport parameters
+		transport := entrySpec.Transport
+		xhttpMode := entrySpec.XHTTPMode
+
+		// For hop/exit, parse HopSpec for port/transport override
 		if node.Role == "hop" || node.Role == "exit" {
-			hop, _ := ParseHopSpec(node.InboundSpec)
+			hop, _ := ParseHopSpec(node.HopInboundSpec)
 			if hop.ClientID != "" {
 				clientID = hop.ClientID
 			}
 			if hop.Port != 0 {
-				hopPort = hop.Port
+				entrySpec.Port = hop.Port
+			}
+			if hop.Transport != "" {
+				transport = hop.Transport
+			}
+			if hop.XHTTPMode != "" {
+				xhttpMode = hop.XHTTPMode
 			}
 		}
 
-		// Determine next node's inbound port for outbound
+		// Determine next node's address/port for outbound.
+		// OutboundSpec overrides (if set in this node's outbound_spec).
+		outSpec, _ := ParseOutbound(node.OutboundSpec)
+		nextHostOverride := outSpec.Address
+		nextPortOverride := outSpec.Port
+
 		nextPort := 443
-		if i+1 < len(chain.Nodes) {
+		if nextPortOverride != 0 {
+			nextPort = nextPortOverride
+		} else if i+1 < len(chain.Nodes) {
 			nextPort = getInboundPort(chain.Nodes[i+1])
+		}
+
+		nextHost := ""
+		if nextHostOverride != "" {
+			nextHost = nextHostOverride
+		} else if i+1 < len(chain.Nodes) {
+			nextSrv, err := lookup(chain.Nodes[i+1].ServerID)
+			if err != nil {
+				return nil, fmt.Errorf("node %d next server: %w", i, err)
+			}
+			nextHost = nextSrv.Host
 		}
 
 		switch node.Role {
 		case "entry":
 			batch.Inbounds = append(batch.Inbounds, buildEntry(node, chainID, entrySpec))
-			if i+1 < len(chain.Nodes) {
-				next := chain.Nodes[i+1]
-				nextSrv, err := lookup(next.ServerID)
-				if err != nil {
-					return nil, fmt.Errorf("node %d next server: %w", i, err)
-				}
+			if i+1 < len(chain.Nodes) && nextHost != "" {
 				outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
 				batch.Outbounds = append(batch.Outbounds,
-					xraycfg.VLESSOutbound(outTag, nextSrv.Host, nextPort, clientID))
+					xraycfg.VLESSOutbound(outTag, nextHost, nextPort, clientID, transport, xhttpMode))
 				batch.Routing = append(batch.Routing, backend.RoutingRule{
 					Type:        "field",
 					InboundTag:  []string{fmt.Sprintf("lucx-%s-entry", chainID)},
@@ -97,16 +119,11 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 
 		case "hop":
 			inTag := fmt.Sprintf("lucx-%s-hop%d", chainID, i)
-			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID, hopPort))
-			if i+1 < len(chain.Nodes) {
-				next := chain.Nodes[i+1]
-				nextSrv, err := lookup(next.ServerID)
-				if err != nil {
-					return nil, fmt.Errorf("node %d next server: %w", i, err)
-				}
+			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID, entrySpec.Port, transport, xhttpMode))
+			if i+1 < len(chain.Nodes) && nextHost != "" {
 				outTag := fmt.Sprintf("lucx-%s-hop%d-to-%d", chainID, i, i+1)
 				batch.Outbounds = append(batch.Outbounds,
-					xraycfg.VLESSOutbound(outTag, nextSrv.Host, nextPort, clientID))
+					xraycfg.VLESSOutbound(outTag, nextHost, nextPort, clientID, transport, xhttpMode))
 				batch.Routing = append(batch.Routing, backend.RoutingRule{
 					Type:        "field",
 					InboundTag:  []string{inTag},
@@ -116,7 +133,7 @@ func BuildPlan(chain *store.Chain, lookup ServerLookup) (*Plan, error) {
 
 		case "exit":
 			inTag := fmt.Sprintf("lucx-%s-exit", chainID)
-			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID, hopPort))
+			batch.Inbounds = append(batch.Inbounds, xraycfg.VLESSHop(inTag, clientID, entrySpec.Port, transport, xhttpMode))
 		}
 	}
 
@@ -130,11 +147,11 @@ func buildEntry(node store.ChainNode, chainID string, s EntrySpec) json.RawMessa
 	tag := fmt.Sprintf("lucx-%s-entry", chainID)
 	switch {
 	case node.Protocol == "trojan":
-		return xraycfg.TrojanEntry(tag, s.Password, s.ServerName, s.Port)
+		return xraycfg.TrojanEntry(tag, s.Password, s.ServerName, s.Port, s.Transport, s.XHTTPHost, s.XHTTPPath, s.XHTTPMode, s.Fingerprint)
 	case s.Security == "reality":
-		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey, s.RealityPub, s.Port)
+		return xraycfg.VLESSEntryReality(tag, s.ClientID, s.RealityKey, s.RealityPub, s.Port, s.Transport, s.XHTTPHost, s.XHTTPPath, s.XHTTPMode, s.Fingerprint)
 	default:
-		return xraycfg.VLESSEntryTLS(tag, s.ClientID, s.ServerName, s.Port)
+		return xraycfg.VLESSEntryTLS(tag, s.ClientID, s.ServerName, s.Port, s.Transport, s.XHTTPHost, s.XHTTPPath, s.XHTTPMode, s.Fingerprint)
 	}
 }
 
@@ -147,7 +164,7 @@ func getInboundPort(node store.ChainNode) int {
 			return s.Port
 		}
 	case "hop", "exit":
-		s, _ := ParseHopSpec(node.InboundSpec)
+		s, _ := ParseHopSpec(node.HopInboundSpec)
 		if s.Port != 0 {
 			return s.Port
 		}

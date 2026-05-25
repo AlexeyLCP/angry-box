@@ -63,12 +63,13 @@ func (c *Client) Exec(cmd string) (string, error) {
 		return "", err
 	}
 	defer session.Close()
-	var b bytes.Buffer
-	session.Stdout = &b
+	var stdout, stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
 	if err := session.Run(cmd); err != nil {
-		return b.String(), fmt.Errorf("run %q: %w", cmd, err)
+		return stdout.String() + stderr.String(), fmt.Errorf("run %q: %w", cmd, err)
 	}
-	return b.String(), nil
+	return stdout.String() + stderr.String(), nil
 }
 
 // ReadFile reads a remote file and returns its content as a string.

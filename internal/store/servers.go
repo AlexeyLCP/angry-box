@@ -42,6 +42,18 @@ func (s *Store) CreateServer(srv *Server) error {
 	return err
 }
 
+// ServerExists checks if a server with the given host:port already exists.
+// Returns the existing server's ID and name if found.
+func (s *Store) ServerExists(host string, port int) (string, string, bool) {
+	var id, name string
+	err := s.db.QueryRow(`SELECT id, name FROM servers WHERE host = ? AND port = ?`, host, port).
+		Scan(&id, &name)
+	if err != nil {
+		return "", "", false
+	}
+	return id, name, true
+}
+
 // GetServer returns a single server by id, or sql.ErrNoRows.
 // NOTE: Includes credential in the result — caller must not expose it (json:"-" on field).
 func (s *Store) GetServer(id string) (*Server, error) {
@@ -61,7 +73,7 @@ func (s *Store) ListServers() ([]Server, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var servers []Server
+	servers := make([]Server, 0)
 	for rows.Next() {
 		var srv Server
 		if err := rows.Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &srv.Username, &srv.AuthMethod, &srv.OS, &srv.Arch, &srv.Status, &srv.Source, &srv.Tags, &srv.LastSeen, &srv.CreatedAt); err != nil {

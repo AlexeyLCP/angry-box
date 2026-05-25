@@ -17,6 +17,8 @@ import (
 	"github.com/alexeylcp/lucx-core/internal/config"
 	"github.com/alexeylcp/lucx-core/internal/ssh"
 	"github.com/alexeylcp/lucx-core/internal/store"
+	lucxweb "github.com/alexeylcp/lucx-core/web"
+	"github.com/alexeylcp/lucx-core/internal/ws"
 )
 
 func main() {
@@ -34,13 +36,14 @@ func main() {
 	}
 
 	sshFactory := ssh.NewFactory(s)
-	engine := chain.NewEngine(s, func(serverID string) (*ssh.Client, error) {
+	wsHub := ws.NewHub()
+	engine := chain.NewEngineWithHub(s, func(serverID string) (*ssh.Client, error) {
 		srv, err := s.GetServer(serverID)
 		if err != nil {
 			return nil, err
 		}
 		return sshFactory.Dial(srv)
-	})
+	}, wsHub)
 
 	// CLI mode: add-server
 	if cfg.AddServer {
@@ -66,12 +69,21 @@ func main() {
 		Engine:     engine,
 		SSHFactory: func(srv *store.Server) (*ssh.Client, error) { return sshFactory.Dial(srv) },
 		JWTSecret:  cfg.JWTSecret,
+		WSHub:      wsHub,
 	}
 
 	router := api.NewRouter(handlers)
+	webHandler := lucxweb.Handler()
+	combined := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/api" {
+			router.ServeHTTP(w, r)
+		} else {
+			webHandler.ServeHTTP(w, r)
+		}
+	})
 	log.Printf("LucX Core listening on %s", cfg.ListenAddr)
 	go func() {
-		if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
+		if err := http.ListenAndServe(cfg.ListenAddr, combined); err != nil {
 			log.Fatalf("http: %v", err)
 		}
 	}()

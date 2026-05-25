@@ -132,16 +132,29 @@ func (m *Manager) Apply(
 	}
 
 	m.log.Printf("[%s] APPLY COMPLETE — all steps passed", h)
+
+	// Clean old backups, keep last N (best-effort, don't fail apply)
+	if err := CleanOldBackups(ctx, m.client, DefaultBackupRetention); err != nil {
+		m.log.Printf("[%s]   warning: backup cleanup failed: %v", h, err)
+	}
+
 	return backupPath, nil
 }
 
-// Rollback restores a backup and restarts Xray.
+// Rollback restores a backup, restarts Xray, and cleans old backups.
 func (m *Manager) Rollback(ctx context.Context, backupPath string) error {
 	m.log.Printf("[%s] ROLLBACK: restoring %s", m.host(), backupPath)
 	if err := Restore(ctx, m.client, backupPath); err != nil {
 		return err
 	}
-	return restartXray(ctx, m.client)
+	if err := restartXray(ctx, m.client); err != nil {
+		return err
+	}
+	// Clean old backups after rollback
+	if err := CleanOldBackups(ctx, m.client, DefaultBackupRetention); err != nil {
+		m.log.Printf("[%s]   warning: backup cleanup after rollback failed: %v", m.host(), err)
+	}
+	return nil
 }
 
 // ClearLucX removes ALL LucX-managed entries from the config.

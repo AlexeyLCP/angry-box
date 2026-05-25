@@ -10,6 +10,9 @@ import (
 
 const configPath = "/usr/local/etc/xray/config.json"
 
+// DefaultBackupRetention is how many backups to keep after apply/rollback.
+const DefaultBackupRetention = 7
+
 // Backup creates a timestamped backup of config.json.
 // Returns the backup file path for later rollback.
 func Backup(ctx context.Context, client *ssh.Client) (string, error) {

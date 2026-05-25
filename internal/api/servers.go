@@ -8,6 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/alexeylcp/lucx-core/internal/backend"
+	"github.com/alexeylcp/lucx-core/internal/health"
+	"github.com/alexeylcp/lucx-core/internal/reality"
 	"github.com/alexeylcp/lucx-core/internal/scanner"
 	"github.com/alexeylcp/lucx-core/internal/store"
 )
@@ -21,14 +23,43 @@ func (h *Handlers) handleListServers() http.HandlerFunc {
 
 func (h *Handlers) handleCreateServer() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var srv store.Server
-		if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+		var raw struct {
+			Name       string `json:"name"`
+			Host       string `json:"host"`
+			Port       int    `json:"port"`
+			Username   string `json:"username"`
+			AuthMethod string `json:"auth_method"`
+			Credential string `json:"credential"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 			http.Error(w, `{"error":"invalid json"}`, 400)
 			return
 		}
-		srv.ID = uuid.New().String()
-		srv.Status = "unknown"
-		srv.Source = "fresh"
+		if raw.Port == 0 {
+			raw.Port = 22
+		}
+		if raw.AuthMethod == "" {
+			raw.AuthMethod = "password"
+		}
+		// Check for duplicate host:port
+		if existingID, existingName, exists := h.Store.ServerExists(raw.Host, raw.Port); exists {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(409)
+			fmt.Fprintf(w, `{"error":"server already registered","existing_id":"%s","existing_name":"%s","hint":"edit the existing server instead"}`, existingID, existingName)
+			return
+		}
+
+		srv := store.Server{
+			ID:         uuid.New().String(),
+			Name:       raw.Name,
+			Host:       raw.Host,
+			Port:       raw.Port,
+			Username:   raw.Username,
+			AuthMethod: raw.AuthMethod,
+			Credential: raw.Credential,
+			Status:     "unknown",
+			Source:     "fresh",
+		}
 		if err := h.Store.CreateServer(&srv); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -154,5 +185,76 @@ func (h *Handlers) handleImportServer() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(cfg)
+	}
+}
+
+func (h *Handlers) handleHealthCheck() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		srv, err := h.Store.GetServer(id)
+		if err != nil {
+			http.Error(w, `{"error":"not found"}`, 404)
+			return
+		}
+		client, err := h.SSHFactory(srv)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"online":false,"error":"ssh: %s"}`, err.Error())
+			return
+		}
+		defer client.Close()
+		be, _ := backend.Get(backend.BackendXray)
+		status := health.Check(r.Context(), client, be)
+		json.NewEncoder(w).Encode(status)
+	}
+}
+
+func (h *Handlers) handleGenerateKeys() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		srv, err := h.Store.GetServer(id)
+		if err != nil {
+			http.Error(w, `{"error":"not found"}`, 404)
+			return
+		}
+		client, err := h.SSHFactory(srv)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"ssh: %s"}`, err.Error()), 500)
+			return
+		}
+		defer client.Close()
+		kp, err := reality.GenerateKeys(client)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(kp)
+	}
+}
+
+func (h *Handlers) handleGenerateKeysAny() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		serverID := r.URL.Query().Get("server_id")
+		if serverID == "" {
+			http.Error(w, `{"error":"server_id query parameter required"}`, 400)
+			return
+		}
+		srv, err := h.Store.GetServer(serverID)
+		if err != nil {
+			http.Error(w, `{"error":"server not found"}`, 404)
+			return
+		}
+		client, err := h.SSHFactory(srv)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"ssh: %s"}`, err.Error()), 500)
+			return
+		}
+		defer client.Close()
+		kp, err := reality.GenerateKeys(client)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(kp)
 	}
 }

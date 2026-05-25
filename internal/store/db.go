@@ -8,7 +8,8 @@ import (
 
 // Store is the central data store backed by SQLite.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 // New opens the SQLite database at path and runs migrations.
@@ -19,13 +20,16 @@ func New(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // SQLite: single writer
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return s, nil
 }
+
+// DBPath returns the database file path.
+func (s *Store) DBPath() string { return s.path }
 
 // Close closes the database connection.
 func (s *Store) Close() error {
@@ -86,5 +90,11 @@ func (s *Store) migrate() error {
 			PRIMARY KEY (chain_id, position)
 		);
 	`)
+
+		// Migration: add hop_inbound_spec column
+		var colCount int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chain_nodes') WHERE name = 'hop_inbound_spec'`).Scan(&colCount); err == nil && colCount == 0 {
+			s.db.Exec(`ALTER TABLE chain_nodes ADD COLUMN hop_inbound_spec TEXT DEFAULT '{}'`)
+		}
 	return err
 }
