@@ -148,12 +148,12 @@ jobs:
         run: |
           BIN="${OUT_DIR}/${APP}-${{ matrix.target }}"
           if command -v upx &>/dev/null; then
-            upx --best --lzma "${BIN}"
+            upx --best --lzma --force-pie "${BIN}" 2>/dev/null || upx --best --lzma "${BIN}" 2>/dev/null || echo "UPX skipped (incompatible binary)"
             ls -lh "${BIN}"
           else
             echo "UPX not installed — installing..."
             sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
-            upx --best --lzma "${BIN}"
+            upx --best --lzma --force-pie "${BIN}" 2>/dev/null || upx --best --lzma "${BIN}" 2>/dev/null || echo "UPX skipped (incompatible binary)"
             ls -lh "${BIN}"
           fi
 
@@ -185,7 +185,7 @@ jobs:
             build/*.ipk
           retention-days: 7
 
-  # ── Keenetic mipsel (CGO + dockcross) ──
+  # ── Keenetic mipsel (CGO + mipsel cross-compiler) ──
   keenetic-mipsel:
     needs: web
     runs-on: ubuntu-latest
@@ -194,6 +194,10 @@ jobs:
       OUT_DIR: build
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
 
       - name: Download web dist
         uses: actions/download-artifact@v4
@@ -220,29 +224,30 @@ jobs:
           echo "value=$V" >> "$GITHUB_OUTPUT"
           echo "version=$V"
 
+      - name: Install mipsel cross-compiler
+        run: |
+          sudo dpkg --add-architecture mipsel
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mipsel-linux-gnu
+
       - name: Build for Keenetic (mipsel + CGO)
         env:
           VERSION: ${{ steps.ver.outputs.value }}
         run: |
           mkdir -p "$OUT_DIR"
 
-          docker run --rm \
-            -v "$PWD":/work \
-            -w /work \
-            dockcross/linux-mipsel-lts \
-            bash -c "
-              CGO_ENABLED=1 \
-              CC=mipsel-linux-gnu-gcc \
-              GOOS=linux \
-              GOARCH=mipsle \
-              GOMIPS=softfloat \
-              go build \
-                -tags sqlite_cgo \
-                -trimpath \
-                -ldflags '-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION} -extldflags=-static' \
-                -o \"${OUT_DIR}/${APP}-keenetic-mipsel\" \
-                ./cmd/${APP}/
-            "
+          CGO_ENABLED=1 \
+          CC=mipsel-linux-gnu-gcc \
+          GOOS=linux \
+          GOARCH=mipsle \
+          GOMIPS=softfloat \
+          CGO_LDFLAGS="-static" \
+          go build \
+            -tags sqlite_cgo \
+            -trimpath \
+            -ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION}" \
+            -o "${OUT_DIR}/${APP}-keenetic-mipsel" \
+            ./cmd/${APP}/
 
           ls -lh "${OUT_DIR}/${APP}-keenetic-mipsel"
           file "${OUT_DIR}/${APP}-keenetic-mipsel" || true

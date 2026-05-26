@@ -95,21 +95,18 @@ router-builds: cross
 keenetic: web
 	@echo "=== Building for Keenetic (mipsel + CGO) ==="
 	@mkdir -p $(OUT_DIR)
-	docker run --rm \
-		-v "$(PWD)":/work \
-		-w /work \
-		dockcross/linux-mipsel-lts \
-		bash -c ' \
-			CGO_ENABLED=1 \
-			CC=mipsel-linux-gnu-gcc \
-			GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
-			go build -tags sqlite_cgo -trimpath \
-				-ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=$(VERSION) -extldflags=-static" \
-				-o $(OUT_DIR)/$(APP)-keenetic-mipsel \
-				./cmd/$(APP)/'
+	@which mipsel-linux-gnu-gcc >/dev/null || { \
+		echo "mipsel-linux-gnu-gcc not found. Install: sudo apt install gcc-mipsel-linux-gnu"; \
+		exit 1; \
+	}
+	CGO_ENABLED=1 CC=mipsel-linux-gnu-gcc GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
+		$(GO) build -tags sqlite_cgo -trimpath \
+			-ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=$(VERSION)" \
+			-o $(OUT_DIR)/$(APP)-keenetic-mipsel \
+			./cmd/$(APP)/
 	@chmod +x $(OUT_DIR)/$(APP)-keenetic-mipsel
 	@if command -v upx >/dev/null; then \
-		upx --best --lzma $(OUT_DIR)/$(APP)-keenetic-mipsel; \
+		upx --best --lzma $(OUT_DIR)/$(APP)-keenetic-mipsel 2>/dev/null || true; \
 	fi
 	@echo ""
 	@echo "Keenetic binary ready:"
