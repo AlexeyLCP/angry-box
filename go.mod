@@ -7,11 +7,16 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/xtls/xray-core v1.260327.0
 	golang.org/x/crypto v0.52.0
 	google.golang.org/grpc v1.81.1
 	modernc.org/sqlite v1.50.1
 )
+
+// Build tag notes:
+//   default (no tag)   → modernc.org/sqlite (pure Go, CGO_ENABLED=0)
+//   -tags sqlite_cgo   → github.com/mattn/go-sqlite3 (CGO, for MIPS via dockcross)
 
 require (
 	github.com/andybalholm/brotli v1.0.6 // indirect

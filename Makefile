@@ -69,24 +69,19 @@ cross-armv7:
 	GOOS=linux GOARCH=arm GOARM=7 $(GOENV) $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(OUT_DIR)/$(APP)-linux-armv7 ./cmd/$(APP)/
 	@echo "  → $(OUT_DIR)/$(APP)-linux-armv7"
 
-# MIPS Little Endian — primary Keenetic target
-cross-mipsle:
+# ── Optimized ARM64 (PIE build) ──
+arm64:
 	@mkdir -p $(OUT_DIR)
-	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GOENV) $(GO) build -trimpath -ldflags="$(LDFLAGS) -buildid=" -o $(OUT_DIR)/$(APP)-keenetic-mipsel ./cmd/$(APP)/
-	@echo "  → $(OUT_DIR)/$(APP)-keenetic-mipsel"
-
-# MIPS Big Endian — older OpenWrt / some Keenetic models
-cross-mips:
-	@mkdir -p $(OUT_DIR)
-	GOOS=linux GOARCH=mips GOMIPS=softfloat $(GOENV) $(GO) build -trimpath -ldflags="$(LDFLAGS) -buildid=" -o $(OUT_DIR)/$(APP)-openwrt-mips ./cmd/$(APP)/
-	@echo "  → $(OUT_DIR)/$(APP)-openwrt-mips"
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOENV) $(GO) build -trimpath \
+		-ldflags="$(LDFLAGS)" -buildmode=pie \
+		-o $(OUT_DIR)/$(APP)-linux-arm64 ./cmd/$(APP)/
+	@echo "  → $(OUT_DIR)/$(APP)-linux-arm64 (PIE)"
 
 # ── Router builds (UPX compressed) ──
 router-builds: cross
 	@echo "=== Compressing router builds with UPX ==="
 	@if command -v upx >/dev/null; then \
 		upx --best --lzma $(OUT_DIR)/$(APP)-linux-arm64; \
-		upx --best --lzma $(OUT_DIR)/$(APP)-linux-mipsle; \
 		upx --best --lzma $(OUT_DIR)/$(APP)-linux-armv7; \
 	else \
 		echo "UPX not installed — skipping compression"; \
@@ -94,24 +89,34 @@ router-builds: cross
 	@ls -lh $(OUT_DIR)/
 
 # ══════════════════════════════════════════════════════
-# Keenetic-specific
+# Keenetic (mipsel via dockcross + CGO)
 # ══════════════════════════════════════════════════════
 
-keenetic: web cross-mipsle cross-mips
-	@echo "=== Building Keenetic packages ==="
+keenetic: web
+	@echo "=== Building for Keenetic (mipsel + CGO) ==="
+	@mkdir -p $(OUT_DIR)
+	docker run --rm \
+		-v "$(PWD)":/work \
+		-w /work \
+		dockcross/linux-mipsel-lts \
+		bash -c ' \
+			CGO_ENABLED=1 \
+			CC=mipsel-linux-gnu-gcc \
+			GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
+			go build -tags sqlite_cgo -trimpath \
+				-ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=$(VERSION) -extldflags=-static" \
+				-o $(OUT_DIR)/$(APP)-keenetic-mipsel \
+				./cmd/$(APP)/'
+	@chmod +x $(OUT_DIR)/$(APP)-keenetic-mipsel
 	@if command -v upx >/dev/null; then \
 		upx --best --lzma $(OUT_DIR)/$(APP)-keenetic-mipsel; \
-		upx --best --lzma $(OUT_DIR)/$(APP)-openwrt-mips; \
 	fi
-	@chmod +x $(OUT_DIR)/$(APP)-keenetic-mipsel $(OUT_DIR)/$(APP)-openwrt-mips
 	@echo ""
-	@echo "Keenetic binaries ready:"
-	@ls -lh $(OUT_DIR)/$(APP)-keenetic-mipsel $(OUT_DIR)/$(APP)-openwrt-mips
+	@echo "Keenetic binary ready:"
+	@ls -lh $(OUT_DIR)/$(APP)-keenetic-mipsel
 	@echo ""
 	@echo "To install on Keenetic:"
 	@echo "  scp build/$(APP)-keenetic-mipsel root@<keenetic>:/opt/bin/$(APP)"
-	@echo ""
-	@echo "To create .ipk package, run: ./scripts/package-keenetic.sh $(VERSION)"
 
 keenetic-package: keenetic
 	@./scripts/package-keenetic.sh $(VERSION)
@@ -123,7 +128,7 @@ keenetic-package: keenetic
 release: test web build-all keenetic
 	@echo "=== Creating release tarballs ($(VERSION)) ==="
 	@mkdir -p $(OUT_DIR)/release
-	@for target in linux-amd64 linux-arm64 linux-armv7 openwrt-mips keenetic-mipsel; do \
+	@for target in linux-amd64 linux-arm64 linux-armv7 linux-arm64-v8 keenetic-mipsel; do \
 		BIN="$(OUT_DIR)/$(APP)-$$target"; \
 		if [ -f "$$BIN" ]; then \
 			TAR_NAME="$(APP)-$(VERSION)-$$target"; \
@@ -137,8 +142,7 @@ release: test web build-all keenetic
 			echo "  → release/$$TAR_NAME.tar.gz"; \
 		fi; \
 	done
-	@echo ""
-	./scripts/package-keenetic.sh $(VERSION) 2>/dev/null && \
+	@./scripts/package-keenetic.sh $(VERSION) 2>/dev/null && \
 		cp $(OUT_DIR)/*.ipk $(OUT_DIR)/release/ 2>/dev/null || true
 	@echo ""
 	@echo "=== Release files ==="

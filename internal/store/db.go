@@ -3,7 +3,9 @@ package store
 import (
 	"database/sql"
 
-	_ "modernc.org/sqlite"
+	// SQLite driver is selected at build time via tags:
+	//   default (no tag) → modernc.org/sqlite (pure Go, CGO_ENABLED=0)
+	//   -tags sqlite_cgo  → github.com/mattn/go-sqlite3 (CGO required, for MIPS)
 )
 
 // Store is the central data store backed by SQLite.
