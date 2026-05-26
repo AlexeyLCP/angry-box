@@ -188,7 +188,7 @@ jobs:
   # ── Keenetic mipsel (CGO + mipsel cross-compiler) ──
   keenetic-mipsel:
     needs: web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       APP: lucx-core
       OUT_DIR: build
@@ -226,9 +226,8 @@ jobs:
 
       - name: Install mipsel cross-compiler
         run: |
-          sudo dpkg --add-architecture mipsel
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-mipsel-linux-gnu
+          sudo apt-get install -y -qq gcc-mipsel-linux-gnu libc6-dev-mipsel-cross
 
       - name: Build for Keenetic (mipsel + CGO)
         env:
