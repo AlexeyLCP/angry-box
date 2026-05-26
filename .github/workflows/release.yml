@@ -75,8 +75,21 @@ jobs:
             upx: true
             extraflags: ''
 
-          # ── MIPS builds are handled by the keenetic-mipsel job below ──
-          # Keenetic uses dockcross + CGO for mattn/go-sqlite3 compatibility.
+          # Keenetic routers — MIPS Little Endian
+          - target: keenetic-mipsel
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
+            upx: true
+            extraflags: ''
+
+          # MIPS Big Endian — older OpenWrt / some Keenetic models
+          - target: openwrt-mips
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+            upx: true
+            extraflags: ''
 
     env:
       APP: lucx-core
@@ -126,6 +139,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm || '' }}
+          GOMIPS: ${{ matrix.gomips || '' }}
           CGO_ENABLED: '0'
           TARGET: ${{ matrix.target }}
           EXTRAFLAGS: ${{ matrix.extraflags }}
@@ -185,143 +199,9 @@ jobs:
             build/*.ipk
           retention-days: 7
 
-  # ── Keenetic mipsel (QEMU + native container build) ──
-  keenetic-mipsel:
-    needs: web
-    runs-on: ubuntu-latest
-    env:
-      APP: lucx-core
-      OUT_DIR: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download web dist
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist
-
-      - name: Compute version
-        id: ver
-        env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-          TRIGGER: ${{ github.event_name }}
-        run: |
-          if [[ "$TRIGGER" == "push" && "$REF_TYPE" == "tag" ]]; then
-            V="${REF_NAME#v}"
-          elif [[ "$TRIGGER" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
-            V="$INPUT_VERSION"
-          else
-            V="$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')"
-            V="${V#v}"
-          fi
-          echo "value=$V" >> "$GITHUB_OUTPUT"
-          echo "version=$V"
-
-      - uses: docker/setup-qemu-action@v3
-
-      - name: Build for Keenetic (mipsel native via QEMU)
-        env:
-          VERSION: ${{ steps.ver.outputs.value }}
-          APP: lucx-core
-          OUT_DIR: build
-        run: |
-          mkdir -p "$OUT_DIR"
-
-          docker run --rm --platform linux/mipsle \
-            -v "$PWD":/work \
-            -w /work \
-            -e "VERSION=${VERSION}" \
-            -e "APP=${APP}" \
-            -e "OUT_DIR=${OUT_DIR}" \
-            golang:1.26-bookworm \
-            bash -c '
-              set -e
-              apt-get update -qq && apt-get install -y -qq gcc 2>/dev/null || true
-              CGO_ENABLED=1 GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
-              go build \
-                -tags sqlite_cgo \
-                -trimpath \
-                -ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION}" \
-                -o /tmp/lucx-core \
-                ./cmd/lucx-core/
-              upx --best --lzma /tmp/lucx-core 2>/dev/null || true
-              cp /tmp/lucx-core "/work/${OUT_DIR}/${APP}-keenetic-mipsel"
-            '
-
-          ls -lh "${OUT_DIR}/${APP}-keenetic-mipsel"
-          file "${OUT_DIR}/${APP}-keenetic-mipsel" || true
-
-      - name: Compress with UPX
-        continue-on-error: true
-        run: |
-          BIN="${OUT_DIR}/${APP}-keenetic-mipsel"
-          if command -v upx &>/dev/null; then
-            upx --best --lzma "$BIN"
-          else
-            sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
-            upx --best --lzma "$BIN"
-          fi
-          ls -lh "$BIN"
-
-      - name: Package Keenetic tarball
-        env:
-          TARGET: keenetic-mipsel
-          VERSION: ${{ steps.ver.outputs.value }}
-        run: |
-          set -euo pipefail
-          BIN="${OUT_DIR}/${APP}-${TARGET}"
-          chmod +x "${BIN}"
-
-          TAR_NAME="${APP}-${VERSION}-${TARGET}"
-          TAR_DIR="${OUT_DIR}/${TAR_NAME}"
-          mkdir -p "${TAR_DIR}"
-
-          cp "${BIN}" "${TAR_DIR}/${APP}"
-          cp README.md "${TAR_DIR}/"
-
-          # NDMS install script
-          cat > "${TAR_DIR}/install.sh" << 'SCRIPT'
-          #!/bin/sh
-          set -e
-          BIN_DIR="/opt/bin"
-          RUN_DIR="/opt/var/run"
-          INIT_DIR="/opt/etc/init.d"
-          echo "LucX Keenetic NDMS Installer"
-          mkdir -p "$BIN_DIR" "$RUN_DIR" "$INIT_DIR"
-          cp lucx-core "$BIN_DIR/lucx-core"
-          chmod +x "$BIN_DIR/lucx-core"
-          cat > "$INIT_DIR/S99lucx" << 'INIT'
-          #!/bin/sh
-          PATH="/opt/bin:/opt/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
-          start() { echo "Starting LucX..."; /opt/bin/lucx-core -listen :8744 -db /opt/var/run/lucx.db & }
-          stop() { echo "Stopping LucX..."; killall lucx-core 2>/dev/null || true; }
-          case "$1" in
-              start) start ;; stop) stop ;; restart) stop; sleep 1; start ;;
-              *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
-          esac
-          INIT
-          chmod +x "$INIT_DIR/S99lucx"
-          echo "Done. Start: $INIT_DIR/S99lucx start"
-          echo "Web UI: http://<keenetic-ip>:8744"
-          SCRIPT
-          chmod +x "${TAR_DIR}/install.sh"
-
-          tar czf "${OUT_DIR}/${TAR_NAME}.tar.gz" -C "$OUT_DIR" "$TAR_NAME"
-          echo "Package: ${OUT_DIR}/${TAR_NAME}.tar.gz"
-          ls -lh "${OUT_DIR}/${TAR_NAME}.tar.gz"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: keenetic-mipsel
-          path: build/*.tar.gz
-          retention-days: 7
-
   # ── GitHub Release ──
   release:
-    needs: [build, keenetic-mipsel]
+    needs: build
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
     steps:

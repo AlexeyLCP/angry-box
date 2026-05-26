@@ -77,43 +77,44 @@ arm64:
 		-o $(OUT_DIR)/$(APP)-linux-arm64 ./cmd/$(APP)/
 	@echo "  → $(OUT_DIR)/$(APP)-linux-arm64 (PIE)"
 
+# MIPS Little Endian — primary Keenetic target
+cross-mipsle:
+	@mkdir -p $(OUT_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GOENV) $(GO) build -trimpath -ldflags="$(LDFLAGS) -buildid=" -o $(OUT_DIR)/$(APP)-keenetic-mipsel ./cmd/$(APP)/
+	@echo "  → $(OUT_DIR)/$(APP)-keenetic-mipsel"
+
+# MIPS Big Endian — older OpenWrt / some Keenetic models
+cross-mips:
+	@mkdir -p $(OUT_DIR)
+	GOOS=linux GOARCH=mips GOMIPS=softfloat $(GOENV) $(GO) build -trimpath -ldflags="$(LDFLAGS) -buildid=" -o $(OUT_DIR)/$(APP)-openwrt-mips ./cmd/$(APP)/
+	@echo "  → $(OUT_DIR)/$(APP)-openwrt-mips"
+
 # ── Router builds (UPX compressed) ──
 router-builds: cross
 	@echo "=== Compressing router builds with UPX ==="
 	@if command -v upx >/dev/null; then \
-		upx --best --lzma $(OUT_DIR)/$(APP)-linux-arm64; \
-		upx --best --lzma $(OUT_DIR)/$(APP)-linux-armv7; \
+		upx --best --lzma --force-pie $(OUT_DIR)/$(APP)-linux-arm64 2>/dev/null || upx --best --lzma $(OUT_DIR)/$(APP)-linux-arm64 2>/dev/null || true; \
+		upx --best --lzma $(OUT_DIR)/$(APP)-keenetic-mipsel 2>/dev/null || true; \
+		upx --best --lzma $(OUT_DIR)/$(APP)-linux-armv7 2>/dev/null || true; \
 	else \
 		echo "UPX not installed — skipping compression"; \
 	fi
 	@ls -lh $(OUT_DIR)/
 
 # ══════════════════════════════════════════════════════
-# Keenetic (mipsel via dockcross + CGO)
+# Keenetic
 # ══════════════════════════════════════════════════════
 
-keenetic: web
-	@echo "=== Building for Keenetic (mipsel via QEMU) ==="
-	@mkdir -p $(OUT_DIR)
-	docker run --rm --platform linux/mipsle \
-		-v "$(PWD)":/work -w /work \
-		-e "VERSION=$(VERSION)" \
-		golang:1.26-bookworm \
-		bash -c ' \
-			set -e; \
-			apt-get update -qq && apt-get install -y -qq gcc 2>/dev/null || true; \
-			CGO_ENABLED=1 GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
-			go build -tags sqlite_cgo -trimpath \
-				-ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=$${VERSION}" \
-				-o /tmp/lucx-core \
-				./cmd/lucx-core/; \
-			upx --best --lzma /tmp/lucx-core 2>/dev/null || true; \
-			cp /tmp/lucx-core /work/$(OUT_DIR)/$(APP)-keenetic-mipsel; \
-		'
-	@chmod +x $(OUT_DIR)/$(APP)-keenetic-mipsel
+keenetic: web cross-mipsle cross-mips
+	@echo "=== Building Keenetic packages ==="
+	@if command -v upx >/dev/null; then \
+		upx --best --lzma $(OUT_DIR)/$(APP)-keenetic-mipsel 2>/dev/null || true; \
+		upx --best --lzma $(OUT_DIR)/$(APP)-openwrt-mips 2>/dev/null || true; \
+	fi
+	@chmod +x $(OUT_DIR)/$(APP)-keenetic-mipsel $(OUT_DIR)/$(APP)-openwrt-mips
 	@echo ""
-	@echo "Keenetic binary ready:"
-	@ls -lh $(OUT_DIR)/$(APP)-keenetic-mipsel
+	@echo "Keenetic binaries ready:"
+	@ls -lh $(OUT_DIR)/$(APP)-keenetic-mipsel $(OUT_DIR)/$(APP)-openwrt-mips
 	@echo ""
 	@echo "To install on Keenetic:"
 	@echo "  scp build/$(APP)-keenetic-mipsel root@<keenetic>:/opt/bin/$(APP)"
@@ -128,7 +129,7 @@ keenetic-package: keenetic
 release: test web build-all keenetic
 	@echo "=== Creating release tarballs ($(VERSION)) ==="
 	@mkdir -p $(OUT_DIR)/release
-	@for target in linux-amd64 linux-arm64 linux-armv7 linux-arm64-v8 keenetic-mipsel; do \
+	@for target in linux-amd64 linux-arm64 linux-armv7 linux-arm64-v8 keenetic-mipsel openwrt-mips; do \
 		BIN="$(OUT_DIR)/$(APP)-$$target"; \
 		if [ -f "$$BIN" ]; then \
 			TAR_NAME="$(APP)-$(VERSION)-$$target"; \

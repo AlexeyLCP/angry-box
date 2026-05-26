@@ -3,9 +3,7 @@ package store
 import (
 	"database/sql"
 
-	// SQLite driver is selected at build time via tags:
-	//   default (no tag) → modernc.org/sqlite (pure Go, CGO_ENABLED=0)
-	//   -tags sqlite_cgo  → github.com/mattn/go-sqlite3 (CGO required, for MIPS)
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 // Store is the central data store backed by SQLite.
@@ -17,7 +15,7 @@ type Store struct {
 // New opens the SQLite database at path and runs migrations.
 // Use ":memory:" for an in-memory database (tests).
 func New(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +91,10 @@ func (s *Store) migrate() error {
 		);
 	`)
 
-		// Migration: add hop_inbound_spec column
-		var colCount int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chain_nodes') WHERE name = 'hop_inbound_spec'`).Scan(&colCount); err == nil && colCount == 0 {
-			s.db.Exec(`ALTER TABLE chain_nodes ADD COLUMN hop_inbound_spec TEXT DEFAULT '{}'`)
-		}
+	// Migration: add hop_inbound_spec column
+	var colCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('chain_nodes') WHERE name = 'hop_inbound_spec'`).Scan(&colCount); err == nil && colCount == 0 {
+		s.db.Exec(`ALTER TABLE chain_nodes ADD COLUMN hop_inbound_spec TEXT DEFAULT '{}'`)
+	}
 	return err
 }

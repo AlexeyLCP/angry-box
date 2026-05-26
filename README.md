@@ -90,20 +90,14 @@ curl .../install.sh | bash -s -- --version v0.1.0
 
 | Target | Arch | CGO | SQLite Driver | Use Case |
 |--------|------|-----|---------------|----------|
-| `linux-amd64` | x86_64 | no | modernc (pure Go) | VPS, dedicated servers |
-| `linux-arm64` | aarch64 | no | modernc (pure Go) | ARM servers, Raspberry Pi 4/5 |
-| `linux-arm64-v8` | aarch64 | no | modernc (pure Go) | Optimized ARMv8 (PIE build) |
-| `linux-armv7` | armv7l | no | modernc (pure Go) | OpenWrt, old Raspberry Pi |
-| `keenetic-mipsel` | mipsle | **yes** | mattn/go-sqlite3 | **Keenetic routers** (dockcross) |
+| `linux-amd64` | x86_64 | no | ncruces (WASM) | VPS, dedicated servers |
+| `linux-arm64` | aarch64 | no | ncruces (WASM) | ARM servers, Raspberry Pi 4/5 (PIE) |
+| `linux-arm64-v8` | aarch64 | no | ncruces (WASM) | Optimized ARMv8 (PIE build) |
+| `linux-armv7` | armv7l | no | ncruces (WASM) | OpenWrt, old Raspberry Pi |
+| `keenetic-mipsel` | mipsle | no | ncruces (WASM) | **Keenetic routers** |
+| `openwrt-mips` | mips | no | ncruces (WASM) | Older OpenWrt / Keenetic models |
 
-**SQLite driver selection:**
-
-```
-default (no tag)   → modernc.org/sqlite    (pure Go, zero CGO)
--tags sqlite_cgo   → mattn/go-sqlite3      (CGO, for MIPS via dockcross)
-```
-
-Build tags are defined in `internal/store/sqlite_modernc.go` and `internal/store/sqlite_cgo.go`. MIPS builds require `dockcross/linux-mipsel-lts` Docker image for the cross-compilation toolchain.
+**SQLite driver:** [`ncruces/go-sqlite3`](https://github.com/ncruces/go-sqlite3) — WASM-based, pure Go. Works on all GOARCH without CGO. Single driver for all platforms, no build tags.
 
 ---
 
