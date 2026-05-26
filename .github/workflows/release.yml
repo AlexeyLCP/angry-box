@@ -185,19 +185,15 @@ jobs:
             build/*.ipk
           retention-days: 7
 
-  # ── Keenetic mipsel (CGO + mipsel cross-compiler) ──
+  # ── Keenetic mipsel (QEMU + native container build) ──
   keenetic-mipsel:
     needs: web
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     env:
       APP: lucx-core
       OUT_DIR: build
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
 
       - name: Download web dist
         uses: actions/download-artifact@v4
@@ -224,29 +220,36 @@ jobs:
           echo "value=$V" >> "$GITHUB_OUTPUT"
           echo "version=$V"
 
-      - name: Install mipsel cross-compiler
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-mipsel-linux-gnu libc6-dev-mipsel-cross
+      - uses: docker/setup-qemu-action@v3
 
-      - name: Build for Keenetic (mipsel + CGO)
+      - name: Build for Keenetic (mipsel native via QEMU)
         env:
           VERSION: ${{ steps.ver.outputs.value }}
+          APP: lucx-core
+          OUT_DIR: build
         run: |
           mkdir -p "$OUT_DIR"
 
-          CGO_ENABLED=1 \
-          CC=mipsel-linux-gnu-gcc \
-          GOOS=linux \
-          GOARCH=mipsle \
-          GOMIPS=softfloat \
-          CGO_LDFLAGS="-static" \
-          go build \
-            -tags sqlite_cgo \
-            -trimpath \
-            -ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION}" \
-            -o "${OUT_DIR}/${APP}-keenetic-mipsel" \
-            ./cmd/${APP}/
+          docker run --rm --platform linux/mipsle \
+            -v "$PWD":/work \
+            -w /work \
+            -e "VERSION=${VERSION}" \
+            -e "APP=${APP}" \
+            -e "OUT_DIR=${OUT_DIR}" \
+            golang:1.26-bookworm \
+            bash -c '
+              set -e
+              apt-get update -qq && apt-get install -y -qq gcc 2>/dev/null || true
+              CGO_ENABLED=1 GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
+              go build \
+                -tags sqlite_cgo \
+                -trimpath \
+                -ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION}" \
+                -o /tmp/lucx-core \
+                ./cmd/lucx-core/
+              upx --best --lzma /tmp/lucx-core 2>/dev/null || true
+              cp /tmp/lucx-core "/work/${OUT_DIR}/${APP}-keenetic-mipsel"
+            '
 
           ls -lh "${OUT_DIR}/${APP}-keenetic-mipsel"
           file "${OUT_DIR}/${APP}-keenetic-mipsel" || true

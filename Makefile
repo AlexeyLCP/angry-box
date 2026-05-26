@@ -93,21 +93,24 @@ router-builds: cross
 # ══════════════════════════════════════════════════════
 
 keenetic: web
-	@echo "=== Building for Keenetic (mipsel + CGO) ==="
+	@echo "=== Building for Keenetic (mipsel via QEMU) ==="
 	@mkdir -p $(OUT_DIR)
-	@which mipsel-linux-gnu-gcc >/dev/null || { \
-		echo "mipsel-linux-gnu-gcc not found. Install: sudo apt install gcc-mipsel-linux-gnu"; \
-		exit 1; \
-	}
-	CGO_ENABLED=1 CC=mipsel-linux-gnu-gcc GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
-		$(GO) build -tags sqlite_cgo -trimpath \
-			-ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=$(VERSION)" \
-			-o $(OUT_DIR)/$(APP)-keenetic-mipsel \
-			./cmd/$(APP)/
+	docker run --rm --platform linux/mipsle \
+		-v "$(PWD)":/work -w /work \
+		-e "VERSION=$(VERSION)" \
+		golang:1.26-bookworm \
+		bash -c ' \
+			set -e; \
+			apt-get update -qq && apt-get install -y -qq gcc 2>/dev/null || true; \
+			CGO_ENABLED=1 GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
+			go build -tags sqlite_cgo -trimpath \
+				-ldflags "-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=$${VERSION}" \
+				-o /tmp/lucx-core \
+				./cmd/lucx-core/; \
+			upx --best --lzma /tmp/lucx-core 2>/dev/null || true; \
+			cp /tmp/lucx-core /work/$(OUT_DIR)/$(APP)-keenetic-mipsel; \
+		'
 	@chmod +x $(OUT_DIR)/$(APP)-keenetic-mipsel
-	@if command -v upx >/dev/null; then \
-		upx --best --lzma $(OUT_DIR)/$(APP)-keenetic-mipsel 2>/dev/null || true; \
-	fi
 	@echo ""
 	@echo "Keenetic binary ready:"
 	@ls -lh $(OUT_DIR)/$(APP)-keenetic-mipsel
