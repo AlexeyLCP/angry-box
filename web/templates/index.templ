@@ -1,0 +1,42 @@
+package templates
+
+templ Index() {
+	<div class="max-w-4xl">
+		<h2 class="text-2xl font-bold mb-2">Welcome to Angry-BOX</h2>
+		<p class="text-base-content/70 mb-6">
+			Lightweight SSH orchestrator for sing-box and xray nodes.
+		</p>
+
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+			<div class="card bg-base-100 shadow">
+				<div class="card-body">
+					<h3 class="card-title text-lg">Hosts</h3>
+					<p class="text-sm">Manage remote nodes (servers and routers).</p>
+					<div class="card-actions justify-end">
+						<button class="btn btn-primary btn-sm" hx-get="/ui/hosts" hx-target="#main-content" hx-push-url="true">Go to Hosts</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="card bg-base-100 shadow">
+				<div class="card-body">
+					<h3 class="card-title text-lg">Chains</h3>
+					<p class="text-sm">Build and manage multi-hop proxy chains.</p>
+					<div class="card-actions justify-end">
+						<button class="btn btn-primary btn-sm" hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true">Go to Chains</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="card bg-base-100 shadow">
+				<div class="card-body">
+					<h3 class="card-title text-lg">Status</h3>
+					<p class="text-sm">View overall system and node health.</p>
+					<div class="card-actions justify-end">
+						<button class="btn btn-primary btn-sm" hx-get="/ui/status" hx-target="#main-content" hx-push-url="true">View Status</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+}

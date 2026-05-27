@@ -24,9 +24,23 @@ INSTALL_BIN  := $(INSTALL) -m 755
 INSTALL_DATA := $(INSTALL) -m 644
 INSTALL_DIR  := $(INSTALL) -d -m 755
 
+.PHONY: generate
+generate:
+	@echo "==> Generating templ components (web UI)..."
+	@export PATH="$$HOME/.local/go/bin:$$PATH"; \
+	go run github.com/a-h/templ/cmd/templ@latest generate ./web/templates
+	@echo "    templates generated"
+	@echo "==> Fixing duplicate imports in generated files (templ generator v0.3.x quirk)..."
+	@cd web/templates && \
+	for f in *_templ.go; do \
+		awk 'BEGIN{seen=0} /^import "github.com\/a-h\/templ"$$/ {if(++seen>1) next} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+	done
+	@echo "    imports cleaned"
+
 .PHONY: build
-build:
+build: generate
 	@echo "==> Building $(BINARY) (version=$(VERSION), commit=$(COMMIT))..."
+	@export PATH="$$HOME/.local/go/bin:$$PATH"; \
 	go build $(LDFLAGS) -o $(BINARY) $(CMD_DIR)
 	@echo "    $(BINARY) built"
 

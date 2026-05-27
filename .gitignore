@@ -9,3 +9,4 @@ lucx-core.exe
 
 # Node
 node_modules/
+.serena/

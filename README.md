@@ -29,10 +29,16 @@
 - JSON-хранилище хостов и цепочек
 - CLI с подкомандами (deploy, status, config, apply, remove, reload, host, chain, apply-chain, serve)
 - HTTP API в режиме демона (/health, /api/status)
+- Web UI (HTMX + a-h/templ + DaisyUI + Tailwind CDN, по практикам Pagoda/TemplUI):
+  - Боковая навигация, переключение страниц без перезагрузки
+  - Полноценная страница Hosts: таблица, кнопка добавления (модалка), форма, live create/delete через HTMX (POST/DELETE, OOB-friendly)
+  - Дашборд и заглушки Chains/Status с тем же паттерном (готово к расширению)
 
 ### В разработке
 
-- Web UI (HTMX)
+- Полноценная страница Chains (создание цепочки, визуальный список, кнопка Apply)
+- Pull-статус нод и прокси (авто-обновление по открытию UI + периодически)
+- Улучшения UX (toast-уведомления, live polling статуса, редактирование хостов)
 
 ## Установка
 

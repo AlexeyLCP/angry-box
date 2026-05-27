@@ -13,6 +13,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/web"
 )
 
 var (
@@ -525,12 +526,17 @@ func serveCmd() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI)
+	ui := web.NewServer(storePath)
+	ui.Register(mux)
+
+	// Existing API routes
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		s := chain.NewStore(storePath)
 		hosts, _ := s.ListHosts()
 		chains, _ := s.ListChains()
@@ -543,6 +549,7 @@ func serveCmd() {
 	})
 
 	fmt.Printf("angry-box daemon listening on %s\n", *listen)
+	fmt.Println("Web UI available at http://" + *listen + "/ui")
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		os.Exit(1)

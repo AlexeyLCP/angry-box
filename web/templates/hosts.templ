@@ -1,0 +1,113 @@
+package templates
+
+import "github.com/alexeylcp/angry-box/internal/domain/model"
+
+templ Hosts(hosts []*model.Host) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">Hosts</h2>
+			<button 
+				class="btn btn-primary btn-sm"
+				hx-get="/ui/hosts/new"
+				hx-target="#modal-container"
+				hx-swap="innerHTML">
+				+ Add Host
+			</button>
+		</div>
+
+		<div class="card bg-base-100 shadow">
+			<div class="overflow-x-auto">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>ID</th>
+							<th>Address</th>
+							<th>User</th>
+							<th>Key</th>
+							<th class="w-px"></th>
+						</tr>
+					</thead>
+					<tbody id="hosts-tbody">
+						for _, h := range hosts {
+							@HostRow(h)
+						}
+						if len(hosts) == 0 {
+							<tr>
+								<td colspan="5" class="text-center py-8 text-base-content/50">
+									No hosts yet. Add your first remote node.
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<!-- Modal container for HTMX-loaded forms -->
+	<div id="modal-container"></div>
+}
+
+templ HostRow(h *model.Host) {
+	<tr id={"host-" + h.ID}>
+		<td class="font-mono text-sm">{ h.ID }</td>
+		<td class="font-mono text-sm">{ h.Addr }</td>
+		<td>{ h.User }</td>
+		<td class="font-mono text-xs opacity-60 truncate max-w-[140px]">{ h.KeyPath }</td>
+		<td>
+			<button 
+				class="btn btn-ghost btn-xs text-error"
+				hx-delete={"/ui/hosts/" + h.ID}
+				hx-confirm={"Delete host " + h.ID + "?"}
+				hx-target={"#host-" + h.ID}
+				hx-swap="outerHTML">
+				Delete
+			</button>
+		</td>
+	</tr>
+}
+
+templ NewHostForm() {
+	<dialog id="host-modal" class="modal" open>
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-4">Add New Host</h3>
+			
+			<form 
+				hx-post="/ui/hosts"
+				hx-target="#hosts-tbody"
+				hx-swap="beforeend"
+				hx-on::after-request="this.closest('dialog').close(); this.reset();"
+				class="space-y-4">
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">ID (unique)</span></label>
+					<input type="text" name="id" class="input input-bordered" required placeholder="node1" />
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH Address</span></label>
+						<input type="text" name="addr" class="input input-bordered" required placeholder="192.168.1.10:22" />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH User</span></label>
+						<input type="text" name="user" class="input input-bordered" value="root" />
+					</div>
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">Path to SSH Private Key</span></label>
+					<input type="text" name="keyPath" class="input input-bordered" required placeholder="~/.ssh/id_ed25519" />
+				</div>
+
+				<div class="modal-action">
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+					<button type="submit" class="btn btn-primary">Add Host</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+}
