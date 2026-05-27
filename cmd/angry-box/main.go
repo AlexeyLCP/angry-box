@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -24,6 +26,9 @@ Node commands:
   apply       Push config to a remote host and restart proxy
   remove      Remove proxy from a remote host
   reload      Gracefully reload proxy on a remote host
+
+Service commands:
+  serve       Start HTTP API server (for systemd / init.d daemon)
 
 Host registry:
   host add    Register a host for use in chains
@@ -94,6 +99,9 @@ func main() {
 
 	case "apply-chain":
 		applyChainCmd()
+
+	case "serve":
+		serveCmd()
 
 	case "deploy", "status", "config", "apply", "remove", "reload":
 		nodeCmd(cmd)
@@ -449,6 +457,40 @@ func nodeCmd(cmd string) {
 			os.Exit(1)
 		}
 		fmt.Printf("%s reloaded on %s\n", b.Name(), host.Addr)
+	}
+}
+
+// ─── Serve ────────────────────────────────────────────────────────────────────
+
+func serveCmd() {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	listen := fs.String("listen", ":8090", "HTTP listen address")
+	fs.StringVar(&storePath, "file", "chains.json", "store file path")
+	_ = fs.Parse(os.Args[2:])
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+		s := chain.NewStore(storePath)
+		hosts, _ := s.ListHosts()
+		chains, _ := s.ListChains()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"hosts":  hosts,
+			"chains": chains,
+		})
+	})
+
+	fmt.Printf("angry-box daemon listening on %s\n", *listen)
+	if err := http.ListenAndServe(*listen, mux); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		os.Exit(1)
 	}
 }
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=Angry-BOX proxy orchestrator
+Documentation=https://github.com/alexeylcp/angry-box
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/angry-box serve --listen :8090 --file /etc/angry-box/store.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+StateDirectory=angry-box
+WorkingDirectory=/etc/angry-box
+
+[Install]
+WantedBy=multi-user.target

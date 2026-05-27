@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# Angry-BOX init script for Keenetic / NDMS (Entware)
+#
+# Install to: /opt/etc/init.d/S99angry-box
+#
+
+PATH=/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin
+
+DAEMON="/opt/bin/angry-box"
+ARGS="serve --listen :8090 --file /opt/etc/angry-box/store.json"
+PIDFILE="/opt/var/run/angry-box.pid"
+LOGFILE="/opt/var/log/angry-box.log"
+
+start() {
+    echo "Starting Angry-BOX..."
+    mkdir -p /opt/etc/angry-box /opt/var/run /opt/var/log
+    $DAEMON $ARGS >> $LOGFILE 2>&1 &
+    echo $! > $PIDFILE
+}
+
+stop() {
+    echo "Stopping Angry-BOX..."
+    if [ -f $PIDFILE ]; then
+        kill $(cat $PIDFILE) 2>/dev/null
+        rm -f $PIDFILE
+    fi
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+case "$1" in
+    start)   start ;;
+    stop)    stop ;;
+    restart) restart ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0
