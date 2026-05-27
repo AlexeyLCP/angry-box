@@ -13,6 +13,10 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
+// This file contains Xray-specific configuration generators.
+// The style is intentionally kept similar to the sing-box backend for maintainability,
+// even though Xray uses a different overall config schema.
+
 type xrayConfig struct {
 	Log       *xrayLog         `json:"log,omitempty"`
 	Inbounds  []json.RawMessage `json:"inbounds"`

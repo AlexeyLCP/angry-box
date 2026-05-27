@@ -1,3 +1,8 @@
+// Package xray implements the Backend interface for Xray-core.
+//
+// This backend is considered secondary / best-effort compared to sing-box.
+// It is maintained at a basic functional level but receives significantly less
+// development attention.
 package xray
 
 import (
@@ -187,6 +192,7 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 
 	output, err := client.Run("systemctl is-active xray 2>/dev/null || echo unknown")
 	if err != nil {
+		// Non-fatal: we can still return partial status
 	}
 
 	status := &model.Status{
@@ -232,6 +238,8 @@ func (b *Backend) Name() string { return "xray" }
 // Version returns the managed xray version.
 func (b *Backend) Version() string { return xrayVersion }
 
+// archToGoArch maps uname -m output to the archive suffix used by Xray-core releases.
+// Note: This mapping is Xray-specific and differs from sing-box.
 func archToGoArch(arch string) string {
 	switch arch {
 	case "x86_64":
