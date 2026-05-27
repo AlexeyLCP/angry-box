@@ -1,0 +1,53 @@
+# LucX License
+
+Copyright (c) 2026 LucX Project. All rights reserved.
+
+---
+
+## Personal Use Only
+
+LucX is an open-source project intended **exclusively** for:
+- **Personal, non-commercial use**
+- **Educational and research purposes**
+- **Academic study and experimentation**
+
+---
+
+## Strict Prohibition on Commercial Use
+
+**Any commercial use is strictly prohibited without direct written permission from the author.**
+
+This includes, but is not limited to:
+- Selling, reselling, or providing VPN/proxy services using LucX-managed infrastructure
+- Offering LucX as a managed service or SaaS
+- Bundling or integrating LucX with commercial hardware or software products
+- Using LucX orchestration, obfuscation, or clustering features in any commercial VPN operation
+- Monetizing access to infrastructure configured or managed by LucX
+- Providing LucX-based proxy access as part of a paid subscription
+
+**To request commercial use permission, contact the author.** Such permission is granted at the author's sole discretion and may be subject to separate terms.
+
+---
+
+## No Warranty / No Liability
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+**The author assumes no responsibility or liability for any use made of this software by third parties.** Users are solely responsible for complying with all applicable laws and regulations in their jurisdiction. The author does not endorse, condone, or encourage the use of this software for any illegal activities.
+
+---
+
+## Educational & Research Purpose Statement
+
+This project is developed primarily for educational and research purposes — to explore the design and implementation of cross-platform network orchestration systems, multi-hop proxy topologies, and protocol abstraction patterns. It is a personal technical research project, not a commercial product.
+
+---
+
+## Full License Text
+
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**:
+https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+---
+
+SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
