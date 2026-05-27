@@ -11,6 +11,7 @@ import (
 
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
 	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
@@ -54,6 +55,7 @@ Other:
 Common flags:
   -backend   Proxy backend: sing-box (default) or xray
   -file      Path to store file (default: chains.json)
+  -config    Path to angry-box config file (default: /etc/angry-box/angry-box.toml)
   -addr      Remote host address (IP:port)
   -user      SSH user (default: root)
   -key       Path to SSH private key
@@ -81,6 +83,8 @@ var (
 	configType string
 	nodesStr   string
 	strategy   string
+
+	configPath string
 )
 
 func main() {
@@ -89,7 +93,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Load orchestrator config (if present). Flags can still override.
+	cfgPath := os.Getenv("ANGRY_BOX_CONFIG")
+	if cfgPath == "" {
+		cfgPath = config.DefaultConfigPath()
+	}
+	orchCfg, _ := config.Load(cfgPath) // ignore error, fall back to defaults
+
+	// Apply config defaults for flags that weren't explicitly set on CLI
+	// (simple approach: we let per-command flag sets override later)
+	_ = orchCfg // will be used more in future iterations
+
 	cmd := os.Args[1]
+
+	// Quick pre-parse for global --config flag (before subcommand flag sets)
+	for i, arg := range os.Args {
+		if arg == "--config" && i+1 < len(os.Args) {
+			configPath = os.Args[i+1]
+			break
+		}
+	}
+	if configPath != "" {
+		if c, err := config.Load(configPath); err == nil {
+			// Use loaded values as base (flags can still override per-command)
+			_ = c
+		}
+	}
 
 	switch cmd {
 	case "host":
@@ -478,8 +507,20 @@ func nodeCmd(cmd string) {
 
 func serveCmd() {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	listen := fs.String("listen", ":8090", "HTTP listen address")
-	fs.StringVar(&storePath, "file", "chains.json", "store file path")
+
+	// Load orchestrator-level config first for defaults
+	cfg, _ := config.Load(configPath)
+	defaultListen := cfg.ListenAddr
+	if defaultListen == "" {
+		defaultListen = ":8090"
+	}
+	defaultStore := cfg.StoreFile
+	if defaultStore == "" {
+		defaultStore = "chains.json"
+	}
+
+	listen := fs.String("listen", defaultListen, "HTTP listen address")
+	fs.StringVar(&storePath, "file", defaultStore, "store file path")
 	_ = fs.Parse(os.Args[2:])
 
 	mux := http.NewServeMux()
