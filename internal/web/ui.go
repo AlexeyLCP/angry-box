@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"github.com/alexeylcp/angry-box/internal/backend/factory"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/web/templates"
@@ -39,8 +40,14 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /ui/hosts/{id}", s.handleDeleteHost)
 	mux.HandleFunc("GET /ui/hosts/new", s.handleNewHostForm)
 
-	// Other sections (stubs for now, same navigation pattern)
+	// Chains (real implementation)
 	mux.HandleFunc("GET /ui/chains", s.handleChains)
+	mux.HandleFunc("POST /ui/chains", s.handleCreateChain)
+	mux.HandleFunc("DELETE /ui/chains/{name}", s.handleDeleteChain)
+	mux.HandleFunc("POST /ui/chains/{name}/apply", s.handleApplyChain)
+	mux.HandleFunc("GET /ui/chains/new", s.handleNewChainForm)
+
+	// Status (still stub)
 	mux.HandleFunc("GET /ui/status", s.handleStatus)
 }
 
@@ -143,10 +150,10 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
-	// Temporary stub – will be replaced with a real templates.Chains component
-	// when we implement the chain management UI (visual editor + apply from web).
-	frag := &simpleHTML{html: `<div class="space-y-4"><h2 class="text-2xl font-semibold mb-2">Chains</h2><p class="text-sm opacity-70">Chain builder (create, visualise, apply-chain) coming in the next step.</p></div>`}
-	s.renderContent(w, r, "Chains", frag)
+	st := s.store()
+	chains, _ := st.ListChains()
+	hosts, _ := st.ListHosts()
+	s.renderContent(w, r, "Chains", templates.Chains(chains, hosts))
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -167,3 +174,111 @@ func (s *simpleHTML) Render(ctx context.Context, w io.Writer) error {
 
 // Compile-time interface check.
 var _ templ.Component = (*simpleHTML)(nil)
+
+// ─── Chain handlers ───────────────────────────────────────────────────────────
+
+func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	hosts, _ := st.ListHosts()
+	s.render(w, templates.NewChainForm(hosts))
+}
+
+func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	strategy := strings.TrimSpace(r.FormValue("strategy"))
+	if strategy == "" {
+		strategy = "urltest"
+	}
+	nodeIDs := r.Form["nodes"] // multiple checkboxes
+
+	if name == "" || len(nodeIDs) < 1 {
+		http.Error(w, "name and at least one node are required", http.StatusBadRequest)
+		return
+	}
+
+	st := s.store()
+
+	// Build ordered ChainNodes by resolving hosts (preserve selection order).
+	nodes := make([]model.ChainNode, 0, len(nodeIDs))
+	for _, id := range nodeIDs {
+		id = strings.TrimSpace(id)
+		h, err := st.GetHost(id)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("host %q not found", id), http.StatusBadRequest)
+			return
+		}
+		nodes = append(nodes, model.ChainNode{
+			ID:      h.ID,
+			Addr:    h.Addr,
+			User:    h.User,
+			KeyPath: h.KeyPath,
+		})
+	}
+
+	c := &model.Chain{
+		Name:     name,
+		Nodes:    nodes,
+		Strategy: model.Strategy(strategy),
+	}
+
+	if err := st.SaveChain(c); err != nil {
+		http.Error(w, fmt.Sprintf("save failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the new row so it appends to the table.
+	s.render(w, templates.ChainRow(c))
+}
+
+func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "missing name", http.StatusBadRequest)
+		return
+	}
+
+	st := s.store()
+	_ = st.DeleteChain(name) // ignore not-found for UI
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "missing name", http.StatusBadRequest)
+		return
+	}
+
+	st := s.store()
+	c, err := st.GetChain(name)
+	if err != nil {
+		s.render(w, templates.ApplyResult(name, false, "chain not found"))
+		return
+	}
+
+	// Resolve full connection info for SSH.
+	resolved, err := st.ResolveNodes(c)
+	if err != nil {
+		s.render(w, templates.ApplyResult(name, false, err.Error()))
+		return
+	}
+	c.Nodes = resolved
+
+	// Execute the real applier (same logic as CLI apply-chain).
+	f := factory.New()
+	applier := chain.NewApplier(f)
+
+	ctx := context.Background()
+	if err := applier.ApplyChain(ctx, c); err != nil {
+		s.render(w, templates.ApplyResult(name, false, err.Error()))
+		return
+	}
+
+	s.render(w, templates.ApplyResult(name, true, "applied successfully to all nodes"))
+}

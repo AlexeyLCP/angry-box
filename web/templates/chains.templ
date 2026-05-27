@@ -1,0 +1,169 @@
+package templates
+
+import "github.com/alexeylcp/angry-box/internal/domain/model"
+
+// Chains is the main content for /ui/chains.
+// It shows existing chains and a button to open the creation modal.
+templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">Chains</h2>
+			<button
+				class="btn btn-primary btn-sm"
+				hx-get="/ui/chains/new"
+				hx-target="#modal-container"
+				hx-swap="innerHTML"
+			>
+				+ Create Chain
+			</button>
+		</div>
+
+		if len(availableHosts) == 0 {
+			<div class="alert alert-warning">
+				<span>No hosts registered yet. Add hosts first on the Hosts page before creating chains.</span>
+			</div>
+		}
+
+		<div class="card bg-base-100 shadow">
+			<div class="overflow-x-auto">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Nodes</th>
+							<th>Strategy</th>
+							<th class="w-px"></th>
+						</tr>
+					</thead>
+					<tbody id="chains-tbody">
+						for _, c := range chains {
+							@ChainRow(c)
+						}
+						if len(chains) == 0 {
+							<tr>
+								<td colspan="4" class="text-center py-8 text-base-content/50">
+									No chains yet. Create your first multi-hop proxy chain.
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Per-chain apply result area (OOB updates land here) -->
+		<div id="apply-results" class="space-y-2"></div>
+	</div>
+
+	<!-- Modal container -->
+	<div id="modal-container"></div>
+}
+
+// ChainRow renders one row in the chains table.
+templ ChainRow(c *model.Chain) {
+	<tr id={"chain-" + c.Name}>
+		<td class="font-semibold">{ c.Name }</td>
+		<td>
+			<div class="flex flex-wrap gap-1">
+				for _, n := range c.Nodes {
+					<span class="badge badge-outline badge-sm font-mono">{ n.ID }</span>
+				}
+			</div>
+			<div class="text-xs text-base-content/50 mt-0.5">{ len(c.Nodes) } hop(s)</div>
+		</td>
+		<td><span class="badge badge-ghost">{ c.Strategy }</span></td>
+		<td>
+			<div class="flex gap-2">
+				<button
+					class="btn btn-primary btn-xs"
+					hx-post={"/ui/chains/" + c.Name + "/apply"}
+					hx-target="#apply-results"
+					hx-swap="beforeend"
+					hx-indicator={"#apply-spin-" + c.Name}>
+					Apply
+					<span id={"apply-spin-" + c.Name} class="htmx-indicator loading loading-spinner loading-xs ml-1"></span>
+				</button>
+
+				<button
+					class="btn btn-ghost btn-xs text-error"
+					hx-delete={"/ui/chains/" + c.Name}
+					hx-confirm={"Delete chain " + c.Name + "?"}
+					hx-target={"#chain-" + c.Name}
+					hx-swap="outerHTML">
+					Delete
+				</button>
+			</div>
+		</td>
+	</tr>
+}
+
+// NewChainForm is the modal for creating a new chain.
+templ NewChainForm(availableHosts []*model.Host) {
+	<dialog id="chain-modal" class="modal" open>
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-4">Create New Chain</h3>
+
+			<form
+				hx-post="/ui/chains"
+				hx-target="#chains-tbody"
+				hx-swap="beforeend"
+				hx-on::after-request="this.closest('dialog').close(); this.reset();"
+				class="space-y-4">
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">Chain Name (unique)</span></label>
+					<input type="text" name="name" class="input input-bordered" required placeholder="my-exit-chain" />
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">Routing Strategy</span></label>
+					<select name="strategy" class="select select-bordered">
+						<option value="urltest" selected>urltest (best latency)</option>
+						<option value="failover">failover</option>
+						<option value="selector">selector (manual)</option>
+						<option value="bond">bond (load balance)</option>
+					</select>
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">Nodes (in order — first is entry)</span></label>
+					<div class="border border-base-300 rounded-lg p-3 max-h-48 overflow-auto space-y-1">
+						for _, h := range availableHosts {
+							<label class="flex items-center gap-2 cursor-pointer">
+								<input type="checkbox" name="nodes" value={ h.ID } class="checkbox checkbox-sm" />
+								<span class="font-mono text-sm">{ h.ID }</span>
+								<span class="text-xs text-base-content/50">({ h.Addr })</span>
+							</label>
+						}
+					</div>
+					<div class="label"><span class="label-text-alt text-base-content/50">Select 2+ hosts in desired hop order</span></div>
+				</div>
+
+				<div class="modal-action">
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+					<button type="submit" class="btn btn-primary">Create Chain</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+}
+
+// ApplyResult is a small dismissible result box appended after an Apply click.
+templ ApplyResult(chainName string, success bool, message string) {
+	<div class={ "alert " + alertClass(success) + " shadow-sm text-sm flex justify-between items-start" }>
+		<div>
+			<strong>{ chainName }</strong>: { message }
+		</div>
+		<button class="btn btn-ghost btn-xs" onclick="this.closest('.alert').remove()">✕</button>
+	</div>
+}
+
+func alertClass(success bool) string {
+	if success {
+		return "alert-success"
+	}
+	return "alert-error"
+}
