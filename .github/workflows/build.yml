@@ -1,4 +1,5 @@
 name: Build & Test
+
 on:
   push:
     branches: [main]
@@ -10,43 +11,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - run: go vet ./...
-      - run: go test ./... -count=1 -timeout 60s
 
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - working-directory: lucx-web
-        run: |
-          npm ci
-          npx vue-tsc --noEmit
-          npm run build
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -count=1 -timeout 60s
 
   build:
-    needs: [backend, frontend]
     runs-on: ubuntu-latest
+    needs: [backend]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+          - target: linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: '7'
+          - target: keenetic-mipsel
+            goos: linux
+            goarch: mipsle
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - working-directory: lucx-web
-        run: npm ci && npm run build
-      - run: cp -r lucx-web/dist web/dist
-      - run: |
-          mkdir -p build
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o build/lucx-core ./cmd/lucx-core/
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm || '' }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          go build -ldflags="-s -w" -o dist/angry-box-${{ matrix.target }} ./cmd/angry-box
+
       - uses: actions/upload-artifact@v4
         with:
-          name: lucx-core
-          path: build/lucx-core
+          name: angry-box-${{ matrix.target }}
+          path: dist/angry-box-${{ matrix.target }}
