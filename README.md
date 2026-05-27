@@ -97,8 +97,37 @@ angry-box chain show mychain
 
 ## Сборка из исходников
 
+### Быстрая сборка
+
 ```bash
 go build ./cmd/angry-box/
+```
+
+### Установка через make
+
+```bash
+# Сборка и установка бинарника
+sudo make install
+
+# Установка systemd-сервиса
+sudo make install-systemd
+
+# Всё вместе
+sudo make install-all
+
+# Деинсталляция
+sudo make uninstall-systemd
+sudo make uninstall
+```
+
+Переменные:
+- `PREFIX` — путь установки (по умолчанию `/usr/local`)
+- `DESTDIR` — для пакетирования (staging directory)
+- `BINDIR`, `CONFDIR`, `DATADIR`, `SYSTEMD_DIR` — можно переопределить
+
+```bash
+make install PREFIX=/opt/angry-box
+make install DESTDIR=/tmp/staging
 ```
 
 ## Архитектура проекта
