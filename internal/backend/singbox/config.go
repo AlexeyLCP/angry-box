@@ -167,10 +167,7 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 			},
 		},
 		"tls": map[string]any{
-			"enabled": true,
-			"reality": map[string]any{
-				"enabled": false,
-			},
+			"enabled": false,
 		},
 		"transport": map[string]any{
 			"type": "ws",
