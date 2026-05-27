@@ -14,6 +14,12 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 const usage = `angry-box — lightweight proxy orchestrator for sing-box and xray.
 
 Usage:
@@ -41,6 +47,9 @@ Chain management:
   chain show     Show chain details
   chain delete   Delete a chain
   apply-chain    Generate and push configs to all nodes in a chain
+
+Other:
+  version        Show version information
 
 Common flags:
   -backend   Proxy backend: sing-box (default) or xray
@@ -102,6 +111,11 @@ func main() {
 
 	case "serve":
 		serveCmd()
+
+	case "version":
+		fmt.Printf("angry-box %s\n", version)
+		fmt.Printf("commit: %s\n", commit)
+		fmt.Printf("built:  %s\n", date)
 
 	case "deploy", "status", "config", "apply", "remove", "reload":
 		nodeCmd(cmd)

@@ -12,6 +12,13 @@ BINARY       := angry-box
 CMD_DIR      := ./cmd/angry-box
 SERVICE_FILE := scripts/angry-box.service
 
+# Version info (injected at build time)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+DATE    ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
+
 INSTALL      := install
 INSTALL_BIN  := $(INSTALL) -m 755
 INSTALL_DATA := $(INSTALL) -m 644
@@ -19,8 +26,8 @@ INSTALL_DIR  := $(INSTALL) -d -m 755
 
 .PHONY: build
 build:
-	@echo "==> Building $(BINARY)..."
-	go build -o $(BINARY) $(CMD_DIR)
+	@echo "==> Building $(BINARY) (version=$(VERSION), commit=$(COMMIT))..."
+	go build $(LDFLAGS) -o $(BINARY) $(CMD_DIR)
 	@echo "    $(BINARY) built"
 
 .PHONY: install
@@ -103,3 +110,9 @@ vet:
 .PHONY: test
 test:
 	go test ./...
+
+.PHONY: version
+version:
+	@echo "version: $(VERSION)"
+	@echo "commit:  $(COMMIT)"
+	@echo "date:    $(DATE)"
