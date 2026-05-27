@@ -14,33 +14,8 @@ permissions:
   contents: write
 
 jobs:
-  # ── Web UI build (shared across all Go builds) ──
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Build Vue SPA
-        working-directory: lucx-web
-        run: |
-          npm ci
-          npx vue-tsc --noEmit
-          npm run build
-      - name: Copy dist for Go embed
-        run: |
-          rm -rf web/dist
-          cp -r lucx-web/dist web/dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist
-          retention-days: 1
-
-  # ── Matrix build: all architectures ──
+  # ── Build for all supported targets ──
   build:
-    needs: web
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -59,15 +34,6 @@ jobs:
             upx: true
             extraflags: '-buildmode=pie'
 
-          # ARMv8 (64-bit, optimized) — newer Raspberry Pi 4/5, ARM servers
-          - target: linux-arm64-v8
-            goos: linux
-            goarch: arm64
-            goarm: '8'
-            upx: true
-            extraflags: '-buildmode=pie'
-
-          # ARMv7 routers (OpenWrt, old Raspberry Pi)
           - target: linux-armv7
             goos: linux
             goarch: arm
@@ -75,7 +41,7 @@ jobs:
             upx: true
             extraflags: ''
 
-          # Keenetic routers — MIPS Little Endian
+          # Keenetic routers — MIPS Little Endian (primary router target)
           - target: keenetic-mipsel
             goos: linux
             goarch: mipsle
@@ -83,30 +49,17 @@ jobs:
             upx: true
             extraflags: ''
 
-          # MIPS Big Endian — older OpenWrt / some Keenetic models
-          - target: openwrt-mips
-            goos: linux
-            goarch: mips
-            gomips: softfloat
-            upx: true
-            extraflags: ''
-
     env:
-      APP: lucx-core
-      OUT_DIR: build
+      APP: angry-box
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-
-      - name: Download web dist
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: web/dist
 
       - name: Compute version
         id: ver
@@ -117,7 +70,6 @@ jobs:
           TRIGGER: ${{ github.event_name }}
         run: |
           if [[ "$TRIGGER" == "push" && "$REF_TYPE" == "tag" ]]; then
-            # Strip 'v' prefix for clean semver
             V="${REF_NAME#v}"
           elif [[ "$TRIGGER" == "workflow_dispatch" && -n "$INPUT_VERSION" ]]; then
             V="$INPUT_VERSION"
@@ -126,7 +78,6 @@ jobs:
             V="${V#v}"
           fi
           echo "value=$V" >> "$GITHUB_OUTPUT"
-          echo "version=$V"
 
       - name: Go vet
         run: go vet ./...
@@ -141,65 +92,59 @@ jobs:
           GOARM: ${{ matrix.goarm || '' }}
           GOMIPS: ${{ matrix.gomips || '' }}
           CGO_ENABLED: '0'
-          TARGET: ${{ matrix.target }}
-          EXTRAFLAGS: ${{ matrix.extraflags }}
           VERSION: ${{ steps.ver.outputs.value }}
         run: |
-          mkdir -p "$OUT_DIR"
+          mkdir -p build
 
-          LDFLAGS="-s -w -X github.com/alexeylcp/lucx-core/internal/api.Version=${VERSION}"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-          BIN="${OUT_DIR}/${APP}-${TARGET}"
+          BIN="build/${APP}-${{ matrix.target }}"
 
-          echo "Building ${BIN} (GOOS=${GOOS} GOARCH=${GOARCH} GOARM=${GOARM} CGO_ENABLED=${CGO_ENABLED})"
-          go build -trimpath -ldflags="${LDFLAGS}" ${EXTRAFLAGS} -o "${BIN}" ./cmd/${APP}/
+          echo "Building ${BIN}"
+          go build -trimpath -ldflags="${LDFLAGS}" ${{ matrix.extraflags }} -o "${BIN}" ./cmd/angry-box/
 
           ls -lh "${BIN}"
           file "${BIN}" || true
 
-      - name: Compress with UPX (router targets)
+      - name: Compress with UPX (for router targets)
         if: ${{ matrix.upx }}
         run: |
-          BIN="${OUT_DIR}/${APP}-${{ matrix.target }}"
+          BIN="build/${APP}-${{ matrix.target }}"
           if command -v upx &>/dev/null; then
-            upx --best --lzma --force-pie "${BIN}" 2>/dev/null || upx --best --lzma "${BIN}" 2>/dev/null || echo "UPX skipped (incompatible binary)"
+            upx --best --lzma --force-pie "${BIN}" 2>/dev/null || upx --best --lzma "${BIN}" 2>/dev/null || echo "UPX skipped"
             ls -lh "${BIN}"
           else
-            echo "UPX not installed — installing..."
-            sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
-            upx --best --lzma --force-pie "${BIN}" 2>/dev/null || upx --best --lzma "${BIN}" 2>/dev/null || echo "UPX skipped (incompatible binary)"
-            ls -lh "${BIN}"
+            echo "UPX not installed, skipping compression"
           fi
 
-      - name: Package tar.gz
+      - name: Package release tarball
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ steps.ver.outputs.value }}
         run: |
           set -euo pipefail
-          BIN="${OUT_DIR}/${APP}-${TARGET}"
+          BIN="build/${APP}-${TARGET}"
           chmod +x "${BIN}"
 
           TAR_NAME="${APP}-${VERSION}-${TARGET}"
-          TAR_DIR="${OUT_DIR}/${TAR_NAME}"
+          TAR_DIR="build/${TAR_NAME}"
           mkdir -p "${TAR_DIR}"
 
           cp "${BIN}" "${TAR_DIR}/${APP}"
           cp README.md "${TAR_DIR}/"
+          cp scripts/install.sh "${TAR_DIR}/" 2>/dev/null || true
 
-          tar czf "${OUT_DIR}/${TAR_NAME}.tar.gz" -C "$OUT_DIR" "$TAR_NAME"
-          echo "Package: ${OUT_DIR}/${TAR_NAME}.tar.gz"
-          ls -lh "${OUT_DIR}/${TAR_NAME}.tar.gz"
+          tar czf "build/${TAR_NAME}.tar.gz" -C build "${TAR_NAME}"
+          echo "Created build/${TAR_NAME}.tar.gz"
+          ls -lh "build/${TAR_NAME}.tar.gz"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: |
-            build/*.tar.gz
-            build/*.ipk
+          path: build/*.tar.gz
           retention-days: 7
 
-  # ── GitHub Release ──
+  # ── Create GitHub Release ──
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -217,7 +162,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release-assets
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.ipk' \) -exec cp {} release-assets/ \;
+          find artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
           echo "=== Release assets ==="
           ls -lh release-assets/
 
@@ -227,12 +172,11 @@ jobs:
         run: |
           cd release-assets
           shopt -s nullglob
-          FILES=( *.tar.gz *.ipk )
+          FILES=( *.tar.gz )
           if [ ${#FILES[@]} -gt 0 ]; then
-            sha256sum "${FILES[@]}" > "lucx-core-${REF#v}-checksums.txt"
-            cat "lucx-core-${REF#v}-checksums.txt"
+            sha256sum "${FILES[@]}" > "angry-box-${REF#v}-checksums.txt"
+            cat "angry-box-${REF#v}-checksums.txt"
           fi
-          ls -lh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
