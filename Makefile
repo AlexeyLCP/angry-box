@@ -116,3 +116,33 @@ version:
 	@echo "version: $(VERSION)"
 	@echo "commit:  $(COMMIT)"
 	@echo "date:    $(DATE)"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Cross-compilation targets (CGO disabled for simplicity and portability)
+# ──────────────────────────────────────────────────────────────────────────────
+
+.PHONY: build-linux-amd64
+build-linux-amd64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/angry-box-linux-amd64 $(CMD_DIR)
+
+.PHONY: build-linux-arm64
+build-linux-arm64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/angry-box-linux-arm64 $(CMD_DIR)
+
+.PHONY: build-linux-armv7
+build-linux-armv7:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(LDFLAGS) -o dist/angry-box-linux-armv7 $(CMD_DIR)
+
+# Keenetic MIPS (mipsel) - uses pure Go mode
+.PHONY: build-keenetic-mipsel
+build-keenetic-mipsel:
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle go build $(LDFLAGS) -o dist/angry-box-keenetic-mipsel $(CMD_DIR)
+
+.PHONY: build-all
+build-all:
+	@mkdir -p dist
+	$(MAKE) build-linux-amd64
+	$(MAKE) build-linux-arm64
+	$(MAKE) build-linux-armv7
+	$(MAKE) build-keenetic-mipsel
+	@echo "==> All cross builds complete in dist/"
