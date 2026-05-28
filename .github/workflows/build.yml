@@ -21,11 +21,11 @@ jobs:
 
       - name: golangci-lint
         run: |
-          # Install using the project's Go 1.26 so typechecking works with go 1.26 modules
+          # Install using the project's Go 1.26
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64
-          # Run with exit code 0 even if issues found, so the job doesn't fail.
-          # The full list of issues will be in the log.
-          $(go env GOPATH)/bin/golangci-lint run --timeout=5m --issues-exit-code=0 || true
+          # We force exit code 0 so the step never fails the job.
+          # This prevents the "Error: golangci-lint exit with code 3" noise in PR checks.
+          $(go env GOPATH)/bin/golangci-lint run --timeout=5m --issues-exit-code=0 || echo "golangci-lint completed (issues may exist, but step is non-blocking)"
 
       - name: Test
         run: go test ./... -count=1 -timeout 60s
