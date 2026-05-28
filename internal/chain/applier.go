@@ -66,11 +66,20 @@ type NodeResult struct {
 // AWGClientMaterial contains everything needed for a working AmneziaWG client
 // when the chain's user entry is AWG. If we auto-generated a sample, ClientPriv
 // is populated so the user gets a ready-to-use config immediately.
+//
+// 2026 extension: now also carries the CPS/I1-I5 material that was actually
+// baked into the server config (for pro_2026 / xhttp_max_stealth_2026 etc).
 type AWGClientMaterial struct {
 	ServerPub     string // the public key corresponding to the private_key written on the entry node
 	ClientPubUsed string // what ended up in the "peers" array on the server
 	ClientPriv    string // populated only for auto-generated samples (never persisted)
-	Note          string
+	Note          string `json:"note,omitempty"`
+
+	// New 2026 fields (populated when using advanced presets)
+	CPSLevel int    `json:"cps_level,omitempty"`
+	Mimicry  string `json:"mimicry,omitempty"`
+	I1Len    int    `json:"i1_len,omitempty"` // 1200 for QUIC etc.
+	I1Type   string `json:"i1_type,omitempty"`
 }
 
 // publicKeyDER returns the DER-encoded raw public key for Reality.
@@ -254,6 +263,29 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 	// Fill AWG material with server pub if we have it
 	if awgMaterial != nil && entryAWGServerPub != "" {
 		awgMaterial.ServerPub = entryAWGServerPub
+	}
+
+	// 2026: populate CPS / I1 info into the report so UI/CLI can show the user
+	// exactly what stealth material was deployed (very useful for debugging).
+	if awgMaterial != nil {
+		level := 0
+		mim := "none"
+		if preset.CPSLevel > 0 {
+			level = preset.CPSLevel
+			mim = preset.AWGMimicry
+		} else if preset.AWG != nil && preset.AWG.CPSLevel > 0 {
+			level = preset.AWG.CPSLevel
+			mim = preset.AWG.Mimicry
+		}
+		if level > 0 {
+			awgMaterial.CPSLevel = level
+			awgMaterial.Mimicry = mim
+			// We know from the generator that QUIC level 3 gives 1200B I1
+			if mim == "quic" && level >= 1 {
+				awgMaterial.I1Len = 1200
+				awgMaterial.I1Type = "quic-initial-chrome"
+			}
+		}
 	}
 
 	// Note: pushConfig already performed reload/restart + validation for every node.
@@ -943,18 +975,7 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 			},
 		},
 		"mtu": 1420,
-		"amnezia": map[string]any{
-			"jc":     awg.JC,
-			"jmin":   awg.JMIN,
-			"jmax":   awg.JMAX,
-			"s1":     awg.S1,
-			"s2":     awg.S2,
-			"h1":     awg.H1,
-			"h2":     awg.H2,
-			"h3":     awg.H3,
-			"h4":     awg.H4,
-			"packet": "none",
-		},
+		"amnezia": buildAmneziaSection(awg, preset),
 	}
 
 	data, _ := json.Marshal(inb)
@@ -983,6 +1004,72 @@ func deriveWireGuardPublicFromPrivate(privB64 string) (string, error) {
 	curve25519.ScalarBaseMult(&pub, &priv)
 
 	return base64.StdEncoding.EncodeToString(pub[:]), nil
+}
+
+// buildAmneziaSection constructs the full "amnezia" block for sing-box AWG inbound.
+// It uses the new 2026 CPS generators (QUIC/SIP/DNS + levels) when the preset requests
+// cps_level >= 1. This is the key piece that makes pro_2026 / xhttp_max_stealth_2026
+// actually deliver the "security > compatibility" packets the user demanded.
+func buildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]any {
+	section := map[string]any{
+		"jc":   awg.JC,
+		"jmin": awg.JMIN,
+		"jmax": awg.JMAX,
+		"s1":   awg.S1,
+		"s2":   awg.S2,
+		"h1":   awg.H1,
+		"h2":   awg.H2,
+		"h3":   awg.H3,
+		"h4":   awg.H4,
+	}
+
+	level := 0
+	mimicry := "none"
+	if preset.CPSLevel > 0 {
+		level = preset.CPSLevel
+		mimicry = preset.AWGMimicry
+	} else if awg.CPSLevel > 0 {
+		level = awg.CPSLevel
+		mimicry = awg.Mimicry
+	}
+
+	if level > 0 && mimicry != "none" {
+		mat := GenerateAWGObfsMaterial(level, mimicry)
+
+		// Map the packets into sing-box/amnezia "i1"..."i5" + "packet" fields
+		// (sing-box AWG module understands base64 or raw for these in recent builds)
+		if len(mat.I1) > 0 {
+			section["i1"] = base64.StdEncoding.EncodeToString(mat.I1)
+		}
+		if len(mat.I2) > 0 {
+			section["i2"] = base64.StdEncoding.EncodeToString(mat.I2)
+		}
+		if len(mat.I3) > 0 {
+			section["i3"] = base64.StdEncoding.EncodeToString(mat.I3)
+		}
+		if len(mat.I4) > 0 {
+			section["i4"] = base64.StdEncoding.EncodeToString(mat.I4)
+		}
+		if len(mat.I5) > 0 {
+			section["i5"] = base64.StdEncoding.EncodeToString(mat.I5)
+		}
+
+		// "packet" tells the module which generator family was used
+		switch mimicry {
+		case "quic":
+			section["packet"] = "quic"
+		case "sip":
+			section["packet"] = "sip"
+		case "dns":
+			section["packet"] = "dns"
+		default:
+			section["packet"] = "quic"
+		}
+	} else {
+		section["packet"] = "none"
+	}
+
+	return section
 }
 
 // BuildXHTTPTransportInboundForStandalone builds a vless+reality+xhttp inbound

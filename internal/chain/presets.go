@@ -40,7 +40,7 @@ type TUICPreset struct {
 	AuthTimeout        string   `json:"auth_timeout"`
 }
 
-// AWGPreset — настройки для AmneziaWG
+// AWGPreset — настройки для AmneziaWG (2026 extended)
 type AWGPreset struct {
 	JC   int `json:"jc"`
 	JMIN int `json:"jmin"`
@@ -51,9 +51,16 @@ type AWGPreset struct {
 	H2   int `json:"h2"`
 	H3   int `json:"h3"`
 	H4   int `json:"h4"`
+
+	// 2026 advanced CPS / I1-I5 support (from pumbaX/awg2.sh best practices)
+	CPSLevel int    `json:"cps_level,omitempty"`
+	Mimicry  string `json:"mimicry,omitempty"` // "quic" | "sip" | "dns" | "none"
+
+	// Optional I1 packet override (base64 or special keywords "quic-1200", "dns-1232")
+	I1Packet string `json:"i1_packet,omitempty"`
 }
 
-// ConnectionPreset — основной составной пресет
+// ConnectionPreset — основной составной пресет (2026 extended)
 type ConnectionPreset struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
@@ -61,6 +68,10 @@ type ConnectionPreset struct {
 	XHTTP       *XHTTPPreset   `json:"xhttp,omitempty"`
 	TUIC        *TUICPreset    `json:"tuic,omitempty"`
 	AWG         *AWGPreset     `json:"awg,omitempty"`
+
+	// New 2026 top-level fields for maximum control
+	CPSLevel int    `json:"cps_level,omitempty"`
+	AWGMimicry string `json:"awg_mimicry,omitempty"`
 }
 
 // LoadPresets загружает встроенные пресеты + (опционально) мерджит внешние.
