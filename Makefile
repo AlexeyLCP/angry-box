@@ -137,6 +137,36 @@ test-coverage:
 .PHONY: version
 version:
 	@echo "version: $(VERSION)"
+
+# ==================== opkg / .ipk packaging (for Keenetic + OpenWRT) ====================
+# These targets produce installable .ipk packages for real router users.
+# Requires a previously cross-built binary (see build-cross or CI).
+
+.PHONY: build-keenetic-opkg
+build-keenetic-opkg: build
+	@echo "==> Building Keenetic (mipsel_24kc) .ipk ..."
+	@mkdir -p release
+	@export PATH="$$HOME/.local/go/bin:$$PATH"; \
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0 \
+	go build -trimpath $(LDFLAGS) -o /tmp/angry-box-mipsel $(CMD_DIR)
+	@./scripts/build-opkg.sh /tmp/angry-box-mipsel mipsel_24kc $(VERSION) ./release
+	@rm -f /tmp/angry-box-mipsel
+	@echo "    Keenetic .ipk ready in ./release/"
+
+.PHONY: build-arm64-opkg
+build-arm64-opkg: build
+	@echo "==> Building OpenWRT aarch64 .ipk ..."
+	@mkdir -p release
+	@export PATH="$$HOME/.local/go/bin:$$PATH"; \
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+	go build -trimpath $(LDFLAGS) -o /tmp/angry-box-arm64 $(CMD_DIR)
+	@./scripts/build-opkg.sh /tmp/angry-box-arm64 aarch64_cortex-a53 $(VERSION) ./release
+	@rm -f /tmp/angry-box-arm64
+	@echo "    aarch64 .ipk ready in ./release/"
+
+.PHONY: build-all-opkg
+build-all-opkg: build-keenetic-opkg build-arm64-opkg
+	@echo "==> All router .ipk packages built in ./release/"
 	@echo "commit:  $(COMMIT)"
 	@echo "date:    $(DATE)"
 

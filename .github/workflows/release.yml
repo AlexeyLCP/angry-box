@@ -138,6 +138,25 @@ jobs:
           echo "Created build/${TAR_NAME}.tar.gz"
           ls -lh "build/${TAR_NAME}.tar.gz"
 
+      - name: Build .ipk for router targets (Keenetic + OpenWRT aarch64)
+        if: matrix.target == 'keenetic-mipsel' || matrix.target == 'linux-arm64'
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ steps.ver.outputs.value }}
+        run: |
+          set -euo pipefail
+          BIN="build/${APP}-${TARGET}"
+          chmod +x "${BIN}"
+
+          ARCH="mipsel_24kc"
+          if [[ "$TARGET" == "linux-arm64" ]]; then
+            ARCH="aarch64_cortex-a53"
+          fi
+
+          mkdir -p release-ipk
+          ./scripts/build-opkg.sh "$BIN" "$ARCH" "$VERSION" "./release-ipk" || echo "opkg packaging skipped or failed (non-fatal for now)"
+          ls -lh release-ipk/ 2>/dev/null || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
@@ -163,6 +182,8 @@ jobs:
         run: |
           mkdir -p release-assets
           find artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
+          # Include any .ipk packages produced for Keenetic / OpenWRT
+          find . -path '*/release-ipk/*.ipk' -exec cp {} release-assets/ \; 2>/dev/null || true
           echo "=== Release assets ==="
           ls -lh release-assets/
 
