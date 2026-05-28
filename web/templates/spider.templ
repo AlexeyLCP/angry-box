@@ -1,0 +1,308 @@
+package templates
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+)
+
+// SpiderWeb renders the visual chain editor (SVG-based spider web).
+templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">Spider Web</h2>
+			<div class="flex gap-2">
+				<button
+					class="btn btn-ghost btn-sm"
+					hx-get="/ui/spider"
+					hx-target="#main-content"
+					hx-swap="outerHTML">
+					Refresh
+				</button>
+			</div>
+		</div>
+
+		<!-- SVG Canvas for spider web topology -->
+		<div class="card bg-base-100 shadow overflow-hidden">
+			<div class="p-4 border-b border-base-300">
+				<div class="text-sm text-base-content/60">Visual map of all nodes and connections. Click a node to add it to a chain.</div>
+			</div>
+			<div class="bg-base-200" style="min-height: 500px; position: relative;">
+				if len(hosts) == 0 {
+					<div class="flex items-center justify-center h-64 text-base-content/50">
+						No nodes registered. <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary ml-1">Add nodes first</a>.
+					</div>
+				} else {
+					<svg id="spider-svg" viewBox="0 0 800 500" class="w-full" style="min-height: 500px;">
+						<defs>
+							<marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+								<polygon points="0 0, 10 3.5, 0 7" fill="oklch(var(--p))" />
+							</marker>
+						</defs>
+
+						<!-- Connection links from chains -->
+						for _, link := range spiderLinks(chains, hosts) {
+							<line
+								x1={ fmt.Sprintf("%.0f", link.X1) }
+								y1={ fmt.Sprintf("%.0f", link.Y1) }
+								x2={ fmt.Sprintf("%.0f", link.X2) }
+								y2={ fmt.Sprintf("%.0f", link.Y2) }
+								stroke="oklch(var(--p) / 0.4)"
+								stroke-width="2"
+								stroke-dasharray="6,3"
+								marker-end="url(#arrowhead)"
+							/>
+							<text
+								x={ fmt.Sprintf("%.0f", (link.X1+link.X2)/2) }
+								y={ fmt.Sprintf("%.0f", (link.Y1+link.Y2)/2 - 8) }
+								text-anchor="middle"
+								class="text-[10px]"
+								fill="oklch(var(--bc) / 0.5)">
+								{ link.Transport }
+							</text>
+						}
+
+						<!-- Nodes as circles -->
+						for _, sn := range spiderNodes(hosts, infos, chains) {
+							@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y)
+						}
+					</svg>
+				}
+			</div>
+		</div>
+
+		<!-- Add connection form -->
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<h3 class="font-semibold mb-3">Create New Connection</h3>
+				<form
+					hx-post="/ui/spider/links"
+					hx-target="#main-content"
+					hx-swap="outerHTML"
+					class="space-y-3">
+
+					<div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+						<div class="form-control">
+							<label class="label"><span class="label-text">From Node</span></label>
+							<select name="from_node" class="select select-bordered select-sm" required>
+								<option value="">Select...</option>
+								for _, h := range hosts {
+									<option value={ h.ID }>{ h.ID } ({ h.Addr })</option>
+								}
+							</select>
+						</div>
+						<div class="form-control">
+							<label class="label"><span class="label-text">To Node</span></label>
+							<select name="to_node" class="select select-bordered select-sm" required>
+								<option value="">Select...</option>
+								for _, h := range hosts {
+									<option value={ h.ID }>{ h.ID } ({ h.Addr })</option>
+								}
+							</select>
+						</div>
+						<div class="form-control">
+							<label class="label"><span class="label-text">Transport</span></label>
+							<select name="transport" class="select select-bordered select-sm">
+								<option value="xhttp" selected>XHTTP (max obfuscation)</option>
+								<option value="reality">Reality + TCP</option>
+							</select>
+						</div>
+						<div class="form-control">
+							<label class="label"><span class="label-text">Chain Name</span></label>
+							<input type="text" name="chain_name" class="input input-bordered input-sm" required placeholder="my-chain" />
+						</div>
+						<div class="form-control justify-end">
+							<button type="submit" class="btn btn-primary btn-sm">Create Link</button>
+						</div>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<!-- Existing Chains -->
+		if len(chains) > 0 {
+			<div class="card bg-base-100 shadow">
+				<div class="card-body p-4">
+					<h3 class="font-semibold mb-3">Chains</h3>
+					<div class="space-y-2">
+						for _, c := range chains {
+							<div class="flex items-center justify-between border border-base-300 rounded-lg p-3">
+								<div>
+									<div class="font-semibold">{ c.Name }</div>
+									<div class="text-xs text-base-content/50">
+										{ chainNodeList(c.Nodes) }
+										<span class="ml-2">| { c.Transport } | { c.Strategy }</span>
+									</div>
+								</div>
+								<div class="flex gap-2">
+									<button
+										class="btn btn-primary btn-xs"
+										hx-post={"/ui/chains/" + c.Name + "/apply"}
+										hx-target="#spider-apply-result"
+										hx-swap="innerHTML">
+										Apply
+									</button>
+									<button
+										class="btn btn-ghost btn-xs text-error"
+										hx-delete={"/ui/chains/" + c.Name}
+										hx-confirm={"Delete chain " + c.Name + "?"}
+										hx-target="closest .border"
+										hx-swap="delete">
+										Delete
+									</button>
+								</div>
+							</div>
+						}
+					</div>
+					<div id="spider-apply-result" class="mt-2"></div>
+				</div>
+			</div>
+		}
+	</div>
+}
+
+// chainNodeList returns a text representation of node IDs with arrows
+func chainNodeList(nodes []model.ChainNode) string {
+	s := ""
+	for i, n := range nodes {
+		if i > 0 {
+			s += " → "
+		}
+		s += n.ID
+	}
+	return s
+}
+
+// spiderNode renders a single node circle on the SVG canvas
+templ spiderNode(id string, country string, chains []*model.Chain, x, y float64) {
+	<g class="spider-node cursor-pointer" data-node-id={ id }>
+		<circle
+			cx={ fmt.Sprintf("%.0f", x) }
+			cy={ fmt.Sprintf("%.0f", y) }
+			r="30"
+			fill="oklch(var(--b1))"
+			stroke="oklch(var(--p) / 0.2)"
+			stroke-width="2"
+		/>
+		<circle
+			cx={ fmt.Sprintf("%.0f", x) }
+			cy={ fmt.Sprintf("%.0f", y) }
+			r="24"
+			fill="oklch(var(--p) / 0.15)"
+		/>
+		<circle
+			cx={ fmt.Sprintf("%.0f", x + 18) }
+			cy={ fmt.Sprintf("%.0f", y - 18) }
+			r="5"
+			fill="oklch(var(--su))"
+		/>
+		if country != "" {
+			<text
+				x={ fmt.Sprintf("%.0f", x) }
+				y={ fmt.Sprintf("%.0f", y - 8) }
+				text-anchor="middle"
+				class="text-xs"
+				fill="oklch(var(--bc))">{ country }</text>
+		}
+		<text
+			x={ fmt.Sprintf("%.0f", x) }
+			y={ fmt.Sprintf("%.0f", y + 10) }
+			text-anchor="middle"
+			class="text-[11px] font-mono font-semibold"
+			fill="oklch(var(--bc))">{ id }</text>
+		if spiderChainCount(id, chains) > 0 {
+			<text
+				x={ fmt.Sprintf("%.0f", x) }
+				y={ fmt.Sprintf("%.0f", y + 24) }
+				text-anchor="middle"
+				class="text-[9px]"
+				fill="oklch(var(--bc) / 0.5)">{ fmt.Sprintf("%d chain(s)", spiderChainCount(id, chains)) }</text>
+		}
+	</g>
+}
+
+// nodePosition computes a circular layout position for a node
+func nodePosition(id string, hosts []*model.Host, idx int, total int) (float64, float64) {
+	if total == 0 {
+		return 400, 250
+	}
+	angle := float64(idx)*2.0*math.Pi/float64(total) - math.Pi/2.0
+	r := 180.0
+	if total <= 3 {
+		r = 140.0
+	}
+	x := 400.0 + r*math.Cos(angle)
+	y := 250.0 + r*math.Sin(angle)
+	return x, y
+}
+
+func idxOf(id string, hosts []*model.Host) int {
+	for i, h := range hosts {
+		if h.ID == id {
+			return i
+		}
+	}
+	return 0
+}
+
+func findInfoSpider(id string, infos []*model.NodeInfo) *model.NodeInfo {
+	for _, ni := range infos {
+		if ni != nil && ni.ID == id {
+			return ni
+		}
+	}
+	return nil
+}
+
+type spiderLinkData struct {
+	X1, Y1, X2, Y2 float64
+	Transport       string
+}
+
+type spiderNodeData struct {
+	ID      string
+	Country string
+	X, Y    float64
+}
+
+func spiderLinks(chains []*model.Chain, hosts []*model.Host) []spiderLinkData {
+	var links []spiderLinkData
+	for _, c := range chains {
+		for i := 0; i < len(c.Nodes)-1; i++ {
+			x1, y1 := nodePosition(c.Nodes[i].ID, hosts, idxOf(c.Nodes[i].ID, hosts), len(hosts))
+			x2, y2 := nodePosition(c.Nodes[i+1].ID, hosts, idxOf(c.Nodes[i+1].ID, hosts), len(hosts))
+			links = append(links, spiderLinkData{
+				X1: x1, Y1: y1, X2: x2, Y2: y2,
+				Transport: string(c.Transport),
+			})
+		}
+	}
+	return links
+}
+
+func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain) []spiderNodeData {
+	var nodes []spiderNodeData
+	for i, h := range hosts {
+		x, y := nodePosition(h.ID, hosts, i, len(hosts))
+		country := ""
+		if ni := findInfoSpider(h.ID, infos); ni != nil {
+			country = ni.Country
+		}
+		nodes = append(nodes, spiderNodeData{ID: h.ID, Country: country, X: x, Y: y})
+	}
+	return nodes
+}
+
+func spiderChainCount(id string, chains []*model.Chain) int {
+	count := 0
+	for _, c := range chains {
+		for _, n := range c.Nodes {
+			if n.ID == id {
+				count++
+				break
+			}
+		}
+	}
+	return count
+}

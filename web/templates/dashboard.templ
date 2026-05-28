@@ -1,0 +1,166 @@
+package templates
+
+import (
+	"time"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+)
+
+// DashboardStats holds the computed numbers for the dashboard header.
+type DashboardStats struct {
+	TotalHosts  int
+	OnlineHosts int
+	TotalChains int
+	TotalUsers  int
+}
+
+// Dashboard renders the main dashboard page with stats, node list, and health.
+templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeMetrics, infos []*model.NodeInfo, chains []*model.Chain) {
+	<div class="space-y-6">
+		<h2 class="text-2xl font-semibold">Dashboard</h2>
+
+		<!-- Stats Cards -->
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="dashboard-stats">
+			<div class="card bg-base-100 shadow">
+				<div class="card-body p-4">
+					<div class="text-sm text-base-content/60">Nodes</div>
+					<div class="text-2xl font-bold">{ stats.TotalHosts }</div>
+				</div>
+			</div>
+			<div class="card bg-base-100 shadow">
+				<div class="card-body p-4">
+					<div class="text-sm text-base-content/60">Online</div>
+					<div class="text-2xl font-bold text-success">{ stats.OnlineHosts }</div>
+				</div>
+			</div>
+			<div class="card bg-base-100 shadow">
+				<div class="card-body p-4">
+					<div class="text-sm text-base-content/60">Chains</div>
+					<div class="text-2xl font-bold text-primary">{ stats.TotalChains }</div>
+				</div>
+			</div>
+			<div class="card bg-base-100 shadow">
+				<div class="card-body p-4">
+					<div class="text-sm text-base-content/60">Users</div>
+					<div class="text-2xl font-bold text-secondary">{ stats.TotalUsers }</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Node List with Quick Status -->
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="text-lg font-semibold">Nodes</h3>
+					<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary text-sm">Manage Nodes</a>
+				</div>
+				<div class="overflow-x-auto">
+					<table class="table table-sm">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Address</th>
+								<th>Country</th>
+								<th>Status</th>
+								<th>Last Checked</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, h := range hosts {
+								<tr>
+									<td class="font-mono text-sm">{ h.ID }</td>
+									<td class="font-mono text-xs">{ h.Addr }</td>
+									<td>
+										@nodeInfoField(h.ID, infos, func(ni *model.NodeInfo) string { return ni.Country })
+									</td>
+									<td>
+										@metricBadge(h.ID, metrics)
+									</td>
+									<td>
+										@metricTime(h.ID, metrics)
+									</td>
+								</tr>
+							}
+							if len(hosts) == 0 {
+								<tr>
+									<td colspan="5" class="text-center py-6 text-base-content/50">
+										No nodes registered yet. <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary">Add your first node</a>.
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<!-- Chains overview -->
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="text-lg font-semibold">Chains</h3>
+					<a hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true" class="link link-primary text-sm">Manage Chains</a>
+				</div>
+				if len(chains) == 0 {
+					<p class="text-sm text-base-content/50 py-4 text-center">No chains configured. Create one via the Spider Web or Chains page.</p>
+				} else {
+					<div class="flex flex-wrap gap-2">
+						for _, c := range chains {
+							<div class="badge badge-outline badge-lg">{ c.Name } <span class="opacity-60 ml-1">({ len(c.Nodes) } hops)</span></div>
+						}
+					</div>
+				}
+			</div>
+		</div>
+
+		<!-- Auto-refresh: poll stats every 30s while tab is open -->
+		<div
+			hx-get="/ui/api/stats"
+			hx-trigger="every 30s"
+			hx-target="#dashboard-stats"
+			hx-swap="innerHTML"
+			class="hidden">
+		</div>
+	</div>
+}
+
+// Helper: find NodeInfo for a host ID and extract a field
+templ nodeInfoField(hostID string, infos []*model.NodeInfo, fn func(*model.NodeInfo) string) {
+	for _, ni := range infos {
+		if ni.ID == hostID {
+			<span>{ fn(ni) }</span>
+			return
+		}
+	}
+	<span class="text-base-content/30">—</span>
+}
+
+// Helper: show online/offline badge based on metrics
+templ metricBadge(hostID string, metrics []*model.NodeMetrics) {
+	for _, m := range metrics {
+		if m.HostID == hostID {
+			if m.Online {
+				<span class="badge badge-success badge-xs">Online</span>
+			} else {
+				<span class="badge badge-error badge-xs">Offline</span>
+			}
+			return
+		}
+	}
+	<span class="badge badge-ghost badge-xs">Unknown</span>
+}
+
+// Helper: show last checked time from metrics
+templ metricTime(hostID string, metrics []*model.NodeMetrics) {
+	for _, m := range metrics {
+		if m.HostID == hostID {
+			if m.LastChecked.IsZero() {
+				<span class="text-xs text-base-content/30">Never</span>
+				return
+			}
+			<span class="text-xs text-base-content/50">{ time.Since(m.LastChecked).Round(time.Second).String() } ago</span>
+			return
+		}
+	}
+	<span class="text-xs text-base-content/30">Never</span>
+}

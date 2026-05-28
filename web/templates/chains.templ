@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"time"
+
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
@@ -248,7 +250,7 @@ func alertClass(success bool) string {
 }
 
 // Minimal StatusPage for now (hosts with on-demand check)
-templ StatusPage(hosts []*model.Host) {
+templ StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) {
 	<div class="space-y-6">
 		<h2 class="text-2xl font-semibold">System Status</h2>
 		<div class="card bg-base-100 shadow">
@@ -259,6 +261,8 @@ templ StatusPage(hosts []*model.Host) {
 							<th>Host</th>
 							<th>Address</th>
 							<th>Status</th>
+							<th>Version</th>
+							<th>Last Checked</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -271,12 +275,38 @@ templ StatusPage(hosts []*model.Host) {
 										<button class="btn btn-xs">Check</button>
 									</div>
 								</td>
+								@metricVersionCell(h.ID, metrics)
+								@metricLastCheckedCell(h.ID, metrics)
 							</tr>
 						}
 					</tbody>
 				</table>
 			</div>
 		</div>
-		<p class="text-xs opacity-60">Tip: Use the Hosts page for full management. Status here is on-demand.</p>
+		<p class="text-xs opacity-60">Tip: Use the Nodes page for full management. Status here is on-demand.</p>
 	</div>
+}
+
+templ metricVersionCell(hostID string, metrics []*model.NodeMetrics) {
+	<td>
+		for _, m := range metrics {
+			if m.HostID == hostID && m.Version != "" {
+				<span class="font-mono text-xs">{ m.Version }</span>
+				return
+			}
+		}
+		<span class="text-base-content/30 text-xs">—</span>
+	</td>
+}
+
+templ metricLastCheckedCell(hostID string, metrics []*model.NodeMetrics) {
+	<td>
+		for _, m := range metrics {
+			if m.HostID == hostID && !m.LastChecked.IsZero() {
+				<span class="text-xs text-base-content/50">{ time.Since(m.LastChecked).Round(time.Second).String() } ago</span>
+				return
+			}
+		}
+		<span class="text-xs text-base-content/30">Never</span>
+	</td>
 }

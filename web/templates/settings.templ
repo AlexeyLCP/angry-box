@@ -1,0 +1,130 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+)
+
+// Settings renders the panel settings page.
+templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain) {
+	<div class="space-y-6">
+		<h2 class="text-2xl font-semibold">Panel Settings</h2>
+
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<h3 class="font-semibold mb-3">General</h3>
+				<form
+					hx-post="/ui/settings"
+					hx-target="#settings-result"
+					hx-swap="innerHTML"
+					class="space-y-4">
+
+					<div class="form-control">
+						<label class="label"><span class="label-text">Admin Password</span></label>
+						<input type="password" name="admin_password" class="input input-bordered max-w-sm"
+							placeholder="Leave empty to keep current" autocomplete="new-password" />
+						<div class="label"><span class="label-text-alt text-base-content/50">Has set: <span class="font-mono">{ fmt.Sprintf("%v", settings.AdminPasswordHash != "") }</span></span></div>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div class="form-control">
+							<label class="label"><span class="label-text">Panel Country</span></label>
+							<select name="panel_country" class="select select-bordered">
+								<option value="" if settings.PanelCountry == "" { selected }>Auto-detect</option>
+								<option value="RU" if settings.PanelCountry == "RU" { selected }>Russia (RU)</option>
+								<option value="IR" if settings.PanelCountry == "IR" { selected }>Iran (IR)</option>
+								<option value="CN" if settings.PanelCountry == "CN" { selected }>China (CN)</option>
+								<option value="OTHER" if settings.PanelCountry == "OTHER" { selected }>Other</option>
+							</select>
+							<div class="label"><span class="label-text-alt text-base-content/50">Affects recommended obfuscation presets</span></div>
+						</div>
+
+						<div class="form-control">
+							<label class="label"><span class="label-text">Metrics Refresh Interval (minutes)</span></label>
+							<input type="number" name="metrics_interval" class="input input-bordered"
+								value={ fmt.Sprintf("%d", settings.MetricsInterval) } min="1" max="1440" />
+							<div class="label"><span class="label-text-alt text-base-content/50">How often to poll hosts when UI is closed (default: 240)</span></div>
+						</div>
+					</div>
+
+					<div class="form-control">
+						<label class="label"><span class="label-text">Default Protocol</span></label>
+						<select name="default_protocol" class="select select-bordered max-w-sm">
+							<option value="awg" if settings.DefaultProtocol == "awg" { selected }>AWG (AmneziaWG)</option>
+							<option value="tuic" if settings.DefaultProtocol == "tuic" { selected }>TUIC v5</option>
+							<option value="vless-reality" if settings.DefaultProtocol == "vless-reality" { selected }>VLESS Reality</option>
+						</select>
+					</div>
+
+					<!-- SSH Keys -->
+					<div class="border-t border-base-300 pt-4 mt-4">
+						<h4 class="font-medium mb-2">SSH Keys</h4>
+						<p class="text-xs text-base-content/50 mb-3">Manage SSH keys used for node capture and management.</p>
+
+						<div id="ssh-keys-list" class="space-y-2">
+							for _, key := range settings.SSHKeys {
+								<div class="flex gap-2 items-end">
+									<div class="form-control flex-1">
+										<input type="text" name="ssh_key_name" class="input input-bordered input-sm"
+											value={ key.Name } placeholder="Key name" />
+									</div>
+									<div class="form-control flex-1">
+										<input type="text" name="ssh_key_path" class="input input-bordered input-sm"
+											value={ key.KeyPath } placeholder="/path/to/key" />
+									</div>
+									<button type="button" class="btn btn-ghost btn-xs text-error"
+										onclick="this.parentElement.remove()">
+										✕
+									</button>
+								</div>
+							}
+						</div>
+
+						<button type="button" class="btn btn-ghost btn-sm mt-2"
+							onclick="addSSHKey()">
+							+ Add SSH Key
+						</button>
+					</div>
+
+					<div class="pt-2">
+						<button type="submit" class="btn btn-primary">Save Settings</button>
+					</div>
+				</form>
+
+				<div id="settings-result" class="mt-2"></div>
+			</div>
+		</div>
+
+		<!-- System Info -->
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<h3 class="font-semibold mb-3">System Info</h3>
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+					<div>
+						<div class="text-base-content/60">Nodes</div>
+						<div class="font-semibold">{ fmt.Sprintf("%d", len(hosts)) }</div>
+					</div>
+					<div>
+						<div class="text-base-content/60">Chains</div>
+						<div class="font-semibold">{ fmt.Sprintf("%d", len(chains)) }</div>
+					</div>
+					<div>
+						<div class="text-base-content/60">Default Obfuscation</div>
+						<div class="font-semibold text-sm">
+							if settings.PanelCountry != "" {
+								<span>{ settings.PanelCountry }</span>
+							} else {
+								<span class="text-base-content/50">Global default</span>
+							}
+						</div>
+					</div>
+					<div>
+						<div class="text-base-content/60">Metrics Interval</div>
+						<div class="font-semibold">{ fmt.Sprintf("%d min", settings.MetricsInterval) }</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+}

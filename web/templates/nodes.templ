@@ -1,0 +1,345 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+)
+
+// ─── Nodes List ─────────────────────────────────────────────────────────────────
+
+templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMetrics) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">Nodes</h2>
+			<button
+				class="btn btn-primary btn-sm"
+				hx-get="/ui/nodes/new"
+				hx-target="#modal-container"
+				hx-swap="innerHTML">
+				+ Add Node
+			</button>
+		</div>
+
+		<div class="card bg-base-100 shadow">
+			<div class="overflow-x-auto">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>ID</th>
+							<th>Address</th>
+							<th>Country</th>
+							<th>Bandwidth</th>
+							<th>Status</th>
+							<th class="w-px"></th>
+						</tr>
+					</thead>
+					<tbody id="nodes-tbody">
+						for _, h := range hosts {
+							@NodeRow(h, findInfo(h.ID, infos), findMetric(h.ID, metrics))
+						}
+						if len(hosts) == 0 {
+							<tr>
+								<td colspan="6" class="text-center py-8 text-base-content/50">
+									No nodes yet. Add your first remote node.
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<div id="modal-container"></div>
+}
+
+// ─── Node Row ───────────────────────────────────────────────────────────────────
+
+templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
+	<tr id={"node-" + h.ID}>
+		<td class="font-mono text-sm">{ h.ID }</td>
+		<td class="font-mono text-xs">{ h.Addr }</td>
+		<td>
+			if info != nil && info.Country != "" {
+				<span>{ info.Country }</span>
+			} else {
+				<span class="text-base-content/30">—</span>
+			}
+		</td>
+		<td>
+			if info != nil && info.Bandwidth != "" {
+				<span class="badge badge-outline badge-sm">{ info.Bandwidth }</span>
+			} else {
+				<span class="text-base-content/30">—</span>
+			}
+		</td>
+		<td>
+			<div
+				hx-get={"/ui/hosts/" + h.ID + "/status"}
+				hx-target="this"
+				hx-swap="innerHTML">
+				if m != nil && m.Online {
+					<span class="badge badge-success badge-sm">Online</span>
+				} else {
+					<button class="btn btn-ghost btn-xs">Check</button>
+				}
+			</div>
+		</td>
+		<td>
+			<div class="flex gap-1">
+				<button
+					class="btn btn-ghost btn-xs"
+					hx-get={"/ui/nodes/" + h.ID + "/edit"}
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					Edit
+				</button>
+				<button
+					class="btn btn-ghost btn-xs"
+					hx-get={"/ui/nodes/" + h.ID + "/inbounds"}
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					Inbounds
+				</button>
+				<button
+					class="btn btn-ghost btn-xs text-error"
+					hx-delete={"/ui/nodes/" + h.ID}
+					hx-confirm={"Delete node " + h.ID + "?"}
+					hx-target="closest tr"
+					hx-swap="delete">
+					Delete
+				</button>
+			</div>
+		</td>
+	</tr>
+}
+
+// ─── Node Form (create / edit) ──────────────────────────────────────────────────
+
+templ NodeForm(h *model.Host, settings *model.PanelSettings, nodeInfo ...*model.NodeInfo) {
+	<dialog id="node-modal" class="modal" open>
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-4">
+				if h != nil {
+					Edit Node: { h.ID }
+				} else {
+					Add New Node
+				}
+			</h3>
+
+			if h != nil {
+				<form
+					hx-post={"/ui/nodes/" + h.ID + "/edit"}
+					hx-target={"#node-" + h.ID}
+					hx-swap="outerHTML"
+					hx-on::after-request="this.closest('dialog').close()"
+					class="space-y-4">
+					<div class="form-control">
+						<label class="label"><span class="label-text">ID</span></label>
+						<input type="text" name="id" class="input input-bordered" value={ h.ID } readonly />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH Address</span></label>
+						<input type="text" name="addr" class="input input-bordered" value={ h.Addr } required />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH User</span></label>
+						<input type="text" name="user" class="input input-bordered" value={ h.User } />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH Key Path</span></label>
+						<input type="text" name="keyPath" class="input input-bordered" value={ h.KeyPath } />
+					</div>
+					@nodeFormFields(nodeInfo...)
+					<div class="modal-action">
+						<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+						<button type="submit" class="btn btn-primary">Save</button>
+					</div>
+				</form>
+			} else {
+				<form
+					hx-post="/ui/nodes"
+					hx-target="#nodes-tbody"
+					hx-swap="beforeend"
+					hx-on::after-request="this.closest('dialog').close(); this.reset()"
+					class="space-y-4">
+					<div class="form-control">
+						<label class="label"><span class="label-text">ID (unique)</span></label>
+						<input type="text" name="id" class="input input-bordered" required placeholder="node-helsinki" />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH Address</span></label>
+						<input type="text" name="addr" class="input input-bordered" required placeholder="1.2.3.4:22" />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH User</span></label>
+						<input type="text" name="user" class="input input-bordered" value="root" />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">SSH Key Path</span></label>
+						<input type="text" name="keyPath" class="input input-bordered" placeholder="~/.ssh/id_ed25519" />
+					</div>
+					@nodeFormFields()
+					<div class="modal-action">
+						<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+						<button type="submit" class="btn btn-primary">Add Node</button>
+					</div>
+				</form>
+			}
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+}
+
+// nodeFormFields renders country, bandwidth, source fields (shared between create/edit)
+templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
+	<div class="grid grid-cols-3 gap-3">
+		<div class="form-control">
+			<label class="label"><span class="label-text">Country</span></label>
+			<input type="text" name="country" class="input input-bordered" value={ niCountry(nodeInfo) } placeholder="FI" />
+		</div>
+		<div class="form-control">
+			<label class="label"><span class="label-text">Bandwidth</span></label>
+			<input type="text" name="bandwidth" class="input input-bordered" value={ niBandwidth(nodeInfo) } placeholder="1 Gbps" />
+		</div>
+		<div class="form-control">
+			<label class="label"><span class="label-text">Source</span></label>
+			<select name="source" class="select select-bordered">
+				<option value="ssh_key" if niSource(nodeInfo) == "" || niSource(nodeInfo) == "ssh_key" { selected }>SSH Key</option>
+				<option value="password" if niSource(nodeInfo) == "password" { selected }>Password</option>
+				<option value="captured" if niSource(nodeInfo) == "captured" { selected }>Captured</option>
+			</select>
+		</div>
+	</div>
+}
+
+// ─── Node Inbounds Form ─────────────────────────────────────────────────────────
+
+templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
+	<dialog id="inbounds-modal" class="modal" open>
+		<div class="modal-box max-w-2xl">
+			<h3 class="font-bold text-lg mb-4">Inbounds for { info.ID }</h3>
+
+			<form
+				hx-post={"/ui/nodes/" + info.ID + "/inbounds"}
+				hx-target="#inbounds-result"
+				hx-swap="innerHTML"
+				class="space-y-4">
+
+				<div id="inbounds-list" class="space-y-3">
+					for _, ib := range info.Inbounds {
+						<div class="border border-base-300 rounded-lg p-3">
+							<div class="grid grid-cols-5 gap-2">
+								<div class="form-control">
+									<label class="label"><span class="label-text text-xs">Protocol</span></label>
+									<select name="proto" class="select select-bordered select-sm">
+										<option value="awg" if ib.Protocol == "awg" { selected }>AWG</option>
+										<option value="tuic" if ib.Protocol == "tuic" { selected }>TUIC</option>
+										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>VLESS Reality</option>
+									</select>
+								</div>
+								<div class="form-control">
+									<label class="label"><span class="label-text text-xs">Port</span></label>
+									<input type="number" name="port" class="input input-bordered input-sm" value={ fmt.Sprintf("%d", ib.Port) } />
+								</div>
+								<div class="form-control col-span-2">
+									<label class="label"><span class="label-text text-xs">For Users (comma-separated)</span></label>
+									<input type="text" name="for_users" class="input input-bordered input-sm" value={ strings.Join(ib.ForUsers, ",") } />
+								</div>
+								<div class="form-control">
+									<label class="label"><span class="label-text text-xs">Obfuscation</span></label>
+									<input type="text" name="obfuscation" class="input input-bordered input-sm" value={ ib.Obfuscation } placeholder="max" />
+								</div>
+							</div>
+						</div>
+					}
+				</div>
+
+				<button type="button" class="btn btn-ghost btn-sm"
+					onclick="addInboundRow()">
+					+ Add Inbound
+				</button>
+
+				<div class="modal-action">
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+					<button type="submit" class="btn btn-primary">Save Inbounds</button>
+				</div>
+			</form>
+
+			<div id="inbounds-result" class="mt-2"></div>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+
+	<template id="inbound-tmpl" class="hidden">
+		<div class="grid grid-cols-5 gap-2">
+			<div class="form-control">
+				<label class="label"><span class="label-text text-xs">Protocol</span></label>
+				<select name="proto" class="select select-bordered select-sm">
+					<option value="awg" selected>AWG</option>
+					<option value="tuic">TUIC</option>
+					<option value="vless-reality">VLESS Reality</option>
+				</select>
+			</div>
+			<div class="form-control">
+				<label class="label"><span class="label-text text-xs">Port</span></label>
+				<input type="number" name="port" class="input input-bordered input-sm" value="0" />
+			</div>
+			<div class="form-control col-span-2">
+				<label class="label"><span class="label-text text-xs">For Users</span></label>
+				<input type="text" name="for_users" class="input input-bordered input-sm" placeholder="user1,user2" />
+			</div>
+			<div class="form-control">
+				<label class="label"><span class="label-text text-xs">Obfuscation</span></label>
+				<input type="text" name="obfuscation" class="input input-bordered input-sm" value="max" placeholder="max" />
+			</div>
+		</div>
+	</template>
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────────
+
+func findInfo(id string, infos []*model.NodeInfo) *model.NodeInfo {
+	for _, ni := range infos {
+		if ni != nil && ni.ID == id {
+			return ni
+		}
+	}
+	return nil
+}
+
+func findMetric(id string, metrics []*model.NodeMetrics) *model.NodeMetrics {
+	for _, m := range metrics {
+		if m != nil && m.HostID == id {
+			return m
+		}
+	}
+	return nil
+}
+
+func niCountry(nodeInfo []*model.NodeInfo) string {
+	if len(nodeInfo) > 0 && nodeInfo[0] != nil {
+		return nodeInfo[0].Country
+	}
+	return ""
+}
+
+func niBandwidth(nodeInfo []*model.NodeInfo) string {
+	if len(nodeInfo) > 0 && nodeInfo[0] != nil {
+		return nodeInfo[0].Bandwidth
+	}
+	return ""
+}
+
+func niSource(nodeInfo []*model.NodeInfo) string {
+	if len(nodeInfo) > 0 && nodeInfo[0] != nil {
+		return nodeInfo[0].Source
+	}
+	return ""
+}
