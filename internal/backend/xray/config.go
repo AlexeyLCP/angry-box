@@ -9,7 +9,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"strings"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
@@ -78,6 +80,53 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 
 	uuid := generateUUID()
 
+	preset := chain.GetDefaultPreset()
+
+	// Use advanced XHTTP when the preset has rich XHTTP settings or explicitly requested
+	useXHTTP := preset.XHTTP != nil && len(preset.XHTTP.Paths) > 0
+	if v, ok := params.Extra["transport"].(string); ok && strings.ToLower(v) == "xhttp" {
+		useXHTTP = true
+	}
+
+	var streamSettings map[string]any
+	if useXHTTP {
+		// Advanced XHTTP + Reality using our new generators (padding, XMUX, realistic headers, etc.)
+		path := "/api/v1/" + shortIDHex[:4]
+		if preset.XHTTP != nil && len(preset.XHTTP.Paths) > 0 {
+			path = preset.XHTTP.Paths[0]
+		}
+
+		httpSettings := map[string]any{
+			"path":   path,
+			"method": "POST",
+		}
+		chain.ApplyXHTTPObfuscation(httpSettings, preset.XHTTP)
+
+		streamSettings = map[string]any{
+			"network":  "http",
+			"security": "reality",
+			"realitySettings": map[string]any{
+				"dest":        dest,
+				"serverNames": []string{serverName},
+				"privateKey":  string(privKeyPEM),
+				"shortIds":    []string{shortIDHex},
+			},
+			"httpSettings": httpSettings,
+		}
+	} else {
+		// Classic Reality + TCP
+		streamSettings = map[string]any{
+			"network":  "tcp",
+			"security": "reality",
+			"realitySettings": map[string]any{
+				"dest":        dest,
+				"serverNames": []string{serverName},
+				"privateKey":  string(privKeyPEM),
+				"shortIds":    []string{shortIDHex},
+			},
+		}
+	}
+
 	inbound := map[string]any{
 		"port":     port,
 		"protocol": "vless",
@@ -91,16 +140,7 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 			},
 			"decryption": "none",
 		},
-		"streamSettings": map[string]any{
-			"network":  "tcp",
-			"security": "reality",
-			"realitySettings": map[string]any{
-				"dest":        dest,
-				"serverNames": []string{serverName},
-				"privateKey":  string(privKeyPEM),
-				"shortIds":    []string{shortIDHex},
-			},
-		},
+		"streamSettings": streamSettings,
 	}
 
 	inboundJSON, err := json.Marshal(inbound)

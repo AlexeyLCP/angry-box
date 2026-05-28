@@ -165,5 +165,43 @@
       "congestion_controls": ["bbr"],
       "auth_timeout": "4s"
     }
+  },
+  {
+    "name": "xhttp_max_stealth_2026",
+    "description": "EXTREME security preset focused on XHTTP transport. Combines the strongest XHTTP techniques from Xray research (heavy random padding 400-1800, aggressive XMUX, stream-up + fragmentation hints, upstream/downstream separation) + pro-level AWG CPS (level 3 QUIC). Security > everything. Use only when maximum stealth is required and you accept reduced compatibility / larger configs.",
+    "reality": {
+      "server_names": ["www.microsoft.com", "yandex.ru", "discord.com"],
+      "fingerprints": ["chrome", "firefox"],
+      "short_id_len": 8
+    },
+    "xhttp": {
+      "methods": ["POST", "PUT"],
+      "paths": ["/api/telemetry/v3/report", "/graphql/v2", "/cdn/update"],
+      "hosts": ["www.microsoft.com"],
+      "padding_bytes": "400-1800",
+      "multiplex": true,
+      "max_concurrency": "4-20",
+      "upstream_alpn": "h2",
+      "downstream_alpn": "h3"
+    },
+    "awg": {
+      "jc": [4, 16],
+      "jmin": [50, 256],
+      "jmax": [300, 1000],
+      "s1": [15, 150],
+      "s2": [15, 150],
+      "s3": [8, 64],
+      "s4": [6, 31],
+      "h1": [5, 536870911],
+      "h2": [536870912, 1073741823],
+      "h3": [1073741824, 1610612735],
+      "h4": [1610612736, 2147483647],
+      "cps_level": 3,
+      "mimicry": "quic"
+    },
+    "tuic": {
+      "congestion_controls": ["bbr"],
+      "auth_timeout": "5s"
+    }
   }
 ]

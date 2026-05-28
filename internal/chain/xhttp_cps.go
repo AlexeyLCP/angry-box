@@ -149,3 +149,74 @@ func ApplyXHTTPObfuscation(transport map[string]any, preset *XHTTPPreset) {
 		}
 	}
 }
+
+// GenerateXHTTPMode returns a recommended XHTTP mode based on stealth level.
+// 0 = packet-up (max compat), 1-2 = mixed, 3 = stream-up + fragmentation style (max stealth).
+func GenerateXHTTPMode(stealthLevel int) string {
+	if stealthLevel >= 3 {
+		return "stream-up" // aggressive, good with good middleboxes
+	}
+	if stealthLevel >= 2 {
+		return "auto"
+	}
+	return "packet-up"
+}
+
+// GenerateXHTTPExtra produces a full "extra" object that can be dropped into
+// advanced Xray or sing-box XHTTP configs. This is one of the most powerful
+// things we took from the Xray XHTTP research.
+func GenerateXHTTPExtra(stealthLevel int, host string) map[string]any {
+	mode := GenerateXHTTPMode(stealthLevel)
+
+	extra := map[string]any{
+		"mode": mode,
+		"x_padding_bytes": fmt.Sprintf("%d-%d", RandRange(200, 700), RandRange(900, 1800)),
+		"headers": GenerateRealisticHeaders(host),
+	}
+
+	// Strong multiplexing controls for high stealth
+	if stealthLevel >= 2 {
+		extra["xmux"] = map[string]any{
+			"max_concurrency": fmt.Sprintf("%d-%d", RandRange(3, 10), RandRange(12, 40)),
+			"h_max_reusable":  fmt.Sprintf("%d-%d", RandRange(1200, 3000), RandRange(5000, 12000)),
+			"h_max_requests":  fmt.Sprintf("%d-%d", RandRange(300, 700), RandRange(600, 1500)),
+		}
+	}
+
+	// Add fragmentation-style hint (inspired by Gecko thinking)
+	if stealthLevel >= 3 {
+		extra["fragmentation"] = map[string]any{
+			"enabled":     true,
+			"min_packets": 2,
+			"max_packets": 6,
+		}
+	}
+
+	return extra
+}
+
+// GenerateRealisticPreamble simulates the kind of early traffic a real browser
+// would send when opening a page (inspired by NaiveProxy preamble feature).
+// Returns a list of "plausible first requests" that can be used for traffic masking or testing.
+func GenerateRealisticPreamble(host string) []string {
+	paths := []string{
+		"/", "/search", "/api/v1/config", "/static/main.js", "/favicon.ico",
+		"/_next/static/chunks/", "/cdn-cgi/", "/assets/",
+	}
+	out := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		p := paths[RandRange(0, len(paths)-1)]
+		out = append(out, fmt.Sprintf("https://%s%s", host, p))
+	}
+	return out
+}
+
+// EnhanceTransportWithNaivePreamble adds early "browser-like" requests to the
+// transport config when possible (for advanced setups that support it).
+func EnhanceTransportWithNaivePreamble(transport map[string]any, host string) {
+	if host == "" {
+		return
+	}
+	preambles := GenerateRealisticPreamble(host)
+	transport["preamble_urls"] = preambles // consumed by advanced consumers
+}
