@@ -1,120 +1,128 @@
+**Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+
 # Angry-BOX
 
-**زبان‌ها:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+**ارکستر سبک SSH-only** برای **sing-box** (اصلی) و **xray** (ثانویه).
 
-ارکستر سبک برای مدیریت زنجیره‌های پروکسی با اختلال قوی، **فقط از طریق SSH** روی ماشین‌های راه دور.
+بدون نیاز به ایجنت روی نودها. همه مدیریت از طریق SSH انجام می‌شود. روی سرورهای راه‌دور و روترها (از جمله Keenetic) فقط پروکسی سبک نصب می‌شود.
 
-**sing-box** بک‌اند اصلی است. **xray** به عنوان بک‌اند ثانویه (best-effort) پشتیبانی می‌شود.
+## ویژگی‌های اصلی
 
-## اصول معماری
+- مدیریت کامل از طریق SSH بدون ایجنت پایدار
+- پریست‌های قدرتمند ۲۰۲۶ (روسیه، ایران، چین، حداکثر پنهان‌کاری)
+- AWG پیشرفته با تولیدکننده‌های CPS + QUIC/SIP/DNS واقعی
+- XHTTP با کیفیت بالا (padding، XMUX، هدرهای واقعی) روی هر دو بک‌اند
+- اعتبارنامه‌های پایدار کاربر (کلیدهای AWG و CPS فقط یک بار ساخته می‌شوند)
+- پشتیبانی عالی از روترها (Keenetic .ipk + OpenWRT)
+- نسخه بومی ویندوز
+- رابط وب + CLI کامل
 
-- ارکستر فقط «سر» است و هرگز خودش در زنجیره ترافیک شرکت نمی‌کند.
-- مدیریت **فقط از طریق SSH**. هیچ عامل دائمی روی نودها نصب نمی‌شود.
-- روی ماشین‌های راه دور (VPS، روترهای Keenetic و غیره) فقط خود پروکسی (sing-box یا xray) + کانفیگ حداقلی + اسکریپت راه‌اندازی نصب می‌شود.
-- می‌توانید Angry-BOX را روی خود Keenetic اجرا کنید. در این حالت فقط نقش سر مدیریت را دارد و **به عنوان نود پروکسی** در زنجیره شرکت نمی‌کند.
+## شروع سریع
 
-### دو نوع اتصال
+```bash
+# ۱. نصب
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
-- **اتصالات حمل‌ونقل (Transport)**: برای اتصال هاپ‌های داخل زنجیره (در ۲۰۲۶ XHTTP توصیه می‌شود).
-- **اتصالات کاربری (User)**: نقاط ورود برای کلاینت‌های نهایی (TUIC v5، AmneziaWG با CPS پیشرفته و غیره).
+# ۲. اضافه کردن هاست
+angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
 
-## پروفایل‌های اختلال ۲۰۲۶ (اولویت امنیت)
+# ۳. ساخت زنجیره با پریست قوی ۲۰۲۶
+angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
 
-پروفایل جهانی را می‌توان در کانفیگ یا با `--profile` تنظیم کرد.
+# ۴. اعمال
+angry-box apply-chain mychain
+```
 
-پروفایل‌های فعلی:
-- `russia_2026`، `iran_2026`، `china_2026` — متعادل منطقه‌ای
-- `maximum_stealth_2026` — تهاجمی
-- `pro_2026` — محدوده‌های کامل pumbaX Pro ۲۰۲۶ + زنجیره کامل CPS AWG (سطح ۳، عمدتاً QUIC)
-- `xhttp_max_stealth_2026` — پروفایل **افراطی** متمرکز بر XHTTP (پدینگ سنگین تصادفی، XMUX تهاجمی، جداسازی upstream/downstream + AWG سطح pro)
-
-**Security > Compatibility** سیاست صریح `pro_2026` و `xhttp_max_stealth_2026` است. این پروفایل‌ها قوی‌ترین مقاومت شناخته‌شده در سال ۲۰۲۶ در برابر DPI (RKN، GFW و سیستم‌های ایرانی) را ارائه می‌دهند، به قیمت کانفیگ‌های بزرگ‌تر کلاینت و احتمال مشکلات با کلاینت‌های بسیار قدیمی.
-
-کلیدها و پکت‌های CPS آمنیزیا (I1-I5) برای نقطه ورود **یک بار** هنگام ایجاد زنجیره تولید می‌شوند و با apply مجدد چرخش نمی‌کنند.
-
-### اختلال پیشرفته XHTTP
-
-ما بسیاری از تکنیک‌های پیشرفته ۲۰۲۵–۲۰۲۶ را پیاده‌سازی کرده‌ایم:
-- پدینگ هدر با محدوده تصادفی
-- کنترل مالتی‌پلکسینگ به سبک XMUX
-- هدرهای واقع‌گرایانه مرورگر (الهام‌گرفته از استک واقعی Chromium)
-- راهنمایی جداسازی upstream/downstream
-- انتخاب حالت (packet-up / stream-up)
-
-هم در بک‌اند sing-box و هم xray پشتیبانی می‌شود.
+رابط وب به صورت پیش‌فرض روی `http://localhost:8090` در دسترس است.
 
 ## نصب
 
-روش توصیه‌شده، اسکریپت نصب رسمی است:
+### اسکریپت نصب یک‌خطی (توصیه‌شده)
 
 ```bash
 # آخرین نسخه
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # نسخه خاص
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.0
-
-# باینری محلی
-sh scripts/install.sh --local ./angry-box
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.1
 ```
 
-اسکریپت به صورت خودکار محیط Linux (systemd) و Keenetic (Entware) را تشخیص می‌دهد.
+### باینری‌های از پیش ساخته‌شده
 
-### حذف و به‌روزرسانی
+از صفحه [Releases](https://github.com/alexeylcp/angry-box/releases) دانلود کنید.
+
+**لینوکس**
+```bash
+tar -xzf angry-box-0.2.1-linux-amd64.tar.gz
+cd angry-box-0.2.1-linux-amd64
+./angry-box --help
+```
+
+**ویندوز**
+- فایل `angry-box-0.2.1-windows-amd64.zip` یا `.exe` را دانلود کنید
+- اجرا کنید: `angry-box.exe`
+- رابط وب: `http://localhost:8090`
+
+### روترها (Keenetic و OpenWRT)
+
+جزئیات در بخش پایین.
+
+## معماری
+
+Angry-BOX فقط **صفحه کنترل** است.
+
+- خود ارکستر ترافیک را فوروارد نمی‌کند.
+- تمام عملیات از طریق SSH انجام می‌شود.
+- روی نودهای راه‌دور فقط پروکسی سبک (sing-box یا xray) + کانفیگ کوچک نصب می‌شود.
+
+**دو نوع اتصال:**
+- **Transport**: هاب‌های داخلی زنجیره (XHTTP توصیه می‌شود)
+- **User**: نقاط ورود واقعی کاربران (TUIC v5 یا AmneziaWG)
+
+## پریست‌های پنهان‌کاری ۲۰۲۶
+
+پروژه با پریست‌های حرفه‌ای بهینه‌شده برای DPIهای فعلی عرضه می‌شود.
+
+| پریست                    | هدف                  | تکنیک‌های اصلی                    |
+|--------------------------|----------------------|------------------------------------|
+| `russia_2026`            | روسیه                | XHTTP متعادل + AWG                |
+| `iran_2026`              | ایران                | XHTTP تهاجمی + Reality             |
+| `china_2026`             | چین                  | پنهان‌کاری قوی + fragmentation     |
+| `maximum_stealth_2026`   | حداکثر پنهان‌کاری    | XHTTP کامل + AWG CPS               |
+| `pro_2026`               | استفاده حرفه‌ای      | CPS سطح ۳ اجباری + QUIC ۱۲۰۰ بایت |
+| `xhttp_max_stealth_2026` | XHTTP افراطی         | حداکثر padding + XMUX             |
+
+## پشتیبانی از روترها
+
+Angry-BOX پکیج‌های بومی `.ipk` ارائه می‌دهد.
+
+## ساخت از منبع
 
 ```bash
-sh scripts/install.sh --uninstall
-sh scripts/install.sh --version 0.3.0
+git clone https://github.com/alexeylcp/angry-box.git
+cd angry-box
+CGO_ENABLED=0 go build -o angry-box ./cmd/angry-box
+make package-all
 ```
 
-## شروع سریع
+## قدردانی
 
-```bash
-# ۱. افزودن هاست
-angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
+این پروژه بر پایه تحقیقات عمومی جامعه ضدسانسور ساخته شده است.
 
-# ۲. دیپلوی sing-box
-angry-box deploy --host node1
+منابع اصلی:
+- pumbaX / awg-multi-script
+- تیم Xray (RPRX)
+- Hysteria2، NaiveProxy، Telemt و بسیاری از محققان روسی، ایرانی و چینی
 
-# ۳. ایجاد زنجیره با پروفایل قوی ۲۰۲۶
-angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
+## لایسنس
 
-# ۴. اعمال (گزارش غنی شامل کلیدهای AWG + CPS دریافت کنید)
-angry-box apply-chain mychain
-
-# ۵. بررسی وضعیت
-angry-box chain show mychain
-```
-
-تولید کانفیگ مستقل (بدون نیاز به زنجیره):
-
-```bash
-angry-box config -type user --protocol awg --profile xhttp_max_stealth_2026
-```
-
-## ویژگی‌ها
-
-- مدیریت خالص SSH + بازگشت خودکار در صورت خطا
-- گزارش ApplyReport دقیق (شامل کلید عمومی سرور AWG و CPS پایدار I1-I5)
-- اعتبارنامه‌های ورود AWG پایدار (یک بار تولید می‌شوند)
-- XHTTP پیشرفته با پارامترهای تحقیقاتی جامعه
-- پروفایل‌های ماژولار ۲۰۲۶ + پشتیبانی از JSON خارجی
-- برابری کامل بین apply-chain و دستور مستقل `config`
+PolyForm Noncommercial License 1.0.0
 
 ## پشتیبانی
 
-- گزارش باگ و درخواست ویژگی از طریق GitHub Issues.
-- بحث عمومی و کمک برای تنظیمات در شبکه‌های سانسور شده از طریق GitHub Discussions.
-- بازخورد واقعی از روسیه، ایران و چین برای بهبود پروفایل‌ها بسیار ارزشمند است.
+- گزارش باگ و درخواست ویژگی → [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
+- بحث عمومی → GitHub Discussions
 
-## زبان
+---
 
-[English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
-
-## قدردانی / Credits
-
-جزئیات قدردانی را در بخش پایانی نسخه انگلیسی README ببینید. این پروژه heavily بر پایه تحقیقات و ابزارهای عمومی جامعه ضدسانسور ساخته شده است.
-
-## مجوز
-
-PolyForm Noncommercial License 1.0.0
+**نسخه فعلی:** 0.2.1 — بهبود بسته‌بندی روترها، پشتیبانی از ویندوز و مستندات.

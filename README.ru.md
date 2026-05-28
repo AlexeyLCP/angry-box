@@ -1,120 +1,139 @@
-# Angry-BOX
-
 **Языки:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
 
-Лёгкий оркестратор для управления цепочками прокси с мощной обфускацией на удалённых машинах **только через SSH**.
+# Angry-BOX
 
-**sing-box** — основной бэкенд. **xray** — вторичный (best-effort).
+**Лёгкий SSH-оркестратор** для **sing-box** (основной) и **xray** (вторичный).
 
-## Принципы архитектуры
+Без агентов на нодах. Всё управление происходит по SSH. Разворачивайте минимальные прокси-конфиги на удалённых машинах и роутерах (включая Keenetic).
 
-- Оркестратор — это только «голова». Он никогда не участвует в цепочке как прокси.
-- Управление **только по SSH**. Постоянных агентов на нодах нет.
-- На удалённые машины (VPS, Keenetic и другие роутеры) ставится **только** сам прокси (sing-box или xray) + минимальный конфиг + init-скрипт.
-- Angry-BOX можно поставить на сам Keenetic. В этом случае он выступает только управляющей головой и **не становится** нодой цепочки.
+## Возможности
 
-### Два типа подключений
+- Чистое SSH-управление без постоянных агентов на целях
+- Мощные пресеты обфускации 2026 года (Россия / Иран / Китай / Maximum Stealth)
+- Продвинутый AWG с генераторами CPS + реалистичные QUIC/SIP/DNS
+- Высококачественный XHTTP (padding, XMUX, реалистичные заголовки) на обоих бэкендах
+- Стабильные пользовательские креды (ключи AWG + CPS генерируются один раз)
+- Отличная поддержка роутеров (Keenetic .ipk + OpenWRT)
+- Нативная сборка под Windows
+- Веб-интерфейс + полный CLI
 
-- **Транспортные** — для связывания хопов внутри цепочки (в 2026 рекомендуется XHTTP).
-- **Пользовательские** — entry points для клиентов (TUIC v5, AmneziaWG с продвинутым CPS и т.д.).
+## Быстрый старт
 
-## Профили обфускации 2026 (Security-First)
+```bash
+# 1. Установка
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
-Глобальный профиль задаётся в конфиге или через `--profile`.
+# 2. Добавляем хост
+angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
 
-Доступные профили:
-- `russia_2026`, `iran_2026`, `china_2026` — сбалансированные региональные
-- `maximum_stealth_2026` — агрессивный
-- `pro_2026` — полные диапазоны pumbaX Pro 2026 + полный CPS chain AWG (I1-I5, уровень 3, в основном QUIC)
-- `xhttp_max_stealth_2026` — **экстремальный** профиль с акцентом на XHTTP (тяжёлый случайный padding, агрессивный XMUX, разделение upstream/downstream + pro AWG)
+# 3. Создаём цепочку с сильным пресетом 2026
+angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
 
-**Security > Compatibility** — явная политика для `pro_2026` и `xhttp_max_stealth_2026`. Они дают самую сильную известную на май 2026 защиту от DPI (РКН, GFW, Иран), ценой больших клиентских конфигов и возможных проблем на очень старых клиентах.
+# 4. Разворачиваем
+angry-box apply-chain mychain
+```
 
-Ключи и CPS-пакеты AmneziaWG (I1-I5) для entry генерируются **один раз** при создании цепочки и не меняются при повторном apply.
-
-### Продвинутая обфускация XHTTP
-
-Мы реализовали множество техник 2025–2026 годов:
-- Случайный padding заголовков в диапазонах
-- Управление мультиплексированием в стиле XMUX
-- Реалистичные заголовки браузера
-- Подсказки для разделения upstream/downstream
-- Выбор режима (packet-up / stream-up)
-
-Поддерживается как в sing-box, так и в xray бэкенде.
+Веб-интерфейс будет доступен по адресу `http://localhost:8090`.
 
 ## Установка
 
-Рекомендуемый способ — официальный установочный скрипт:
+### Установочный скрипт (рекомендуется)
 
 ```bash
 # Последняя версия
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # Конкретная версия
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.0
-
-# Локальный бинарник
-sh scripts/install.sh --local ./angry-box
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.1
 ```
 
-Скрипт автоматически определяет Linux (systemd) и Keenetic (Entware).
+### Готовые сборки
 
-### Удаление и обновление
+Скачивайте со [страницы Releases](https://github.com/alexeylcp/angry-box/releases).
+
+**Linux**
+```bash
+tar -xzf angry-box-0.2.1-linux-amd64.tar.gz
+cd angry-box-0.2.1-linux-amd64
+./angry-box --help
+```
+
+**Windows**
+- Скачайте `angry-box-0.2.1-windows-amd64.zip` или `.exe`
+- Распакуйте и запустите `angry-box.exe`
+- Веб-интерфейс: `http://localhost:8090`
+
+### Роутеры (Keenetic и OpenWRT)
+
+Подробная инструкция ниже.
+
+## Архитектура
+
+Angry-BOX — это только **управляющая часть**.
+
+- Сам оркестратор никогда не проксирует трафик.
+- Всё управление идёт по SSH.
+- На удалённых нодах ставится только лёгкий прокси (sing-box или xray) + минимальный конфиг.
+
+**Два типа подключений:**
+- **Transport** — технические хопы для связывания цепочки (рекомендуется XHTTP)
+- **User** — реальные точки входа для клиентов (TUIC v5 или AmneziaWG)
+
+## Пресеты 2026 года
+
+Проект поставляется с современными пресетами, заточенными под актуальные системы DPI:
+
+| Пресет                    | Направление            | Основные техники                     |
+|---------------------------|------------------------|--------------------------------------|
+| `russia_2026`             | Россия                 | Сбалансированный XHTTP + AWG         |
+| `iran_2026`               | Иран                   | Агрессивный XHTTP + Reality          |
+| `china_2026`              | Китай                  | Сильная обфускация + фрагментация    |
+| `maximum_stealth_2026`    | Максимальная скрытность| Полный XHTTP + AWG CPS               |
+| `pro_2026`                | Профессиональное использование | Принудительный CPS level 3 + QUIC 1200B |
+| `xhttp_max_stealth_2026`  | Экстремальный XHTTP    | Максимальный padding + XMUX          |
+
+## Поддержка роутеров
+
+Angry-BOX выпускает нативные `.ipk` пакеты.
+
+| Платформа         | Архитектура            | Пример пакета                              | Куда ставится |
+|-------------------|------------------------|--------------------------------------------|---------------|
+| Keenetic (Entware)| `aarch64-3.10`         | `angry-box_0.2.1_aarch64-3.10.ipk`         | `/opt/bin`    |
+| Keenetic          | `mipsel_24kc`          | `angry-box_0.2.1_mipsel_24kc.ipk`          | `/opt/bin`    |
+| OpenWRT           | `aarch64_cortex-a53`   | `angry-box_0.2.1_aarch64_cortex-a53.ipk`   | `/usr/bin`    |
+| OpenWRT           | `mips_24kc`            | `angry-box_0.2.1_mips_24kc.ipk`            | `/usr/bin`    |
+
+Все роутерные пакеты используют формат **outer-tar** и полностью статические бинари.
+
+## Сборка из исходников
 
 ```bash
-sh scripts/install.sh --uninstall
-sh scripts/install.sh --version 0.3.0
+git clone https://github.com/alexeylcp/angry-box.git
+cd angry-box
+
+CGO_ENABLED=0 go build -o angry-box ./cmd/angry-box
+make package-all
 ```
 
-## Быстрый старт
+## Благодарности и источники
 
-```bash
-# 1. Добавить хосты
-angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
+Angry-BOX построен на исследованиях антицензурного сообщества.
 
-# 2. Задеплоить sing-box
-angry-box deploy --host node1
-
-# 3. Создать цепочку с сильным профилем 2026
-angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
-
-# 4. Применить (получите богатый отчёт с ключами AWG + CPS)
-angry-box apply-chain mychain
-
-# 5. Проверить
-angry-box chain show mychain
-```
-
-Генерация конфига без цепочки:
-
-```bash
-angry-box config -type user --protocol awg --profile xhttp_max_stealth_2026
-```
-
-## Возможности
-
-- Чистое SSH-управление с откатом при ошибках
-- Подробный ApplyReport (включая публичный ключ сервера AWG и стабильные CPS I1-I5)
-- Стабильные entry-ключи AWG (не ротируются)
-- Продвинутый XHTTP с параметрами из исследований сообщества
-- Модульные пресеты 2026 + поддержка внешних JSON
-- Полный паритет между apply-chain и standalone `config`
-
-## Поддержка
-
-- Сообщения об ошибках и предложения — через Issues на GitHub.
-- Общие вопросы и помощь с настройками под цензуру — GitHub Discussions.
-- Реальные отчёты из России, Ирана и Китая особенно ценны.
-
-## Язык
-
-[English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
-
-## Acknowledgments / Credits
-
-Смотрите подробный раздел благодарностей в конце английской версии README.md. Проект сильно опирается на публичные исследования и инструменты сообщества борьбы с цензурой.
+**Ключевые источники:**
+- pumbaX / awg-multi-script — генераторы CPS, QUIC, SIP, DNS
+- Xray (RPRX) — транспорт XHTTP и продвинутые методы обфускации
+- Hysteria2, NaiveProxy, Telemt и многие исследователи из русскоязычного, иранского и китайского сообществ
 
 ## Лицензия
 
 PolyForm Noncommercial License 1.0.0
+
+## Поддержка
+
+- Ошибки и предложения → [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
+- Общие обсуждения → GitHub Discussions
+- Реальные результаты работы против DPI (Россия, Иран, Китай) очень ценны.
+
+---
+
+**Текущая версия:** 0.2.1 — исправленная упаковка для роутеров, поддержка Windows и улучшенная документация.
