@@ -9,9 +9,9 @@ linters:
   enable:
     - gofmt
     - govet
-    # errcheck is very noisy on this codebase (many ignored Close(), Unmarshal, etc.).
-    # We disable it for now so the CI step stays clean.
-    # TODO: re-enable later and add //nolint:errcheck where appropriate.
+    # errcheck is extremely noisy in the current codebase.
+    # Disabled temporarily to keep CI green while we gradually improve the code.
+    # TODO(0.3.0): Re-enable and add selective //nolint:errcheck comments.
     # - errcheck
     - staticcheck
     - unused

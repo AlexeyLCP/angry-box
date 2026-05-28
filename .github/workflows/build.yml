@@ -21,11 +21,20 @@ jobs:
 
       - name: golangci-lint
         run: |
-          # Install using the project's Go 1.26
+          # Install using the project's Go 1.26 so it can handle go 1.26 modules
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64
-          # We force exit code 0 so the step never fails the job.
-          # This prevents the "Error: golangci-lint exit with code 3" noise in PR checks.
-          $(go env GOPATH)/bin/golangci-lint run --timeout=5m --issues-exit-code=0 || echo "golangci-lint completed (issues may exist, but step is non-blocking)"
+
+          # Run linter. We use --issues-exit-code=0 so this step never fails the job
+          # (we are gradually cleaning up the codebase). The report will be uploaded as artifact.
+          $(go env GOPATH)/bin/golangci-lint run --timeout=5m --issues-exit-code=0 --out-format=colored-line-number > golangci-lint-report.txt 2>&1 || true
+
+      - name: Upload golangci-lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golangci-lint-report
+          path: golangci-lint-report.txt
+          retention-days: 7
 
       - name: Test
         run: go test ./... -count=1 -timeout 60s
