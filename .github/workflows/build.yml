@@ -77,7 +77,19 @@ jobs:
           mkdir -p dist
           go build -ldflags="-s -w" -o dist/angry-box-${{ matrix.target }} ./cmd/angry-box
 
+      - name: Build Keenetic .ipk (for testing)
+        if: matrix.target == 'keenetic-mipsel'
+        env:
+          VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
+        run: |
+          echo "==> Building test .ipk for Keenetic"
+          ./scripts/build-keenetic-opkg.sh "dist/angry-box-keenetic-mipsel" "$VERSION" dist
+          ls -lh dist/*.ipk || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: angry-box-${{ matrix.target }}
-          path: dist/angry-box-${{ matrix.target }}
+          path: |
+            dist/angry-box-${{ matrix.target }}
+            dist/*.ipk
+          retention-days: 7
