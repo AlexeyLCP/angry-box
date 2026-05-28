@@ -1,229 +1,149 @@
 # Angry-BOX
 
-Лёгкий оркестратор для управления sing-box (по умолчанию) и xray (опционально) на удалённых машинах через SSH.
+**Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
 
-## Архитектура (простая и честная)
+Lightweight orchestrator for managing high-obfuscation proxy chains on remote machines **via SSH only**.
 
-- **Оркестратор** — это только "голова". Он не является нодой цепочки и не проксирует трафик сам по себе.
-- Управление — **только через SSH**. Без постоянных агентов на нодах.
-- На удалённые машины (VPS, Keenetic, другие роутеры) ставится **только** прокси (sing-box или xray) + минимальный конфиг + init-скрипт.
-- Сам angry-box можно установить на Keenetic (для тех, у кого нет другого всегда-включённого устройства). В этом случае он выступает управляющей головой и может управлять другими серверами по SSH. Он **не участвует в цепочке как прокси** (пока что).
+**sing-box** is the primary backend. **xray** is supported as secondary (best-effort).
 
-### Два типа подключений
+## Architecture Principles
 
-- **Транспортные** — технические входящие для связывания хопов внутри цепочки.
-- **Пользовательские** — entry points для конечных клиентов.
+- The orchestrator is a pure "head" — it never participates in the traffic chain itself.
+- Management is **SSH-only**. No persistent agents are deployed to nodes.
+- On remote machines (VPS, Keenetic routers, etc.) only the actual proxy (sing-box or xray) + minimal configuration + init script is installed.
+- You can run Angry-BOX itself on a Keenetic device. In this case it acts only as a management head and does **not** become a proxy node in your chains.
 
-## Текущий статус
+### Two Types of Connections
 
-Проект перезапущен с чистого листа. Старая кодовая база LucX удалена.
-Релизы v0.1.0 и v0.1.1 остаются доступны в GitHub Releases.
+- **Transport** — technical connections used to link hops inside the chain (XHTTP recommended in 2026).
+- **User** — client-facing entry points (TUIC v5, AmneziaWG with advanced CPS, etc.).
 
-### Реализовано (backend)
+## 2026 Obfuscation Presets (Security-First)
 
-- SSH-деплой sing-box (primary) и xray (secondary/best-effort) с systemd + checksum + rollback
-- Полноценный интерфейс Backend (Deploy / ApplyConfig / GenerateConfig / GetStatus / Reload / Remove)
-- Модульные обфускационные профили 2026 (russia_2026, iran_2026, china_2026, maximum_stealth_2026) — XHTTP + Reality + TUIC + AWG параметры
-- Глобальный профиль из конфига + per-chain override + валидация
-- Поддержка внешних пресетов (presets_file в конфиге — свои профили для лабораторий/кастомных стран)
-- Transport между нодами: XHTTP (рекомендуется) или Reality+TCP
-- User entry: TUIC v5 и AmneziaWG (полная генерация Curve25519 + amnezia параметры из профиля)
-- apply-chain: генерация связанных конфигов (transport in/out + user entry на первой ноде), бэкапы, sing-box check, reload/restart с откатом, детальная диагностика по каждой ноде
-- Удобная работа с AWG клиентскими ключами: --client-pubkey при генерации/apply, примеры клиентских конфигов в выводе `config -type user --protocol awg`
-- Standalone генерация `angry-box config -type user/transport` полностью уравнена с апплаером (учитывает текущий профиль, поддерживает --profile, --client-pubkey, --protocol)
-- Хранение хостов/цепочек в JSON, ResolveNodes, chain create с --transport/--user-protocol/--profile
-- SSH клиент с таймаутами и хорошими ошибками
-- Сборка под Linux (amd64/arm64) + Keenetic (mipsel) через Makefile + install-скрипты
+Global profile can be set in config (`default_obfuscation_profile`) or overridden per chain with `--profile`.
 
-### Backend готов
+Current presets:
+- `russia_2026`, `iran_2026`, `china_2026` — balanced regional profiles
+- `maximum_stealth_2026` — aggressive
+- `pro_2026` — full pumbaX Pro 2026 ranges + complete AWG CPS I1-I5 chain (level 3, QUIC primary)
+- `xhttp_max_stealth_2026` — **extreme** XHTTP-focused preset (heavy random padding, aggressive XMUX, upstream/downstream separation hints + pro AWG)
 
-Backend (генерация конфигов, профили 2026, XHTTP/TUIC/AWG, apply-chain с диагностикой, AWG client keys, standalone config, деплой) завершён и готов к совместному тестированию.
+**Security > Compatibility** is the explicit policy for `pro_2026` and `xhttp_max_stealth_2026`. They deliver the strongest known 2026 DPI resistance against RKN, GFW and Iranian systems, at the cost of larger client configs and possible issues with very old clients.
 
-UI (serve) и некоторые UX-мелочи можно дорабатывать по мере использования.
+AWG entry credentials (server keypair + CPS I1-I5) are generated **once** at chain creation time and never rotate on re-apply.
 
-## Установка
+### Advanced XHTTP Obfuscation
 
-### Linux (systemd)
+We ported and implemented many state-of-the-art techniques:
+- Random-range header padding
+- XMUX-style multiplexing controls with ranges
+- Realistic browser-like headers (inspired by real Chromium stacks)
+- Upstream/Downstream separation hints
+- Mode selection (packet-up / stream-up)
+
+These are available both for sing-box and xray backends.
+
+## Installation
+
+The recommended way is the official installer script:
 
 ```bash
-# Из GitHub Releases (замените версию):
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.1.0
+# Latest version
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
-# Или из локального бинарника:
+# Specific version
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.0
+
+# Local binary
 sh scripts/install.sh --local ./angry-box
 ```
 
-После установки angry-box запущен как systemd-сервис на порту `:8090`.
+The script automatically detects Linux (systemd) and Keenetic (Entware/NDMS) environments.
 
-### Keenetic (NDMS/Entware)
-
-```bash
-# Из GitHub Releases:
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.1.0
-
-# Или из локального бинарника:
-sh scripts/install.sh --local ./angry-box
-```
-
-Установщик автоматически определяет Keenetic и ставит бинарник в `/opt/bin/`, конфиги в `/opt/etc/angry-box/`, и S99-скрипт в `/opt/etc/init.d/`.
-
-### Деинсталляция
+### Uninstall / Update
 
 ```bash
 sh scripts/install.sh --uninstall
+sh scripts/install.sh --version 0.3.0   # update
 ```
 
-### Обновление
+## Quick Start
 
 ```bash
-# Просто запустите установщик с новой версией — он заменит бинарник и перезапустит сервис:
-sh scripts/install.sh --version 0.2.0
-```
+# 1. Add hosts
+angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
+angry-box host add node2 --addr 203.0.113.11:22 --user root --key ~/.ssh/id_ed25519
 
-## Быстрый старт
+# 2. Deploy sing-box to hosts
+angry-box deploy --host node1
+angry-box deploy --host node2
 
-```bash
-# 1. Зарегистрировать хосты
-angry-box host add node1 --addr 10.0.0.1:22 --user root --key ~/.ssh/id_ed25519
-angry-box host add node2 --addr 10.0.0.2:22 --user root --key ~/.ssh/id_ed25519
-angry-box host add node3 --addr 10.0.0.3:22 --user root --key ~/.ssh/id_ed25519
+# 3. Create and apply a chain with strong 2026 profile
+angry-box chain create mychain --nodes node1,node2 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
 
-# 2. Задеплоить sing-box на все хосты
-angry-box deploy -addr 10.0.0.1 -user root -key ~/.ssh/id_ed25519
-angry-box deploy -addr 10.0.0.2 -user root -key ~/.ssh/id_ed25519
-angry-box deploy -addr 10.0.0.3 -user root -key ~/.ssh/id_ed25519
-
-# 3. Создать и применить цепочку из трёх нод
-angry-box chain create mychain --nodes node1,node2,node3 --strategy urltest
+# 4. Apply (generates configs, pushes via SSH, returns rich report with AWG keys + CPS)
 angry-box apply-chain mychain
 
-# 4. Проверить статус
-angry-box status -addr 10.0.0.1 -user root -key ~/.ssh/id_ed25519
+# 5. Check status
 angry-box chain show mychain
+angry-box status --host node1
 ```
 
-## Профили обфускации (2026)
-
-Глобальный профиль задаётся в конфиге (`default_obfuscation_profile`) или через `--profile` при создании цепочки / генерации конфига.
-
-Доступные: `russia_2026`, `iran_2026`, `china_2026`, `maximum_stealth_2026`, `pro_2026` (pumbaX Pro 2026 ranges + QUIC CPS I1-I5).
-
-`pro_2026` и обновлённый `maximum_stealth_2026` — **security-first** профили (pumbaX Pro 2026). Полные диапазоны + полный CPS chain (I1-I5, уровень 3, QUIC). Приоритет: максимальная устойчивость к DPI (RKN / GFW / Иран 2026) **выше** совместимости. 
-
-Это даёт самую сильную обфускацию из известных на май 2026, но:
-- клиентские конфиги получаются больше (QR может не влезть);
-- очень старые клиенты AmneziaVPN или некоторые мобильные сети могут иметь проблемы.
-
-Если нужна максимальная совместимость — используйте `russia_2026` / `iran_2026` / `china_2026` (cps_level 0-1).
-
-Для стабильной работы AWG entry-ключи + CPS (I1-I5) генерируются **один раз** при создании цепочки и сохраняются — re-apply их не ротирует.
-
-Профиль влияет на:
-- XHTTP (методы/пути/заголовки/hosts) — для транспорта между нодами
-- Reality SNI + fingerprint
-- TUIC congestion_control + auth_timeout
-- AWG (jc, jmin, jmax, h1-h4, s1/s2)
-
-## AmneziaWG (AWG) — клиентские ключи
-
-**ВАЖНО (security > compatibility):**  
-Профили `pro_2026` и `maximum_stealth_2026` используют полный CPS (I1-I5, QUIC, уровень 3).  
-Это максимально сильная обфускация 2026 года, но клиентские конфиги большие и могут не работать на старых версиях AmneziaVPN / некоторых сетях.  
-Если клиенты не подключаются — попробуйте `--profile china_2026` или `russia_2026` (меньше CPS).
-
-При использовании `--user-protocol awg`:
-
-1. Сгенерируйте клиентскую пару на своей машине:
-   ```bash
-   wg genkey | tee client.priv | wg pubkey > client.pub
-   ```
-
-2. Передайте публичный ключ при apply/generation:
-   ```bash
-   angry-box apply-chain mychain   # если профиль уже содержит AWG
-   # или для standalone:
-   angry-box config -type user --protocol awg --client-pubkey "$(cat client.pub)" --profile russia_2026
-   ```
-
-3. apply-chain / config выведет подсказки с SERVER_PUBLIC_KEY (нужен клиентам в [Peer] PublicKey).
-
-Серверная приватная часть остаётся только на entry-ноде (никогда не покидает её).
-```
-
-## Сборка из исходников
-
-### Быстрая сборка
+Standalone config generation (no chain needed):
 
 ```bash
-go build ./cmd/angry-box/
+angry-box config -type user --protocol awg --profile xhttp_max_stealth_2026
 ```
 
-### Установка через make
+## Features
 
-```bash
-# Сборка и установка бинарника
-sudo make install
+- Pure SSH management + automatic rollback on failure
+- Rich per-node ApplyReport (including AWG server public key + stable CPS I1-I5 when applicable)
+- Stable AWG user-entry credentials (keys + CPS packets generated once)
+- Advanced XHTTP transport with research-grade obfuscation parameters
+- Modular 2026 presets with external JSON support
+- Full parity between `apply-chain` and standalone `config` commands
+- Cross-build support (amd64, arm64, Keenetic mipsel)
 
-# Установка systemd-сервиса
-sudo make install-systemd
+## Support
 
-# Всё вместе
-sudo make install-all
+- Open an issue on GitHub for bugs and feature requests.
+- For general discussion and help with setups in censored networks, use GitHub Discussions.
+- Real-world feedback from Russia, Iran and China environments is extremely valuable.
 
-# Деинсталляция
-sudo make uninstall-systemd
-sudo make uninstall
-```
-
-Переменные:
-- `PREFIX` — путь установки (по умолчанию `/usr/local`)
-- `DESTDIR` — для пакетирования (staging directory)
-- `BINDIR`, `CONFDIR`, `DATADIR`, `SYSTEMD_DIR` — можно переопределить
-
-```bash
-make install PREFIX=/opt/angry-box
-make install DESTDIR=/tmp/staging
-```
-
-## Архитектура проекта
-
-```
-cmd/angry-box/          — CLI (node, host, chain, apply-chain, serve)
-internal/
-  domain/model/         — Host, Chain, ChainNode, Strategy, Config...
-  domain/ports/         — Backend interface, Factory interface
-  backend/factory/      — Factory implementation
-  backend/singbox/      — sing-box adapter (deploy, config, ssh ops)
-  backend/xray/         — xray adapter
-  ssh/                  — SSH client (key auth, Run)
-  chain/                — Store (JSON), Applier (chain config gen + push)
-scripts/
-  install.sh            — Установщик для Linux и Keenetic
-  angry-box.service     — systemd unit
-  S99angry-box          — Keenetic init-скрипт
-```
-
-## Лицензия
-
-PolyForm Noncommercial License 1.0.0
+If you run this in production or lab conditions against real DPI, please share sanitized results — it helps improve the presets.
 
 ## Acknowledgments / Credits
 
-Angry-BOX stands on the shoulders of the broader anti-censorship community. We drew heavy inspiration (and in some cases directly ported ideas for our preset generators) from the following projects and researchers. Huge thanks to all contributors.
+See the detailed credits at the bottom of this document (and in the language-specific versions). Angry-BOX heavily builds upon public research and tools from the anti-censorship community.
+
+## License
+
+PolyForm Noncommercial License 1.0.0
+
+---
+
+## Language / Язык / 语言 / زبان
+
+[English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+
+---
+
+## Acknowledgments / Credits
+
+Angry-BOX stands on the shoulders of the broader anti-censorship community. We drew heavy inspiration (and in some cases directly ported ideas for our preset generators) from the following projects and researchers.
 
 ### Core Obfuscation Techniques & Research
-- **pumbaX / awg-multi-script** — The excellent AmneziaWG CPS/I1–I5 generators (QUIC Initial 1200B Chrome-like, SIP REGISTER, DNS+EDNS0, Pro ranges, Gecko-style thinking). We took "бери все" from it for our AWG implementation.
-- **XTLS / Xray-core team (especially RPRX)** — The groundbreaking XHTTP transport and the deep "XHTTP: Beyond REALITY" research (https://github.com/XTLS/Xray-core/discussions/4113). Header padding ranges, XMUX controls, upstream/downstream separation, packet-up/stream-up modes — directly influenced our XHTTPPreset and generators.
-- **klzgrad / NaiveProxy** — Real Chromium network stack + realistic preamble behavior. The gold standard for fingerprint resistance.
-- **apernet / Hysteria2 team** — Salamander and the new (2026) Gecko obfuscation (QUIC Initial fragmentation + padding). Inspirational for fragmentation-style thinking we apply to HTTP/XHTTP.
-- **telemt / telemt** (and related double-hop work) — Modern high-quality Fake-TLS MTProto proxy with excellent SOCKS5 upstream and documented double-hop patterns.
+- **pumbaX / awg-multi-script** — The excellent AmneziaWG CPS/I1–I5 generators (QUIC Initial 1200B Chrome-like, SIP REGISTER, DNS+EDNS0, Pro ranges). We took "бери все".
+- **XTLS / Xray-core team (especially RPRX)** — The groundbreaking XHTTP transport and "XHTTP: Beyond REALITY" research. Header padding ranges, XMUX, upstream/downstream separation.
+- **klzgrad / NaiveProxy** — Real Chromium network stack + realistic preamble behavior.
+- **apernet / Hysteria2 team** — Salamander and the 2026 Gecko obfuscation.
+- **telemt / telemt** — Modern high-quality Fake-TLS MTProto proxy with excellent double-hop patterns.
 
 ### Community Configs, Installers & Presets
-- TheyCallMeSecond/config-examples — Outstanding collection of working presets for Hysteria2, Reality, Naive, etc.
-- mack-a/v2ray-agent — Battle-tested all-in-one installer supporting many of the same protocols.
-- Hiddify-Manager — Production-grade multi-user panel with smart routing optimized for censored regions.
-- CELERITY-panel, 3x-ui forks, and many Russian/Iranian/Chinese community configs that informed our regional 2026 presets.
+- TheyCallMeSecond/config-examples
+- mack-a/v2ray-agent
+- Hiddify-Manager
+- CELERITY-panel, 3x-ui forks, and many Russian/Iranian/Chinese community configs.
 
-If we used ideas or code patterns from your work and you are not listed — please open an issue or PR. We are happy to add proper credit.
-
-Special thanks to everyone publishing real-world test results against RKN, GFW, and Iranian DPI in 2025–2026. This project would not exist without that collective knowledge.
+Special thanks to everyone publishing real-world test results against RKN, GFW, and Iranian DPI in 2025–2026.
