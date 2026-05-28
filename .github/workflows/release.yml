@@ -151,6 +151,16 @@ jobs:
           ./scripts/build-keenetic-opkg.sh "build/${APP}-keenetic-mipsel" "$VERSION" build
           ls -lh build/*.ipk || true
 
+      - name: Build arm64 .ipk package
+        if: matrix.target == 'linux-arm64'
+        env:
+          VERSION: ${{ steps.ver.outputs.value }}
+        run: |
+          set -euo pipefail
+          echo "==> Building arm64 .ipk for OpenWRT/Entware"
+          ./scripts/build-opkg.sh "build/${APP}-linux-arm64" "$VERSION" aarch64_cortex-a53 build
+          ls -lh build/*.ipk || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}

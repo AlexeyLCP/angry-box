@@ -86,6 +86,15 @@ jobs:
           ./scripts/build-keenetic-opkg.sh "dist/angry-box-keenetic-mipsel" "$VERSION" dist
           ls -lh dist/*.ipk || true
 
+      - name: Build arm64 .ipk (for testing)
+        if: matrix.target == 'linux-arm64'
+        env:
+          VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
+        run: |
+          echo "==> Building test .ipk for arm64 OpenWRT/Entware"
+          ./scripts/build-opkg.sh "dist/angry-box-linux-arm64" "$VERSION" aarch64_cortex-a53 dist
+          ls -lh dist/*.ipk || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: angry-box-${{ matrix.target }}
