@@ -398,7 +398,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		case model.UserProtocolAWG:
 			awgIn, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
 			if err != nil {
-				return "", "", fmt.Errorf("build awg user inbound: %w", err)
+				return "", fmt.Errorf("build awg user inbound: %w", err)
 			}
 			inb = awgIn
 		default:
