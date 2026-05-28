@@ -32,6 +32,16 @@ type XHTTPPreset struct {
 	Headers     map[string][]string `json:"headers"`
 	IdleTimeout string              `json:"idle_timeout"`
 	PingTimeout string              `json:"ping_timeout"`
+
+	// 2026 advanced XHTTP obfuscation fields (from community research: Xray XHTTP, Naive, Hysteria Gecko)
+	PaddingBytes    string `json:"padding_bytes,omitempty"`      // "min-max" or single value, e.g. "300-1800"
+	Multiplex       bool   `json:"multiplex,omitempty"`
+	MaxConcurrency  string `json:"max_concurrency,omitempty"`    // e.g. "4-48"
+	UpstreamHost    string `json:"upstream_host,omitempty"`
+	DownstreamHost  string `json:"downstream_host,omitempty"`
+	UpstreamAlpn    string `json:"upstream_alpn,omitempty"`
+	DownstreamAlpn  string `json:"downstream_alpn,omitempty"`
+	StealthLevel    int    `json:"stealth_level,omitempty"`      // 0-3, drives mode/padding strength
 }
 
 // TUICPreset — настройки для TUIC

@@ -735,7 +735,7 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 		}
 	}
 
-	// Use first option from the preset lists for determinism within a chain (can add per-hop randomization later if desired for extra stealth).
+	// Use first option from the preset lists for determinism within a chain.
 	path := xhttp.Paths[0]
 	method := xhttp.Methods[0]
 	headers := xhttp.Headers
@@ -747,6 +747,19 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 			"Accept-Language": {"en-US,en;q=0.9"},
 		}
 	}
+
+	transport := map[string]any{
+		"type":         "http",
+		"host":         []string{p.ServerName},
+		"path":         path,
+		"method":       method,
+		"headers":      headers,
+		"idle_timeout": "15s",
+		"ping_timeout": "15s",
+	}
+
+	// Apply advanced 2026 XHTTP obfuscation (padding, XMUX, realistic headers, upstream/downstream)
+	ApplyXHTTPObfuscation(transport, xhttp)
 
 	inb := map[string]any{
 		"type": "vless",
@@ -773,15 +786,7 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 				"short_id":    []string{p.ShortID},
 			},
 		},
-		"transport": map[string]any{
-			"type":         "http",
-			"host":         []string{p.ServerName},
-			"path":         path,
-			"method":       method,
-			"headers":      headers,
-			"idle_timeout": "15s",
-			"ping_timeout": "15s",
-		},
+		"transport": transport,
 		"multiplex": map[string]any{
 			"enabled": true,
 		},
@@ -863,6 +868,9 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 			"enabled": true,
 		},
 	}
+
+	// Apply advanced 2026 XHTTP obfuscation on the outbound transport as well
+	ApplyXHTTPObfuscation(out["transport"].(map[string]any), xhttp)
 
 	data, _ := json.Marshal(out)
 	return data, nil
