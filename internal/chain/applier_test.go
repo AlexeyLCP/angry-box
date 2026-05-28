@@ -18,12 +18,10 @@ func TestGenerateWireGuardKeypair_Valid(t *testing.T) {
 		t.Error("empty keys returned")
 	}
 
-	// Should be valid base64 and 44 chars (32 bytes base64)
 	if len(priv) != 44 || len(pub) != 44 {
 		t.Errorf("unexpected key length: priv=%d pub=%d", len(priv), len(pub))
 	}
 
-	// Decode should succeed
 	if _, err := base64.StdEncoding.DecodeString(priv); err != nil {
 		t.Error("priv is not valid base64")
 	}
@@ -35,18 +33,28 @@ func TestGenerateWireGuardKeypair_Valid(t *testing.T) {
 func TestBuildAWGUserInbound_WithClientKey(t *testing.T) {
 	preset := MustGetPreset("russia_2026")
 
-	data, serverPub, err := buildAWGUserInbound(8443, "test-uuid", "user-in", &preset, "MY-CLIENT-PUB", "")
+	ep, tunInb, serverPub, err := buildAWGUserInbound(8443, "test-uuid", "user-in", &preset, "MY-CLIENT-PUB", "")
 	if err != nil {
 		t.Fatalf("buildAWGUserInbound failed: %v", err)
 	}
 
-	s := string(data)
-	if !strings.Contains(s, "MY-CLIENT-PUB") {
-		t.Error("client pubkey not present in peers")
+	// buildAWGUserInbound uses json.Marshal (compact, no spaces)
+	epS := string(ep)
+	if !strings.Contains(epS, "MY-CLIENT-PUB") {
+		t.Error("client pubkey not present in endpoint peers")
 	}
-	if strings.Contains(s, "CLIENT_PUBLIC_KEY_HERE") {
+	if !strings.Contains(epS, `"type":"wireguard"`) {
+		t.Error("endpoint should be wireguard type")
+	}
+	if strings.Contains(epS, "CLIENT_PUBLIC_KEY_HERE") {
 		t.Error("placeholder appeared when client key was provided")
 	}
+
+	tunS := string(tunInb)
+	if !strings.Contains(tunS, `"type":"tun"`) {
+		t.Error("user inbound should be TUN type")
+	}
+
 	if serverPub == "" || len(serverPub) != 44 {
 		t.Error("server public key was not returned")
 	}
@@ -55,10 +63,9 @@ func TestBuildAWGUserInbound_WithClientKey(t *testing.T) {
 func TestBuildAWGUserInbound_WithPreGeneratedServerKey(t *testing.T) {
 	preset := MustGetPreset("maximum_stealth_2026")
 
-	// Generate once
 	serverPriv, serverPub1, _ := GenerateWireGuardKeypair()
 
-	data, serverPub2, err := buildAWGUserInbound(8443, "uuid", "tag", &preset, "client-pub", serverPriv)
+	ep, _, serverPub2, err := buildAWGUserInbound(8443, "uuid", "tag", &preset, "client-pub", serverPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,18 +74,17 @@ func TestBuildAWGUserInbound_WithPreGeneratedServerKey(t *testing.T) {
 		t.Error("server pub from pre-generated path does not match the one returned")
 	}
 
-	s := string(data)
-	if !strings.Contains(s, serverPriv) {
+	epS := string(ep)
+	if !strings.Contains(epS, serverPriv) {
 		t.Error("pre-generated private key was not used in the config")
 	}
 
-	// Stronger check: parse JSON and verify the exact private_key field
 	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("failed to parse AWG inbound JSON: %v", err)
+	if err := json.Unmarshal(ep, &parsed); err != nil {
+		t.Fatalf("failed to parse AWG endpoint JSON: %v", err)
 	}
 	if parsed["private_key"] != serverPriv {
-		t.Errorf("private_key in generated config does not exactly match pre-generated one")
+		t.Errorf("private_key in generated endpoint does not exactly match pre-generated one")
 	}
 }
 
@@ -95,19 +101,15 @@ func TestDeriveWireGuardPublicFromPrivate(t *testing.T) {
 	}
 }
 
-// TestAWGKeyConsistencyInEntryNode simulates the critical path fixed in ApplyChain:
-// server keypair is generated once, used for the pushed config, and the pub is captured for the report.
 func TestAWGKeyConsistencyInEntryNode(t *testing.T) {
 	preset := MustGetPreset("russia_2026")
 
-	// This is what ApplyChain now does for AWG entry: generate once
 	serverPriv, serverPub, err := GenerateWireGuardKeypair()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Build the user inbound using the pre-generated priv (like the fixed path)
-	data, returnedPub, err := buildAWGUserInbound(8443, "entry-uuid", "user-in", &preset, "client-pub-123", serverPriv)
+	ep, _, returnedPub, err := buildAWGUserInbound(8443, "entry-uuid", "user-in", &preset, "client-pub-123", serverPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +119,7 @@ func TestAWGKeyConsistencyInEntryNode(t *testing.T) {
 	}
 
 	var parsed map[string]any
-	json.Unmarshal(data, &parsed)
+	json.Unmarshal(ep, &parsed)
 
 	if parsed["private_key"] != serverPriv {
 		t.Error("config does not contain the exact server private key that will be reported")
@@ -144,10 +146,14 @@ func TestBuildNodeConfig_EntryNode_AWG_SingleNode(t *testing.T) {
 	}
 
 	s := string(cfg)
+	// WireGuard is now an endpoint, not an inbound
 	if !strings.Contains(s, `"type": "wireguard"`) {
-		t.Error("expected wireguard user inbound on entry node with AWG")
+		t.Error("expected wireguard endpoint on entry node with AWG")
 	}
-	// Single node AWG chain has no transport links, only the user inbound + direct
+	// TUN inbound for user traffic
+	if !strings.Contains(s, `"type": "tun"`) {
+		t.Error("expected TUN user inbound on entry node with AWG")
+	}
 	if !strings.Contains(s, `"type": "direct"`) {
 		t.Error("single node should have direct outbound")
 	}
@@ -199,9 +205,6 @@ func TestBuildNodeConfig_LastNode_Direct(t *testing.T) {
 	}
 }
 
-// Note: Direct XHTTP builder tests are covered indirectly via buildNodeConfig tests above.
-// The builders are internal and their behavior is validated through higher-level node config generation.
-
 func TestBuildNodeConfig_TUIC_Entry_With_XHTTP_Transport(t *testing.T) {
 	preset := MustGetPreset("iran_2026")
 	p1 := makeTestHopParams(443)
@@ -224,7 +227,6 @@ func TestBuildNodeConfig_TUIC_Entry_With_XHTTP_Transport(t *testing.T) {
 	if !strings.Contains(s, `"type": "http"`) {
 		t.Error("expected XHTTP transport outbound from entry")
 	}
-	// Iran preset influence
 	if !strings.Contains(s, "/msdownload") {
 		t.Error("expected iran XHTTP path")
 	}
@@ -242,10 +244,13 @@ func TestBuildNodeConfig_MultiHop_FullChain(t *testing.T) {
 		{ID: "n3", Addr: "10.0.0.3:22"},
 	}
 
-	// Entry with AWG
+	// Entry with AWG: wireguard endpoint + TUN inbound
 	cfg0, _ := buildNodeConfig(&nodes[0], 0, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG)
 	if !strings.Contains(string(cfg0), `"type": "wireguard"`) {
-		t.Error("entry should be AWG wireguard")
+		t.Error("entry should have wireguard endpoint")
+	}
+	if !strings.Contains(string(cfg0), `"type": "tun"`) {
+		t.Error("entry should have TUN inbound")
 	}
 
 	// Middle
@@ -261,33 +266,30 @@ func TestBuildNodeConfig_MultiHop_FullChain(t *testing.T) {
 	}
 }
 
-// === ApplyReport / AWG material population tests (the core of the big fix) ===
+// === ApplyReport / AWG material population tests ===
 
 func TestAWGEntryKeyMaterial_Population(t *testing.T) {
 	preset := MustGetPreset("russia_2026")
 
-	// Simulate what the fixed ApplyChain does for the entry node
 	serverPriv, serverPub, _ := GenerateWireGuardKeypair()
 	clientPub := "test-client-pub-for-report"
 
-	data, returnedPub, err := buildAWGUserInbound(8443, "uuid-123", "user-in", &preset, clientPub, serverPriv)
+	ep, _, returnedPub, err := buildAWGUserInbound(8443, "uuid-123", "user-in", &preset, clientPub, serverPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// The report would capture this
 	if returnedPub != serverPub {
 		t.Fatal("pub returned from builder must match the one captured for ApplyReport")
 	}
 
 	var parsed map[string]any
-	json.Unmarshal(data, &parsed)
+	json.Unmarshal(ep, &parsed)
 
-	// Simulate building the AWGClientMaterial that goes into ApplyReport
 	material := &AWGClientMaterial{
 		ServerPub:     serverPub,
 		ClientPubUsed: clientPub,
-		ClientPriv:    "", // would be set only on auto-generation at higher level
+		ClientPriv:    "",
 	}
 
 	if material.ServerPub == "" || material.ClientPubUsed == "" {

@@ -302,18 +302,6 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]an
 		if len(mat.I5) > 0 {
 			section["i5"] = base64.StdEncoding.EncodeToString(mat.I5)
 		}
-		switch mimicry {
-		case "quic":
-			section["packet"] = "quic"
-		case "sip":
-			section["packet"] = "sip"
-		case "dns":
-			section["packet"] = "dns"
-		default:
-			section["packet"] = "quic"
-		}
-	} else {
-		section["packet"] = "none"
 	}
 	return section
 }

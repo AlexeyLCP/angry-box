@@ -81,9 +81,18 @@ func TestGenerateUser_AWGWithoutClientKey_StillValid(t *testing.T) {
 	if err := json.Unmarshal([]byte(cfg.Content), &parsed); err != nil {
 		t.Fatalf("generated config is not valid JSON: %v", err)
 	}
+	// AWG now uses endpoint (wireguard) + inbound (tun)
+	eps := parsed["endpoints"].([]any)
+	if len(eps) == 0 {
+		t.Fatal("expected endpoints section for AWG")
+	}
+	ep := eps[0].(map[string]any)
+	if ep["type"] != "wireguard" {
+		t.Errorf("expected wireguard endpoint type, got %v", ep["type"])
+	}
 	inb := parsed["inbounds"].([]any)[0].(map[string]any)
-	if inb["type"] != "wireguard" {
-		t.Error("expected wireguard type for AWG")
+	if inb["type"] != "tun" {
+		t.Errorf("expected tun inbound type, got %v", inb["type"])
 	}
 }
 

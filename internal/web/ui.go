@@ -310,11 +310,7 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f := factory.New()
-	b, err := f.Create(model.SingBox) // default to sing-box for status checks
-	if err != nil {
-		s.render(w, &simpleHTML{html: `<span class="text-error text-xs">backend error</span>`})
-		return
-	}
+	b := f.Create()
 
 	ctx := context.Background()
 	status, err := b.GetStatus(ctx, *host)

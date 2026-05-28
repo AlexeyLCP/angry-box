@@ -23,7 +23,7 @@ var (
 	date    = "unknown"
 )
 
-const usage = `angry-box — lightweight proxy orchestrator for sing-box and xray.
+const usage = `angry-box — lightweight proxy orchestrator for sing-box-extended.
 
 Usage:
   angry-box <command> [options]
@@ -55,7 +55,6 @@ Other:
   version        Show version information
 
 Common flags:
-  -backend   Proxy backend: sing-box (default) or xray
   -file      Path to store file (default: chains.json)
   -config    Path to angry-box config file (default: /etc/angry-box/angry-box.toml)
   -addr      Remote host address (IP:port)
@@ -77,7 +76,6 @@ Examples:
 
 // CLI flags.
 var (
-	backendStr   string
 	storePath    string
 	addr         string
 	user         string
@@ -541,7 +539,6 @@ func loadExternalPresets(path string) {
 
 func nodeCmd(cmd string) {
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
-	fs.StringVar(&backendStr, "backend", "sing-box", "proxy backend")
 	fs.StringVar(&addr, "addr", "", "remote host address")
 	fs.StringVar(&user, "user", "root", "SSH user")
 	fs.StringVar(&keyPath, "key", "", "path to SSH private key")
@@ -554,13 +551,7 @@ func nodeCmd(cmd string) {
 	_ = fs.Parse(os.Args[2:])
 
 	f := factory.New()
-
-	backendKind := model.BackendKind(backendStr)
-	b, err := f.Create(backendKind)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	b := f.Create()
 
 	ctx := context.Background()
 

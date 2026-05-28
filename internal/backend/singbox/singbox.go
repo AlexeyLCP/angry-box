@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	singBoxVersion = "1.12.0"
+	singBoxVersion = "1.13.11-extended-2.1.0"
 	installPath    = "/usr/local/bin/sing-box"
 	configDir      = "/etc/sing-box"
 	configFile     = "/etc/sing-box/config.json"
@@ -20,11 +20,9 @@ const (
 	logDir         = "/var/log/sing-box"
 )
 
-// Known good SHA256 checksums for sing-box releases (linux only).
-// These MUST be updated when changing singBoxVersion.
-// Get them from the official GitHub release page (sing-box-*.tar.gz.sha256).
+// sing-box-extended releases from shtorm-7/sing-box-extended
+// Archive name pattern: sing-box-{version}-extended-{ext_ver}-linux-{arch}.tar.gz
 var singBoxChecksums = map[string]string{
-	// TODO: Fill real checksums for v1.12.0 (or current version)
 	"amd64": "",
 	"arm64": "",
 	"armv7": "",
@@ -72,9 +70,10 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	arch := strings.TrimSpace(archOut)
 	goArch := archToGoArch(arch)
 
-	// Download and install sing-box with checksum verification.
+	// Download and install sing-box-extended from shtorm-7 community releases.
+	// This fork includes AmneziaWG (wireguard inbound) and advanced obfuscation support.
 	downloadURL := fmt.Sprintf(
-		"https://github.com/SagerNet/sing-box/releases/download/v%s/sing-box-%s-linux-%s.tar.gz",
+		"https://github.com/shtorm-7/sing-box-extended/releases/download/v%s/sing-box-%s-linux-%s.tar.gz",
 		singBoxVersion, singBoxVersion, goArch,
 	)
 

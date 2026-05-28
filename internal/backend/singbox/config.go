@@ -16,6 +16,7 @@ import (
 // singBoxConfig is the top-level sing-box configuration structure.
 type singBoxConfig struct {
 	Log       *logConfig        `json:"log,omitempty"`
+	Endpoints []json.RawMessage `json:"endpoints,omitempty"`
 	Inbounds  []json.RawMessage `json:"inbounds"`
 	Outbounds []json.RawMessage `json:"outbounds"`
 }
@@ -342,28 +343,41 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	inbound := map[string]any{
-		"type": "wireguard",
-		"tag":  "user-in",
-		"listen":      "0.0.0.0",
-		"listen_port": port,
+	// sing-box-extended: WireGuard as endpoint + TUN inbound
+	endpoint := map[string]any{
+		"type":        "wireguard",
+		"tag":         "wg-ep",
+		"system":      false,
+		"mtu":         1420,
+		"address":     []string{"10.8.0.1/32"},
 		"private_key": privB64,
+		"listen_port": port,
 		"peers": []map[string]any{
 			{
 				"public_key":  peerPub,
-				"allowed_ips": []string{"0.0.0.0/0", "::/0"},
+				"allowed_ips": []string{"10.8.0.2/32"},
 			},
 		},
-		"mtu": 1420,
 		"amnezia": chain.BuildAmneziaSection(awg, preset),
 	}
 
-	inboundJSON, _ := json.Marshal(inbound)
+	tunInbound := map[string]any{
+		"type":           "tun",
+		"tag":            "user-in",
+		"interface_name": "angry-tun",
+		"address":        []string{"10.8.0.1/30"},
+		"mtu":            1420,
+		"stack":          "system",
+	}
+
+	epJSON, _ := json.Marshal(endpoint)
+	tunJSON, _ := json.Marshal(tunInbound)
 	outboundJSON, _ := json.Marshal(map[string]any{"type": "direct", "tag": "direct-out"})
 
 	cfg := singBoxConfig{
 		Log:       &logConfig{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
-		Inbounds:  []json.RawMessage{inboundJSON},
+		Endpoints: []json.RawMessage{epJSON},
+		Inbounds:  []json.RawMessage{tunJSON},
 		Outbounds: []json.RawMessage{outboundJSON},
 	}
 

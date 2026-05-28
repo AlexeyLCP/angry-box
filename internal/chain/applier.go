@@ -117,11 +117,7 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 		return nil, fmt.Errorf("chain: chain %q has no nodes", chain.Name)
 	}
 
-	b, err := a.factory.Create(model.SingBox)
-	if err != nil {
-		return nil, fmt.Errorf("chain: create backend: %w", err)
-	}
-	_ = b // backend may be used in future for version/status; reload logic moved into pushConfig
+	_ = a.factory.Create() // sing-box-extended backend
 
 
 	// Apply modern defaults if not specified on the chain
@@ -347,6 +343,7 @@ func generateHopParams(port int, preset *ConnectionPreset) (*hopParams, error) {
 func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol) (string, error) {
 	var inbounds []json.RawMessage
 	var outbounds []json.RawMessage
+	var endpoints []json.RawMessage
 	tags := []string{}
 
 	// Every node except the first (entry) gets a transport inbound for the previous hop.
@@ -372,22 +369,21 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		tag := "user-in"
 		tags = append(tags, tag)
 
-		var inb json.RawMessage
-		// The global profile (from config) drives the actual obfuscation parameters.
-		// userProto only decides *which* protocol to use for the user entry.
 		switch userProto {
 		case model.UserProtocolTUIC:
-			inb = buildTUICUserInbound(port, params[i].UUID, tag, preset)
+			inb := buildTUICUserInbound(port, params[i].UUID, tag, preset)
+			inbounds = append(inbounds, inb)
 		case model.UserProtocolAWG:
-			awgIn, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
+			ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
 			if err != nil {
 				return "", fmt.Errorf("build awg user inbound: %w", err)
 			}
-			inb = awgIn
+			endpoints = append(endpoints, ep)
+			inbounds = append(inbounds, tunInb)
 		default:
-			inb = buildUserInbound(port, params[i].UUID, tag)
+			inb := buildUserInbound(port, params[i].UUID, tag)
+			inbounds = append(inbounds, inb)
 		}
-		inbounds = append(inbounds, inb)
 	}
 
 	// Every node except the last (exit) gets an outbound to the next hop.
@@ -442,6 +438,9 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
 	}
+	if len(endpoints) > 0 {
+		cfg["endpoints"] = endpoints
+	}
 
 	if route != nil {
 		cfg["route"] = route
@@ -466,9 +465,10 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 
 	var inbounds []json.RawMessage
 	var outbounds []json.RawMessage
+	var endpoints []json.RawMessage
 	tags := []string{}
 
-	// Entry node + AWG: user inbound with the supplied/generated client pub
+	// Entry node + AWG: wireguard endpoint + TUN inbound
 	port := node.Port
 	if port == 0 {
 		port = defaultUserPort
@@ -476,11 +476,12 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	tag := "user-in"
 	tags = append(tags, tag)
 
-	inb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv)
+	ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv)
 	if err != nil {
 		return "", fmt.Errorf("build awg user inbound (with client pub): %w", err)
 	}
-	inbounds = append(inbounds, inb)
+	endpoints = append(endpoints, ep)
+	inbounds = append(inbounds, tunInb)
 
 	// Outbound to next hop (if any)
 	if i < n-1 {
@@ -520,6 +521,9 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 		},
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
+	}
+	if len(endpoints) > 0 {
+		cfg["endpoints"] = endpoints
 	}
 	if route != nil {
 		cfg["route"] = route
@@ -909,11 +913,9 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset) 
 	return data
 }
 
-func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, clientPubKey string, serverPrivKeyB64 string) (json.RawMessage, string, error) {
-	// Always prefer the AWG section from the chosen country profile
+func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, clientPubKey string, serverPrivKeyB64 string) (json.RawMessage, json.RawMessage, string, error) {
 	awg := preset.AWG
 	if awg == nil {
-		// Very conservative fallback only if the preset is broken/missing AWG section
 		awg = &AWGPreset{
 			JC: 4, JMIN: 40, JMAX: 70,
 			S1: 0, S2: 0,
@@ -925,17 +927,15 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 	var err error
 
 	if serverPrivKeyB64 != "" {
-		// Use pre-generated key (for apply-chain consistency between pushed config and reported server pub)
 		privKeyB64 = serverPrivKeyB64
-		// Derive pub from the supplied priv (we need a small helper or inline clamp+scalar)
 		pubKeyB64, err = deriveWireGuardPublicFromPrivate(privKeyB64)
 		if err != nil {
-			return nil, "", fmt.Errorf("derive awg pub from provided priv: %w", err)
+			return nil, nil, "", fmt.Errorf("derive awg pub from provided priv: %w", err)
 		}
 	} else {
 		privKeyB64, pubKeyB64, err = generateWireGuardKeypair()
 		if err != nil {
-			return nil, "", fmt.Errorf("generate awg server keypair: %w", err)
+			return nil, nil, "", fmt.Errorf("generate awg server keypair: %w", err)
 		}
 	}
 
@@ -944,24 +944,38 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	inb := map[string]any{
-		"type": "wireguard",
-		"tag":  tag,
-		"listen":      "0.0.0.0",
-		"listen_port": port,
+	// sing-box-extended: WireGuard is an ENDPOINT (not an inbound).
+	// The TUN inbound captures traffic and routes it through the WireGuard endpoint.
+	ep := map[string]any{
+		"type":        "wireguard",
+		"tag":         "wg-ep",
+		"system":      false,
+		"mtu":         1420,
+		"address":     []string{"10.8.0.1/32"},
 		"private_key": privKeyB64,
+		"listen_port": port,
 		"peers": []map[string]any{
 			{
 				"public_key":  peerPub,
-				"allowed_ips": []string{"0.0.0.0/0", "::/0"},
+				"allowed_ips": []string{"10.8.0.2/32"},
 			},
 		},
-		"mtu": 1420,
 		"amnezia": BuildAmneziaSection(awg, preset),
 	}
 
-	data, _ := json.Marshal(inb)
-	return data, pubKeyB64, nil
+	epJSON, _ := json.Marshal(ep)
+
+	tunInb := map[string]any{
+		"type":           "tun",
+		"tag":            tag,
+		"interface_name": "angry-tun",
+		"address":        []string{"10.8.0.1/30"},
+		"mtu":            1420,
+		"stack":          "system",
+	}
+	tunJSON, _ := json.Marshal(tunInb)
+
+	return epJSON, tunJSON, pubKeyB64, nil
 }
 
 // deriveWireGuardPublicFromPrivate takes a base64 WireGuard private key and returns the corresponding public key.

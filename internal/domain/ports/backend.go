@@ -35,7 +35,7 @@ type Backend interface {
 	Version() string
 }
 
-// Factory creates Backend instances by kind.
+// Factory creates Backend instances.
 type Factory interface {
-	Create(kind model.BackendKind) (Backend, error)
+	Create() Backend
 }
