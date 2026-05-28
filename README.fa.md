@@ -49,10 +49,10 @@
 
 ```bash
 # آخرین نسخه
-curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # نسخه خاص
-curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | sh -s -- --version 0.2.0
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.0
 
 # باینری محلی
 sh scripts/install.sh --local ./angry-box
