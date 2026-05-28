@@ -27,6 +27,8 @@ if [[ ! -f "$BIN" ]]; then
   exit 1
 fi
 
+# Resolve OUT to absolute path *before* any cd, so relative paths from caller work correctly
+OUT=$(cd "$(dirname "$OUT")" && pwd -P)/$(basename "$OUT")
 mkdir -p "$OUT"
 PKG_NAME="angry-box_${VERSION}_${ARCH}"
 PKG_DIR="/tmp/${PKG_NAME}"
