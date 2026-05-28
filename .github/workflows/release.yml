@@ -154,6 +154,7 @@ jobs:
           fi
 
           mkdir -p release-ipk
+          chmod +x ./scripts/build-opkg.sh
           ./scripts/build-opkg.sh "$BIN" "$ARCH" "$VERSION" "./release-ipk"
           ls -lh release-ipk/ 2>/dev/null || true
 

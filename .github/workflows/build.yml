@@ -83,6 +83,7 @@ jobs:
           VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
         run: |
           echo "==> Building test .ipk for Keenetic"
+          chmod +x ./scripts/build-opkg.sh
           ./scripts/build-opkg.sh "dist/angry-box-keenetic-mipsel" mipsel_24kc "$VERSION" dist
           ls -lh dist/*.ipk || true
 
@@ -92,6 +93,7 @@ jobs:
           VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
         run: |
           echo "==> Building test .ipk for arm64 OpenWRT/Entware"
+          chmod +x ./scripts/build-opkg.sh
           ./scripts/build-opkg.sh "dist/angry-box-linux-arm64" "$VERSION" aarch64_cortex-a53 dist
           ls -lh dist/*.ipk || true
 
