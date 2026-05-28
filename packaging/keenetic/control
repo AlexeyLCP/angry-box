@@ -1,0 +1,9 @@
+Package: angry-box
+Version: __VERSION__
+Depends: 
+Section: net
+Architecture: mipsel_24kc
+Maintainer: Alexey L. <alexey@example.com>
+Description: Lightweight proxy orchestrator (sing-box / xray) with strong obfuscation.
+ Installed via Entware/Keenetic.
+EOF

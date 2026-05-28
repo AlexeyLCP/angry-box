@@ -173,12 +173,12 @@ func TestGenerateUser_AllCombinations(t *testing.T) {
 	b := New()
 
 	testCases := []struct {
-		name       string
-		profile    string
-		protocol   string // via Extra or implicit
-		clientKey  string
-		wantType   string
-		wantNoPH   bool // should not contain placeholder
+		name      string
+		profile   string
+		protocol  string // via Extra or implicit
+		clientKey string
+		wantType  string
+		wantNoPH  bool // should not contain placeholder
 	}{
 		{"russia_awg_with_key", "russia_2026", "awg", "test-client-pub-abc", "wireguard", true},
 		{"china_awg_no_key", "china_2026", "awg", "", "wireguard", true}, // now auto-generates sample at CLI, but generator itself may still use placeholder

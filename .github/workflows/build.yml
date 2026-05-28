@@ -2,7 +2,7 @@ name: Build & Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'task/**', 'feature/**']
   pull_request:
     branches: [main]
 
@@ -14,10 +14,27 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: 'go.mod'
 
       - name: Vet
         run: go vet ./...
+
+      - name: golangci-lint
+        run: |
+          # Install using the project's Go 1.26 so it can handle go 1.26 modules
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64
+
+          # Run linter. We use --issues-exit-code=0 so this step never fails the job
+          # (we are gradually cleaning up the codebase). The report will be uploaded as artifact.
+          $(go env GOPATH)/bin/golangci-lint run --timeout=5m --issues-exit-code=0 --out-format=colored-line-number > golangci-lint-report.txt 2>&1 || true
+
+      - name: Upload golangci-lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golangci-lint-report
+          path: golangci-lint-report.txt
+          retention-days: 7
 
       - name: Test
         run: go test ./... -count=1 -timeout 60s
@@ -48,7 +65,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: 'go.mod'
 
       - name: Build
         env:
@@ -60,7 +77,28 @@ jobs:
           mkdir -p dist
           go build -ldflags="-s -w" -o dist/angry-box-${{ matrix.target }} ./cmd/angry-box
 
+      - name: Build Keenetic .ipk (for testing)
+        if: matrix.target == 'keenetic-mipsel'
+        env:
+          VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
+        run: |
+          echo "==> Building test .ipk for Keenetic"
+          ./scripts/build-keenetic-opkg.sh "dist/angry-box-keenetic-mipsel" "$VERSION" dist
+          ls -lh dist/*.ipk || true
+
+      - name: Build arm64 .ipk (for testing)
+        if: matrix.target == 'linux-arm64'
+        env:
+          VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
+        run: |
+          echo "==> Building test .ipk for arm64 OpenWRT/Entware"
+          ./scripts/build-opkg.sh "dist/angry-box-linux-arm64" "$VERSION" aarch64_cortex-a53 dist
+          ls -lh dist/*.ipk || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: angry-box-${{ matrix.target }}
-          path: dist/angry-box-${{ matrix.target }}
+          path: |
+            dist/angry-box-${{ matrix.target }}
+            dist/*.ipk
+          retention-days: 7
