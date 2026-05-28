@@ -100,13 +100,13 @@ echo "2.0" > debian-binary
 
 IPK="${OUT}/angry-box_${VERSION}_${ARCH}.ipk"
 
-# Use 'ar rc' (create/replace) for better compatibility across runners
-# Some minimal environments complain with plain 'ar r' if the file doesn't exist yet
-ar rc "$IPK" debian-binary control.tar.gz data.tar.gz || {
-  echo "ERROR: Failed to create .ipk with ar"
-  ls -l "$PKG_DIR"
-  exit 1
-}
+# Robust .ipk creation for CI runners (GitHub Actions, etc.)
+# Using sequential 'ar r' after ensuring the archive exists often works better
+# than a single multi-file command on some binutils versions.
+touch "$IPK"
+ar r "$IPK" debian-binary || { echo "ERROR: ar failed on debian-binary"; ls -l "$IPK"; exit 1; }
+ar r "$IPK" control.tar.gz || { echo "ERROR: ar failed on control.tar.gz"; exit 1; }
+ar r "$IPK" data.tar.gz    || { echo "ERROR: ar failed on data.tar.gz"; exit 1; }
 
 rm -f control.tar.gz data.tar.gz debian-binary
 rm -rf "$PKG_DIR"
