@@ -1008,7 +1008,9 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 	}
 
 	// sing-box-extended: WireGuard SERVER endpoint (listen_port, no detour).
-	// Decrypted traffic goes to kernel → TUN inbound captures → routing → outbound.
+	// Endpoint and TUN use different subnets to avoid IP conflicts:
+	// - Endpoint (AmneziaWG): 10.8.0.1/32, client peer: 10.8.0.2/32
+	// - TUN inbound (internal routing): 10.8.1.1/30
 	ep := map[string]any{
 		"type":        "wireguard",
 		"tag":         "wg-ep",
@@ -1028,12 +1030,12 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 
 	epJSON, _ := json.Marshal(ep)
 
-	// TUN inbound captures decrypted traffic from kernel for routing
+	// TUN inbound on separate subnet to capture routed traffic
 	tunInb := map[string]any{
 		"type":           "tun",
 		"tag":            tag,
 		"interface_name": "angry-tun",
-		"address":        []string{"10.8.0.1/30"},
+		"address":        []string{"10.8.1.1/30"},
 		"mtu":            1420,
 		"stack":          "system",
 		"auto_route":     true,

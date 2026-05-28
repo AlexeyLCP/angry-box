@@ -366,7 +366,7 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		"type":           "tun",
 		"tag":            "user-in",
 		"interface_name": "angry-tun",
-		"address":        []string{"10.8.0.1/30"},
+		"address":        []string{"10.8.1.1/30"},
 		"mtu":            1420,
 		"stack":          "system",
 		"auto_route":     true,
