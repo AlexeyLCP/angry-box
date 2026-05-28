@@ -554,15 +554,11 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	}
 	st.SaveChain(chain)
 
-	s.render(w, templates.SpiderWeb(hostsToPtrs([]model.Host{{ID: fromNode}, {ID: toNode}}), []*model.Chain{chain}, nil))
-}
-
-func hostsToPtrs(hosts []model.Host) []*model.Host {
-	result := make([]*model.Host, len(hosts))
-	for i := range hosts {
-		result[i] = &hosts[i]
-	}
-	return result
+	// Re-render with full data from store
+	allHosts, _ := st.ListHosts()
+	allChains, _ := st.ListChains()
+	allInfos, _ := st.ListNodeInfos()
+	s.render(w, templates.SpiderWeb(allHosts, allChains, allInfos))
 }
 
 func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) {

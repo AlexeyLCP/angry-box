@@ -42,7 +42,7 @@ templ Base(title string, content templ.Component) {
 				var list = document.getElementById('inbounds-list');
 				if (list) list.appendChild(wrapper);
 			}
-			// Update page title from first h2 in main content after HTMX navigation
+			// Update page title and sidebar active state after HTMX navigation
 			document.body.addEventListener('htmx:afterSettle', function() {
 				var main = document.getElementById('main-content');
 				if (main) {
@@ -53,7 +53,25 @@ templ Base(title string, content templ.Component) {
 						if (pageTitle) pageTitle.textContent = h2.textContent.trim();
 					}
 				}
+				// Highlight active sidebar link
+				var path = window.location.pathname;
+				document.querySelectorAll('.menu a').forEach(function(link) {
+					link.classList.remove('sidebar-active');
+					if (link.getAttribute('hx-get') === path) {
+						link.classList.add('sidebar-active');
+					}
+				});
+				// Also run on page load
 			});
+			// Initial sidebar highlight on page load
+			(function() {
+				var path = window.location.pathname;
+				document.querySelectorAll('.menu a').forEach(function(link) {
+					if (link.getAttribute('hx-get') === path) {
+						link.classList.add('sidebar-active');
+					}
+				});
+			})();
 		</script>
 	</head>
 	<body class="min-h-screen bg-base-200">
