@@ -399,7 +399,7 @@ func applyChainCmd() {
 	applier := chain.NewApplier(f)
 
 	ctx := context.Background()
-	if err := applier.ApplyChain(ctx, c); err != nil {
+	if _, err := applier.ApplyChain(ctx, c, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "apply-chain failed: %v\n", err)
 		os.Exit(1)
 	}

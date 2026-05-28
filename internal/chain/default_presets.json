@@ -21,8 +21,9 @@
     },
     "awg": {
       "jc": 5, "jmin": 30, "jmax": 80,
-      "s1": 0, "s2": 0,
-      "h1": 1, "h2": 2, "h3": 3, "h4": 4
+      "s1": 0, "s2": 0, "s3": 0, "s4": 0,
+      "h1": 1, "h2": 2, "h3": 3, "h4": 4,
+      "cps_level": 0
     },
     "tuic": {
       "congestion_controls": ["bbr"],
@@ -45,8 +46,9 @@
     },
     "awg": {
       "jc": 4, "jmin": 40, "jmax": 90,
-      "s1": 0, "s2": 0,
-      "h1": 1, "h2": 2, "h3": 3, "h4": 4
+      "s1": 0, "s2": 0, "s3": 0, "s4": 0,
+      "h1": 1, "h2": 2, "h3": 3, "h4": 4,
+      "cps_level": 0
     },
     "tuic": {
       "congestion_controls": ["cubic"],
@@ -75,8 +77,10 @@
     },
     "awg": {
       "jc": 6, "jmin": 50, "jmax": 120,
-      "s1": 0, "s2": 0,
-      "h1": 1, "h2": 2, "h3": 3, "h4": 4
+      "s1": 0, "s2": 0, "s3": 0, "s4": 0,
+      "h1": 1, "h2": 2, "h3": 3, "h4": 4,
+      "cps_level": 1,
+      "mimicry": "dns"
     },
     "tuic": {
       "congestion_controls": ["bbr"],
@@ -98,21 +102,62 @@
       "ping_timeout": "15s"
     },
     "awg": {
-      "jc": [3, 15],
-      "jmin": 20,
-      "jmax": 180,
-      "s1": [0, 60],
-      "s2": [0, 60],
-      "s3": [0, 60],
-      "s4": [0, 60],
-      "h1": [1, 50],
-      "h2": [1, 50],
-      "h3": [1, 50],
-      "h4": [1, 50]
+      "jc": [4, 16],
+      "jmin": [50, 256],
+      "jmax": [300, 1000],
+      "s1": [15, 150],
+      "s2": [15, 150],
+      "s3": [8, 64],
+      "s4": [6, 31],
+      "h1": [5, 536870911],
+      "h2": [536870912, 1073741823],
+      "h3": [1073741824, 1610612735],
+      "h4": [1610612736, 2147483647],
+      "cps_level": 2,
+      "mimicry": "quic"
     },
     "tuic": {
       "congestion_controls": ["bbr"],
       "auth_timeout": "5s"
+    }
+  },
+  {
+    "name": "pro_2026",
+    "description": "Pro profile from pumbaX best practices (May 2026). Full J/S/H ranges + QUIC CPS I1-I5. Maximum stealth for RU/IR/CN. Use for entry when you need 'it just works as clock' under heavy DPI.",
+    "reality": {
+      "server_names": ["www.microsoft.com", "discord.com", "www.apple.com"],
+      "fingerprints": ["chrome", "firefox", "safari"],
+      "short_id_len": 8
+    },
+    "xhttp": {
+      "methods": ["POST", "PUT"],
+      "paths": ["/api/v3/telemetry", "/msdownload/update/", "/graphql"],
+      "hosts": ["www.microsoft.com"],
+      "headers": {
+        "User-Agent": ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/135.0.0.0"],
+        "Content-Type": ["application/json", "application/octet-stream"]
+      },
+      "idle_timeout": "15s",
+      "ping_timeout": "15s"
+    },
+    "awg": {
+      "jc": [4, 16],
+      "jmin": [50, 256],
+      "jmax": [300, 1000],
+      "s1": [15, 150],
+      "s2": [15, 150],
+      "s3": [8, 64],
+      "s4": [6, 31],
+      "h1": [5, 536870911],
+      "h2": [536870912, 1073741823],
+      "h3": [1073741824, 1610612735],
+      "h4": [1610612736, 2147483647],
+      "cps_level": 3,
+      "mimicry": "quic"
+    },
+    "tuic": {
+      "congestion_controls": ["bbr"],
+      "auth_timeout": "4s"
     }
   }
 ]

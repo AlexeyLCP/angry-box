@@ -34,6 +34,14 @@ type Chain struct {
 	AWGEntryServerPriv string `json:"awg_entry_server_priv,omitempty"`
 	AWGEntryServerPub  string `json:"awg_entry_server_pub,omitempty"`
 
+	// Stable CPS/I1-I5 for AWG user entry (generated once with the server keypair).
+	// Prevents client breakage on every apply. Populated from pro_2026 / maximum_stealth etc.
+	AWGEntryI1 string `json:"awg_entry_i1,omitempty"`
+	AWGEntryI2 string `json:"awg_entry_i2,omitempty"`
+	AWGEntryI3 string `json:"awg_entry_i3,omitempty"`
+	AWGEntryI4 string `json:"awg_entry_i4,omitempty"`
+	AWGEntryI5 string `json:"awg_entry_i5,omitempty"`
+
 	TUICEntryUserUUID     string `json:"tuic_entry_user_uuid,omitempty"`
 	TUICEntryUserPassword string `json:"tuic_entry_user_password,omitempty"`
 }

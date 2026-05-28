@@ -344,7 +344,7 @@ func (b *Backend) generateTUICUser(params model.ConfigParams, preset *chain.Conn
 func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.ConnectionPreset, uuid string, port int, clientPubKey string) (*model.Config, string, error) {
 	awg := preset.AWG
 	if awg == nil {
-		awg = &chain.AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
+		awg = &chain.AWGPreset{}
 	}
 
 	// Always generate a fresh server keypair for this AWG entry point.
@@ -356,6 +356,49 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 	peerPub := clientPubKey
 	if peerPub == "" {
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
+	}
+
+	jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4 := awg.Concrete()
+	chain.EnforceAWGInvariants(&jc, &jmin, &jmax, &s1, &s2, &s3, &s4, &h1, &h2, &h3, &h4)
+
+	amn := map[string]any{
+		"jc":   jc,
+		"jmin": jmin,
+		"jmax": jmax,
+		"s1":   s1,
+		"s2":   s2,
+		"s3":   s3,
+		"s4":   s4,
+		"h1":   h1,
+		"h2":   h2,
+		"h3":   h3,
+		"h4":   h4,
+	}
+	// For standalone user config we generate fresh CPS every time (no persistent Chain entry).
+	// For stable long-lived entry points use "chain create/apply" which persists I1-I5 + server key.
+	if awg.CPSLevel > 0 {
+		mim := awg.Mimicry
+		if mim == "" {
+			mim = "quic"
+		}
+		ii1, ii2, ii3, ii4, ii5, _ := chain.GenerateCPS(awg.CPSLevel, mim)
+		if ii1 != "" {
+			amn["i1"] = ii1
+		}
+		if ii2 != "" {
+			amn["i2"] = ii2
+		}
+		if ii3 != "" {
+			amn["i3"] = ii3
+		}
+		if ii4 != "" {
+			amn["i4"] = ii4
+		}
+		if ii5 != "" {
+			amn["i5"] = ii5
+		}
+	} else {
+		amn["packet"] = "none"
 	}
 
 	inbound := map[string]any{
@@ -372,19 +415,8 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 				"allowed_ips": []string{"0.0.0.0/0", "::/0"},
 			},
 		},
-		"mtu": 1420,
-		"amnezia": map[string]any{
-			"jc":     awg.JC,
-			"jmin":   awg.JMIN,
-			"jmax":   awg.JMAX,
-			"s1":     awg.S1,
-			"s2":     awg.S2,
-			"h1":     awg.H1,
-			"h2":     awg.H2,
-			"h3":     awg.H3,
-			"h4":     awg.H4,
-			"packet": "none",
-		},
+		"mtu":     1420,
+		"amnezia": amn,
 	}
 
 	inboundJSON, _ := json.Marshal(inbound)

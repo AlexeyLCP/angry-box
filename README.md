@@ -106,7 +106,9 @@ angry-box chain show mychain
 
 Глобальный профиль задаётся в конфиге (`default_obfuscation_profile`) или через `--profile` при создании цепочки / генерации конфига.
 
-Доступные: `russia_2026`, `iran_2026`, `china_2026`, `maximum_stealth_2026`.
+Доступные: `russia_2026`, `iran_2026`, `china_2026`, `maximum_stealth_2026`, `pro_2026` (pumbaX Pro 2026 ranges + QUIC CPS I1-I5).
+
+`pro_2026` и обновлённый `maximum_stealth_2026` используют лучшие практики 2026 (диапазоны Jc 4-16 / Jmin 50-256 / S 15-150 / H квадранты + генераторы QUIC Initial 1200B Chrome, SIP REGISTER, DNS+EDNS0 из pumbaX/awg-multi-script). Для стабильной работы AWG entry-ключи + CPS (I1-I5) генерируются **один раз** при создании цепочки и сохраняются — re-apply их не ротирует.
 
 Профиль влияет на:
 - XHTTP (методы/пути/заголовки/hosts) — для транспорта между нодами

@@ -66,11 +66,19 @@ type NodeResult struct {
 // AWGClientMaterial contains everything needed for a working AmneziaWG client
 // when the chain's user entry is AWG. If we auto-generated a sample, ClientPriv
 // is populated so the user gets a ready-to-use config immediately.
+// I1-I5 are the stable CPS packets (from pumbaX generators) — must be saved on Chain
+// at creation time exactly like the server keypair.
 type AWGClientMaterial struct {
 	ServerPub     string // the public key corresponding to the private_key written on the entry node
 	ClientPubUsed string // what ended up in the "peers" array on the server
 	ClientPriv    string // populated only for auto-generated samples (never persisted)
-	Note          string
+	// Stable CPS/I1-I5 (hex or <r N><b 0x...> form ready for sing-box amnezia.i*)
+	I1 string
+	I2 string
+	I3 string
+	I4 string
+	I5 string
+	Note string
 }
 
 // publicKeyDER returns the DER-encoded raw public key for Reality.
@@ -207,23 +215,48 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 		var buildErr error
 		if i == 0 && chain.UserProtocol == model.UserProtocolAWG {
 			// STABLE AWG user entry creds (the big change for "works like clockwork"):
-			// Reuse the keypair that was generated once at chain creation time (stored on the Chain).
-			// This way client configs do not break when you re-apply the chain after changing transport hops.
-			// Only transport (inter-hop) Reality keys rotate on every apply.
+			// Reuse the keypair + CPS/I1-I5 that were generated once at chain creation time (stored on the Chain).
+			// This way client configs (including the heavy pumbaX QUIC/SIP CPS) never break on re-apply.
 			serverPrivForAWG := chain.AWGEntryServerPriv
 			serverPubForAWG := chain.AWGEntryServerPub
 
+			i1 := chain.AWGEntryI1
+			i2 := chain.AWGEntryI2
+			i3 := chain.AWGEntryI3
+			i4 := chain.AWGEntryI4
+			i5 := chain.AWGEntryI5
+
 			if serverPrivForAWG == "" {
-				// Fallback: first time or legacy chain without stored creds → generate once and we should persist it
-				// (in practice this is now done at creation time in CLI/UI).
+				// Fallback first-time: generate keypair + CPS if preset requests it
 				if priv, pub, kerr := generateWireGuardKeypair(); kerr == nil {
 					serverPrivForAWG = priv
 					serverPubForAWG = pub
 				}
 			}
+			if (i1 == "" || preset.AWG != nil && preset.AWG.CPSLevel > 0) && (i1 == "" && i2 == "" && i3 == "" && i4 == "" && i5 == "") {
+				// Generate fresh stable CPS from the best pumbaX generators (QUIC 1200B etc.)
+				// These must be persisted by the caller (CLI/UI "chain create") exactly like server keys.
+				level := 0
+				mim := "quic"
+				if preset.AWG != nil {
+					level = preset.AWG.CPSLevel
+					if preset.AWG.Mimicry != "" {
+						mim = preset.AWG.Mimicry
+					}
+				}
+				if level > 0 {
+					ii1, ii2, ii3, ii4, ii5, _ := GenerateCPS(level, mim)
+					i1, i2, i3, i4, i5 = ii1, ii2, ii3, ii4, ii5
+					// Surface in report so CLI can save them back to the Chain store
+					if awgMaterial != nil {
+						awgMaterial.I1, awgMaterial.I2, awgMaterial.I3, awgMaterial.I4, awgMaterial.I5 = i1, i2, i3, i4, i5
+					}
+				}
+			}
 
 			// Build the node config but force the correct client pub for the user inbound
-			cfg, buildErr = buildNodeConfigWithAWGClient(node, i, n, params, chain.Nodes, &preset, chain.Transport, chain.UserProtocol, effectiveClientPub, serverPrivForAWG)
+			// Pass the (possibly just generated or pre-saved) stable I1-I5
+			cfg, buildErr = buildNodeConfigWithAWGClient(node, i, n, params, chain.Nodes, &preset, chain.Transport, chain.UserProtocol, effectiveClientPub, serverPrivForAWG, i1, i2, i3, i4, i5)
 			if buildErr == nil && serverPubForAWG != "" {
 				entryAWGServerPub = serverPubForAWG
 			}
@@ -364,7 +397,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		case model.UserProtocolTUIC:
 			inb = buildTUICUserInbound(port, params[i].UUID, tag, preset)
 		case model.UserProtocolAWG:
-			awgIn, _, _ := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
+			awgIn, _, _ := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "", "", "", "", "", "")
 			inb = awgIn
 		default:
 			inb = buildUserInbound(port, params[i].UUID, tag)
@@ -440,7 +473,8 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 // buildNodeConfigWithAWGClient is like buildNodeConfig but forces a specific clientPubKey
 // for the user-facing AWG inbound on the entry node (i==0). Used by ApplyChain so that
 // auto-generated or supplied client keys are actually used in the pushed config.
-func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol, awgClientPub string, serverAWGPriv string) (string, error) {
+// The i1..i5 are the stable CPS packets (pumbaX generators) — empty means no CPS / legacy "packet":"none".
+func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol, awgClientPub string, serverAWGPriv string, i1, i2, i3, i4, i5 string) (string, error) {
 	// For non-entry or non-AWG we can delegate.
 	if i != 0 || userProto != model.UserProtocolAWG {
 		return buildNodeConfig(node, i, n, params, nodes, preset, transport, userProto)
@@ -458,7 +492,7 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	tag := "user-in"
 	tags = append(tags, tag)
 
-	inb, _, _ := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv)
+	inb, _, _ := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv, i1, i2, i3, i4, i5)
 	inbounds = append(inbounds, inb)
 
 	// Outbound to next hop (if any)
@@ -893,17 +927,15 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset) 
 	return data
 }
 
-func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, clientPubKey string, serverPrivKeyB64 string) (json.RawMessage, string, error) {
-	// Always prefer the AWG section from the chosen country profile
+func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, clientPubKey string, serverPrivKeyB64 string, i1, i2, i3, i4, i5 string) (json.RawMessage, string, error) {
+	// Always prefer the AWG section from the chosen country profile (pumbaX Pro ranges + CPS)
 	awg := preset.AWG
 	if awg == nil {
-		// Very conservative fallback only if the preset is broken/missing AWG section
-		awg = &AWGPreset{
-			JC: 4, JMIN: 40, JMAX: 70,
-			S1: 0, S2: 0,
-			H1: 1, H2: 2, H3: 3, H4: 4,
-		}
+		// Very conservative fallback only if the preset is broken
+		awg = &AWGPreset{}
 	}
+	jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4 := awg.Concrete()
+	EnforceAWGInvariants(&jc, &jmin, &jmax, &s1, &s2, &s3, &s4, &h1, &h2, &h3, &h4)
 
 	var privKeyB64, pubKeyB64 string
 	var err error
@@ -911,7 +943,6 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 	if serverPrivKeyB64 != "" {
 		// Use pre-generated key (for apply-chain consistency between pushed config and reported server pub)
 		privKeyB64 = serverPrivKeyB64
-		// Derive pub from the supplied priv (we need a small helper or inline clamp+scalar)
 		pubKeyB64, err = deriveWireGuardPublicFromPrivate(privKeyB64)
 		if err != nil {
 			return nil, "", fmt.Errorf("derive awg pub from provided priv: %w", err)
@@ -928,6 +959,40 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
+	amn := map[string]any{
+		"jc":   jc,
+		"jmin": jmin,
+		"jmax": jmax,
+		"s1":   s1,
+		"s2":   s2,
+		"s3":   s3,
+		"s4":   s4,
+		"h1":   h1,
+		"h2":   h2,
+		"h3":   h3,
+		"h4":   h4,
+	}
+	// Only include CPS/I* when provided (stable from chain) or when level >0 in preset.
+	// "packet":"none" is omitted when real I1-I5 are used (better stealth).
+	if i1 != "" {
+		amn["i1"] = i1
+	}
+	if i2 != "" {
+		amn["i2"] = i2
+	}
+	if i3 != "" {
+		amn["i3"] = i3
+	}
+	if i4 != "" {
+		amn["i4"] = i4
+	}
+	if i5 != "" {
+		amn["i5"] = i5
+	}
+	if i1 == "" && i2 == "" {
+		amn["packet"] = "none" // legacy conservative mode
+	}
+
 	inb := map[string]any{
 		"type": "wireguard",
 		"tag":  tag,
@@ -942,19 +1007,8 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 				"allowed_ips": []string{"0.0.0.0/0", "::/0"},
 			},
 		},
-		"mtu": 1420,
-		"amnezia": map[string]any{
-			"jc":     awg.JC,
-			"jmin":   awg.JMIN,
-			"jmax":   awg.JMAX,
-			"s1":     awg.S1,
-			"s2":     awg.S2,
-			"h1":     awg.H1,
-			"h2":     awg.H2,
-			"h3":     awg.H3,
-			"h4":     awg.H4,
-			"packet": "none",
-		},
+		"mtu":     1420,
+		"amnezia": amn,
 	}
 
 	data, _ := json.Marshal(inb)
