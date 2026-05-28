@@ -232,19 +232,20 @@ func BuildAWGClientMaterialFromPreset(p ConnectionPreset, serverHost string) AWG
 	level := 0
 	mimicry := "none"
 
-	if p.AWG != nil {
-		// New fields will be added to AWGPreset in follow-up edit
-	}
-
+	// Force full CPS3 + QUIC for the two security-first 2026 profiles (user requirement: Security > Compatibility)
 	if p.Name == "pro_2026" || p.Name == "xhttp_max_stealth_2026" || strings.Contains(p.Name, "max_stealth") {
 		level = 3
 		mimicry = "quic"
-	} else if p.AWG != nil {
-		// simple heuristic from existing fields
-		if p.AWG.JMAX >= 100 {
-			level = 2
-			mimicry = "quic"
-		}
+	} else if p.CPSLevel > 0 {
+		level = p.CPSLevel
+		mimicry = p.AWGMimicry
+	} else if p.AWG != nil && p.AWG.CPSLevel > 0 {
+		level = p.AWG.CPSLevel
+		mimicry = p.AWG.Mimicry
+	} else if p.AWG != nil && p.AWG.JMAX >= 100 {
+		// Fallback heuristic for older-style presets
+		level = 2
+		mimicry = "quic"
 	}
 
 	return GenerateAWGObfsMaterial(level, mimicry)

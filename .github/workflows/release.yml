@@ -154,13 +154,21 @@ jobs:
           fi
 
           mkdir -p release-ipk
-          ./scripts/build-opkg.sh "$BIN" "$ARCH" "$VERSION" "./release-ipk" || echo "opkg packaging skipped or failed (non-fatal for now)"
+          ./scripts/build-opkg.sh "$BIN" "$ARCH" "$VERSION" "./release-ipk"
           ls -lh release-ipk/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
           path: build/*.tar.gz
+          retention-days: 7
+
+      # Explicitly upload .ipk packages so the release job can collect them
+      - uses: actions/upload-artifact@v4
+        if: matrix.target == 'keenetic-mipsel' || matrix.target == 'linux-arm64'
+        with:
+          name: ipk-${{ matrix.target }}
+          path: release-ipk/*.ipk
           retention-days: 7
 
   # ── Create GitHub Release ──
@@ -182,8 +190,8 @@ jobs:
         run: |
           mkdir -p release-assets
           find artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
-          # Include any .ipk packages produced for Keenetic / OpenWRT
-          find . -path '*/release-ipk/*.ipk' -exec cp {} release-assets/ \; 2>/dev/null || true
+          # Collect .ipk packages from the dedicated ipk-* artifacts (uploaded by the build job)
+          find artifacts -type f -name '*.ipk' -exec cp {} release-assets/ \; 2>/dev/null || true
           echo "=== Release assets ==="
           ls -lh release-assets/
 
