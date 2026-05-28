@@ -102,13 +102,13 @@ echo "2.0" > debian-binary
 
 IPK="${OUT}/angry-box_${VERSION}_${ARCH}.ipk"
 
-# Clean, reliable .ipk creation (works reliably on GitHub Actions runners)
+# Most reliable way to build .ipk for OpenWRT/Entware/Keenetic
+# Sequential appends after removing any stale file.
+# This pattern is known to work on a wide range of devices.
 rm -f "$IPK"
-ar rc "$IPK" debian-binary control.tar.gz data.tar.gz || {
-  echo "ERROR: Failed to create .ipk archive"
-  ls -l "$IPK" 2>/dev/null || true
-  exit 1
-}
+ar -r -c "$IPK" debian-binary
+ar -r "$IPK" control.tar.gz
+ar -r "$IPK" data.tar.gz
 
 rm -f control.tar.gz data.tar.gz debian-binary
 rm -rf "$PKG_DIR"
