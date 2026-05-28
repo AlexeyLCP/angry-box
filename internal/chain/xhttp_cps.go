@@ -107,46 +107,13 @@ func ApplyXHTTPObfuscation(transport map[string]any, preset *XHTTPPreset) {
 		return
 	}
 
-	// Padding (very important for breaking fixed-size fingerprints)
-	if preset.PaddingBytes != "" {
-		// Expect format "min-max" or single number
-		transport["x_padding_bytes"] = preset.PaddingBytes // sing-box / xray compatible name in many setups
-	} else {
-		// Auto-generate strong random padding range
-		minP := RandRange(120, 600)
-		maxP := RandRange(800, 1600)
-		transport["x_padding_bytes"] = fmt.Sprintf("%d-%d", minP, maxP)
-	}
-
-	// Multiplex controls (XMUX style)
-	if preset.Multiplex {
-		xmux := GenerateXMUX()
-		if preset.MaxConcurrency != "" {
-			xmux["max_concurrency"] = preset.MaxConcurrency
-		}
-		transport["multiplex"] = xmux
-	}
-
-	// Rich realistic headers (Naive-inspired)
+	// Rich realistic headers (Naive-inspired) — these are fully supported by sing-box
 	if len(preset.Headers) == 0 {
 		host := ""
 		if len(preset.Hosts) > 0 {
 			host = preset.Hosts[0]
 		}
 		transport["headers"] = GenerateRealisticHeaders(host)
-	}
-
-	// Upstream / Downstream separation hints (powerful technique from Xray XHTTP research)
-	if preset.UpstreamHost != "" || preset.DownstreamHost != "" {
-		// These can be consumed by more advanced builders or passed via extra
-		transport["upstream_host"] = preset.UpstreamHost
-		transport["downstream_host"] = preset.DownstreamHost
-		if preset.UpstreamAlpn != "" {
-			transport["upstream_alpn"] = preset.UpstreamAlpn
-		}
-		if preset.DownstreamAlpn != "" {
-			transport["downstream_alpn"] = preset.DownstreamAlpn
-		}
 	}
 }
 
