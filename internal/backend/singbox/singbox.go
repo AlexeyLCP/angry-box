@@ -17,7 +17,18 @@ const (
 	configDir      = "/etc/sing-box"
 	configFile     = "/etc/sing-box/config.json"
 	systemdUnit    = "/etc/systemd/system/sing-box.service"
+	logDir         = "/var/log/sing-box"
 )
+
+// Known good SHA256 checksums for sing-box releases (linux only).
+// These MUST be updated when changing singBoxVersion.
+// Get them from the official GitHub release page (sing-box-*.tar.gz.sha256).
+var singBoxChecksums = map[string]string{
+	// TODO: Fill real checksums for v1.12.0 (or current version)
+	"amd64": "",
+	"arm64": "",
+	"armv7": "",
+}
 
 var _ ports.Backend = (*Backend)(nil)
 
@@ -61,29 +72,47 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	arch := strings.TrimSpace(archOut)
 	goArch := archToGoArch(arch)
 
-	// Download and install sing-box.
+	// Download and install sing-box with checksum verification.
 	downloadURL := fmt.Sprintf(
 		"https://github.com/SagerNet/sing-box/releases/download/v%s/sing-box-%s-linux-%s.tar.gz",
 		singBoxVersion, singBoxVersion, goArch,
 	)
+
+	expectedChecksum, hasChecksum := singBoxChecksums[goArch]
 
 	installScript := fmt.Sprintf(
 		`set -e
 mkdir -p /tmp/sing-box-install
 cd /tmp/sing-box-install
 curl -fsSL '%s' -o sing-box.tar.gz
-tar xzf sing-box.tar.gz
+`,
+		downloadURL,
+	)
+
+	if hasChecksum {
+		installScript += fmt.Sprintf(
+			`echo '%s  sing-box.tar.gz' | sha256sum -c -
+`,
+			expectedChecksum,
+		)
+	} else {
+		// Warn in log if no checksum (should be temporary)
+		installScript += "echo 'WARNING: No checksum available for this architecture - skipping verification' >&2\n"
+	}
+
+	installScript += fmt.Sprintf(
+		`tar xzf sing-box.tar.gz
 cp sing-box-*/sing-box %s
 chmod +x %s
-mkdir -p %s
+mkdir -p %s %s
 rm -rf /tmp/sing-box-install
 `,
-		downloadURL, installPath, installPath, configDir,
+		installPath, installPath, configDir, logDir,
 	)
 
 	_, err = client.Run(installScript)
 	if err != nil {
-		return nil, fmt.Errorf("singbox: deploy: install: %w", err)
+		return nil, fmt.Errorf("singbox: deploy: install binary: %w", err)
 	}
 
 	// Create systemd service.
@@ -107,13 +136,15 @@ WantedBy=multi-user.target
 	writeCmd := fmt.Sprintf("cat > %s << 'SYSTEMD_UNIT_EOF'\n%s\nSYSTEMD_UNIT_EOF", systemdUnit, systemdContent)
 	_, err = client.Run(writeCmd)
 	if err != nil {
+		// Attempt partial cleanup
+		_, _ = client.Run(fmt.Sprintf("rm -f %s", installPath))
 		return nil, fmt.Errorf("singbox: deploy: create systemd unit: %w", err)
 	}
 
 	// Reload systemd, enable and start.
 	_, err = client.Run("systemctl daemon-reload && systemctl enable sing-box && systemctl start sing-box")
 	if err != nil {
-		return nil, fmt.Errorf("singbox: deploy: start service: %w", err)
+		return nil, fmt.Errorf("singbox: deploy: enable and start service: %w", err)
 	}
 
 	return &model.DeployResult{
@@ -123,7 +154,8 @@ WantedBy=multi-user.target
 	}, nil
 }
 
-// ApplyConfig generates a config and pushes it to the remote host, then restarts the proxy.
+// ApplyConfig generates a config and pushes it to the remote host.
+// It creates a backup of the previous config and attempts rollback on failure.
 func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType model.ConfigType, params model.ConfigParams) error {
 	cfg, err := b.GenerateConfig(cfgType, params)
 	if err != nil {
@@ -136,13 +168,20 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 	}
 	defer client.Close()
 
-	// Validate the JSON before pushing.
+	// Validate JSON structure before touching remote.
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(cfg.Content), &js); err != nil {
 		return fmt.Errorf("singbox: applyConfig: invalid JSON: %w", err)
 	}
 
-	// Ensure config directory exists and write config.
+	// Backup existing config if present.
+	backupCmd := fmt.Sprintf(
+		"if [ -f %s ]; then cp %s %s.bak.$(date +%%s); fi",
+		configFile, configFile, configFile,
+	)
+	_, _ = client.Run(backupCmd) // best effort
+
+	// Write new config.
 	writeCmd := fmt.Sprintf("mkdir -p %s && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF",
 		configDir, configFile, cfg.Content)
 
@@ -151,13 +190,21 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 	}
 
 	// Validate with sing-box check.
-	if _, err := client.Run(fmt.Sprintf("%s check -c %s", installPath, configFile)); err != nil {
-		return fmt.Errorf("singbox: applyConfig: config validation failed: %w", err)
+	checkCmd := fmt.Sprintf("%s check -c %s", installPath, configFile)
+	if _, err := client.Run(checkCmd); err != nil {
+		// Attempt rollback
+		rollbackCmd := fmt.Sprintf(
+			"if [ -f %s.bak.* ]; then latest=$(ls -t %s.bak.* | head -1); cp \"$latest\" %s; fi",
+			configFile, configFile, configFile,
+		)
+		_, _ = client.Run(rollbackCmd)
+		return fmt.Errorf("singbox: applyConfig: config validation failed (rollback attempted): %w", err)
 	}
 
-	// Restart to apply.
-	if _, err := client.Run("systemctl restart sing-box"); err != nil {
-		return fmt.Errorf("singbox: applyConfig: restart: %w", err)
+	// Prefer reload for minimal disruption, fall back to restart.
+	reloadCmd := fmt.Sprintf("%s reload -c %s 2>/dev/null || systemctl reload sing-box 2>/dev/null || systemctl restart sing-box", installPath, configFile)
+	if _, err := client.Run(reloadCmd); err != nil {
+		return fmt.Errorf("singbox: applyConfig: reload/restart failed: %w", err)
 	}
 
 	return nil
@@ -178,6 +225,8 @@ systemctl daemon-reload 2>/dev/null || true
 rm -f /usr/local/bin/sing-box
 rm -rf /etc/sing-box
 rm -rf /var/log/sing-box
+# Clean up old config backups (keep last 3 days worth if any)
+find /etc/sing-box -name 'config.json.bak.*' -mtime +3 -delete 2>/dev/null || true
 `
 
 	if _, err := client.Run(script); err != nil {
@@ -232,8 +281,13 @@ func (b *Backend) Reload(ctx context.Context, host model.Host) error {
 	}
 	defer client.Close()
 
-	// Try systemctl reload first, fall back to kill -HUP on MainPID.
-	reloadCmd := fmt.Sprintf("%s check -c %s && systemctl reload sing-box 2>/dev/null || systemctl kill -s HUP sing-box", installPath, configFile)
+	// Validate config first, then reload.
+	checkCmd := fmt.Sprintf("%s check -c %s", installPath, configFile)
+	if _, err := client.Run(checkCmd); err != nil {
+		return fmt.Errorf("singbox: reload: refusing reload, config invalid: %w", err)
+	}
+
+	reloadCmd := "systemctl reload sing-box 2>/dev/null || systemctl kill -s HUP sing-box"
 	if _, err := client.Run(reloadCmd); err != nil {
 		return fmt.Errorf("singbox: reload: %w", err)
 	}
@@ -249,12 +303,14 @@ func (b *Backend) Version() string { return singBoxVersion }
 
 func archToGoArch(arch string) string {
 	switch arch {
-	case "x86_64":
+	case "x86_64", "amd64":
 		return "amd64"
-	case "aarch64":
+	case "aarch64", "arm64":
 		return "arm64"
-	case "armv7l":
+	case "armv7l", "armv7", "arm":
 		return "armv7"
+	case "i386", "i686":
+		return "386"
 	default:
 		return arch
 	}

@@ -123,7 +123,16 @@ vet:
 
 .PHONY: test
 test:
-	go test ./...
+	go test ./... -count=1
+
+.PHONY: test-coverage
+test-coverage:
+	go test ./internal/... -count=1 -coverprofile=coverage.out 2>&1 | grep -E '(ok|FAIL)'
+	@echo ""
+	@echo "=== Coverage on core backend packages ==="
+	go tool cover -func=coverage.out | grep -E 'chain|singbox|config' | sort -k3 -nr || true
+	@echo ""
+	@echo "Run 'go tool cover -html=coverage.out' for interactive report"
 
 .PHONY: version
 version:

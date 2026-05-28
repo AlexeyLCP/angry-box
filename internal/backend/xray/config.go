@@ -18,7 +18,7 @@ import (
 // even though Xray uses a different overall config schema.
 
 type xrayConfig struct {
-	Log       *xrayLog         `json:"log,omitempty"`
+	Log       *xrayLog          `json:"log,omitempty"`
 	Inbounds  []json.RawMessage `json:"inbounds"`
 	Outbounds []json.RawMessage `json:"outbounds"`
 }
@@ -157,8 +157,8 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 			"decryption": "none",
 		},
 		"streamSettings": map[string]any{
-			"network":     "ws",
-			"security":    "none",
+			"network":  "ws",
+			"security": "none",
 			"wsSettings": map[string]any{
 				"path": "/ws",
 			},
@@ -206,4 +206,3 @@ func generateUUID() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
-

@@ -1,6 +1,9 @@
 package templates
 
-import "github.com/alexeylcp/angry-box/internal/domain/model"
+import (
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+)
 
 // Chains is the main content for /ui/chains.
 // It shows existing chains and a button to open the creation modal.
@@ -71,7 +74,17 @@ templ ChainRow(c *model.Chain) {
 			</div>
 			<div class="text-xs text-base-content/50 mt-0.5">{ len(c.Nodes) } hop(s)</div>
 		</td>
-		<td><span class="badge badge-ghost">{ c.Strategy }</span></td>
+		<td>
+			<div class="flex flex-col gap-0.5">
+				<span class="badge badge-ghost badge-sm">{ c.Strategy }</span>
+				if c.Transport != "" {
+					<span class="text-[10px] opacity-60">{ c.Transport }</span>
+				}
+				if c.UserProtocol != "" {
+					<span class="text-[10px] opacity-60">{ c.UserProtocol }</span>
+				}
+			</div>
+		</td>
 		<td>
 			<div class="flex gap-2">
 				<button
@@ -88,8 +101,8 @@ templ ChainRow(c *model.Chain) {
 					class="btn btn-ghost btn-xs text-error"
 					hx-delete={"/ui/chains/" + c.Name}
 					hx-confirm={"Delete chain " + c.Name + "?"}
-					hx-target={"#chain-" + c.Name}
-					hx-swap="outerHTML">
+					hx-target="closest tr"
+					hx-swap="delete">
 					Delete
 				</button>
 			</div>
@@ -98,7 +111,7 @@ templ ChainRow(c *model.Chain) {
 }
 
 // NewChainForm is the modal for creating a new chain.
-templ NewChainForm(availableHosts []*model.Host) {
+templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 	<dialog id="chain-modal" class="modal" open>
 		<div class="modal-box">
 			<h3 class="font-bold text-lg mb-4">Create New Chain</h3>
@@ -113,6 +126,36 @@ templ NewChainForm(availableHosts []*model.Host) {
 				<div class="form-control">
 					<label class="label"><span class="label-text">Chain Name (unique)</span></label>
 					<input type="text" name="name" class="input input-bordered" required placeholder="my-exit-chain" />
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+					<div class="form-control">
+						<label class="label"><span class="label-text">Transport</span></label>
+						<select name="transport" class="select select-bordered">
+							<option value="xhttp" selected>XHTTP (recommended)</option>
+							<option value="reality">Reality + TCP</option>
+						</select>
+					</div>
+
+					<div class="form-control">
+						<label class="label"><span class="label-text">User Protocol (entry)</span></label>
+						<select name="user_protocol" class="select select-bordered">
+							<option value="awg" selected>AWG (AmneziaWG)</option>
+							<option value="tuic">TUIC v5</option>
+							<option value="vless-reality">VLESS + Reality</option>
+						</select>
+					</div>
+
+					<div class="form-control">
+						<label class="label"><span class="label-text">Obfuscation Profile</span></label>
+						<select name="profile" class="select select-bordered">
+							<option value="">Use global default</option>
+							for _, p := range profiles {
+								<option value={p}>{p}</option>
+							}
+						</select>
+						<div class="label"><span class="label-text-alt text-base-content/50">Leave empty to use the global profile from config</span></div>
+					</div>
 				</div>
 
 				<div class="form-control">
@@ -151,13 +194,49 @@ templ NewChainForm(availableHosts []*model.Host) {
 	</dialog>
 }
 
-// ApplyResult is a small dismissible result box appended after an Apply click.
-templ ApplyResult(chainName string, success bool, message string) {
-	<div class={ "alert " + alertClass(success) + " shadow-sm text-sm flex justify-between items-start" }>
-		<div>
-			<strong>{ chainName }</strong>: { message }
+// ApplyResult supports both simple mode and rich report mode (from backend ApplyReport)
+templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, simpleMessage string) {
+	<div class={ "alert " + alertClass(success) + " shadow-sm text-sm mb-2" }>
+		<div class="w-full">
+			<div class="flex justify-between items-start mb-1">
+				<strong>{ chainName }</strong>
+				<button class="btn btn-ghost btn-xs" onclick="this.closest('.alert').remove()">✕</button>
+			</div>
+
+			if report != nil {
+				<div class="space-y-1 text-xs">
+					for _, n := range report.Nodes {
+						<div>
+							<span class="font-mono">{ n.ID }</span>
+							if n.Success {
+								<span class="text-success font-semibold">OK</span>
+							} else {
+								<span class="text-error font-semibold">FAIL</span>
+								if n.Error != "" {
+									<span class="opacity-70"> — { n.Error }</span>
+								}
+							}
+						</div>
+					}
+
+					if report.AWG != nil {
+						<div class="mt-2 p-2 bg-base-300 rounded font-mono text-[11px]">
+							<div class="font-semibold mb-0.5">AWG Client Keys (for first node)</div>
+							<div>Server Public: <span class="select-all">{ report.AWG.ServerPub }</span></div>
+							<div>Client Public used: <span class="select-all">{ report.AWG.ClientPubUsed }</span></div>
+							if report.AWG.ClientPriv != "" {
+								<div class="text-warning">Sample Client Private: <span class="select-all">{ report.AWG.ClientPriv }</span></div>
+							}
+							if report.AWG.Note != "" {
+								<div class="opacity-70 text-[10px]">{ report.AWG.Note }</div>
+							}
+						</div>
+					}
+				</div>
+			} else if simpleMessage != "" {
+				<div>{ simpleMessage }</div>
+			}
 		</div>
-		<button class="btn btn-ghost btn-xs" onclick="this.closest('.alert').remove()">✕</button>
 	</div>
 }
 
@@ -166,4 +245,38 @@ func alertClass(success bool) string {
 		return "alert-success"
 	}
 	return "alert-error"
+}
+
+// Minimal StatusPage for now (hosts with on-demand check)
+templ StatusPage(hosts []*model.Host) {
+	<div class="space-y-6">
+		<h2 class="text-2xl font-semibold">System Status</h2>
+		<div class="card bg-base-100 shadow">
+			<div class="overflow-x-auto">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Host</th>
+							<th>Address</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, h := range hosts {
+							<tr>
+								<td class="font-mono">{ h.ID }</td>
+								<td class="font-mono text-sm">{ h.Addr }</td>
+								<td>
+									<div hx-get={"/ui/hosts/" + h.ID + "/status"} hx-target="this" hx-swap="innerHTML">
+										<button class="btn btn-xs">Check</button>
+									</div>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<p class="text-xs opacity-60">Tip: Use the Hosts page for full management. Status here is on-demand.</p>
+	</div>
 }

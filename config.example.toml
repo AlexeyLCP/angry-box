@@ -7,6 +7,12 @@ store_file  = "/etc/angry-box/store.json"
 # Default backend when not specified on CLI
 default_backend = "sing-box"
 
-# Future options (examples):
-# log_level = "info"
-# api_key   = ""
+# Global obfuscation profile used for all chain generation and standalone config
+# unless a chain has its own obfuscation_profile override.
+# Built-in options: russia_2026, iran_2026, china_2026, maximum_stealth_2026
+default_obfuscation_profile = "maximum_stealth_2026"
+
+# Optional JSON file with extra ConnectionPreset definitions (merged on top of built-ins).
+# User-defined presets with the same name override the built-in ones.
+# Example file content: an array of objects with name, xhttp, awg, tuic, reality sections.
+# presets_file = "/etc/angry-box/custom-presets.json"
