@@ -2,8 +2,8 @@
 
 **Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
 
-[![Build & Test](https://github.com/alexeylcp/angry-box/actions/workflows/build.yml/badge.svg)](https://github.com/alexeylcp/angry-box/actions/workflows/build.yml)
-[![Release](https://github.com/alexeylcp/angry-box/actions/workflows/release.yml/badge.svg)](https://github.com/alexeylcp/angry-box/actions/workflows/release.yml)
+[![Build & Test](https://github.com/AlexeyLCP/lucx/actions/workflows/build.yml/badge.svg)](https://github.com/AlexeyLCP/lucx/actions/workflows/build.yml)
+[![Release](https://github.com/AlexeyLCP/lucx/actions/workflows/release.yml/badge.svg)](https://github.com/AlexeyLCP/lucx/actions/workflows/release.yml)
 
 Lightweight orchestrator for managing high-obfuscation proxy chains on remote machines **via SSH only**.
 
@@ -50,11 +50,11 @@ These are available both for sing-box and xray backends.
 
 ### From GitHub Releases (recommended)
 
-Download the latest tarball for your architecture from [Releases](https://github.com/alexeylcp/angry-box/releases), or use the installer:
+Download the latest tarball for your architecture from [Releases](https://github.com/AlexeyLCP/lucx/releases), or use the installer:
 
 ```bash
 # Latest stable
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | sh
 ```
 
 ### From source / development
@@ -63,10 +63,10 @@ The recommended way is the official installer script:
 
 ```bash
 # Latest version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | sh
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.0
+curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/lucx/main/scripts/install.sh | sh -s -- --version 0.2.0
 
 # Local binary
 sh scripts/install.sh --local ./angry-box
