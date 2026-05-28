@@ -140,7 +140,7 @@ func TestBuildNodeConfig_EntryNode_AWG_SingleNode(t *testing.T) {
 	params := []*hopParams{makeTestHopParams(443)}
 	nodes := []model.ChainNode{{ID: "node1", Addr: "1.2.3.4:22"}}
 
-	cfg, err := buildNodeConfig(&nodes[0], 0, 1, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG)
+	cfg, err := buildNodeConfig(&nodes[0], 0, 1, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
 	if err != nil {
 		t.Fatalf("buildNodeConfig failed: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestBuildNodeConfig_MiddleNode_XHTTP(t *testing.T) {
 		{ID: "n3", Addr: "3.3.3.3:22"},
 	}
 
-	cfg, err := buildNodeConfig(&nodes[1], 1, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolTUIC)
+	cfg, err := buildNodeConfig(&nodes[1], 1, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolTUIC, model.StrategyURLTest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestBuildNodeConfig_LastNode_Direct(t *testing.T) {
 	params := []*hopParams{p}
 	nodes := []model.ChainNode{{ID: "exit", Addr: "9.9.9.9:22"}}
 
-	cfg, err := buildNodeConfig(&nodes[0], 0, 1, params, nodes, &preset, model.TransportReality, model.UserProtocolVLESSReality)
+	cfg, err := buildNodeConfig(&nodes[0], 0, 1, params, nodes, &preset, model.TransportReality, model.UserProtocolVLESSReality, model.StrategyURLTest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestBuildNodeConfig_TUIC_Entry_With_XHTTP_Transport(t *testing.T) {
 		{ID: "exit", Addr: "2.2.2.2:22"},
 	}
 
-	cfg, err := buildNodeConfig(&nodes[0], 0, 2, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolTUIC)
+	cfg, err := buildNodeConfig(&nodes[0], 0, 2, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolTUIC, model.StrategyURLTest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestBuildNodeConfig_MultiHop_FullChain(t *testing.T) {
 	}
 
 	// Entry with AWG: wireguard endpoint + TUN inbound
-	cfg0, _ := buildNodeConfig(&nodes[0], 0, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG)
+	cfg0, _ := buildNodeConfig(&nodes[0], 0, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
 	if !strings.Contains(string(cfg0), `"type": "wireguard"`) {
 		t.Error("entry should have wireguard endpoint")
 	}
@@ -253,13 +253,13 @@ func TestBuildNodeConfig_MultiHop_FullChain(t *testing.T) {
 	}
 
 	// Middle
-	cfg1, _ := buildNodeConfig(&nodes[1], 1, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG)
+	cfg1, _ := buildNodeConfig(&nodes[1], 1, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
 	if !strings.Contains(string(cfg1), `"type": "http"`) {
 		t.Error("middle should have XHTTP transport")
 	}
 
 	// Exit
-	cfg2, _ := buildNodeConfig(&nodes[2], 2, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG)
+	cfg2, _ := buildNodeConfig(&nodes[2], 2, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
 	if !strings.Contains(string(cfg2), `"type": "direct"`) {
 		t.Error("exit should have direct outbound")
 	}

@@ -226,7 +226,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 		Rules:                 []RouteRuleEntry{},
 		Final:                 chainOutboundTag,
 		AutoDetectInterface:   true,
-		DefaultDomainResolver: "dns-local",
+		DefaultDomainResolver: "dns-direct",
 	}
 
 	ruleTags := map[string]bool{}
@@ -294,6 +294,72 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 	}
 
 	return section
+}
+
+// StrategyOutbound описывает сгенерированный стратегический outbound.
+type StrategyOutbound struct {
+	Type      string   `json:"type"`
+	Tag       string   `json:"tag"`
+	Outbounds []string `json:"outbounds"`
+	Default   string   `json:"default,omitempty"`
+	URL       string   `json:"url,omitempty"`
+	Interval  string   `json:"interval,omitempty"`
+	Tolerance int      `json:"tolerance,omitempty"`
+}
+
+// BuildStrategyOutbound создаёт стратегический outbound (urltest/selector/failover).
+func BuildStrategyOutbound(strategy string, outboundTags []string) *StrategyOutbound {
+	if len(outboundTags) == 0 {
+		return nil
+	}
+	switch strategy {
+	case "urltest":
+		return &StrategyOutbound{
+			Type:      "urltest",
+			Tag:       "auto",
+			Outbounds: outboundTags,
+			URL:       "https://www.gstatic.com/generate_204",
+			Interval:  "3m",
+			Tolerance: 50,
+		}
+	case "selector":
+		def := outboundTags[0]
+		return &StrategyOutbound{
+			Type:      "selector",
+			Tag:       "select",
+			Outbounds: outboundTags,
+			Default:   def,
+		}
+	case "failover":
+		return &StrategyOutbound{
+			Type:      "selector",
+			Tag:       "auto",
+			Outbounds: outboundTags,
+			Default:   outboundTags[0],
+		}
+	default:
+		return nil
+	}
+}
+
+// BuildDNSWithDetour создаёт DNS-секцию с detour через outbound цепочки.
+func BuildDNSWithDetour(chainOutboundTag string, directDomains []string) map[string]any {
+	dnsServers := []map[string]any{
+		{"tag": "dns-chain", "type": "tls", "server": "1.1.1.1", "detour": chainOutboundTag},
+		{"tag": "dns-direct", "type": "udp", "server": "8.8.8.8", "detour": "direct-out"},
+	}
+	dnsRules := []map[string]any{}
+	if len(directDomains) > 0 {
+		dnsRules = append(dnsRules, map[string]any{
+			"domain_suffix": directDomains,
+			"server":        "dns-direct",
+		})
+	}
+	return map[string]any{
+		"servers": dnsServers,
+		"rules":   dnsRules,
+		"final":   "dns-chain",
+	}
 }
 
 // BuildDNSSection создаёт DNS-секцию (sing-box 1.12+ non-legacy формат).

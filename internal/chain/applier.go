@@ -219,12 +219,12 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 			}
 
 			// Build the node config but force the correct client pub for the user inbound
-			cfg, buildErr = buildNodeConfigWithAWGClient(node, i, n, params, chain.Nodes, &preset, chain.Transport, chain.UserProtocol, effectiveClientPub, serverPrivForAWG)
+			cfg, buildErr = buildNodeConfigWithAWGClient(node, i, n, params, chain.Nodes, &preset, chain.Transport, chain.UserProtocol, effectiveClientPub, serverPrivForAWG, chain.Strategy)
 			if buildErr == nil && serverPubForAWG != "" {
 				entryAWGServerPub = serverPubForAWG
 			}
 		} else {
-			cfg, buildErr = buildNodeConfig(node, i, n, params, chain.Nodes, &preset, chain.Transport, chain.UserProtocol)
+			cfg, buildErr = buildNodeConfig(node, i, n, params, chain.Nodes, &preset, chain.Transport, chain.UserProtocol, chain.Strategy)
 		}
 
 		if buildErr != nil {
@@ -340,7 +340,7 @@ func generateHopParams(port int, preset *ConnectionPreset) (*hopParams, error) {
 }
 
 // buildNodeConfig constructs the full sing-box config for a node at position i of n.
-func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol) (string, error) {
+func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol, strategy model.Strategy) (string, error) {
 	var inbounds []json.RawMessage
 	var outbounds []json.RawMessage
 	var endpoints []json.RawMessage
@@ -403,18 +403,29 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		}
 	}
 
-	// Build routing: use preset-based routing with rule_set, geoip, geosite, domain rules.
+	// Build routing + strategy + DNS
 	var route interface{}
+	var strategyTag string
 	if len(outbounds) > 0 {
 		var firstOut map[string]any
 		json.Unmarshal(outbounds[0], &firstOut)
 		outTag, _ := firstOut["tag"].(string)
 
+		// Apply chain strategy: wrap outbounds in urltest/selector/failover
+		stratOut := BuildStrategyOutbound(string(strategy), []string{outTag})
+		if stratOut != nil {
+			stratJSON, _ := json.Marshal(stratOut)
+			outbounds = append(outbounds, stratJSON)
+			strategyTag = stratOut.Tag
+		} else {
+			strategyTag = outTag
+		}
+
 		// Generate full routing section from preset
-		routingSection := BuildRoutingSection(preset, outTag)
+		routingSection := BuildRoutingSection(preset, strategyTag)
 		route = routingSection
 
-		// Add block outbound if there are any block rules
+		// Add block/direct outbounds as needed
 		if len(routingSection.Rules) > 0 {
 			hasBlock := false
 			hasDirect := false
@@ -432,7 +443,6 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 				outbounds = append(outbounds, blockJSON)
 			}
 			if hasDirect {
-				// Ensure direct-out exists (for non-exit nodes in chain)
 				found := false
 				for _, ob := range outbounds {
 					var m map[string]any
@@ -463,11 +473,15 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 
 	if route != nil {
 		cfg["route"] = route
-		// Add DNS section for chain nodes
-		cfg["dns"] = BuildDNSSection("direct-out")
+		// DNS with detour through strategy outbound
+		dnsTag := strategyTag
+		if dnsTag == "" {
+			dnsTag = "direct-out"
+		}
+		cfg["dns"] = BuildDNSWithDetour(dnsTag, preset.Routing.DirectDomains)
 	}
 
-	// Add experimental cache_file (needed for rule_set)
+	// cache_file for rule_set
 	cfg["experimental"] = map[string]any{
 		"cache_file": map[string]any{
 			"enabled": true,
@@ -485,10 +499,10 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 // buildNodeConfigWithAWGClient is like buildNodeConfig but forces a specific clientPubKey
 // for the user-facing AWG inbound on the entry node (i==0). Used by ApplyChain so that
 // auto-generated or supplied client keys are actually used in the pushed config.
-func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol, awgClientPub string, serverAWGPriv string) (string, error) {
+func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hopParams, nodes []model.ChainNode, preset *ConnectionPreset, transport model.TransportType, userProto model.UserProtocol, awgClientPub string, serverAWGPriv string, strategy model.Strategy) (string, error) {
 	// For non-entry or non-AWG we can delegate.
 	if i != 0 || userProto != model.UserProtocolAWG {
-		return buildNodeConfig(node, i, n, params, nodes, preset, transport, userProto)
+		return buildNodeConfig(node, i, n, params, nodes, preset, transport, userProto, strategy)
 	}
 
 	var inbounds []json.RawMessage
@@ -528,43 +542,46 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	endpoints = append(endpoints, ep)
 	inbounds = append(inbounds, tunInb)
 
-	// Routing — use preset-based routing
+	// Routing + strategy + DNS
 	var route interface{}
+	var strategyTag string
 	if len(outbounds) > 0 {
 		var firstOut map[string]any
 		json.Unmarshal(outbounds[0], &firstOut)
-		if outTag, ok := firstOut["tag"].(string); ok {
-			routingSection := BuildRoutingSection(preset, outTag)
-			route = routingSection
+		outTag, _ := firstOut["tag"].(string)
 
-			// Add block/direct outbounds as needed
-			hasBlock, hasDirect := false, false
-			for _, r := range routingSection.Rules {
-				if r.Outbound == "block" {
-					hasBlock = true
-				}
-				if r.Outbound == "direct-out" {
-					hasDirect = true
-				}
+		// Apply chain strategy: wrap outbounds
+		stratOut := BuildStrategyOutbound(string(strategy), []string{outTag})
+		if stratOut != nil {
+			stratJSON, _ := json.Marshal(stratOut)
+			outbounds = append(outbounds, stratJSON)
+			strategyTag = stratOut.Tag
+		} else {
+			strategyTag = outTag
+		}
+
+		routingSection := BuildRoutingSection(preset, strategyTag)
+		route = routingSection
+
+		hasBlock, hasDirect := false, false
+		for _, r := range routingSection.Rules {
+			if r.Outbound == "block" { hasBlock = true }
+			if r.Outbound == "direct-out" { hasDirect = true }
+		}
+		if hasBlock {
+			blockOut := map[string]any{"type": "block", "tag": "block"}
+			blockJSON, _ := json.Marshal(blockOut)
+			outbounds = append(outbounds, blockJSON)
+		}
+		if hasDirect {
+			found := false
+			for _, ob := range outbounds {
+				var m map[string]any
+				json.Unmarshal(ob, &m)
+				if m["tag"] == "direct-out" { found = true; break }
 			}
-			if hasBlock {
-				blockOut := map[string]any{"type": "block", "tag": "block"}
-				blockJSON, _ := json.Marshal(blockOut)
-				outbounds = append(outbounds, blockJSON)
-			}
-			if hasDirect {
-				found := false
-				for _, ob := range outbounds {
-					var m map[string]any
-					json.Unmarshal(ob, &m)
-					if m["tag"] == "direct-out" {
-						found = true
-						break
-					}
-				}
-				if !found {
-					outbounds = append(outbounds, buildDirectOutbound("direct-out"))
-				}
+			if !found {
+				outbounds = append(outbounds, buildDirectOutbound("direct-out"))
 			}
 		}
 	}
@@ -582,18 +599,16 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	}
 	if route != nil {
 		cfg["route"] = route
-		cfg["dns"] = BuildDNSSection("direct-out")
+		dnsTag := strategyTag
+		if dnsTag == "" { dnsTag = "direct-out" }
+		cfg["dns"] = BuildDNSWithDetour(dnsTag, preset.Routing.DirectDomains)
 	}
 	cfg["experimental"] = map[string]any{
-		"cache_file": map[string]any{
-			"enabled": true,
-		},
+		"cache_file": map[string]any{"enabled": true},
 	}
 
 	content, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return "", err
-	}
+	if err != nil { return "", err }
 	return string(content), nil
 }
 
