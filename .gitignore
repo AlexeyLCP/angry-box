@@ -1,12 +1,57 @@
+# Project-specific
 .superpowers/
-
 .worktrees/
-
-# Built binaries
-lucx-core
-lucx-core.exe
+/angry-box
+/angry-box.exe
 *.db
+coverage.out
+coverage.html
 
-# Node
+# Build artifacts
+dist/
+build/
+*.tar.gz
+*.ipk
+*.deb
+
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Env files
+.env
+.env.*
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Node / frontend build
 node_modules/
 .serena/
+web/static/dist/
+frontend/dist/
+
+# Logs
+*.log
+logs/

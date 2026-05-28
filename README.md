@@ -1,53 +1,116 @@
-# Angry-BOX
-
 **Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
 
-Lightweight orchestrator for managing high-obfuscation proxy chains on remote machines **via SSH only**.
+# Angry-BOX
 
-**sing-box** is the primary backend. **xray** is supported as secondary (best-effort).
+Lightweight SSH-only orchestrator for **sing-box** (primary) and **xray** (secondary) on remote machines and routers.
 
-## Architecture Principles
+No agents on the nodes. Everything happens over SSH + minimal proxy install on the far side.
 
-- The orchestrator is a pure "head" — it never participates in the traffic chain itself.
-- Management is **SSH-only**. No persistent agents are deployed to nodes.
-- On remote machines (VPS, Keenetic routers, etc.) only the actual proxy (sing-box or xray) + minimal configuration + init script is installed.
-- You can run Angry-BOX itself on a Keenetic device. In this case it acts only as a management head and does **not** become a proxy node in your chains.
+## Architecture (simple and honest)
 
-### Two Types of Connections
+- The **orchestrator** is only the "head". It never proxies traffic itself.
+- Management is **SSH only**. No persistent agents on nodes (including Keenetic).
+- On remote machines (VPS, Keenetic, other routers) you only deploy the proxy (sing-box or xray) + tiny config + init script.
+- You can even run angry-box itself on a Keenetic (it acts purely as the control plane).
 
-- **Transport** — technical connections used to link hops inside the chain (XHTTP recommended in 2026).
-- **User** — client-facing entry points (TUIC v5, AmneziaWG with advanced CPS, etc.).
+### Two connection types
 
-## 2026 Obfuscation Presets (Security-First)
+- **Transport** — technical hops that chain the nodes together (XHTTP recommended, Reality+TCP as fallback).
+- **User** — real entry points for clients (TUIC v5 or AmneziaWG).
 
-Global profile can be set in config (`default_obfuscation_profile`) or overridden per chain with `--profile`.
+## 2026 Stealth Presets (the killer feature)
 
-Current presets:
-- `russia_2026`, `iran_2026`, `china_2026` — balanced regional profiles
-- `maximum_stealth_2026` — aggressive
-- `pro_2026` — full pumbaX Pro 2026 ranges + complete AWG CPS I1-I5 chain (level 3, QUIC primary)
-- `xhttp_max_stealth_2026` — **extreme** XHTTP-focused preset (heavy random padding, aggressive XMUX, upstream/downstream separation hints + pro AWG)
+We took the best public obfuscation research from the community as of mid-2026 (pumbaX/awg-multi-script, Xray XHTTP #4113 RPRX, Hysteria Gecko ideas, NaiveProxy headers, Hiddify/3x-ui patterns) and turned them into modular, force-enabled profiles.
 
-**Security > Compatibility** is the explicit policy for `pro_2026` and `xhttp_max_stealth_2026`. They deliver the strongest known 2026 DPI resistance against RKN, GFW and Iranian systems, at the cost of larger client configs and possible issues with very old clients.
+**Security > Compatibility** is the policy for the strong profiles.
 
-AWG entry credentials (server keypair + CPS I1-I5) are generated **once** at chain creation time and never rotate on re-apply.
+Included out of the box:
+- `russia_2026`, `iran_2026`, `china_2026`
+- `maximum_stealth_2026`
+- `pro_2026` — forces full CPS level 3 + 1200-byte QUIC Initial (Chrome fingerprint) for AWG
+- `xhttp_max_stealth_2026` — extreme XHTTP padding + XMUX + full CPS3+QUIC
+
+AWG now ships with proper I1-I5 generators (QUIC Initial exactly 1200B, realistic SIP REGISTER, DNS+EDNS0, short-header packets) when you use the pro/stealth presets.
+
+XHTTP transport gets realistic browser headers + padding ranges on both sing-box and xray backends.
 
 ### Advanced XHTTP Obfuscation
 
-We ported and implemented many state-of-the-art techniques:
+We ported and implemented many state-of-the-art techniques from the community:
 - Random-range header padding
-- XMUX-style multiplexing controls with ranges
-- Realistic browser-like headers (inspired by real Chromium stacks)
+- XMUX-style multiplexing controls
+- Realistic browser-like headers
 - Upstream/Downstream separation hints
-- Mode selection (packet-up / stream-up)
 
-These are available both for sing-box and xray backends.
+These are available for both sing-box and xray backends.
+
+**Credits / Acknowledgments** (we stand on the shoulders of giants):
+
+- pumbaX / awg-multi-script (the entire CPS + QUIC/SIP/DNS generator approach — "бери все")
+- RPRX + Xray community (XHTTP padding, XMUX, extra, realistic flow control — PR #4113 and related)
+- Hysteria2 Gecko obfuscation ideas
+- NaiveProxy header realism
+- Hiddify, 3x-ui, Telemt and the broader Russian/Iranian/Chinese proxy research community (2025-2026)
 
 ## Installation
 
-The recommended way is the official installer script:
+# Or with a local binary
+sh scripts/install.sh --local ./angry-box
+```
+
+### Keenetic (Entware / NDMS)
 
 ```bash
+# After opkg install (see below) or via the generic installer
+sh scripts/install.sh --version 0.2.0
+```
+
+### OpenWRT / routers via .ipk (new in 0.2.0)
+
+```bash
+# Keenetic (mipsel_24kc)
+opkg install angry-box_0.2.0_mipsel_24kc.ipk
+
+# OpenWRT aarch64 (e.g. many modern devices)
+opkg install angry-box_0.2.0_aarch64_cortex-a53.ipk
+```
+
+The packages install the binary to `/usr/bin/angry-box` (or `/opt/bin` on Entware), create directories, and provide a basic S99 init script.
+
+## Quick Start
+
+```bash
+# 1. Register hosts (the orchestrator talks to them only via SSH)
+angry-box host add node1 --addr 10.0.0.1:22 --user root --key ~/.ssh/id_ed25519
+angry-box host add node2 --addr 10.0.0.2:22 --user root --key ~/.ssh/id_ed25519
+
+# 2. Deploy sing-box (or xray) on them
+angry-box deploy -addr 10.0.0.1 ...
+angry-box deploy -addr 10.0.0.2 ...
+
+# 3. Create a chain using a 2026 stealth preset
+angry-box chain create mychain --nodes node1,node2 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
+
+# 4. Apply (this is where the magic CPS + XHTTP generators run)
+angry-box apply-chain mychain
+
+# 5. Get client configs (including ready AWG with the exact I1-I5 that were deployed)
+angry-box config -type user --protocol awg --profile pro_2026 --client-pubkey <pub>
+```
+
+## Support
+
+- GitHub Issues: https://github.com/alexeylcp/angry-box/issues
+- For router-specific problems (opkg, init scripts, Entware) please include the exact device model + OpenWRT/NDMS version.
+
+## License
+
+MIT
+
+---
+
+**This is v0.2.0** — the first release with the full 2026 obfuscation engine and real router packaging.
+=======
 # Latest version
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 

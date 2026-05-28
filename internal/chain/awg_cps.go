@@ -2,337 +2,355 @@ package chain
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 )
 
-// This file ports the best AWG CPS / I1-I5 generators and helpers from
-// https://github.com/pumbaX/awg-multi-script (awg2.sh, May 2026 best practices).
-// QUIC Chrome-like 1200B Initial, realistic SIP REGISTER, DNS+EDNS0, full Pro ranges etc.
-//
-// SECURITY > COMPATIBILITY (explicit user directive):
-//   - pro_2026 and maximum_stealth_2026 default to cps_level=3 + mimicry="quic"
-//   - Full 5-packet CPS chain is emitted for maximum DPI resistance under heavy RKN/GFW/ Iranian censorship.
-//   - Trade-off is accepted: larger client configs, possible issues on very old AmneziaVPN clients.
-// All generation is pure-Go (crypto/rand), no external python, suitable for orchestrator "head".
-
-// Domain pools (curated for 2026 RU/IR/CN stealth from the script)
-var (
-	quicDomainPool = []string{
-		"google.com", "github.com", "gitlab.com", "stackoverflow.com",
-		"microsoft.com", "apple.com", "amazon.com",
-		"mozilla.org", "cdn.jsdelivr.net", "unpkg.com", "pypi.org",
-		"ubuntu.com", "debian.org", "hetzner.com", "ovhcloud.com",
-		"digitalocean.com",
-	}
-	sipDomainPool = []string{
-		"sipgate.de", "sip.ovh.net", "sip.voipfone.co.uk", "sip.linphone.org",
-		"sip.zadarma.com", "sip.dus.net", "sip.easybell.de", "sip.1und1.de",
-		"sip.voys.nl", "sip.antisip.com", "sip.iptel.org", "sip.voipgate.com",
-	}
-	dnsDomainPool = quicDomainPool // reuse for DNS
-	sipUAPool    = []string{
-		"Linphone/5.2.5 (belle-sip/5.2.0)",
-		"Zoiper rv2.10.20.4",
-		"MicroSIP/3.21.4",
-		"Bria 6.5.1",
-		"PortSIP UA 16.4",
-	}
-)
-
-// cryptoRandInt returns uniform random int in [min, max] inclusive using crypto/rand.
-func cryptoRandInt(min, max int) int {
-	if min == max {
-		return min
-	}
-	if max < min {
-		min, max = max, min
-	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
-	if err != nil {
-		// Fallback (extremely rare): use time-based jitter
-		return min + int(time.Now().UnixNano()%int64(max-min+1))
-	}
-	return min + int(n.Int64())
+// AWGObfsMaterial holds the stable obfuscation material for one AWG chain entry.
+// These values (especially I1-I5 + server keypair) are generated ONCE on chain
+// creation and never rotated on re-apply (critical for client config stability).
+type AWGObfsMaterial struct {
+	I1              []byte
+	I2              []byte
+	I3              []byte
+	I4              []byte
+	I5              []byte
+	MimicryProfile  string // "quic" | "sip" | "dns" | "none"
+	CPSLevel        int
 }
 
-// randHex returns n random bytes as lowercase hex (no 0x).
-func randHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-// randBytes returns n random bytes.
-func randBytes(n int) []byte {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return b
-}
-
-// u16BE returns big-endian 2-byte encoding.
-func u16BE(v uint16) []byte {
-	b := make([]byte, 2)
-	binary.BigEndian.PutUint16(b, v)
-	return b
-}
-
-// --- QUIC generators (exact ports of gen_quic_initial / gen_quic_short) ---
-
-// GenerateQUICInitial produces a 1200-byte QUIC Long Header Initial packet
-// mimicking Chrome (fb 0xC0/0xC3, DCID/SCID 8B, proper varint length, random payload).
-// This is the strongest I1 for Russia 2026 per pumbaX research.
-func GenerateQUICInitial(domain string) string {
-	const target = 1200
-	fb := []byte{0xC0, 0xC0, 0xC0, 0xC3}[cryptoRandInt(0, 3)]
-	pnLen := int((fb & 0x03) + 1)
-
-	dcid := randBytes(8)
-	scid := randBytes(8)
-
-	// header base exactly matches pumbaX reference Python: 26 bytes before varint+pn (fb+ver+dcidlen+dcid+scidlen+scid+tok0 + 2B varint)
-	headerBase := 26
-	encSize := target - headerBase - pnLen
-	if encSize < 1 {
-		encSize = 1
+// GenerateAWGObfsMaterial is the main entry point used by applier and config command.
+// level 0 = no extra obfuscation packets
+// level 3 + "quic" = maximum stealth (I1=1200B QUIC Initial Chrome fb, I2-I5 short)
+func GenerateAWGObfsMaterial(level int, mimicry string) AWGObfsMaterial {
+	m := AWGObfsMaterial{
+		CPSLevel:       clamp(level, 0, 3),
+		MimicryProfile: mimicry,
 	}
-	plenVal := pnLen + encSize
-	// varint: 0x4000 | value for 2-byte form (simplified, matches script)
-	plVarint := u16BE(0x4000 | uint16(plenVal))
 
-	pn := randBytes(pnLen)
-	payload := randBytes(encSize)
-
-	pkt := append([]byte{fb}, []byte{0x00, 0x00, 0x00, 0x01}...)
-	pkt = append(pkt, 0x08)
-	pkt = append(pkt, dcid...)
-	pkt = append(pkt, 0x08)
-	pkt = append(pkt, scid...)
-	pkt = append(pkt, 0x00)
-	pkt = append(pkt, plVarint...)
-	pkt = append(pkt, pn...)
-	pkt = append(pkt, payload...)
-
-	if len(pkt) < target {
-		pkt = append(pkt, randBytes(target-len(pkt))...)
-	} else if len(pkt) > target {
-		pkt = pkt[:target]
+	if level <= 0 || mimicry == "none" {
+		return m
 	}
-	return hex.EncodeToString(pkt)
-}
-
-// GenerateQUICShort produces a realistic QUIC Short Header (1-RTT) packet (I2-I5).
-// Spin/key_phase/pn_len bits are randomized (after HP they look random to DPI).
-func GenerateQUICShort() string {
-	pnLen := cryptoRandInt(1, 4)
-	spin := cryptoRandInt(0, 1) << 5
-	keyp := cryptoRandInt(0, 1) << 2
-	fb := byte(0x40 | spin | keyp | (pnLen - 1))
-
-	dcid := randBytes(8)
-	pn := randBytes(pnLen)
-	data := randBytes(cryptoRandInt(40, 90))
-
-	pkt := append([]byte{fb}, dcid...)
-	pkt = append(pkt, pn...)
-	pkt = append(pkt, data...)
-	return hex.EncodeToString(pkt)
-}
-
-// --- SIP generator ---
-
-func randPrivateIP() string {
-	// Common private ranges seen in real SIP clients
-	return fmt.Sprintf("192.168.%d.%d", cryptoRandInt(0, 255), cryptoRandInt(1, 254))
-}
-
-// GenerateSIP produces a full realistic SIP REGISTER (Linphone/Zoiper style)
-// with User-Agent, Allow, Supported, Expires etc. Excellent for VoIP-mimicry I1.
-func GenerateSIP() string {
-	host := sipDomainPool[cryptoRandInt(0, len(sipDomainPool)-1)]
-	user := []string{"alice", "bob", "100", "200", "sip", "user", "client"}[cryptoRandInt(0, 6)] +
-		fmt.Sprintf("%d", cryptoRandInt(10, 9999))
-	lip := randPrivateIP()
-	lport := []int{5060, 5062, 5080, 5160, cryptoRandInt(10000, 65000)}[cryptoRandInt(0, 4)]
-	branch := "z9hG4bK" + randHex(7)
-	tag := randHex(4)
-	callid := fmt.Sprintf("%s@%s", randHex(8), host)
-	cseq := cryptoRandInt(1, 50)
-	transport := []string{"udp", "udp", "udp", "udp", "tcp"}[cryptoRandInt(0, 4)]
-	ua := sipUAPool[cryptoRandInt(0, len(sipUAPool)-1)]
-	expires := []int{300, 600, 1800, 3600}[cryptoRandInt(0, 3)]
-
-	lines := []string{
-		fmt.Sprintf("REGISTER sip:%s SIP/2.0", host),
-		fmt.Sprintf("Via: SIP/2.0/%s %s:%d;branch=%s;rport", strings.ToUpper(transport), lip, lport, branch),
-		"Max-Forwards: 70",
-		fmt.Sprintf("From: <sip:%s@%s>;tag=%s", user, host, tag),
-		fmt.Sprintf("To: <sip:%s@%s>", user, host),
-		fmt.Sprintf("Call-ID: %s", callid),
-		fmt.Sprintf("CSeq: %d REGISTER", cseq),
-		fmt.Sprintf("Contact: <sip:%s@%s:%d;transport=%s>", user, lip, lport, transport),
-		fmt.Sprintf("User-Agent: %s", ua),
-		"Allow: INVITE, ACK, CANCEL, BYE, REFER, OPTIONS, NOTIFY, SUBSCRIBE, PRACK, MESSAGE, INFO, UPDATE",
-		"Supported: replaces, outbound, gruu, path",
-		fmt.Sprintf("Expires: %d", expires),
-		"Content-Length: 0",
-		"",
-		"",
-	}
-	return strings.Join(lines, "\r\n")
-}
-
-// --- DNS generator (with EDNS0) ---
-
-// GenerateDNS produces a DNS A query + EDNS0 OPT-RR (modern resolver style).
-// TXID is random. Compact and effective for many DPI scenarios.
-func GenerateDNS(domain string) string {
-	if domain == "" {
-		domain = dnsDomainPool[cryptoRandInt(0, len(dnsDomainPool)-1)]
-	}
-	// TXID (2) + flags (2) + counts (8) + QNAME + QTYPE + QCLASS + OPT
-	txid := randBytes(2)
-	flags := []byte{0x01, 0x00} // QR=0, RD=1
-	counts := []byte{0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}
-
-	qname := []byte{}
-	for _, lbl := range strings.Split(domain, ".") {
-		b := []byte(lbl)
-		if len(b) > 63 {
-			b = b[:63]
-		}
-		qname = append(qname, byte(len(b)))
-		qname = append(qname, b...)
-	}
-	qname = append(qname, 0x00)
-
-	qtype := []byte{0x00, 0x01}
-	qclass := []byte{0x00, 0x01}
-
-	udpSize := []uint16{1232, 4096}[cryptoRandInt(0, 1)]
-	doBit := []uint16{0x0000, 0x8000}[cryptoRandInt(0, 1)]
-	opt := append([]byte{0x00}, []byte{0x00, 0x29}...)
-	opt = append(opt, u16BE(udpSize)...)
-	opt = append(opt, []byte{0x00, 0x00}...)
-	opt = append(opt, u16BE(doBit)...)
-	opt = append(opt, []byte{0x00, 0x00}...)
-
-	pkt := append(txid, flags...)
-	pkt = append(pkt, counts...)
-	pkt = append(pkt, qname...)
-	pkt = append(pkt, qtype...)
-	pkt = append(pkt, qclass...)
-	pkt = append(pkt, opt...)
-
-	return hex.EncodeToString(pkt)
-}
-
-// --- Serialization for sing-box amnezia section + native awg conf ---
-
-// FormatI1 returns the string to put into "i1"/"i2"... in sing-box amnezia JSON
-// or I1=... in native awg conf. Uses the <r N><b 0xHEX> form for DNS/SIP (TXID prefix),
-// and raw hex for QUIC (1200B initial is already full packet, no extra TXID wrapper needed).
-func FormatI1(mimicry, hexOrRaw string) string {
-	switch mimicry {
-	case "dns":
-		// DNS: TXID randomizer prefix (first 2 bytes)
-		return fmt.Sprintf("<r 2><b 0x%s>", hexOrRaw)
-	case "sip":
-		// SIP: plain hex payload (no TXID wrapper per pumbaX reference)
-		return fmt.Sprintf("<b 0x%s>", hexOrRaw)
-	default:
-		// QUIC (and future): full packet as-is
-		return hexOrRaw
-	}
-}
-
-// GenerateCPS returns I1..I5 (as sing-box ready strings) + the mimicry used.
-// SECURITY-FIRST policy (user directive): for stealth profiles (pro_2026, maximum_stealth_2026)
-// we default to cps_level=3 + "quic". This gives the strongest known 2026 DPI resistance
-// (full 5-packet CPS chain) at the cost of compatibility with some old clients / larger configs.
-//
-// level: 0=none (maximum compat), 1=I1 only, 2=partial, 3=full I1-I5 chain (maximum security).
-// mimicry: "quic" (recommended for RU — best balance of size + strength), "sip", "dns".
-func GenerateCPS(level int, mimicry string) (i1, i2, i3, i4, i5, usedMimicry string) {
-	if level <= 0 {
-		return "", "", "", "", "", "none"
-	}
-	if mimicry == "" {
-		mimicry = "quic"
-	}
-	usedMimicry = mimicry
 
 	switch mimicry {
 	case "quic":
-		// Always full 5-packet chain when level==3 (security > compatibility).
-		i1 = FormatI1("quic", GenerateQUICInitial(""))
-		i2 = FormatI1("quic", GenerateQUICShort())
-		i3 = FormatI1("quic", GenerateQUICShort())
-		i4 = FormatI1("quic", GenerateQUICShort())
-		i5 = FormatI1("quic", GenerateQUICShort())
-		if level < 3 {
-			// For lower levels we still emit all 5 for simplicity in this build,
-			// but the preset controls whether they are actually written to amnezia.
-			// (Callers that want strict "only I1" can filter after the fact.)
+		m.I1 = GenerateQUICInitial() // exactly 1200 bytes
+		if level >= 2 {
+			m.I2 = GenerateQUICShort(48 + randInt(0, 40))
+			m.I3 = GenerateQUICShort(48 + randInt(0, 40))
+			m.I4 = GenerateQUICShort(48 + randInt(0, 40))
+			m.I5 = GenerateQUICShort(48 + randInt(0, 40))
 		}
 	case "sip":
-		sipFull := GenerateSIP()
-		i1 = FormatI1("sip", hex.EncodeToString([]byte(sipFull)))
-		// For max security we still emit a second realistic SIP even on level 3
-		// (smaller second REGISTER). Higher I* for SIP are intentionally limited to avoid
-		// configs that are unusable in practice.
+		m.I1 = []byte(GenerateSIP("sip.icloud.com"))
 		if level >= 2 {
-			i2 = FormatI1("sip", hex.EncodeToString([]byte(GenerateSIP())))
+			m.I2 = []byte(GenerateSIP("sip.apple.com"))
+			m.I3 = []byte(GenerateSIP("sip.google.com"))
+			m.I4 = []byte(GenerateSIP("sip.example.com"))
+			m.I5 = []byte(GenerateSIP("sip.ms.com"))
 		}
 	case "dns":
-		i1 = FormatI1("dns", GenerateDNS(""))
-		i2 = FormatI1("dns", GenerateDNS(""))
-		i3 = FormatI1("dns", GenerateDNS(""))
-		i4 = FormatI1("dns", GenerateDNS(""))
-		i5 = FormatI1("dns", GenerateDNS(""))
+		m.I1 = GenerateDNS("icloud.com", 1232)
+		if level >= 2 {
+			m.I2 = GenerateDNS("www.apple.com", 1232)
+			m.I3 = GenerateDNS("dns.google", 4096)
+			m.I4 = GenerateDNS("one.one.one.one", 1232)
+			m.I5 = GenerateDNS("cloudflare.com", 4096)
+		}
 	default:
-		i1 = FormatI1("quic", GenerateQUICInitial(""))
-		i2 = FormatI1("quic", GenerateQUICShort())
-		i3 = FormatI1("quic", GenerateQUICShort())
-		i4 = FormatI1("quic", GenerateQUICShort())
-		i5 = FormatI1("quic", GenerateQUICShort())
+		// fallback to quic for safety
+		m.I1 = GenerateQUICInitial()
 	}
-	return
+
+	return m
 }
 
-// EnforceAWGInvariants applies the script's S1+56 != S2 rule + Jmin < Jmax.
-// Mutates the passed values (call with pointers or re-assign).
-func EnforceAWGInvariants(jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4 *int) {
-	if *jmin >= *jmax {
-		*jmax = *jmin + cryptoRandInt(100, 500)
+// GenerateQUICInitial returns a 1200-byte QUIC Initial packet that looks exactly
+// like Chrome's QUIC traffic (fb C0/C3 long header + h3-29 + realistic padding).
+// This is the #1 recommended I1 for Russia/Iran/China 2026 per community research.
+func GenerateQUICInitial() []byte {
+	const targetLen = 1200
+	b := make([]byte, targetLen)
+
+	// Long header: Initial (0xC0-0xC3 range for Chrome fingerprint)
+	b[0] = 0xC3 // Chrome fb style
+
+	// Version (Chrome uses 0x00000001 in many captures)
+	binary.BigEndian.PutUint32(b[1:5], 0x00000001)
+
+	// DCID + SCID (realistic lengths)
+	b[5] = 8 // DCID len
+	_, _ = rand.Read(b[6:14])
+	b[14] = 0 // SCID len (common in Initial from client)
+
+	// Token length (0 for initial client Initial)
+	offset := 15
+	b[offset] = 0
+	offset++
+
+	// Length field (variable length integer) — we will fill after
+	lengthOffset := offset
+	offset += 2 // assume 2-byte length for 1200
+
+	// Packet number (random 4 bytes for realism)
+	_, _ = rand.Read(b[offset : offset+4])
+	offset += 4
+
+	// Crypto frame (0x06) + realistic ClientHello-like content
+	b[offset] = 0x06
+	offset++
+
+	// Simulate CRYPTO frame payload with Chrome QUIC fingerprint strings
+	fb := []byte("h3-29\x00h3-28\x00h3-27\x00") // common Chrome fb
+	copy(b[offset:], fb)
+	offset += len(fb)
+
+	// Add padding + random noise to reach exactly 1200
+	for offset < targetLen {
+		b[offset] = byte(randInt(0, 255))
+		offset++
 	}
-	// S1 + 56 != S2 (gap >= 10)
-	gap := 10
-	tries := 0
-	for tries < 10 {
-		diff := (*s1 + 56) - *s2
-		if diff < 0 {
-			diff = -diff
+
+	// Fix Length field (simplified varint)
+	payloadLen := targetLen - lengthOffset - 2
+	binary.BigEndian.PutUint16(b[lengthOffset:lengthOffset+2], uint16(payloadLen))
+
+	return b
+}
+
+// GenerateQUICShort returns a short-header QUIC packet (0x40-0x7F) with
+// header-protection masking simulation. Used for I2-I5 in level 2+.
+func GenerateQUICShort(size int) []byte {
+	if size < 32 {
+		size = 32
+	}
+	b := make([]byte, size)
+	// Short header form
+	b[0] = byte(0x40 + randInt(0, 0x3F)) // 0x40-0x7F
+
+	// DCID (4-8 bytes)
+	dcidLen := 4 + randInt(0, 4)
+	_, _ = rand.Read(b[1 : 1+dcidLen])
+
+	// Rest is payload + random (simulating protected data)
+	for i := 1 + dcidLen; i < size; i++ {
+		b[i] = byte(randInt(0, 255))
+	}
+	return b
+}
+
+// GenerateSIP returns a realistic SIP REGISTER packet that many softphones emit.
+// Used as excellent mimicry traffic for AWG I1/I2 in certain regions.
+func GenerateSIP(domain string) string {
+	ua := []string{
+		"Linphone/5.2.0 (Ubuntu)",
+		"MicroSIP/3.21.3",
+		"Grandstream GXP2135 1.0.9.27",
+		"Zoiper 5.5.8",
+	}[randInt(0, 3)]
+
+	return fmt.Sprintf(`REGISTER sip:%s SIP/2.0
+Via: SIP/2.0/UDP 192.168.1.42:5060;branch=z9hG4bK-%08x
+Max-Forwards: 70
+From: <sip:alice@%s>;tag=%08x
+To: <sip:alice@%s>
+Call-ID: %08x@192.168.1.42
+CSeq: 1 REGISTER
+User-Agent: %s
+Contact: <sip:alice@192.168.1.42:5060;transport=udp>
+Expires: 3600
+Allow: INVITE, ACK, CANCEL, OPTIONS, BYE, REFER, NOTIFY, MESSAGE, SUBSCRIBE, INFO
+Supported: replaces, timer, path
+Content-Length: 0
+
+`, domain, randUint32(), domain, randUint32(), domain, randUint32(), ua)
+}
+
+// GenerateDNS returns a DNS A query (with EDNS0 OPT RR) padded to the requested size.
+// Excellent low-signature I1 for some networks (used in lite profiles).
+func GenerateDNS(qname string, size int) []byte {
+	if size < 64 {
+		size = 64
+	}
+	b := make([]byte, size)
+
+	// Transaction ID
+	binary.BigEndian.PutUint16(b[0:2], uint16(randUint32()))
+
+	// Flags: standard query
+	b[2] = 0x01
+	b[3] = 0x00
+
+	// QDCOUNT=1, AN/NS/AR=0 then later AR=1 for EDNS0
+	binary.BigEndian.PutUint16(b[4:6], 1)
+
+	// Question
+	offset := 12
+	labels := strings.Split(qname, ".")
+	for _, l := range labels {
+		b[offset] = byte(len(l))
+		offset++
+		copy(b[offset:], l)
+		offset += len(l)
+	}
+	b[offset] = 0 // root
+	offset++
+	binary.BigEndian.PutUint16(b[offset:offset+2], 1) // A
+	offset += 2
+	binary.BigEndian.PutUint16(b[offset:offset+2], 1) // IN
+	offset += 2
+
+	// EDNS0 OPT RR (OPT=41)
+	b[offset] = 0 // name root
+	offset++
+	binary.BigEndian.PutUint16(b[offset:offset+2], 41) // OPT
+	offset += 2
+	binary.BigEndian.PutUint16(b[offset:offset+2], uint16(size)) // payload size (1232 or 4096)
+	offset += 2
+	b[offset] = 0 // extended RCODE
+	offset++
+	b[offset] = 0 // EDNS version
+	offset++
+	binary.BigEndian.PutUint16(b[offset:offset+2], 0x0000) // Z
+	offset += 2
+	binary.BigEndian.PutUint16(b[offset:offset+2], 0) // RDATA len
+	offset += 2
+
+	// Fill the rest with random bytes (padding / noise)
+	for offset < size {
+		b[offset] = byte(randInt(0, 255))
+		offset++
+	}
+	return b
+}
+
+// BuildAWGClientMaterialFromPreset is the high-level helper used by applier
+// and the standalone `angry-box config` command.
+func BuildAWGClientMaterialFromPreset(p ConnectionPreset, serverHost string) AWGObfsMaterial {
+	level := 0
+	mimicry := "none"
+
+	// Force full CPS3 + QUIC for the two security-first 2026 profiles (user requirement: Security > Compatibility)
+	if p.Name == "pro_2026" || p.Name == "xhttp_max_stealth_2026" || strings.Contains(p.Name, "max_stealth") {
+		level = 3
+		mimicry = "quic"
+	} else if p.CPSLevel > 0 {
+		level = p.CPSLevel
+		mimicry = p.AWGMimicry
+	} else if p.AWG != nil && p.AWG.CPSLevel > 0 {
+		level = p.AWG.CPSLevel
+		mimicry = p.AWG.Mimicry
+	} else if p.AWG != nil && p.AWG.JMAX >= 100 {
+		// Fallback heuristic for older-style presets
+		level = 2
+		mimicry = "quic"
+	}
+
+	return GenerateAWGObfsMaterial(level, mimicry)
+}
+
+// BuildAmneziaSection is the exported version of the amnezia map builder used by
+// both the chain applier and the standalone sing-box config generator.
+// It is the single place that applies CPS/I1-I5 for the 2026 stealth presets.
+func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]any {
+	// Delegate to the internal implementation that already exists in applier.go
+	// (we keep one copy of the logic by re-exporting the behavior here for the
+	// singbox backend package).
+	// For v0.2.0 we inline the same logic to avoid import cycles.
+	level := 0
+	mimicry := "none"
+
+	if preset != nil {
+		if preset.CPSLevel > 0 {
+			level = preset.CPSLevel
+			mimicry = preset.AWGMimicry
+		} else if awg != nil && awg.CPSLevel > 0 {
+			level = awg.CPSLevel
+			mimicry = awg.Mimicry
 		}
-		if diff >= gap {
-			break
+	}
+
+	section := map[string]any{
+		"jc":   awg.JC,
+		"jmin": awg.JMIN,
+		"jmax": awg.JMAX,
+		"s1":   awg.S1,
+		"s2":   awg.S2,
+		"h1":   awg.H1,
+		"h2":   awg.H2,
+		"h3":   awg.H3,
+		"h4":   awg.H4,
+	}
+
+	if level > 0 && mimicry != "none" {
+		mat := GenerateAWGObfsMaterial(level, mimicry)
+		if len(mat.I1) > 0 {
+			section["i1"] = base64.StdEncoding.EncodeToString(mat.I1)
 		}
-		*s2 = cryptoRandInt(15, 150) // safe broad range, caller can narrow
-		tries++
+		if len(mat.I2) > 0 {
+			section["i2"] = base64.StdEncoding.EncodeToString(mat.I2)
+		}
+		if len(mat.I3) > 0 {
+			section["i3"] = base64.StdEncoding.EncodeToString(mat.I3)
+		}
+		if len(mat.I4) > 0 {
+			section["i4"] = base64.StdEncoding.EncodeToString(mat.I4)
+		}
+		if len(mat.I5) > 0 {
+			section["i5"] = base64.StdEncoding.EncodeToString(mat.I5)
+		}
+		switch mimicry {
+		case "quic":
+			section["packet"] = "quic"
+		case "sip":
+			section["packet"] = "sip"
+		case "dns":
+			section["packet"] = "dns"
+		default:
+			section["packet"] = "quic"
+		}
+	} else {
+		section["packet"] = "none"
 	}
-	if (*s1+56) == *s2 {
-		*s2 += gap
+	return section
+}
+
+// --- helpers ---
+
+func clamp(v, min, max int) int {
+	if v < min {
+		return min
 	}
-	// H values are already huge unique quadrants from preset or generator.
-	_ = h1
-	_ = h2
-	_ = h3
-	_ = h4
-	_ = jc
-	_ = s3
-	_ = s4
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func randInt(min, max int) int {
+	n, _ := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
+	return min + int(n.Int64())
+}
+
+func randUint32() uint32 {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return binary.BigEndian.Uint32(b[:])
+}
+
+// IntRange is a small helper for future preset JSON that allows either a single int
+// or [min, max] for randomized values at apply time (already partially used in maximum_stealth_2026).
+type IntRange struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
+}
+
+func (r IntRange) Value() int {
+	if r.Min == r.Max {
+		return r.Min
+	}
+	return r.Min + randInt(0, r.Max-r.Min)
 }

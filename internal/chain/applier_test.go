@@ -35,7 +35,7 @@ func TestGenerateWireGuardKeypair_Valid(t *testing.T) {
 func TestBuildAWGUserInbound_WithClientKey(t *testing.T) {
 	preset := MustGetPreset("russia_2026")
 
-	data, serverPub, err := buildAWGUserInbound(8443, "test-uuid", "user-in", &preset, "MY-CLIENT-PUB", "", "", "", "", "", "")
+	data, serverPub, err := buildAWGUserInbound(8443, "test-uuid", "user-in", &preset, "MY-CLIENT-PUB", "")
 	if err != nil {
 		t.Fatalf("buildAWGUserInbound failed: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestBuildAWGUserInbound_WithPreGeneratedServerKey(t *testing.T) {
 	// Generate once
 	serverPriv, serverPub1, _ := GenerateWireGuardKeypair()
 
-	data, serverPub2, err := buildAWGUserInbound(8443, "uuid", "tag", &preset, "client-pub", serverPriv, "", "", "", "", "")
+	data, serverPub2, err := buildAWGUserInbound(8443, "uuid", "tag", &preset, "client-pub", serverPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestAWGKeyConsistencyInEntryNode(t *testing.T) {
 	}
 
 	// Build the user inbound using the pre-generated priv (like the fixed path)
-	data, returnedPub, err := buildAWGUserInbound(8443, "entry-uuid", "user-in", &preset, "client-pub-123", serverPriv, "", "", "", "", "")
+	data, returnedPub, err := buildAWGUserInbound(8443, "entry-uuid", "user-in", &preset, "client-pub-123", serverPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestAWGEntryKeyMaterial_Population(t *testing.T) {
 	serverPriv, serverPub, _ := GenerateWireGuardKeypair()
 	clientPub := "test-client-pub-for-report"
 
-	data, returnedPub, err := buildAWGUserInbound(8443, "uuid-123", "user-in", &preset, clientPub, serverPriv, "", "", "", "", "")
+	data, returnedPub, err := buildAWGUserInbound(8443, "uuid-123", "user-in", &preset, clientPub, serverPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
