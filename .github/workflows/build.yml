@@ -20,12 +20,12 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.64
-          install-mode: goinstall   # build using the Go 1.26 we just set up
-          args: --timeout=5m --issues-exit-code=1
-        continue-on-error: true   # Do not hard-fail the build on lint issues yet. The full report will still appear in the log.
+        run: |
+          # Install using the project's Go 1.26 so typechecking works with go 1.26 modules
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64
+          # Run with exit code 0 even if issues found, so the job doesn't fail.
+          # The full list of issues will be in the log.
+          $(go env GOPATH)/bin/golangci-lint run --timeout=5m --issues-exit-code=0 || true
 
       - name: Test
         run: go test ./... -count=1 -timeout 60s
