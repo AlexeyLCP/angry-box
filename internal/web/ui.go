@@ -92,6 +92,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// API endpoints for dashboard
 	mux.HandleFunc("GET /ui/api/stats", s.handleStats)
 	mux.HandleFunc("GET /ui/api/metrics", s.handleMetricsJSON)
+	mux.HandleFunc("GET /ui/dashboard/stats", s.handleDashboardStatsHTML)
 
 	// Hosts (kept for backward compat, redirect to nodes)
 	mux.HandleFunc("GET /ui/hosts", s.handleNodes)
@@ -214,6 +215,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"total_chains":  len(chains),
 		"total_users":   len(users),
 	})
+}
+
+func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	hosts, _ := st.ListHosts()
+	chains, _ := st.ListChains()
+	users, _ := st.ListUsers()
+	metrics, _ := st.ListMetrics()
+
+	online := 0
+	for _, m := range metrics {
+		if m.Online {
+			online++
+		}
+	}
+	stats := templates.DashboardStats{
+		TotalHosts:  len(hosts),
+		OnlineHosts: online,
+		TotalChains: len(chains),
+		TotalUsers:  len(users),
+	}
+	s.render(w, templates.StatsCards(stats))
 }
 
 func (s *Server) handleMetricsJSON(w http.ResponseWriter, r *http.Request) {

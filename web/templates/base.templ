@@ -42,11 +42,16 @@ templ Base(title string, content templ.Component) {
 				var list = document.getElementById('inbounds-list');
 				if (list) list.appendChild(wrapper);
 			}
-			// Update page title from h1 after HTMX navigation
+			// Update page title from first h2 in main content after HTMX navigation
 			document.body.addEventListener('htmx:afterSettle', function() {
-				var h1 = document.getElementById('page-title');
-				if (h1 && h1.textContent) {
-					document.title = h1.textContent.trim() + ' | Angry-BOX';
+				var main = document.getElementById('main-content');
+				if (main) {
+					var h2 = main.querySelector('h2');
+					if (h2 && h2.textContent) {
+						document.title = h2.textContent.trim() + ' | Angry-BOX';
+						var pageTitle = document.getElementById('page-title');
+						if (pageTitle) pageTitle.textContent = h2.textContent.trim();
+					}
 				}
 			});
 		</script>

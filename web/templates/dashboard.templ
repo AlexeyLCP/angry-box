@@ -14,6 +14,36 @@ type DashboardStats struct {
 	TotalUsers  int
 }
 
+// StatsCards renders just the four stat cards (used for polling).
+templ StatsCards(stats DashboardStats) {
+	<div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="dashboard-stats">
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<div class="text-sm text-base-content/60">Nodes</div>
+				<div class="text-2xl font-bold">{ stats.TotalHosts }</div>
+			</div>
+		</div>
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<div class="text-sm text-base-content/60">Online</div>
+				<div class="text-2xl font-bold text-success">{ stats.OnlineHosts }</div>
+			</div>
+		</div>
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<div class="text-sm text-base-content/60">Chains</div>
+				<div class="text-2xl font-bold text-primary">{ stats.TotalChains }</div>
+			</div>
+		</div>
+		<div class="card bg-base-100 shadow">
+			<div class="card-body p-4">
+				<div class="text-sm text-base-content/60">Users</div>
+				<div class="text-2xl font-bold text-secondary">{ stats.TotalUsers }</div>
+			</div>
+		</div>
+	</div>
+}
+
 // Dashboard renders the main dashboard page with stats, node list, and health.
 templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeMetrics, infos []*model.NodeInfo, chains []*model.Chain) {
 	<div class="space-y-6">
@@ -115,10 +145,10 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 
 		<!-- Auto-refresh: poll stats every 30s while tab is open -->
 		<div
-			hx-get="/ui/api/stats"
+			hx-get="/ui/dashboard/stats"
 			hx-trigger="every 30s"
 			hx-target="#dashboard-stats"
-			hx-swap="innerHTML"
+			hx-swap="outerHTML"
 			class="hidden">
 		</div>
 	</div>
