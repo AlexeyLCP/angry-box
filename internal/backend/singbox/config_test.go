@@ -81,7 +81,7 @@ func TestGenerateUser_AWGWithoutClientKey_StillValid(t *testing.T) {
 	if err := json.Unmarshal([]byte(cfg.Content), &parsed); err != nil {
 		t.Fatalf("generated config is not valid JSON: %v", err)
 	}
-	// AWG now uses endpoint (wireguard) + inbound (tun)
+	// AWG uses server endpoint (wireguard) + TUN inbound
 	eps := parsed["endpoints"].([]any)
 	if len(eps) == 0 {
 		t.Fatal("expected endpoints section for AWG")

@@ -27,6 +27,12 @@
     "tuic": {
       "congestion_controls": ["bbr"],
       "auth_timeout": "3s"
+    },
+    "routing": {
+      "direct_geoip": ["ru"],
+      "direct_geosite": ["geosite-vk", "geosite-yandex", "geosite-mailru"],
+      "direct_domains": [".ru", ".su", ".рф"],
+      "block_geosite": ["geosite-category-ads-all"]
     }
   },
   {
@@ -51,6 +57,10 @@
     "tuic": {
       "congestion_controls": ["cubic"],
       "auth_timeout": "4s"
+    },
+    "routing": {
+      "direct_geoip": ["ir"],
+      "direct_domains": [".ir"]
     }
   },
   {
@@ -81,6 +91,11 @@
     "tuic": {
       "congestion_controls": ["bbr"],
       "auth_timeout": "3s"
+    },
+    "routing": {
+      "direct_geoip": ["cn"],
+      "direct_geosite": ["geosite-cn"],
+      "direct_domains": [".cn", ".com.cn"]
     }
   },
   {
@@ -111,6 +126,9 @@
     "tuic": {
       "congestion_controls": ["bbr"],
       "auth_timeout": "5s"
+    },
+    "routing": {
+      "block_geosite": ["geosite-category-ads-all", "geosite-malware"]
     }
   },
   {
@@ -145,7 +163,10 @@
       "auth_timeout": "4s"
     },
     "cps_level": 3,
-    "awg_mimicry": "quic"
+    "awg_mimicry": "quic",
+    "routing": {
+      "block_geosite": ["geosite-category-ads-all"]
+    }
   },
   {
     "name": "xhttp_max_stealth_2026",
@@ -182,6 +203,9 @@
       "auth_timeout": "6s"
     },
     "cps_level": 3,
-    "awg_mimicry": "quic"
+    "awg_mimicry": "quic",
+    "routing": {
+      "block_geosite": ["geosite-category-ads-all"]
+    }
   }
 ]

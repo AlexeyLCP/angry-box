@@ -343,7 +343,8 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	// sing-box-extended: WireGuard as endpoint + TUN inbound
+	// sing-box-extended: WireGuard SERVER endpoint (listen_port, no detour).
+	// TUN inbound captures decrypted traffic for routing.
 	endpoint := map[string]any{
 		"type":        "wireguard",
 		"tag":         "wg-ep",
@@ -368,6 +369,7 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		"address":        []string{"10.8.0.1/30"},
 		"mtu":            1420,
 		"stack":          "system",
+		"auto_route":     true,
 	}
 
 	epJSON, _ := json.Marshal(endpoint)

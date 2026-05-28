@@ -49,7 +49,7 @@ func TestBuildAWGUserInbound_WithClientKey(t *testing.T) {
 	if strings.Contains(epS, "CLIENT_PUBLIC_KEY_HERE") {
 		t.Error("placeholder appeared when client key was provided")
 	}
-
+	// Check TUN inbound
 	tunS := string(tunInb)
 	if !strings.Contains(tunS, `"type":"tun"`) {
 		t.Error("user inbound should be TUN type")
@@ -146,11 +146,10 @@ func TestBuildNodeConfig_EntryNode_AWG_SingleNode(t *testing.T) {
 	}
 
 	s := string(cfg)
-	// WireGuard is now an endpoint, not an inbound
+	// WireGuard is a server endpoint + TUN inbound for traffic capture
 	if !strings.Contains(s, `"type": "wireguard"`) {
 		t.Error("expected wireguard endpoint on entry node with AWG")
 	}
-	// TUN inbound for user traffic
 	if !strings.Contains(s, `"type": "tun"`) {
 		t.Error("expected TUN user inbound on entry node with AWG")
 	}

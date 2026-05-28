@@ -80,8 +80,16 @@ type ConnectionPreset struct {
 	AWG         *AWGPreset     `json:"awg,omitempty"`
 
 	// New 2026 top-level fields for maximum control
-	CPSLevel int    `json:"cps_level,omitempty"`
+	CPSLevel   int    `json:"cps_level,omitempty"`
 	AWGMimicry string `json:"awg_mimicry,omitempty"`
+
+	// Routing rules — country-specific traffic steering
+	Routing struct {
+		DirectGeoIP   []string `json:"direct_geoip,omitempty"`   // geoip codes for direct access
+		DirectGeoSite []string `json:"direct_geosite,omitempty"` // geosite categories for direct access
+		DirectDomains []string `json:"direct_domains,omitempty"` // domain suffixes for direct access
+		BlockGeoSite  []string `json:"block_geosite,omitempty"`  // geosite categories to block
+	} `json:"routing,omitempty"`
 }
 
 // LoadPresets загружает встроенные пресеты + (опционально) мерджит внешние.
@@ -177,4 +185,140 @@ func GetEffectivePreset(c *model.Chain) ConnectionPreset {
 		}
 	}
 	return GetDefaultPreset()
+}
+
+// RoutingSection описывает сгенерированную секцию route для sing-box конфига.
+type RoutingSection struct {
+	Rules                  []RouteRuleEntry `json:"rules"`
+	RuleSet                []RuleSetEntry   `json:"rule_set,omitempty"`
+	Final                  string           `json:"final,omitempty"`
+	AutoDetectInterface    bool             `json:"auto_detect_interface,omitempty"`
+	DefaultDomainResolver  string           `json:"default_domain_resolver,omitempty"`
+}
+
+// RouteRuleEntry — одно правило маршрутизации.
+type RouteRuleEntry struct {
+	Inbound      []string `json:"inbound,omitempty"`
+	Outbound     string   `json:"outbound"`
+	GeoIP        []string `json:"geoip,omitempty"`
+	GeoSite      []string `json:"geosite,omitempty"`
+	DomainSuffix []string `json:"domain_suffix,omitempty"`
+	RuleSet      []string `json:"rule_set,omitempty"`
+}
+
+// RuleSetEntry — удалённый набор правил (SRS).
+type RuleSetEntry struct {
+	Tag            string `json:"tag"`
+	Type           string `json:"type"`
+	Format         string `json:"format"`
+	URL            string `json:"url"`
+	DownloadDetour string `json:"download_detour,omitempty"`
+	UpdateInterval string `json:"update_interval,omitempty"`
+}
+
+// ruleSetBaseURL — базовый URL для SRS-файлов sing-box.
+const ruleSetBaseURL = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set"
+const ruleSetGeoSiteURL = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"
+
+// BuildRoutingSection создаёт полноценную routing-секцию на основе пресета и имени цепочки.
+func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) RoutingSection {
+	section := RoutingSection{
+		Rules:                 []RouteRuleEntry{},
+		Final:                 chainOutboundTag,
+		AutoDetectInterface:   true,
+		DefaultDomainResolver: "dns-local",
+	}
+
+	ruleTags := map[string]bool{}
+
+	// Direct geoip rules
+	for _, geo := range preset.Routing.DirectGeoIP {
+		tag := "geoip-" + geo
+		ruleTags[tag] = true
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			RuleSet:  []string{tag},
+			Outbound: "direct-out",
+		})
+	}
+
+	// Direct geosite rules
+	for _, gs := range preset.Routing.DirectGeoSite {
+		tag := gs
+		ruleTags[tag] = true
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			RuleSet:  []string{tag},
+			Outbound: "direct-out",
+		})
+	}
+
+	// Direct domain suffixes
+	if len(preset.Routing.DirectDomains) > 0 {
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			DomainSuffix: preset.Routing.DirectDomains,
+			Outbound:     "direct",
+		})
+	}
+
+	// Block rules
+	for _, gs := range preset.Routing.BlockGeoSite {
+		tag := gs
+		ruleTags[tag] = true
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			RuleSet:  []string{tag},
+			Outbound: "block",
+		})
+	}
+
+	// Build rule_set entries
+	for tag := range ruleTags {
+		entry := RuleSetEntry{
+			Tag:    tag,
+			Type:   "remote",
+			Format: "binary",
+		}
+
+		isGeoIP := false
+		for _, g := range preset.Routing.DirectGeoIP {
+			if "geoip-"+g == tag {
+				isGeoIP = true
+				break
+			}
+		}
+
+		if isGeoIP {
+			entry.URL = ruleSetBaseURL + "/" + tag + ".srs"
+		} else {
+			entry.URL = ruleSetGeoSiteURL + "/" + tag + ".srs"
+		}
+		section.RuleSet = append(section.RuleSet, entry)
+	}
+
+	return section
+}
+
+// BuildDNSSection создаёт DNS-секцию (sing-box 1.12+ non-legacy формат).
+func BuildDNSSection(chainOutboundTag string) map[string]any {
+	return map[string]any{
+		"servers": []map[string]any{
+			{
+				"tag":    "dns-remote",
+				"type":   "tls",
+				"server": "1.1.1.1",
+				"detour": chainOutboundTag,
+			},
+			{
+				"tag":    "dns-local",
+				"type":   "udp",
+				"server": "8.8.8.8",
+				"detour": "direct-out",
+			},
+		},
+		"rules": []map[string]any{
+			{
+				"domain_suffix": []string{".ru", ".su", ".рф", ".ir", ".cn"},
+				"server":        "dns-local",
+			},
+		},
+		"final": "dns-remote",
+	}
 }

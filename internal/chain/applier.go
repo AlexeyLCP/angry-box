@@ -346,11 +346,31 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 	var endpoints []json.RawMessage
 	tags := []string{}
 
+	// Pre-build outbounds so we know their tags for detour references.
+	if i < n-1 {
+		next := params[i+1]
+		nextAddr := extractHost(nodes[i+1].Addr)
+		tag := fmt.Sprintf("out-to-%s", next.ServerName)
+		var outb json.RawMessage
+		var err error
+		if transport == model.TransportXHTTP {
+			outb, err = buildXHTTPTransportOutbound(next, nextAddr, tag, preset)
+		} else {
+			outb, err = buildTransportOutbound(next, nextAddr, tag)
+		}
+		if err != nil {
+			return "", fmt.Errorf("build outbound to next hop: %w", err)
+		}
+		outbounds = append(outbounds, outb)
+	}
+	if i == n-1 {
+		outbounds = append(outbounds, buildDirectOutbound("direct-out"))
+	}
+
 	// Every node except the first (entry) gets a transport inbound for the previous hop.
 	if i > 0 {
 		tag := "transport-in"
 		tags = append(tags, tag)
-
 		var inb json.RawMessage
 		if transport == model.TransportXHTTP {
 			inb = buildXHTTPTransportInbound(params[i], tag, preset)
@@ -360,7 +380,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		inbounds = append(inbounds, inb)
 	}
 
-	// The first node gets a user-facing inbound.
+	// The first node gets a user-facing entry.
 	if i == 0 {
 		port := node.Port
 		if port == 0 {
@@ -376,7 +396,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		case model.UserProtocolAWG:
 			ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
 			if err != nil {
-				return "", fmt.Errorf("build awg user inbound: %w", err)
+				return "", fmt.Errorf("build awg endpoint: %w", err)
 			}
 			endpoints = append(endpoints, ep)
 			inbounds = append(inbounds, tunInb)
@@ -386,47 +406,49 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		}
 	}
 
-	// Every node except the last (exit) gets an outbound to the next hop.
-	if i < n-1 {
-		next := params[i+1]
-		nextAddr := extractHost(nodes[i+1].Addr)
-		tag := fmt.Sprintf("out-to-%s", next.ServerName)
-
-		var outb json.RawMessage
-		var err error
-		if transport == model.TransportXHTTP {
-			outb, err = buildXHTTPTransportOutbound(next, nextAddr, tag, preset)
-		} else {
-			outb, err = buildTransportOutbound(next, nextAddr, tag)
-		}
-		if err != nil {
-			return "", fmt.Errorf("build outbound to next hop: %w", err)
-		}
-		outbounds = append(outbounds, outb)
-	}
-
-	// The last node gets a direct outbound (exit to internet).
-	if i == n-1 {
-		tag := "direct-out"
-		outb := buildDirectOutbound(tag)
-		outbounds = append(outbounds, outb)
-	}
-
-	// Build routing rule: route all inbound traffic to the first outbound.
-	var route *routeConfig
-	if len(tags) > 0 && len(outbounds) > 0 {
-		// Parse the first outbound to get its tag.
+	// Build routing: use preset-based routing with rule_set, geoip, geosite, domain rules.
+	var route interface{}
+	if len(outbounds) > 0 {
 		var firstOut map[string]any
 		json.Unmarshal(outbounds[0], &firstOut)
 		outTag, _ := firstOut["tag"].(string)
 
-		route = &routeConfig{
-			Rules: []routeRule{
-				{
-					Inbound:  tags,
-					Outbound: outTag,
-				},
-			},
+		// Generate full routing section from preset
+		routingSection := BuildRoutingSection(preset, outTag)
+		route = routingSection
+
+		// Add block outbound if there are any block rules
+		if len(routingSection.Rules) > 0 {
+			hasBlock := false
+			hasDirect := false
+			for _, r := range routingSection.Rules {
+				if r.Outbound == "block" {
+					hasBlock = true
+				}
+				if r.Outbound == "direct-out" {
+					hasDirect = true
+				}
+			}
+			if hasBlock {
+				blockOut := map[string]any{"type": "block", "tag": "block"}
+				blockJSON, _ := json.Marshal(blockOut)
+				outbounds = append(outbounds, blockJSON)
+			}
+			if hasDirect {
+				// Ensure direct-out exists (for non-exit nodes in chain)
+				found := false
+				for _, ob := range outbounds {
+					var m map[string]any
+					json.Unmarshal(ob, &m)
+					if m["tag"] == "direct-out" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					outbounds = append(outbounds, buildDirectOutbound("direct-out"))
+				}
+			}
 		}
 	}
 
@@ -444,6 +466,15 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 
 	if route != nil {
 		cfg["route"] = route
+		// Add DNS section for chain nodes
+		cfg["dns"] = BuildDNSSection("direct-out")
+	}
+
+	// Add experimental cache_file (needed for rule_set)
+	cfg["experimental"] = map[string]any{
+		"cache_file": map[string]any{
+			"enabled": true,
+		},
 	}
 
 	content, err := json.MarshalIndent(cfg, "", "  ")
@@ -468,22 +499,7 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	var endpoints []json.RawMessage
 	tags := []string{}
 
-	// Entry node + AWG: wireguard endpoint + TUN inbound
-	port := node.Port
-	if port == 0 {
-		port = defaultUserPort
-	}
-	tag := "user-in"
-	tags = append(tags, tag)
-
-	ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv)
-	if err != nil {
-		return "", fmt.Errorf("build awg user inbound (with client pub): %w", err)
-	}
-	endpoints = append(endpoints, ep)
-	inbounds = append(inbounds, tunInb)
-
-	// Outbound to next hop (if any)
+	// Pre-build outbounds so we know the detour tag for the endpoint.
 	if i < n-1 {
 		next := params[i+1]
 		nextAddr := extractHost(nodes[i+1].Addr)
@@ -500,17 +516,62 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 		}
 		outbounds = append(outbounds, outb)
 	} else {
-		// Last (and first) node — direct
 		outbounds = append(outbounds, buildDirectOutbound("direct-out"))
 	}
 
-	// Routing
-	var route *routeConfig
-	if len(tags) > 0 && len(outbounds) > 0 {
+	// Entry node + AWG: wireguard endpoint with built-in detour to the first outbound
+	port := node.Port
+	if port == 0 {
+		port = defaultUserPort
+	}
+	tag := "user-in"
+	tags = append(tags, tag)
+
+	ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv)
+	if err != nil {
+		return "", fmt.Errorf("build awg endpoint: %w", err)
+	}
+	endpoints = append(endpoints, ep)
+	inbounds = append(inbounds, tunInb)
+
+	// Routing — use preset-based routing
+	var route interface{}
+	if len(outbounds) > 0 {
 		var firstOut map[string]any
 		json.Unmarshal(outbounds[0], &firstOut)
 		if outTag, ok := firstOut["tag"].(string); ok {
-			route = &routeConfig{Rules: []routeRule{{Inbound: tags, Outbound: outTag}}}
+			routingSection := BuildRoutingSection(preset, outTag)
+			route = routingSection
+
+			// Add block/direct outbounds as needed
+			hasBlock, hasDirect := false, false
+			for _, r := range routingSection.Rules {
+				if r.Outbound == "block" {
+					hasBlock = true
+				}
+				if r.Outbound == "direct-out" {
+					hasDirect = true
+				}
+			}
+			if hasBlock {
+				blockOut := map[string]any{"type": "block", "tag": "block"}
+				blockJSON, _ := json.Marshal(blockOut)
+				outbounds = append(outbounds, blockJSON)
+			}
+			if hasDirect {
+				found := false
+				for _, ob := range outbounds {
+					var m map[string]any
+					json.Unmarshal(ob, &m)
+					if m["tag"] == "direct-out" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					outbounds = append(outbounds, buildDirectOutbound("direct-out"))
+				}
+			}
 		}
 	}
 
@@ -527,6 +588,12 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	}
 	if route != nil {
 		cfg["route"] = route
+		cfg["dns"] = BuildDNSSection("direct-out")
+	}
+	cfg["experimental"] = map[string]any{
+		"cache_file": map[string]any{
+			"enabled": true,
+		},
 	}
 
 	content, err := json.MarshalIndent(cfg, "", "  ")
@@ -537,11 +604,13 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 }
 
 type routeConfig struct {
-	Rules []routeRule `json:"rules"`
+	Rules               []routeRule `json:"rules"`
+	Final               string      `json:"final,omitempty"`
+	AutoDetectInterface bool        `json:"auto_detect_interface,omitempty"`
 }
 
 type routeRule struct {
-	Inbound  []string `json:"inbound"`
+	Inbound  []string `json:"inbound,omitempty"`
 	Outbound string   `json:"outbound"`
 }
 
@@ -944,8 +1013,8 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	// sing-box-extended: WireGuard is an ENDPOINT (not an inbound).
-	// The TUN inbound captures traffic and routes it through the WireGuard endpoint.
+	// sing-box-extended: WireGuard SERVER endpoint (listen_port, no detour).
+	// Decrypted traffic goes to kernel → TUN inbound captures → routing → outbound.
 	ep := map[string]any{
 		"type":        "wireguard",
 		"tag":         "wg-ep",
@@ -965,6 +1034,7 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 
 	epJSON, _ := json.Marshal(ep)
 
+	// TUN inbound captures decrypted traffic from kernel for routing
 	tunInb := map[string]any{
 		"type":           "tun",
 		"tag":            tag,
@@ -972,6 +1042,7 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 		"address":        []string{"10.8.0.1/30"},
 		"mtu":            1420,
 		"stack":          "system",
+		"auto_route":     true,
 	}
 	tunJSON, _ := json.Marshal(tunInb)
 
