@@ -48,6 +48,8 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 								y1={ fmt.Sprintf("%.0f", link.Y1) }
 								x2={ fmt.Sprintf("%.0f", link.X2) }
 								y2={ fmt.Sprintf("%.0f", link.Y2) }
+								data-from={ link.FromID }
+								data-to={ link.ToID }
 								stroke="oklch(var(--p) / 0.4)"
 								stroke-width="2"
 								stroke-dasharray="6,3"
@@ -121,6 +123,29 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 					texts[2] && texts[2].setAttribute('x', nx);
 					texts[2] && texts[2].setAttribute('y', ny + 24);
 					if (texts[3]) { texts[3].setAttribute('x', nx + 24); texts[3].setAttribute('y', ny + 26); }
+					// Update connected lines
+					var nodeId = dragged.getAttribute('data-node-id');
+					var lines = svg.querySelectorAll('line[data-from], line[data-to]');
+					lines.forEach(function(line) {
+						if (line.getAttribute('data-from') === nodeId) {
+							line.setAttribute('x1', nx);
+							line.setAttribute('y1', ny);
+							var tx = line.nextElementSibling;
+							if (tx && tx.tagName === 'text') {
+								tx.setAttribute('x', (nx + parseFloat(line.getAttribute('x2')))/2);
+								tx.setAttribute('y', (ny + parseFloat(line.getAttribute('y2')))/2 - 8);
+							}
+						}
+						if (line.getAttribute('data-to') === nodeId) {
+							line.setAttribute('x2', nx);
+							line.setAttribute('y2', ny);
+							var tx = line.nextElementSibling;
+							if (tx && tx.tagName === 'text') {
+								tx.setAttribute('x', (parseFloat(line.getAttribute('x1')) + nx)/2);
+								tx.setAttribute('y', (parseFloat(line.getAttribute('y1')) + ny)/2 - 8);
+							}
+						}
+					});
 				});
 
 				svg.addEventListener('mouseup', function() {
@@ -351,6 +376,7 @@ func findInfoSpider(id string, infos []*model.NodeInfo) *model.NodeInfo {
 type spiderLinkData struct {
 	X1, Y1, X2, Y2 float64
 	Transport       string
+	FromID, ToID    string
 }
 
 type spiderNodeData struct {
@@ -368,6 +394,7 @@ func spiderLinks(chains []*model.Chain, hosts []*model.Host) []spiderLinkData {
 			links = append(links, spiderLinkData{
 				X1: x1, Y1: y1, X2: x2, Y2: y2,
 				Transport: string(c.Transport),
+				FromID: c.Nodes[i].ID, ToID: c.Nodes[i+1].ID,
 			})
 		}
 	}

@@ -42,6 +42,13 @@ templ Base(title string, content templ.Component) {
 				var list = document.getElementById('inbounds-list');
 				if (list) list.appendChild(wrapper);
 			}
+			// Update page title from h1 after HTMX navigation
+			document.body.addEventListener('htmx:afterSettle', function() {
+				var h1 = document.getElementById('page-title');
+				if (h1 && h1.textContent) {
+					document.title = h1.textContent.trim() + ' | Angry-BOX';
+				}
+			});
 		</script>
 	</head>
 	<body class="min-h-screen bg-base-200">

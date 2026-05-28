@@ -104,51 +104,77 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" stroke=\"oklch(var(--p) / 0.4)\" stroke-width=\"2\" stroke-dasharray=\"6,3\" marker-end=\"url(#arrowhead)\"></line> <text x=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" data-from=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var6 string
-				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", (link.X1+link.X2)/2))
+				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(link.FromID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 57, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 51, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" y=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-to=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", (link.Y1+link.Y2)/2-8))
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(link.ToID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 58, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 52, Col: 27}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" text-anchor=\"middle\" class=\"text-[10px]\" fill=\"oklch(var(--bc) / 0.5)\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" stroke=\"oklch(var(--p) / 0.4)\" stroke-width=\"2\" stroke-dasharray=\"6,3\" marker-end=\"url(#arrowhead)\"></line> <text x=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var8 string
-				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(link.Transport)
+				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", (link.X1+link.X2)/2))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 62, Col: 24}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 59, Col: 52}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</text>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" y=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var9 string
+				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", (link.Y1+link.Y2)/2-8))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 60, Col: 56}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" text-anchor=\"middle\" class=\"text-[10px]\" fill=\"oklch(var(--bc) / 0.5)\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var10 string
+				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(link.Transport)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 64, Col: 24}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</text>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<!-- Nodes as circles -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<!-- Nodes as circles -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -158,221 +184,221 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</svg>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</svg>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></div><script>\n\t\t\t(function() {\n\t\t\t\tvar svg = document.getElementById('spider-svg');\n\t\t\t\tif (!svg) return;\n\t\t\t\tvar dragged = null;\n\t\t\t\tvar offsetX = 0, offsetY = 0;\n\n\t\t\t\tsvg.addEventListener('mousedown', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\t// Don't drag if clicking + button\n\t\t\t\t\tif (e.target.classList.contains('node-add-btn') || e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tdragged = node;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar inner = node.querySelector('.node-inner');\n\t\t\t\t\toffsetX = parseFloat(inner.getAttribute('cx')) - pt.x;\n\t\t\t\t\toffsetY = parseFloat(inner.getAttribute('cy')) - pt.y;\n\t\t\t\t\tnode.style.cursor = 'grabbing';\n\t\t\t\t\te.preventDefault();\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mousemove', function(e) {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar nx = pt.x + offsetX;\n\t\t\t\t\tvar ny = pt.y + offsetY;\n\t\t\t\t\tvar circles = dragged.querySelectorAll('circle');\n\t\t\t\t\tcircles[0].setAttribute('cx', nx);\n\t\t\t\t\tcircles[0].setAttribute('cy', ny);\n\t\t\t\t\tcircles[1].setAttribute('cx', nx);\n\t\t\t\t\tcircles[1].setAttribute('cy', ny);\n\t\t\t\t\tcircles[2].setAttribute('cx', nx + 18);\n\t\t\t\t\tcircles[2].setAttribute('cy', ny - 18);\n\t\t\t\t\tif (circles[3]) { circles[3].setAttribute('cx', nx + 24); circles[3].setAttribute('cy', ny + 22); }\n\t\t\t\t\tvar texts = dragged.querySelectorAll('text');\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('x', nx);\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('y', ny - 8);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('x', nx);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('y', ny + 10);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('x', nx);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('y', ny + 24);\n\t\t\t\t\tif (texts[3]) { texts[3].setAttribute('x', nx + 24); texts[3].setAttribute('y', ny + 26); }\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseup', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseleave', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\t// Show + button on hover\n\t\t\t\tsvg.addEventListener('mouseover', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '1');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '1');\n\t\t\t\t});\n\t\t\t\tsvg.addEventListener('mouseout', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '0');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '0');\n\t\t\t\t});\n\n\t\t\t\t// + button click: pre-fill connection form\n\t\t\t\tsvg.addEventListener('click', function(e) {\n\t\t\t\t\tif (!e.target.classList.contains('node-add-btn') && !e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar nodeId = node.getAttribute('data-node-id');\n\t\t\t\t\tvar sel = document.querySelector('select[name=\"from_node\"]');\n\t\t\t\t\tif (sel) sel.value = nodeId;\n\t\t\t\t});\n\t\t\t})();\n\t\t</script><!-- Add connection form --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">Create New Connection</h3><form hx-post=\"/ui/spider/links\" hx-target=\"#main-content\" hx-swap=\"outerHTML\" class=\"space-y-3\"><div class=\"grid grid-cols-1 md:grid-cols-5 gap-3\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">From Node</span></label> <select name=\"from_node\" class=\"select select-bordered select-sm\" required><option value=\"\">Select...</option> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div></div><script>\n\t\t\t(function() {\n\t\t\t\tvar svg = document.getElementById('spider-svg');\n\t\t\t\tif (!svg) return;\n\t\t\t\tvar dragged = null;\n\t\t\t\tvar offsetX = 0, offsetY = 0;\n\n\t\t\t\tsvg.addEventListener('mousedown', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\t// Don't drag if clicking + button\n\t\t\t\t\tif (e.target.classList.contains('node-add-btn') || e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tdragged = node;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar inner = node.querySelector('.node-inner');\n\t\t\t\t\toffsetX = parseFloat(inner.getAttribute('cx')) - pt.x;\n\t\t\t\t\toffsetY = parseFloat(inner.getAttribute('cy')) - pt.y;\n\t\t\t\t\tnode.style.cursor = 'grabbing';\n\t\t\t\t\te.preventDefault();\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mousemove', function(e) {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar nx = pt.x + offsetX;\n\t\t\t\t\tvar ny = pt.y + offsetY;\n\t\t\t\t\tvar circles = dragged.querySelectorAll('circle');\n\t\t\t\t\tcircles[0].setAttribute('cx', nx);\n\t\t\t\t\tcircles[0].setAttribute('cy', ny);\n\t\t\t\t\tcircles[1].setAttribute('cx', nx);\n\t\t\t\t\tcircles[1].setAttribute('cy', ny);\n\t\t\t\t\tcircles[2].setAttribute('cx', nx + 18);\n\t\t\t\t\tcircles[2].setAttribute('cy', ny - 18);\n\t\t\t\t\tif (circles[3]) { circles[3].setAttribute('cx', nx + 24); circles[3].setAttribute('cy', ny + 22); }\n\t\t\t\t\tvar texts = dragged.querySelectorAll('text');\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('x', nx);\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('y', ny - 8);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('x', nx);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('y', ny + 10);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('x', nx);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('y', ny + 24);\n\t\t\t\t\tif (texts[3]) { texts[3].setAttribute('x', nx + 24); texts[3].setAttribute('y', ny + 26); }\n\t\t\t\t\t// Update connected lines\n\t\t\t\t\tvar nodeId = dragged.getAttribute('data-node-id');\n\t\t\t\t\tvar lines = svg.querySelectorAll('line[data-from], line[data-to]');\n\t\t\t\t\tlines.forEach(function(line) {\n\t\t\t\t\t\tif (line.getAttribute('data-from') === nodeId) {\n\t\t\t\t\t\t\tline.setAttribute('x1', nx);\n\t\t\t\t\t\t\tline.setAttribute('y1', ny);\n\t\t\t\t\t\t\tvar tx = line.nextElementSibling;\n\t\t\t\t\t\t\tif (tx && tx.tagName === 'text') {\n\t\t\t\t\t\t\t\ttx.setAttribute('x', (nx + parseFloat(line.getAttribute('x2')))/2);\n\t\t\t\t\t\t\t\ttx.setAttribute('y', (ny + parseFloat(line.getAttribute('y2')))/2 - 8);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line.getAttribute('data-to') === nodeId) {\n\t\t\t\t\t\t\tline.setAttribute('x2', nx);\n\t\t\t\t\t\t\tline.setAttribute('y2', ny);\n\t\t\t\t\t\t\tvar tx = line.nextElementSibling;\n\t\t\t\t\t\t\tif (tx && tx.tagName === 'text') {\n\t\t\t\t\t\t\t\ttx.setAttribute('x', (parseFloat(line.getAttribute('x1')) + nx)/2);\n\t\t\t\t\t\t\t\ttx.setAttribute('y', (parseFloat(line.getAttribute('y1')) + ny)/2 - 8);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseup', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseleave', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\t// Show + button on hover\n\t\t\t\tsvg.addEventListener('mouseover', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '1');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '1');\n\t\t\t\t});\n\t\t\t\tsvg.addEventListener('mouseout', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '0');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '0');\n\t\t\t\t});\n\n\t\t\t\t// + button click: pre-fill connection form\n\t\t\t\tsvg.addEventListener('click', function(e) {\n\t\t\t\t\tif (!e.target.classList.contains('node-add-btn') && !e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar nodeId = node.getAttribute('data-node-id');\n\t\t\t\t\tvar sel = document.querySelector('select[name=\"from_node\"]');\n\t\t\t\t\tif (sel) sel.value = nodeId;\n\t\t\t\t});\n\t\t\t})();\n\t\t</script><!-- Add connection form --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">Create New Connection</h3><form hx-post=\"/ui/spider/links\" hx-target=\"#main-content\" hx-swap=\"outerHTML\" class=\"space-y-3\"><div class=\"grid grid-cols-1 md:grid-cols-5 gap-3\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">From Node</span></label> <select name=\"from_node\" class=\"select select-bordered select-sm\" required><option value=\"\">Select...</option> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, h := range hosts {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<option value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 184, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 184, Col: 38}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " (")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<option value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 184, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 209, Col: 29}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, ")</option>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">To Node</span></label> <select name=\"to_node\" class=\"select select-bordered select-sm\" required><option value=\"\">Select...</option> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		for _, h := range hosts {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<option value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 193, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 209, Col: 38}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, " (")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 193, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 209, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " (")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, ")</option>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">To Node</span></label> <select name=\"to_node\" class=\"select select-bordered select-sm\" required><option value=\"\">Select...</option> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, h := range hosts {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<option value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
-			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 193, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 218, Col: 29}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, ")</option>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var15 string
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 218, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, " (")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 218, Col: 50}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, ")</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Transport</span></label> <select name=\"transport\" class=\"select select-bordered select-sm\"><option value=\"xhttp\" selected>XHTTP (max obfuscation)</option> <option value=\"reality\">Reality + TCP</option></select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Chain Name</span></label> <input type=\"text\" name=\"chain_name\" class=\"input input-bordered input-sm\" required placeholder=\"my-chain\"></div><div class=\"form-control justify-end\"><button type=\"submit\" class=\"btn btn-primary btn-sm\">Create Link</button></div></div></form></div></div><!-- Existing Chains -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Transport</span></label> <select name=\"transport\" class=\"select select-bordered select-sm\"><option value=\"xhttp\" selected>XHTTP (max obfuscation)</option> <option value=\"reality\">Reality + TCP</option></select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Chain Name</span></label> <input type=\"text\" name=\"chain_name\" class=\"input input-bordered input-sm\" required placeholder=\"my-chain\"></div><div class=\"form-control justify-end\"><button type=\"submit\" class=\"btn btn-primary btn-sm\">Create Link</button></div></div></form></div></div><!-- Existing Chains -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(chains) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">Chains</h3><div class=\"space-y-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">Chains</h3><div class=\"space-y-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, c := range chains {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div class=\"flex items-center justify-between border border-base-300 rounded-lg p-3\"><div><div class=\"font-semibold\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var15 string
-				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 225, Col: 44}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div><div class=\"text-xs text-base-content/50\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var16 string
-				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(chainNodeList(c.Nodes))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 227, Col: 34}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, " <span class=\"ml-2\">| ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"flex items-center justify-between border border-base-300 rounded-lg p-3\"><div><div class=\"font-semibold\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
-				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(c.Transport)
+				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 228, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 250, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, " | ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div><div class=\"text-xs text-base-content/50\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var18 string
-				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(c.Strategy)
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(chainNodeList(c.Nodes))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 228, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 252, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</span></div></div><div class=\"flex gap-2\"><button class=\"btn btn-primary btn-xs\" hx-post=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, " <span class=\"ml-2\">| ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var19 string
-				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/chains/" + c.Name + "/apply")
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(c.Transport)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 234, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 253, Col: 44}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" hx-target=\"#spider-apply-result\" hx-swap=\"innerHTML\">Apply</button> <button class=\"btn btn-ghost btn-xs text-error\" hx-delete=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, " | ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var20 string
-				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/chains/" + c.Name)
+				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(c.Strategy)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 241, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 253, Col: 61}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" hx-confirm=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</span></div></div><div class=\"flex gap-2\"><button class=\"btn btn-primary btn-xs\" hx-post=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var21 string
-				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue("Delete chain " + c.Name + "?")
+				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/chains/" + c.Name + "/apply")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 242, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 259, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" hx-target=\"closest .border\" hx-swap=\"delete\">Delete</button></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" hx-target=\"#spider-apply-result\" hx-swap=\"innerHTML\">Apply</button> <button class=\"btn btn-ghost btn-xs text-error\" hx-delete=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var22 string
+				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/chains/" + c.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 266, Col: 43}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" hx-confirm=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var23 string
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue("Delete chain " + c.Name + "?")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 267, Col: 52}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\" hx-target=\"closest .border\" hx-swap=\"delete\">Delete</button></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div><div id=\"spider-apply-result\" class=\"mt-2\"></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div><div id=\"spider-apply-result\" class=\"mt-2\"></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -409,58 +435,32 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var22 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var22 == nil {
-			templ_7745c5c3_Var22 = templ.NopComponent
+		templ_7745c5c3_Var24 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var24 == nil {
+			templ_7745c5c3_Var24 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<g class=\"spider-node cursor-pointer\" data-node-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var23 string
-		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 272, Col: 56}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\"><circle cx=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var24 string
-		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 274, Col: 30}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" cy=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<g class=\"spider-node cursor-pointer\" data-node-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
-		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y))
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 275, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 297, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" r=\"30\" fill=\"oklch(var(--b1))\" stroke=\"oklch(var(--p) / 0.2)\" stroke-width=\"2\"></circle> <circle cx=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\"><circle cx=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 282, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 299, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {
@@ -473,20 +473,20 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 283, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 300, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" r=\"24\" fill=\"oklch(var(--p) / 0.15)\"></circle> <circle cx=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" r=\"30\" fill=\"oklch(var(--b1))\" stroke=\"oklch(var(--p) / 0.2)\" stroke-width=\"2\"></circle> <circle cx=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var28 string
-		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x+18))
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 288, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 307, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 		if templ_7745c5c3_Err != nil {
@@ -497,152 +497,178 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var29 string
-		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-18))
+		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 289, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 308, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" r=\"5\" fill=\"oklch(var(--su))\"></circle> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" r=\"24\" fill=\"oklch(var(--p) / 0.15)\"></circle> <circle cx=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var30 string
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x+18))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 313, Col: 35}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\" cy=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var31 string
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-18))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 314, Col: 35}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\" r=\"5\" fill=\"oklch(var(--su))\"></circle> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if country != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<text x=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var30 string
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 295, Col: 30}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\" y=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var31 string
-			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-8))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 296, Col: 34}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" text-anchor=\"middle\" class=\"text-xs\" fill=\"oklch(var(--bc))\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<text x=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var32 string
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(country)
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 299, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 320, Col: 30}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</text> ")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\" y=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var33 string
+			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-8))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 321, Col: 34}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" text-anchor=\"middle\" class=\"text-xs\" fill=\"oklch(var(--bc))\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(country)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 324, Col: 37}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</text> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<text x=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var33 string
-		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 302, Col: 29}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\" y=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var34 string
-		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+10))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 303, Col: 34}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" text-anchor=\"middle\" class=\"text-[11px] font-mono font-semibold\" fill=\"oklch(var(--bc))\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<text x=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var35 string
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(id)
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 306, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 327, Col: 29}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</text> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" y=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var36 string
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+10))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 328, Col: 34}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" text-anchor=\"middle\" class=\"text-[11px] font-mono font-semibold\" fill=\"oklch(var(--bc))\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var37 string
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(id)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 331, Col: 31}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</text> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if spiderChainCount(id, chains) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<text x=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var36 string
-			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 309, Col: 30}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" y=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var37 string
-			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+24))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 310, Col: 35}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" text-anchor=\"middle\" class=\"text-[9px]\" fill=\"oklch(var(--bc) / 0.5)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<text x=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var38 string
-			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d chain(s)", spiderChainCount(id, chains)))
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 313, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 334, Col: 30}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</text>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" y=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var39 string
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+24))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 335, Col: 35}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" text-anchor=\"middle\" class=\"text-[9px]\" fill=\"oklch(var(--bc) / 0.5)\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d chain(s)", spiderChainCount(id, chains)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 338, Col: 92}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</text>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</g>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</g>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -686,6 +712,7 @@ func findInfoSpider(id string, infos []*model.NodeInfo) *model.NodeInfo {
 type spiderLinkData struct {
 	X1, Y1, X2, Y2 float64
 	Transport      string
+	FromID, ToID   string
 }
 
 type spiderNodeData struct {
@@ -703,6 +730,7 @@ func spiderLinks(chains []*model.Chain, hosts []*model.Host) []spiderLinkData {
 			links = append(links, spiderLinkData{
 				X1: x1, Y1: y1, X2: x2, Y2: y2,
 				Transport: string(c.Transport),
+				FromID:    c.Nodes[i].ID, ToID: c.Nodes[i+1].ID,
 			})
 		}
 	}
