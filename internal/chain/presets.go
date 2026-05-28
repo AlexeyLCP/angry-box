@@ -255,7 +255,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 	if len(preset.Routing.DirectDomains) > 0 {
 		section.Rules = append(section.Rules, RouteRuleEntry{
 			DomainSuffix: preset.Routing.DirectDomains,
-			Outbound:     "direct",
+			Outbound:     "direct-out",
 		})
 	}
 

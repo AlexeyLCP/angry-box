@@ -382,10 +382,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 
 	// The first node gets a user-facing entry.
 	if i == 0 {
-		port := node.Port
-		if port == 0 {
-			port = defaultUserPort
-		}
+		port := defaultUserPort // always use user port for entry
 		tag := "user-in"
 		tags = append(tags, tag)
 
@@ -519,11 +516,8 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 		outbounds = append(outbounds, buildDirectOutbound("direct-out"))
 	}
 
-	// Entry node + AWG: wireguard endpoint with built-in detour to the first outbound
-	port := node.Port
-	if port == 0 {
-		port = defaultUserPort
-	}
+	// Entry node + AWG: wireguard endpoint + TUN inbound
+	port := defaultUserPort // always use user port for entry
 	tag := "user-in"
 	tags = append(tags, tag)
 
