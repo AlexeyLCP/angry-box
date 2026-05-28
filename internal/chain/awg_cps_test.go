@@ -102,3 +102,30 @@ func TestFormatI1_DNSUsesR2Prefix(t *testing.T) {
 		t.Errorf("dns I1 must use <r 2> randomizer prefix, got %s", s)
 	}
 }
+
+// Security-first requirement: pro_2026 + maximum_stealth_2026 must emit full I1-I5 (cps_level=3 + quic)
+func TestPro2026AndMaxStealth_ForceFullCPSLevel3(t *testing.T) {
+	for _, name := range []string{"pro_2026", "maximum_stealth_2026"} {
+		p, ok := GetPreset(name)
+		if !ok {
+			t.Fatalf("preset %s not found", name)
+		}
+		if p.AWG == nil || p.AWG.CPSLevel != 3 {
+			t.Errorf("%s must have cps_level=3 (security > compatibility), got %d", name, p.AWG.CPSLevel)
+		}
+		if p.AWG.Mimicry != "quic" {
+			t.Errorf("%s must default to quic mimicry for strongest 2026 resistance, got %q", name, p.AWG.Mimicry)
+		}
+
+		// Generate and verify we actually get 5 non-empty I* strings
+		i1, i2, i3, i4, i5, used := GenerateCPS(p.AWG.CPSLevel, p.AWG.Mimicry)
+		if used != "quic" {
+			t.Errorf("%s: expected quic, got %s", name, used)
+		}
+		for i, val := range []string{i1, i2, i3, i4, i5} {
+			if val == "" {
+				t.Errorf("%s level 3 must produce all 5 I* (I%d empty) — security policy violation", name, i+1)
+			}
+		}
+	}
+}

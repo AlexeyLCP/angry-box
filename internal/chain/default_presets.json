@@ -89,7 +89,7 @@
   },
   {
     "name": "maximum_stealth_2026",
-    "description": "Very aggressive preset for when lighter ones start getting blocked.",
+    "description": "Aggressive security-first preset (pumbaX Pro ranges + full CPS level 3 / QUIC). Security > compatibility. Use when lighter profiles (russia/iran/china) are no longer enough.",
     "xhttp": {
       "methods": ["POST"],
       "paths": ["/api/telemetry/v2/report"],
@@ -113,7 +113,7 @@
       "h2": [536870912, 1073741823],
       "h3": [1073741824, 1610612735],
       "h4": [1610612736, 2147483647],
-      "cps_level": 2,
+      "cps_level": 3,
       "mimicry": "quic"
     },
     "tuic": {
@@ -123,7 +123,7 @@
   },
   {
     "name": "pro_2026",
-    "description": "Pro profile from pumbaX best practices (May 2026). Full J/S/H ranges + QUIC CPS I1-I5. Maximum stealth for RU/IR/CN. Use for entry when you need 'it just works as clock' under heavy DPI.",
+    "description": "MAXIMUM SECURITY preset (pumbaX Pro 2026). Full J/S/H ranges + complete QUIC CPS I1-I5 chain (level 3). Security > compatibility: strongest known DPI resistance for RU/IR/CN in 2026. May produce larger client configs; some very old AmneziaVPN clients or extreme networks can have issues. Preferred when stealth is critical.",
     "reality": {
       "server_names": ["www.microsoft.com", "discord.com", "www.apple.com"],
       "fingerprints": ["chrome", "firefox", "safari"],

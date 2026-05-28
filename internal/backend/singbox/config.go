@@ -374,8 +374,9 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		"h3":   h3,
 		"h4":   h4,
 	}
-	// For standalone user config we generate fresh CPS every time (no persistent Chain entry).
-	// For stable long-lived entry points use "chain create/apply" which persists I1-I5 + server key.
+	// SECURITY-FIRST: when preset requests cps_level==3 we always emit the full CPS chain
+	// (no silent downgrade to "packet":"none"). Standalone generates fresh values each time.
+	// For truly stable entry (recommended for production) use chain create + apply (persists keys + I*).
 	if awg.CPSLevel > 0 {
 		mim := awg.Mimicry
 		if mim == "" {
