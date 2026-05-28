@@ -798,6 +798,16 @@ PersistentKeepalive = 25
 	}
 
 	fmt.Println("# amnezia parameters (jc/jmin/jmax/h1-h4) come from the active profile — must match server exactly.")
+
+	p := chain.GetDefaultPreset()
+	if p.CPSLevel >= 2 || (p.AWG != nil && p.AWG.CPSLevel >= 2) {
+		fmt.Println("#")
+		fmt.Println("# IMPORTANT (pro_2026 / xhttp_max_stealth_2026):")
+		fmt.Println("# This preset uses advanced CPS (I1-I5). The I1-I5 values are embedded in the server config above.")
+		fmt.Println("# For the client to work, the AmneziaWG client must receive matching I1-I5 (usually via the 'amnezia' section or extra params).")
+		fmt.Println("# When using apply-chain, the report already contains the exact material. For standalone config, re-apply via chain for full CPS output.")
+	}
+
 	fmt.Println("# ============================================================")
 }
 

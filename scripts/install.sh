@@ -15,7 +15,7 @@ set -e
 
 # ─── Defaults ──────────────────────────────────────────────────────────────────
 
-VERSION="${VERSION:-latest}"
+VERSION="${VERSION:-0.2.0}"
 LOCAL_BIN=""
 NO_START=false
 UNINSTALL=false
@@ -100,19 +100,25 @@ install_binary() {
 
     echo "==> Downloading Angry-BOX ${VERSION} for ${TARGET}..."
 
-    ARCHIVE="angry-box-${VERSION}-${TARGET}.tar.gz"
-    URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
+    if [ "$VERSION" = "latest" ]; then
+        ARCHIVE="angry-box-${TARGET}.tar.gz"
+        URL="https://github.com/${GITHUB_REPO}/releases/latest/download/${ARCHIVE}"
+    else
+        ARCHIVE="angry-box-${VERSION}-${TARGET}.tar.gz"
+        URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
+    fi
+
     TMPDIR=$(mktemp -d)
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$URL" -o "$TMPDIR/$ARCHIVE" || {
+        curl -fsSL -L "$URL" -o "$TMPDIR/$ARCHIVE" || {
             echo "ERROR: Failed to download $URL"
             echo "Check that version v${VERSION} exists and target ${TARGET} is available."
             rm -rf "$TMPDIR"
             exit 1
         }
     elif command -v wget >/dev/null 2>&1; then
-        wget -q "$URL" -O "$TMPDIR/$ARCHIVE" || {
+        wget -q --show-progress "$URL" -O "$TMPDIR/$ARCHIVE" || {
             echo "ERROR: Failed to download $URL"
             rm -rf "$TMPDIR"
             exit 1
@@ -247,6 +253,10 @@ print_done() {
     echo "    angry-box deploy -addr <IP> -key ~/.ssh/id_ed25519"
     echo ""
     echo "  API:  http://localhost:8090/health"
+    echo ""
+    echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation:"
+    echo "    opkg install angry-box_0.2.0_mipsel_24kc.ipk        # Keenetic"
+    echo "    opkg install angry-box_0.2.0_aarch64_cortex-a53.ipk # OpenWRT aarch64"
     echo ""
 }
 

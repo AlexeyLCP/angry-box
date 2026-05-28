@@ -94,7 +94,9 @@ angry-box chain create mychain --nodes node1,node2 --strategy urltest --profile 
 # 4. Apply (this is where the magic CPS + XHTTP generators run)
 angry-box apply-chain mychain
 
-# 5. Get client configs (including ready AWG with the exact I1-I5 that were deployed)
+# 5. Get client configs
+# Note: For full CPS/I1-I5 material in the output, prefer `apply-chain`.
+# Standalone `config` will generate the server config + basic client template.
 angry-box config -type user --protocol awg --profile pro_2026 --client-pubkey <pub>
 ```
 
