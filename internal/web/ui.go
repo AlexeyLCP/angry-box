@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -63,7 +62,6 @@ func (s *Server) Stop() {
 func (s *Server) collectAllMetrics() {
 	st := s.store()
 	hosts, _ := st.ListHosts()
-	settings, _ := st.GetSettings()
 	f := factory.New()
 	b := f.Create()
 	ctx := context.Background()
@@ -79,7 +77,6 @@ func (s *Server) collectAllMetrics() {
 			Online:  status.Running,
 			Version: status.Version,
 		})
-		_ = settings
 	}
 }
 
@@ -1110,9 +1107,3 @@ func jsonMarshal(v any) string {
 	return string(data)
 }
 
-// ─── Base64 helpers ───────────────────────────────────────────────────────────
-
-func init() {
-	// Ensure base64 is used (for QR codes etc)
-	_ = base64.StdEncoding.EncodeToString([]byte{})
-}
