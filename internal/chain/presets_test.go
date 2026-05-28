@@ -64,7 +64,7 @@ func TestLoadPresetsExternalOverride(t *testing.T) {
 		},
 		{
 			Name: "my_custom_2026",
-			AWG: &AWGPreset{JC: 99, JMIN: 100, JMAX: 200},
+			AWG:  &AWGPreset{JC: 99, JMIN: 100, JMAX: 200},
 		},
 	}
 

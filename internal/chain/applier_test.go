@@ -297,4 +297,3 @@ func TestAWGEntryKeyMaterial_Population(t *testing.T) {
 		t.Error("config private_key does not match what was recorded for the report")
 	}
 }
-

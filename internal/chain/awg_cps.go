@@ -35,7 +35,7 @@ var (
 		"sip.voys.nl", "sip.antisip.com", "sip.iptel.org", "sip.voipgate.com",
 	}
 	dnsDomainPool = quicDomainPool // reuse for DNS
-	sipUAPool    = []string{
+	sipUAPool     = []string{
 		"Linphone/5.2.5 (belle-sip/5.2.0)",
 		"Zoiper rv2.10.20.4",
 		"MicroSIP/3.21.4",
@@ -324,7 +324,7 @@ func EnforceAWGInvariants(jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4 *int) {
 		*s2 = cryptoRandInt(15, 150) // safe broad range, caller can narrow
 		tries++
 	}
-	if (*s1+56) == *s2 {
+	if (*s1 + 56) == *s2 {
 		*s2 += gap
 	}
 	// H values are already huge unique quadrants from preset or generator.

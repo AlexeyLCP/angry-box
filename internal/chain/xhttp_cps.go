@@ -90,12 +90,12 @@ func GenerateRealisticHeaders(host string) map[string][]string {
 // These can be mapped to sing-box multiplex settings or passed via extra in Xray.
 func GenerateXMUX() map[string]any {
 	return map[string]any{
-		"enabled":          true,
-		"max_concurrency":  fmt.Sprintf("%d-%d", RandRange(4, 12), RandRange(16, 48)),
-		"max_connections":  0, // unlimited or controlled
-		"h_max_reusable":   fmt.Sprintf("%d-%d", RandRange(1800, 3600), RandRange(7200, 14400)),
-		"h_max_requests":   fmt.Sprintf("%d-%d", RandRange(400, 900), RandRange(800, 2000)),
-		"keep_alive":       "30s",
+		"enabled":         true,
+		"max_concurrency": fmt.Sprintf("%d-%d", RandRange(4, 12), RandRange(16, 48)),
+		"max_connections": 0, // unlimited or controlled
+		"h_max_reusable":  fmt.Sprintf("%d-%d", RandRange(1800, 3600), RandRange(7200, 14400)),
+		"h_max_requests":  fmt.Sprintf("%d-%d", RandRange(400, 900), RandRange(800, 2000)),
+		"keep_alive":      "30s",
 	}
 }
 
@@ -169,9 +169,9 @@ func GenerateXHTTPExtra(stealthLevel int, host string) map[string]any {
 	mode := GenerateXHTTPMode(stealthLevel)
 
 	extra := map[string]any{
-		"mode": mode,
+		"mode":            mode,
 		"x_padding_bytes": fmt.Sprintf("%d-%d", RandRange(200, 700), RandRange(900, 1800)),
-		"headers": GenerateRealisticHeaders(host),
+		"headers":         GenerateRealisticHeaders(host),
 	}
 
 	// Strong multiplexing controls for high stealth

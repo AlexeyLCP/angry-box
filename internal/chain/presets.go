@@ -68,7 +68,7 @@ type XHTTPPreset struct {
 	PingTimeout string              `json:"ping_timeout"`
 
 	// Advanced obfuscation (inspired by Xray XHTTP #4113 and community)
-	PaddingBytes   string `json:"padding_bytes,omitempty"`    // e.g. "100-1200" or "400-1600" — random per request like xPaddingBytes
+	PaddingBytes   string `json:"padding_bytes,omitempty"` // e.g. "100-1200" or "400-1600" — random per request like xPaddingBytes
 	Multiplex      bool   `json:"multiplex,omitempty"`
 	MaxConcurrency string `json:"max_concurrency,omitempty"` // "8-32" range style (XMUX inspiration)
 	MaxConnections string `json:"max_connections,omitempty"`
@@ -76,7 +76,7 @@ type XHTTPPreset struct {
 	// Upstream / Downstream separation hints (powerful against behavioral DPI)
 	UpstreamHost   string `json:"upstream_host,omitempty"`
 	DownstreamHost string `json:"downstream_host,omitempty"`
-	UpstreamAlpn   string `json:"upstream_alpn,omitempty"`   // "h2", "h3", etc.
+	UpstreamAlpn   string `json:"upstream_alpn,omitempty"` // "h2", "h3", etc.
 	DownstreamAlpn string `json:"downstream_alpn,omitempty"`
 }
 

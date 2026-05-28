@@ -73,11 +73,11 @@ type AWGClientMaterial struct {
 	ClientPubUsed string // what ended up in the "peers" array on the server
 	ClientPriv    string // populated only for auto-generated samples (never persisted)
 	// Stable CPS/I1-I5 (hex or <r N><b 0x...> form ready for sing-box amnezia.i*)
-	I1 string
-	I2 string
-	I3 string
-	I4 string
-	I5 string
+	I1   string
+	I2   string
+	I3   string
+	I4   string
+	I5   string
 	Note string
 }
 
@@ -130,7 +130,6 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 		return nil, fmt.Errorf("chain: create backend: %w", err)
 	}
 	_ = b // backend may be used in future for version/status; reload logic moved into pushConfig
-
 
 	// Apply modern defaults if not specified on the chain
 	if chain.Transport == "" {
@@ -293,7 +292,6 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 	// We no longer do a second b.Reload here, because it was poisoning successful nodes
 	// (the second reload could fail for transient reasons even though the config was already active).
 	// This avoids the "double apply" problem identified in review.
-
 
 	report := &ApplyReport{
 		ChainName: chain.Name,
