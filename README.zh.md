@@ -1,120 +1,130 @@
+**Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+
 # Angry-BOX
 
-**语言:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+**轻量级 SSH-only 编排器**，用于 **sing-box**（主要）和 **xray**（次要）。
 
-轻量级编排器，通过 **仅 SSH** 方式在远程机器上管理高混淆代理链。
+无需在节点上部署持久化代理。所有管理均通过 SSH 完成。可在远程服务器和路由器（包括 Keenetic）上部署最小代理配置。
 
-**sing-box** 为主后端，**xray** 为次要后端（尽力而为）。
+## 主要特性
 
-## 架构原则
+- 纯 SSH 控制平面，无需在目标上保留代理
+- 2026 年强力隐身预设（俄罗斯/伊朗/中国/最大隐身）
+- 高级 AWG + 完整的 CPS + 真实 QUIC/SIP/DNS 生成器
+- 高质量 XHTTP 传输（填充、XMUX、真实请求头），同时支持 sing-box 和 xray
+- 稳定的用户凭证（AWG 密钥和 CPS 每个链路只生成一次）
+- 优秀的路由器支持（Keenetic .ipk + OpenWRT）
+- 原生 Windows 版本
+- Web UI + 完整 CLI
 
-- 编排器仅作为“控制大脑”，绝不参与实际流量转发。
-- 完全通过 **SSH** 管理，节点上不部署常驻代理。
-- 远程机器（VPS、Keenetic 等路由器）仅部署实际代理（sing-box 或 xray）+ 最小配置 + 启动脚本。
-- 可以在 Keenetic 上运行 Angry-BOX 本身，此时它仅作为管理头，**不成为**链路中的代理节点。
+## 快速开始
 
-### 两种连接类型
+```bash
+# 1. 安装
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
-- **传输连接（Transport）**：用于链路内部跳点连接（2026 年推荐 XHTTP）。
-- **用户连接（User）**：面向最终客户端的入口（TUIC v5、带高级 CPS 的 AmneziaWG 等）。
+# 2. 添加节点
+angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
 
-## 2026 年混淆预设（安全优先）
+# 3. 使用 2026 强力预设创建链路
+angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
 
-可通过配置文件或 `--profile` 指定全局/链路级预设。
+# 4. 部署
+angry-box apply-chain mychain
+```
 
-当前预设：
-- `russia_2026`、`iran_2026`、`china_2026` — 区域平衡型
-- `maximum_stealth_2026` — 激进型
-- `pro_2026` — 完整 pumbaX Pro 2026 参数 + 完整 AWG CPS I1-I5 链（级别 3，主打 QUIC）
-- `xhttp_max_stealth_2026` — **极端** XHTTP 专用预设（重度随机填充、激进 XMUX、上下行分离提示 + pro 级 AWG）
-
-**Security > Compatibility** 是 `pro_2026` 和 `xhttp_max_stealth_2026` 的明确策略。它们提供 2026 年已知最强的 DPI 抵抗能力（针对 RKN、GFW、伊朗系统），代价是客户端配置更大，可能与极旧客户端不兼容。
-
-AWG 入口凭证（服务器密钥对 + CPS I1-I5）在创建链路时**一次性生成**，后续 apply 不会轮换。
-
-### 高级 XHTTP 混淆
-
-我们实现了大量 2025–2026 年社区最前沿的技术：
-- 随机范围的 Header Padding
-- XMUX 风格的多路复用控制
-- 真实浏览器风格的请求头（受真实 Chromium 启发）
-- 上下行分离提示
-- 模式选择（packet-up / stream-up）
-
-同时支持 sing-box 和 xray 后端。
+Web UI 默认地址：`http://localhost:8090`
 
 ## 安装
 
-推荐使用官方安装脚本：
+### 一键安装脚本（推荐，Linux / Keenetic）
 
 ```bash
 # 最新版
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # 指定版本
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.0
-
-# 本地二进制
-sh scripts/install.sh --local ./angry-box
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.1
 ```
 
-脚本会自动识别 Linux（systemd）和 Keenetic（Entware）环境。
+### 预编译二进制
 
-### 卸载与更新
+从 [Releases](https://github.com/alexeylcp/angry-box/releases) 下载。
+
+**Linux**
+```bash
+tar -xzf angry-box-0.2.1-linux-amd64.tar.gz
+cd angry-box-0.2.1-linux-amd64
+./angry-box --help
+```
+
+**Windows**
+- 下载 `angry-box-0.2.1-windows-amd64.zip` 或 `.exe`
+- 解压后直接运行 `angry-box.exe`
+- Web UI: `http://localhost:8090`
+
+### 路由器（Keenetic / OpenWRT）
+
+详见下方路由器安装部分。
+
+## 架构
+
+Angry-BOX 仅作为**控制平面**存在。
+
+- 编排器本身不转发流量
+- 所有操作通过 SSH 完成
+- 远程节点上仅部署轻量代理（sing-box 或 xray）+ 小型配置
+
+**两种连接类型：**
+- **Transport**：用于链路内部跳板（推荐 XHTTP）
+- **User**：真实客户端入口（TUIC v5 或 AmneziaWG）
+
+## 2026 隐身预设
+
+项目内置针对当前 DPI 优化的专业预设：
+
+| 预设                      | 针对环境               | 主要技术                           |
+|---------------------------|------------------------|------------------------------------|
+| `russia_2026`             | 俄罗斯                 | 平衡型 XHTTP + AWG                 |
+| `iran_2026`               | 伊朗                   | 激进 XHTTP + Reality               |
+| `china_2026`              | 中国                   | 强力混淆 + 分片                    |
+| `maximum_stealth_2026`    | 最高隐蔽性             | 完整 XHTTP + AWG CPS               |
+| `pro_2026`                | 专业使用               | 强制 CPS 3 级 + 1200B QUIC         |
+| `xhttp_max_stealth_2026`  | 极限 XHTTP             | 最大填充 + XMUX                    |
+
+## 路由器支持
+
+Angry-BOX 提供原生 `.ipk` 包。
+
+推荐直接从 Releases 下载对应架构的包安装。
+
+## 从源码构建
 
 ```bash
-sh scripts/install.sh --uninstall
-sh scripts/install.sh --version 0.3.0
+git clone https://github.com/alexeylcp/angry-box.git
+cd angry-box
+CGO_ENABLED=0 go build -o angry-box ./cmd/angry-box
+make package-all
 ```
 
-## 快速开始
+## 致谢
 
-```bash
-# 1. 添加主机
-angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
+本项目大量借鉴了反审查社区的公开研究成果。
 
-# 2. 部署 sing-box
-angry-box deploy --host node1
-
-# 3. 使用强 2026 预设创建链路
-angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
-
-# 4. 应用（将获得包含 AWG 密钥 + CPS 的丰富报告）
-angry-box apply-chain mychain
-
-# 5. 查看状态
-angry-box chain show mychain
-```
-
-独立生成配置（无需链路）：
-
-```bash
-angry-box config -type user --protocol awg --profile xhttp_max_stealth_2026
-```
-
-## 功能特性
-
-- 纯 SSH 管理 + 失败自动回滚
-- 详细的 ApplyReport（包含 AWG 服务端公钥和稳定的 CPS I1-I5）
-- AWG 入口凭证稳定（创建时生成一次）
-- 基于社区研究的先进 XHTTP 混淆参数
-- 模块化 2026 预设 + 支持外部 JSON
-- apply-chain 与独立 `config` 命令完全对等
-
-## 支持
-
-- Bug 反馈和功能请求请通过 GitHub Issues。
-- 一般讨论和被墙环境下的配置帮助请使用 GitHub Discussions。
-- 来自俄罗斯、伊朗、中国的真实测试反馈对改进预设非常有价值。
-
-## 语言
-
-[English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
-
-## 致谢 / Credits
-
-详细致谢见英文版 README 底部。项目大量借鉴了反审查社区的公开研究与工具。
+核心贡献者包括：
+- pumbaX / awg-multi-script
+- Xray 团队（RPRX）
+- Hysteria2、NaiveProxy、Telemt 等社区项目
 
 ## 许可证
 
 PolyForm Noncommercial License 1.0.0
+
+## 支持
+
+- 问题反馈 → [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
+- 讨论 → GitHub Discussions
+
+---
+
+**当前版本：** 0.2.1 — 改进路由器打包、Windows 支持及文档。

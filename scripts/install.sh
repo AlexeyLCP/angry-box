@@ -6,7 +6,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 #
 #   # Or with options:
-#   sh install.sh --version 0.1.0
+#   sh install.sh --version 0.2.1
 #   sh install.sh --local ./angry-box          # install from local binary
 #   sh install.sh --no-start                    # don't start the service
 #   sh install.sh --uninstall                   # remove angry-box
@@ -15,7 +15,7 @@ set -e
 
 # ─── Defaults ──────────────────────────────────────────────────────────────────
 
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.2.1}"
 LOCAL_BIN=""
 NO_START=false
 UNINSTALL=false
@@ -34,6 +34,22 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# ─── Windows detection (this script is Unix-only) ──────────────────────────────
+
+case "$(uname -s)" in
+    *MINGW*|*MSYS*|*CYGWIN*|*Windows*)
+        echo "ERROR: This installer does not support native Windows."
+        echo ""
+        echo "Please download the Windows package instead:"
+        echo "  https://github.com/alexeylcp/angry-box/releases"
+        echo ""
+        echo "Look for: angry-box-*-windows-amd64.zip or .exe"
+        exit 1
+        ;;
+esac
+
+# ─── Privilege detection and User Mode ─────────────────────────────────────────
 
 # ─── Detect platform ───────────────────────────────────────────────────────────
 
@@ -84,6 +100,39 @@ do_uninstall() {
     exit 0
 }
 
+# ─── Resolve version (especially "latest") ─────────────────────────────────────
+
+resolve_version() {
+    if [ "$VERSION" != "latest" ]; then
+        RESOLVED_VERSION="$VERSION"
+        return
+    fi
+
+    echo "==> Resolving latest version from GitHub API..."
+
+    API_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+
+    # Try jq first (cleanest)
+    if command -v jq >/dev/null 2>&1; then
+        TAG=$(curl -fsSL "$API_URL" 2>/dev/null | jq -r '.tag_name' 2>/dev/null || true)
+    else
+        # Fallback: basic parsing
+        TAG=$(curl -fsSL "$API_URL" 2>/dev/null | \
+              grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | \
+              head -1 | cut -d'"' -f4 || true)
+    fi
+
+    if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+        echo "ERROR: Could not determine latest version from GitHub API."
+        echo "Please specify an explicit version with --version X.Y.Z"
+        exit 1
+    fi
+
+    # Strip leading 'v' if present
+    RESOLVED_VERSION="${TAG#v}"
+    echo "    Latest version is: $RESOLVED_VERSION"
+}
+
 # ─── Install: get binary ───────────────────────────────────────────────────────
 
 install_binary() {
@@ -100,20 +149,15 @@ install_binary() {
 
     echo "==> Downloading Angry-BOX ${VERSION} for ${TARGET}..."
 
-    if [ "$VERSION" = "latest" ]; then
-        ARCHIVE="angry-box-${TARGET}.tar.gz"
-        URL="https://github.com/${GITHUB_REPO}/releases/latest/download/${ARCHIVE}"
-    else
-        ARCHIVE="angry-box-${VERSION}-${TARGET}.tar.gz"
-        URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
-    fi
+    ARCHIVE="angry-box-${VERSION}-${TARGET}.tar.gz"
+    URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
 
     TMPDIR=$(mktemp -d)
 
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL -L "$URL" -o "$TMPDIR/$ARCHIVE" || {
             echo "ERROR: Failed to download $URL"
-            echo "Check that version v${VERSION} exists and target ${TARGET} is available."
+            echo "Check that version v${RESOLVED_VERSION} exists and target ${TARGET} is available."
             rm -rf "$TMPDIR"
             exit 1
         }
@@ -130,7 +174,20 @@ install_binary() {
     fi
 
     tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
-    cp "$TMPDIR/angry-box" "$INSTALL_PATH"
+
+    # The tarball contains a subdirectory (e.g. angry-box-0.2.1-linux-amd64/)
+    # We need to find the binary inside it.
+    BINARY_PATH=$(find "$TMPDIR" -type f -name "angry-box" | head -1)
+
+    if [ -z "$BINARY_PATH" ]; then
+        echo "ERROR: Could not find 'angry-box' binary inside the archive."
+        echo "Archive contents:"
+        find "$TMPDIR" -maxdepth 2 -type f | head -20
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+
+    cp "$BINARY_PATH" "$INSTALL_PATH"
     chmod +x "$INSTALL_PATH"
     rm -rf "$TMPDIR"
 }
@@ -143,9 +200,23 @@ install_dirs() {
     mkdir -p "$DATA_DIR"
     mkdir -p "$LOG_DIR"
 
-    # Create default store if it doesn't exist.
+    # Create default store.json for backward compatibility
     if [ ! -f "$CONFIG_DIR/store.json" ]; then
         echo '{"hosts":[],"chains":[]}' > "$CONFIG_DIR/store.json"
+    fi
+
+    # Create a minimal modern config.toml if it doesn't exist
+    if [ ! -f "$CONFIG_DIR/config.toml" ]; then
+        cat > "$CONFIG_DIR/config.toml" << 'CONFIG_EOF'
+# Angry-BOX configuration
+# See documentation for all available options.
+
+listen_addr = "0.0.0.0:8090"
+log_level = "info"
+
+# storage_file = "store.json"   # default
+CONFIG_EOF
+        echo "    Created default config.toml"
     fi
 }
 
@@ -156,36 +227,69 @@ install_service() {
         echo "==> Installing Keenetic init script..."
         cat > /opt/etc/init.d/S99angry-box << 'INIT_EOF'
 #!/bin/sh
-PATH=/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin
-DAEMON="/opt/bin/angry-box"
-ARGS="serve --listen :8090 --file /opt/etc/angry-box/store.json"
-PIDFILE="/opt/var/run/angry-box.pid"
-LOGFILE="/opt/var/log/angry-box.log"
+# Angry-BOX init script for Keenetic / Entware
+
+BIN="/opt/bin/angry-box"
+STORE="/opt/etc/angry-box/store.json"
+PID="/var/run/angry-box.pid"
 
 start() {
-    echo "Starting Angry-BOX..."
-    mkdir -p /opt/etc/angry-box /opt/var/run /opt/var/log
-    $DAEMON $ARGS >> $LOGFILE 2>&1 &
-    echo $! > $PIDFILE
-}
-stop() {
-    echo "Stopping Angry-BOX..."
-    if [ -f $PIDFILE ]; then
-        kill $(cat $PIDFILE) 2>/dev/null
-        rm -f $PIDFILE
+    if [ -f "$PID" ]; then
+        pid=$(cat "$PID" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "angry-box already running"
+            return 0
+        fi
+        rm -f "$PID"
     fi
+    mkdir -p "$(dirname "$STORE")" 2>/dev/null || true
+    "$BIN" serve -listen 0.0.0.0:8090 -file "$STORE" >/dev/null 2>&1 &
+    echo $! > "$PID"
+    echo "angry-box started"
 }
+
+stop() {
+    if [ -f "$PID" ]; then
+        kill "$(cat "$PID" 2>/dev/null)" 2>/dev/null || true
+        rm -f "$PID"
+    fi
+    echo "angry-box stopped"
+}
+
 case "$1" in
     start)   start ;;
     stop)    stop ;;
     restart) stop; sleep 1; start ;;
+    *)       echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
 esac
 exit 0
 INIT_EOF
         chmod +x /opt/etc/init.d/S99angry-box
     else
-        echo "==> Installing systemd service..."
-        cat > /etc/systemd/system/angry-box.service << UNIT_EOF
+        if [ "$USER_MODE" = true ]; then
+            echo "==> Installing user systemd service..."
+            mkdir -p "$HOME/.config/systemd/user"
+            cat > "$HOME/.config/systemd/user/angry-box.service" << UNIT_EOF
+[Unit]
+Description=Angry-BOX proxy orchestrator
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_PATH serve -listen 0.0.0.0:8090 -file $CONFIG_DIR/store.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+WorkingDirectory=$CONFIG_DIR
+
+[Install]
+WantedBy=default.target
+UNIT_EOF
+            systemctl --user daemon-reload
+            systemctl --user enable angry-box
+        else
+            echo "==> Installing systemd service..."
+            cat > /etc/systemd/system/angry-box.service << UNIT_EOF
 [Unit]
 Description=Angry-BOX proxy orchestrator
 After=network.target
@@ -193,7 +297,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/angry-box serve --listen :8090 --file /etc/angry-box/store.json
+ExecStart=/usr/local/bin/angry-box serve -listen 0.0.0.0:8090 -file /etc/angry-box/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -202,8 +306,9 @@ WorkingDirectory=/etc/angry-box
 [Install]
 WantedBy=multi-user.target
 UNIT_EOF
-        systemctl daemon-reload
-        systemctl enable angry-box
+            systemctl daemon-reload
+            systemctl enable angry-box
+        fi
     fi
 }
 
@@ -215,7 +320,21 @@ start_service() {
         /opt/etc/init.d/S99angry-box start
     else
         echo "==> Starting Angry-BOX..."
-        systemctl start angry-box
+        if [ "$USER_MODE" = true ]; then
+            systemctl --user start angry-box
+            sleep 1
+            if ! systemctl --user is-active --quiet angry-box; then
+                echo "WARNING: Service failed to start."
+                systemctl --user status angry-box --no-pager -n 20 || true
+            fi
+        else
+            systemctl start angry-box
+            sleep 1
+            if ! systemctl is-active --quiet angry-box; then
+                echo "WARNING: Service failed to start."
+                journalctl -u angry-box -n 25 --no-pager || true
+            fi
+        fi
     fi
 }
 
@@ -230,7 +349,7 @@ print_done() {
 
     if [ "$IS_KEENETIC" = true ]; then
         echo "  Binary:     /opt/bin/angry-box"
-        echo "  Config:     /opt/etc/angry-box/"
+        echo "  Config:     /opt/etc/angry-box/config.toml"
         echo "  Data:       /opt/var/lib/angry-box/"
         echo "  Logs:       /opt/var/log/angry-box.log"
         echo ""
@@ -238,14 +357,25 @@ print_done() {
         echo "    /opt/etc/init.d/S99angry-box {start|stop|restart}"
         echo ""
     else
-        echo "  Binary:     /usr/local/bin/angry-box"
-        echo "  Config:     /etc/angry-box/"
-        echo "  Data:       /var/lib/angry-box/"
-        echo ""
-        echo "  Control:"
-        echo "    systemctl status angry-box"
-        echo "    systemctl {start|stop|restart} angry-box"
-        echo ""
+        if [ "$USER_MODE" = true ]; then
+            echo "  Binary:     $INSTALL_PATH"
+            echo "  Config:     $CONFIG_DIR/config.toml"
+            echo "  Data:       $DATA_DIR/"
+            echo ""
+            echo "  Control (user mode):"
+            echo "    systemctl --user status angry-box"
+            echo "    systemctl --user {start|stop|restart} angry-box"
+            echo ""
+        else
+            echo "  Binary:     /usr/local/bin/angry-box"
+            echo "  Config:     /etc/angry-box/config.toml"
+            echo "  Data:       /var/lib/angry-box/"
+            echo ""
+            echo "  Control:"
+            echo "    systemctl status angry-box"
+            echo "    systemctl {start|stop|restart} angry-box"
+            echo ""
+        fi
     fi
 
     echo "  Quick start:"
@@ -254,9 +384,10 @@ print_done() {
     echo ""
     echo "  API:  http://localhost:8090/health"
     echo ""
-    echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation:"
-    echo "    opkg install angry-box_0.2.0_mipsel_24kc.ipk        # Keenetic"
-    echo "    opkg install angry-box_0.2.0_aarch64_cortex-a53.ipk # OpenWRT aarch64"
+    echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation from Releases:"
+    echo "    opkg install angry-box_0.2.1_aarch64-3.10.ipk        # Keenetic aarch64 (recommended)"
+    echo "    opkg install angry-box_0.2.1_mipsel_24kc.ipk         # Keenetic MIPS"
+    echo "    opkg install angry-box_0.2.1_aarch64_cortex-a53.ipk  # OpenWRT aarch64"
     echo ""
 }
 
@@ -264,11 +395,49 @@ print_done() {
 
 detect_platform
 
+# ─── Privilege & User Mode decision (must be early) ────────────────────────────
+if [ "$IS_KEENETIC" = false ]; then
+    if [ "$(id -u)" -ne 0 ]; then
+        echo ""
+        echo "You are not running as root."
+        echo "System-wide installation requires sudo."
+        echo ""
+        echo "Options:"
+        echo "  1. Re-run with: sudo $0 $*"
+        echo "  2. Install only for current user (no sudo needed)"
+        echo ""
+        printf "Install for current user only? [Y/n] "
+        read -r answer
+        case "$answer" in
+            [nN]*)
+                echo "Exiting. Run with sudo for system-wide install."
+                exit 0
+                ;;
+            *)
+                USER_MODE=true
+                echo "==> Using user-local installation mode"
+                ;;
+        esac
+    fi
+fi
+
+# Resolve "latest" early so the rest of the script uses a concrete version
+resolve_version
+VERSION="$RESOLVED_VERSION"
+
+# ─── Determine installation paths (respect USER_MODE) ──────────────────────────
+
 if [ "$IS_KEENETIC" = true ]; then
     INSTALL_PATH="/opt/bin/angry-box"
     CONFIG_DIR="/opt/etc/angry-box"
     DATA_DIR="/opt/var/lib/angry-box"
     LOG_DIR="/opt/var/log"
+elif [ "$USER_MODE" = true ]; then
+    INSTALL_PATH="$HOME/.local/bin/angry-box"
+    CONFIG_DIR="$HOME/.config/angry-box"
+    DATA_DIR="$HOME/.local/share/angry-box"
+    LOG_DIR="$HOME/.local/log"
+    mkdir -p "$HOME/.local/bin" "$HOME/.config" "$HOME/.local/share" "$HOME/.local/log" 2>/dev/null || true
 else
     INSTALL_PATH="/usr/local/bin/angry-box"
     CONFIG_DIR="/etc/angry-box"
