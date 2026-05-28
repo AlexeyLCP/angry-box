@@ -161,6 +161,14 @@ build-linux-armv7:
 build-keenetic-mipsel:
 	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle go build $(LDFLAGS) -o dist/angry-box-keenetic-mipsel $(CMD_DIR)
 
+# Build proper .ipk package for Keenetic / Entware
+.PHONY: build-keenetic-opkg
+build-keenetic-opkg: build-keenetic-mipsel
+	@echo "==> Building Keenetic .ipk package..."
+	@mkdir -p dist
+	@VERSION=$(VERSION) ./scripts/build-keenetic-opkg.sh dist/angry-box-keenetic-mipsel $(VERSION) dist
+	@echo "==> Keenetic .ipk package ready in dist/"
+
 .PHONY: build-all
 build-all:
 	@mkdir -p dist

@@ -141,10 +141,22 @@ jobs:
           echo "Created build/${TAR_NAME}.tar.gz"
           ls -lh "build/${TAR_NAME}.tar.gz"
 
+      - name: Build Keenetic .ipk package
+        if: matrix.target == 'keenetic-mipsel'
+        env:
+          VERSION: ${{ steps.ver.outputs.value }}
+        run: |
+          set -euo pipefail
+          echo "==> Building .ipk for Keenetic / Entware"
+          ./scripts/build-keenetic-opkg.sh "build/${APP}-keenetic-mipsel" "$VERSION" build
+          ls -lh build/*.ipk || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: build/*.tar.gz
+          path: |
+            build/*.tar.gz
+            build/*.ipk
           retention-days: 7
 
   # ── Create GitHub Release ──
@@ -165,7 +177,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release-assets
-          find artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.ipk' \) -exec cp {} release-assets/ \;
           echo "=== Release assets ==="
           ls -lh release-assets/
 

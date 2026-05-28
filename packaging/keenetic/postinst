@@ -1,0 +1,26 @@
+#!/bin/sh
+
+set -e
+
+BIN="/opt/bin/angry-box"
+INIT="/opt/etc/init.d/S99angry-box"
+
+# Make sure binary is executable
+if [ -f "$BIN" ]; then
+    chmod 755 "$BIN"
+fi
+
+# Install init script if the package provides one in /opt/tmp or similar during packaging
+# (we will put the real S99 in data.tar.gz)
+
+if [ -f "/opt/tmp/S99angry-box" ]; then
+    mv /opt/tmp/S99angry-box "$INIT"
+    chmod 755 "$INIT"
+    rm -rf /opt/tmp
+fi
+
+echo "Angry-BOX installed successfully."
+echo "You can start it with: $INIT start"
+echo "Or enable autostart: $INIT enable"
+
+exit 0
