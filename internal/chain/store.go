@@ -103,6 +103,15 @@ func (s *Store) DeleteHost(id string) error {
 		return fmt.Errorf("store: read: %w", err)
 	}
 
+	// Safety check: refuse delete if any chain still references this host
+	for _, c := range sf.Chains {
+		for _, n := range c.Nodes {
+			if n.ID == id {
+				return fmt.Errorf("store: cannot delete host %q: still referenced by chain %q", id, c.Name)
+			}
+		}
+	}
+
 	found := false
 	filtered := sf.Hosts[:0]
 	for _, h := range sf.Hosts {

@@ -139,6 +139,9 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		return fmt.Errorf("xray: applyConfig: invalid JSON: %w", err)
 	}
 
+	// Backup existing config (best effort)
+	_, _ = client.Run(fmt.Sprintf("if [ -f %s ]; then cp %s %s.bak.$(date +%%s); fi", configFile, configFile, configFile))
+
 	writeCmd := fmt.Sprintf("mkdir -p %s && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF",
 		configDir, configFile, cfg.Content)
 
@@ -148,7 +151,9 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 
 	// Xray validates config at startup; test it.
 	if _, err := client.Run(fmt.Sprintf("%s run -test -config %s", installPath, configFile)); err != nil {
-		return fmt.Errorf("xray: applyConfig: config test failed: %w", err)
+		// best effort rollback
+		_, _ = client.Run(fmt.Sprintf(`latest=$(ls -t %s.bak.* 2>/dev/null | head -1); [ -n "$latest" ] && cp "$latest" %s`, configFile, configFile))
+		return fmt.Errorf("xray: applyConfig: config test failed (rollback attempted): %w", err)
 	}
 
 	if _, err := client.Run("systemctl restart xray"); err != nil {

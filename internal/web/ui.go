@@ -39,6 +39,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/hosts", s.handleCreateHost)
 	mux.HandleFunc("DELETE /ui/hosts/{id}", s.handleDeleteHost)
 	mux.HandleFunc("GET /ui/hosts/new", s.handleNewHostForm)
+	mux.HandleFunc("GET /ui/hosts/{id}/status", s.handleHostStatus)
 
 	// Chains (real implementation)
 	mux.HandleFunc("GET /ui/chains", s.handleChains)
@@ -139,13 +140,11 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 
 	st := s.store()
 	if err := st.DeleteHost(id); err != nil {
-		// Still return 200 so the row is removed from DOM (or show error toast later)
-		// For simplicity we just log via header.
-		w.Header().Set("X-Error", err.Error())
+		http.Error(w, fmt.Sprintf("failed to delete host: %v", err), http.StatusInternalServerError)
+		return
 	}
 
-	// The calling button does hx-swap="outerHTML" on the row, so we can return
-	// nothing (or a zero-height element). 204 is clean for delete.
+	// Success: tell HTMX (with hx-swap="delete") to remove the row
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -157,8 +156,16 @@ func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	frag := &simpleHTML{html: `<div class="space-y-4"><h2 class="text-2xl font-semibold mb-2">System Status</h2><p class="text-sm opacity-70">Live host/proxy status (HTMX polling every 30s + on-demand pull) will appear here.</p></div>`}
-	s.renderContent(w, r, "Status", frag)
+	st := s.store()
+	hosts, _ := st.ListHosts()
+
+	var content templ.Component
+	if len(hosts) == 0 {
+		content = &simpleHTML{html: `<div class="text-base-content/70">No hosts registered yet.</div>`}
+	} else {
+		content = templates.StatusPage(hosts) // we'll add this template
+	}
+	s.renderContent(w, r, "Status", content)
 }
 
 // simpleHTML lets us return ad-hoc HTML fragments while staying inside the templ.Component interface.
@@ -180,7 +187,8 @@ var _ templ.Component = (*simpleHTML)(nil)
 func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	hosts, _ := st.ListHosts()
-	s.render(w, templates.NewChainForm(hosts))
+	profiles := chain.ListPresets()
+	s.render(w, templates.NewChainForm(hosts, profiles))
 }
 
 func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +202,33 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	if strategy == "" {
 		strategy = "urltest"
 	}
-	nodeIDs := r.Form["nodes"] // multiple checkboxes
+
+	transport := model.TransportType(strings.TrimSpace(r.FormValue("transport")))
+	if transport == "" {
+		transport = model.TransportXHTTP
+	}
+	userProto := model.UserProtocol(strings.TrimSpace(r.FormValue("user_protocol")))
+	if userProto == "" {
+		userProto = model.UserProtocolAWG
+	}
+	profile := strings.TrimSpace(r.FormValue("profile"))
+
+	// Collect selected nodes (supports multiple checkboxes)
+	nodeIDs := r.Form["nodes"]
+	if len(nodeIDs) == 0 {
+		nodeIDs = r.PostForm["nodes"]
+	}
+	// Dedup while preserving order
+	seen := map[string]bool{}
+	uniqueNodes := []string{}
+	for _, id := range nodeIDs {
+		id = strings.TrimSpace(id)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			uniqueNodes = append(uniqueNodes, id)
+		}
+	}
+	nodeIDs = uniqueNodes
 
 	if name == "" || len(nodeIDs) < 1 {
 		http.Error(w, "name and at least one node are required", http.StatusBadRequest)
@@ -221,10 +255,17 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := &model.Chain{
-		Name:     name,
-		Nodes:    nodes,
-		Strategy: model.Strategy(strategy),
+		Name:               name,
+		Nodes:              nodes,
+		Strategy:           model.Strategy(strategy),
+		Transport:          transport,
+		UserProtocol:       userProto,
+		ObfuscationProfile: profile,
 	}
+
+	// Stable user-entry creds for AWG/TUIC are primarily generated at chain creation via CLI
+	// for the "works like clockwork" guarantee. UI creation falls back to generation on first apply.
+	_ = userProto // reserved for future full parity with CLI creation flow
 
 	if err := st.SaveChain(c); err != nil {
 		http.Error(w, fmt.Sprintf("save failed: %v", err), http.StatusInternalServerError)
@@ -243,9 +284,46 @@ func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st := s.store()
-	_ = st.DeleteChain(name) // ignore not-found for UI
+	if err := st.DeleteChain(name); err != nil {
+		http.Error(w, fmt.Sprintf("failed to delete chain: %v", err), http.StatusInternalServerError)
+		return
+	}
 
+	// Success: HTMX with hx-swap="delete" will remove the row
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ─── Host status (live check via SSH) ─────────────────────────────────────────
+
+func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+
+	st := s.store()
+	host, err := st.GetHost(id)
+	if err != nil {
+		s.render(w, &simpleHTML{html: `<span class="text-error text-xs">Host not found</span>`})
+		return
+	}
+
+	f := factory.New()
+	b, err := f.Create(model.SingBox) // default to sing-box for status checks
+	if err != nil {
+		s.render(w, &simpleHTML{html: `<span class="text-error text-xs">backend error</span>`})
+		return
+	}
+
+	ctx := context.Background()
+	status, err := b.GetStatus(ctx, *host)
+	if err != nil {
+		s.render(w, &simpleHTML{html: `<span class="badge badge-error badge-sm">Error</span>`})
+		return
+	}
+
+	s.render(w, templates.HostStatus(status))
 }
 
 func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
@@ -258,14 +336,14 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	c, err := st.GetChain(name)
 	if err != nil {
-		s.render(w, templates.ApplyResult(name, false, "chain not found"))
+		s.render(w, templates.ApplyResult(name, false, nil, "chain not found"))
 		return
 	}
 
 	// Resolve full connection info for SSH.
 	resolved, err := st.ResolveNodes(c)
 	if err != nil {
-		s.render(w, templates.ApplyResult(name, false, err.Error()))
+		s.render(w, templates.ApplyResult(name, false, nil, err.Error()))
 		return
 	}
 	c.Nodes = resolved
@@ -275,10 +353,26 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 	applier := chain.NewApplier(f)
 
 	ctx := context.Background()
-	if err := applier.ApplyChain(ctx, c); err != nil {
-		s.render(w, templates.ApplyResult(name, false, err.Error()))
+	// Pass empty clientPubKey — for AWG chains the applier will auto-generate a usable sample.
+	report, err := applier.ApplyChain(ctx, c, "")
+	if err != nil {
+		// Include some detail from the report if available (per-node failures)
+		msg := err.Error()
+		if report != nil && len(report.Nodes) > 0 {
+			for _, n := range report.Nodes {
+				if !n.Success && n.Error != "" {
+					msg += " | " + n.ID + ": " + n.Error
+				}
+			}
+		}
+		s.render(w, templates.ApplyResult(name, false, report, msg))
 		return
 	}
 
-	s.render(w, templates.ApplyResult(name, true, "applied successfully to all nodes"))
+	if report != nil && len(report.Nodes) > 0 {
+		// For rich display we pass the report (template supports it)
+		s.render(w, templates.ApplyResult(name, true, report, ""))
+	} else {
+		s.render(w, templates.ApplyResult(name, true, report, ""))
+	}
 }

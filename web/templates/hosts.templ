@@ -24,6 +24,7 @@ templ Hosts(hosts []*model.Host) {
 							<th>Address</th>
 							<th>User</th>
 							<th>Key</th>
+							<th>Status</th>
 							<th class="w-px"></th>
 						</tr>
 					</thead>
@@ -33,7 +34,7 @@ templ Hosts(hosts []*model.Host) {
 						}
 						if len(hosts) == 0 {
 							<tr>
-								<td colspan="5" class="text-center py-8 text-base-content/50">
+								<td colspan="6" class="text-center py-8 text-base-content/50">
 									No hosts yet. Add your first remote node.
 								</td>
 							</tr>
@@ -55,12 +56,20 @@ templ HostRow(h *model.Host) {
 		<td>{ h.User }</td>
 		<td class="font-mono text-xs opacity-60 truncate max-w-[140px]">{ h.KeyPath }</td>
 		<td>
-			<button 
+			<div 
+				hx-get={"/ui/hosts/" + h.ID + "/status"}
+				hx-target="this"
+				hx-swap="innerHTML">
+				<button class="btn btn-ghost btn-xs">Check</button>
+			</div>
+		</td>
+		<td>
+			<button
 				class="btn btn-ghost btn-xs text-error"
 				hx-delete={"/ui/hosts/" + h.ID}
 				hx-confirm={"Delete host " + h.ID + "?"}
-				hx-target={"#host-" + h.ID}
-				hx-swap="outerHTML">
+				hx-target="closest tr"
+				hx-swap="delete">
 				Delete
 			</button>
 		</td>
@@ -110,4 +119,21 @@ templ NewHostForm() {
 			<button>close</button>
 		</form>
 	</dialog>
+}
+
+// HostStatus shows the result of a GetStatus call for a host.
+templ HostStatus(status *model.Status) {
+	<div class="flex flex-col gap-0.5 text-xs">
+		if status.Running {
+			<span class="badge badge-success badge-sm">Running</span>
+			<span class="font-mono text-[10px] opacity-70">{ status.Version }</span>
+		} else {
+			<span class="badge badge-error badge-sm">Stopped</span>
+		}
+		if status.Error != "" {
+			<span class="text-error text-[10px] truncate max-w-[120px]" title={status.Error}>
+				{ status.Error }
+			</span>
+		}
+	</div>
 }

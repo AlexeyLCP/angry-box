@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -60,9 +61,11 @@ Common flags:
   -addr      Remote host address (IP:port)
   -user      SSH user (default: root)
   -key       Path to SSH private key
-  -port      Listen port for inbound
-  -protocol  Protocol (default: VLESS)
-  -type      Config type: transport or user (default: transport)
+  -port          Listen port for inbound
+  -protocol      Protocol (default: VLESS)
+  -type          Config type: transport or user (default: transport)
+  -profile       Obfuscation profile override (russia_2026 | iran_2026 | china_2026 | maximum_stealth_2026)
+  -client-pubkey Client public key for AWG (wireguard) user configs — required for real clients
 
 Examples:
   angry-box host add mynode --addr 192.168.1.1:22 --user root --key ~/.ssh/id_ed25519
@@ -74,16 +77,20 @@ Examples:
 
 // CLI flags.
 var (
-	backendStr string
-	storePath  string
-	addr       string
-	user       string
-	keyPath    string
-	port       int
-	protocol   string
-	configType string
-	nodesStr   string
-	strategy   string
+	backendStr   string
+	storePath    string
+	addr         string
+	user         string
+	keyPath      string
+	port         int
+	protocol     string
+	configType   string
+	nodesStr     string
+	strategy     string
+	transport    string
+	userProtocol string
+	profile      string
+	clientPubKey string
 
 	configPath string
 )
@@ -101,9 +108,16 @@ func main() {
 	}
 	orchCfg, _ := config.Load(cfgPath) // ignore error, fall back to defaults
 
-	// Apply config defaults for flags that weren't explicitly set on CLI
-	// (simple approach: we let per-command flag sets override later)
-	_ = orchCfg // will be used more in future iterations
+	// Apply global profile + load any external presets for *all* commands (not just serve)
+	// This fixes the previous --config flag limitation for profile/presets.
+	if orchCfg.DefaultObfuscationProfile != "" {
+		if _, ok := chain.GetPreset(orchCfg.DefaultObfuscationProfile); ok {
+			chain.SetDefaultProfile(orchCfg.DefaultObfuscationProfile)
+		}
+	}
+	if orchCfg.PresetsFile != "" {
+		loadExternalPresets(orchCfg.PresetsFile)
+	}
 
 	cmd := os.Args[1]
 
@@ -243,12 +257,15 @@ func chainCmd(action string) {
 		fs.StringVar(&storePath, "file", "chains.json", "store file path")
 		fs.StringVar(&nodesStr, "nodes", "", "comma-separated host IDs (required)")
 		fs.StringVar(&strategy, "strategy", "urltest", "routing strategy (urltest, failover, selector, bond)")
+		fs.StringVar(&transport, "transport", "xhttp", "transport between nodes (xhttp or reality)")
+		fs.StringVar(&userProtocol, "user-protocol", "tuic", "user entry protocol (tuic, awg, vless-reality)")
+		fs.StringVar(&profile, "profile", "", "obfuscation profile override (e.g. china_2026, russia_2026)")
 
 		name, flagArgs := popFirstArg(os.Args[3:])
 		_ = fs.Parse(flagArgs)
 
 		if name == "" {
-			fmt.Fprintf(os.Stderr, "usage: angry-box chain create <name> --nodes id1,id2,id3 [--strategy urltest]\n")
+			fmt.Fprintf(os.Stderr, "usage: angry-box chain create <name> --nodes id1,id2,id3 [--strategy urltest] [--transport xhttp] [--user-protocol tuic]\n")
 			os.Exit(1)
 		}
 
@@ -273,10 +290,37 @@ func chainCmd(action string) {
 			nodes = append(nodes, model.ChainNode{ID: id})
 		}
 
+		if profile != "" {
+			if _, ok := chain.GetPreset(profile); !ok {
+				fmt.Fprintf(os.Stderr, "error: unknown obfuscation profile %q (available: %v)\n", profile, chain.ListPresets())
+				os.Exit(1)
+			}
+		}
+
 		c := &model.Chain{
-			Name:     name,
-			Nodes:    nodes,
-			Strategy: model.Strategy(strategy),
+			Name:               name,
+			Nodes:              nodes,
+			Strategy:           model.Strategy(strategy),
+			Transport:          model.TransportType(transport),
+			UserProtocol:       model.UserProtocol(userProtocol),
+			ObfuscationProfile: profile,
+		}
+
+		// Generate stable user-entry credentials once at creation time for AWG/TUIC.
+		// This is the key change for "AWG works like clockwork" — clients configure once.
+		// Transport hop keys still rotate on every apply for security.
+		if userProtocol == "awg" {
+			priv, pub, err := chain.GenerateWireGuardKeypair()
+			if err == nil {
+				c.AWGEntryServerPriv = priv
+				c.AWGEntryServerPub = pub
+			}
+		}
+		if userProtocol == "tuic" {
+			// Stable UUID + password for the single TUIC user on the entry node
+			uuid, _ := chain.GenerateStableTUICUserCreds()
+			c.TUICEntryUserUUID = uuid
+			c.TUICEntryUserPassword = uuid
 		}
 
 		if err := s.SaveChain(c); err != nil {
@@ -284,7 +328,8 @@ func chainCmd(action string) {
 			os.Exit(1)
 		}
 
-		fmt.Printf("chain %q created with %d nodes (strategy: %s)\n", name, len(nodes), strategy)
+		fmt.Printf("chain %q created with %d nodes (strategy: %s, transport: %s, user: %s, profile: %s)\n",
+			name, len(nodes), strategy, transport, userProtocol, profile)
 
 	case "list":
 		fs := flag.NewFlagSet("chain list", flag.ExitOnError)
@@ -369,12 +414,13 @@ func chainCmd(action string) {
 func applyChainCmd() {
 	fs := flag.NewFlagSet("apply-chain", flag.ExitOnError)
 	fs.StringVar(&storePath, "file", "chains.json", "store file path")
+	fs.StringVar(&clientPubKey, "client-pubkey", "", "client public key to use for AWG user entry (if omitted and chain uses awg, a convenient sample is auto-generated)")
 
 	name, flagArgs := popFirstArg(os.Args[2:])
 	_ = fs.Parse(flagArgs)
 
 	if name == "" {
-		fmt.Fprintf(os.Stderr, "usage: angry-box apply-chain <name>\n")
+		fmt.Fprintf(os.Stderr, "usage: angry-box apply-chain <name> [--client-pubkey <pub>]\n")
 		os.Exit(1)
 	}
 
@@ -393,18 +439,102 @@ func applyChainCmd() {
 	}
 	c.Nodes = resolved
 
-	fmt.Printf("applying chain %q (%d nodes, strategy: %s)...\n", c.Name, len(c.Nodes), c.Strategy)
+	fmt.Printf("applying chain %q (%d nodes, strategy: %s, transport: %s, user: %s)\n",
+		c.Name, len(c.Nodes), c.Strategy, c.Transport, c.UserProtocol)
+
+	effProfile := c.ObfuscationProfile
+	if effProfile == "" {
+		effProfile = chain.GetDefaultPresetName()
+	}
+	fmt.Printf("effective obfuscation profile: %s\n", effProfile)
 
 	f := factory.New()
 	applier := chain.NewApplier(f)
 
 	ctx := context.Background()
-	if err := applier.ApplyChain(ctx, c); err != nil {
+	report, err := applier.ApplyChain(ctx, c, clientPubKey)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "apply-chain failed: %v\n", err)
+		// Still print partial report if we have one
+		if report != nil {
+			printApplyReport(report)
+		}
 		os.Exit(1)
 	}
 
-	fmt.Printf("chain %q applied successfully\n", c.Name)
+	printApplyReport(report)
+}
+
+func printApplyReport(r *chain.ApplyReport) {
+	fmt.Printf("\n✓ chain %q applied successfully\n", r.ChainName)
+	fmt.Printf("  profile: %s  transport: %s  user: %s\n", r.Profile, r.Transport, r.UserProto)
+
+	for _, n := range r.Nodes {
+		status := "OK"
+		if !n.Success {
+			status = "FAIL"
+		}
+		fmt.Printf("  - %s: %s", n.ID, status)
+		if n.Error != "" {
+			fmt.Printf(" (%s)", n.Error)
+		}
+		fmt.Println()
+	}
+
+	if r.AWG != nil && r.UserProto == model.UserProtocolAWG {
+		fmt.Println("\n=== AWG Client Config (ready to use / adapt) ===")
+		fmt.Printf("Server public key (put in client [Peer] PublicKey): %s\n", r.AWG.ServerPub)
+		fmt.Printf("Client public key that was allowed on server:     %s\n", r.AWG.ClientPubUsed)
+		if r.AWG.ClientPriv != "" {
+			fmt.Printf("Sample client private key (for testing):         %s\n", r.AWG.ClientPriv)
+		}
+		if r.AWG.Note != "" {
+			fmt.Printf("Note: %s\n", r.AWG.Note)
+		}
+		fmt.Printf(`
+[Interface]
+PrivateKey = %s
+Address = 10.8.0.2/32
+MTU = 1420
+
+[Peer]
+PublicKey = %s
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = <ENTRY_NODE_PUBLIC_IP>:%d
+PersistentKeepalive = 25
+`, firstNonEmpty(r.AWG.ClientPriv, "<your-client-private-key>"), r.AWG.ServerPub, defaultUserPortForPrint())
+		fmt.Println("amnezia parameters come from the active profile on the server (must match exactly).")
+		fmt.Println("==================================================")
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+func defaultUserPortForPrint() int { return 8443 }
+
+// loadExternalPresets reads a JSON array of ConnectionPreset from the given path
+// and merges them into the global registry (user presets override built-ins on name clash).
+func loadExternalPresets(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not read presets_file %s: %v\n", path, err)
+		return
+	}
+	var extras []chain.ConnectionPreset
+	if err := json.Unmarshal(data, &extras); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: presets_file %s is not valid JSON array of presets: %v\n", path, err)
+		return
+	}
+	if err := chain.LoadPresets(extras); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to load presets from %s: %v\n", path, err)
+		return
+	}
+	fmt.Printf("loaded %d additional obfuscation preset(s) from %s\n", len(extras), path)
 }
 
 // ─── Single-node commands (existing) ──────────────────────────────────────────
@@ -418,6 +548,9 @@ func nodeCmd(cmd string) {
 	fs.IntVar(&port, "port", 0, "listen port")
 	fs.StringVar(&protocol, "protocol", "VLESS", "protocol")
 	fs.StringVar(&configType, "type", "transport", "config type (transport or user)")
+	fs.StringVar(&profile, "profile", "", "obfuscation profile (russia_2026, iran_2026, china_2026, maximum_stealth_2026)")
+	fs.StringVar(&clientPubKey, "client-pubkey", "", "client public key for AWG user configs")
+	fs.StringVar(&transport, "transport", "xhttp", "transport for -type=transport (xhttp or reality)")
 	_ = fs.Parse(os.Args[2:])
 
 	f := factory.New()
@@ -461,15 +594,51 @@ func nodeCmd(cmd string) {
 
 	case "config":
 		ct := parseConfigType(configType)
-		cfg, err := b.GenerateConfig(ct, model.ConfigParams{
+		// Apply profile override for this generation if provided
+		if profile != "" {
+			if _, ok := chain.GetPreset(profile); !ok {
+				fmt.Fprintf(os.Stderr, "error: unknown profile %q\n", profile)
+				os.Exit(1)
+			}
+			chain.SetDefaultProfile(profile)
+		}
+
+		// For AWG user configs without explicit client key: auto-generate a sample client keypair
+		// (same UX as apply-chain). This eliminates the dangerous "CLIENT_PUBLIC_KEY_HERE" placeholder.
+		effectiveClientPub := clientPubKey
+		var sampleClientPriv string
+		if ct == model.ConfigUser && isAWGUserConfig() && effectiveClientPub == "" {
+			if priv, pub, kerr := chain.GenerateWireGuardKeypair(); kerr == nil {
+				effectiveClientPub = pub
+				sampleClientPriv = priv
+			}
+		}
+
+		params := model.ConfigParams{
 			Port:     port,
 			Protocol: protocol,
-		})
+			Extra:    map[string]any{},
+		}
+		if effectiveClientPub != "" {
+			params.Extra["clientPubKey"] = effectiveClientPub
+		}
+		if transport != "" {
+			params.Extra["transport"] = transport
+		}
+
+		cfg, err := b.GenerateConfig(ct, params)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "config generation failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(cfg.Content)
+
+		// Enhanced AWG client output: if we auto-generated a sample, print full usable client config
+		// with server pub (we can't easily get it from GenerateConfig return without model change,
+		// so we tell user to derive or re-run with explicit key for production).
+		if ct == model.ConfigUser && isAWGUserConfig() {
+			printAWGClientExample(effectiveClientPub, sampleClientPriv)
+		}
 
 	case "apply":
 		requireHostFlags()
@@ -518,6 +687,20 @@ func serveCmd() {
 	defaultStore := cfg.StoreFile
 	if defaultStore == "" {
 		defaultStore = "chains.json"
+	}
+
+	// Apply global default obfuscation profile (this becomes the default for all config generation)
+	if cfg.DefaultObfuscationProfile != "" {
+		if _, ok := chain.GetPreset(cfg.DefaultObfuscationProfile); !ok {
+			fmt.Fprintf(os.Stderr, "error: unknown obfuscation profile %q in config\n", cfg.DefaultObfuscationProfile)
+			os.Exit(1)
+		}
+		chain.SetDefaultProfile(cfg.DefaultObfuscationProfile)
+	}
+
+	// Load extra presets if configured (after the default profile so they can reference/override)
+	if cfg.PresetsFile != "" {
+		loadExternalPresets(cfg.PresetsFile)
 	}
 
 	listen := fs.String("listen", defaultListen, "HTTP listen address")
@@ -579,6 +762,45 @@ func parseConfigType(s string) model.ConfigType {
 	}
 }
 
+// isAWGUserConfig returns true if the current effective preset has AWG settings
+// (used for standalone `config -type user` to decide whether to print client example).
+func isAWGUserConfig() bool {
+	p := chain.GetDefaultPreset()
+	return p.AWG != nil
+}
+
+// printAWGClientExample prints guidance + a template for AmneziaWG client.
+// The critical piece the user needs from the *server* is its public key (printed by apply-chain or by inspecting the generated server config).
+func printAWGClientExample(providedClientPub, sampleClientPriv string) {
+	fmt.Println("\n# === AWG / AmneziaWG Client Config ===")
+
+	if sampleClientPriv != "" {
+		fmt.Println("# Auto-generated sample client keypair for quick testing (same behavior as apply-chain).")
+		fmt.Println("# The SERVER_PUBLIC_KEY must be derived from the 'private_key' field in the JSON config printed above.")
+		fmt.Printf(`
+[Interface]
+PrivateKey = %s
+Address = 10.8.0.2/32
+MTU = 1420
+
+[Peer]
+PublicKey = <SERVER_PUBLIC_FROM_THE_JSON_YOU_JUST_GOT>
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = YOUR_ENTRY_NODE_PUBLIC_IP:8443
+PersistentKeepalive = 25
+`, sampleClientPriv)
+		fmt.Println("# Paste the correct Server PublicKey and this config should work immediately with the profile's amnezia params.")
+	} else if providedClientPub != "" {
+		fmt.Printf("# Used provided --client-pubkey=%s (server config above allows this peer).\n", providedClientPub)
+		fmt.Println("# You still need the matching SERVER_PUBLIC_KEY from the generated server private_key.")
+	} else {
+		fmt.Println("# Generated without client key (may contain placeholder — prefer supplying --client-pubkey or using apply-chain for AWG).")
+	}
+
+	fmt.Println("# amnezia parameters (jc/jmin/jmax/h1-h4) come from the active profile — must match server exactly.")
+	fmt.Println("# ============================================================")
+}
+
 // popFirstArg extracts the first non-flag argument and returns it along with
 // the remaining args. Returns ("", args) if no positional arg is found.
 func popFirstArg(args []string) (first string, rest []string) {
@@ -588,4 +810,17 @@ func popFirstArg(args []string) (first string, rest []string) {
 		}
 	}
 	return "", args
+}
+
+// generateStableUUIDForTUIC generates a stable UUID for TUIC user entry at chain creation time.
+func generateStableUUIDForTUIC() string {
+	// Simple stable generation for creation time (not cryptographic, just consistent)
+	b := make([]byte, 16)
+	// Use a fixed seed pattern based on time or better - for creation we can use proper random
+	// For simplicity and stability across runs we use the same pattern as before but at creation only
+	_, _ = rand.Read(b) // still random, but only called once at creation
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

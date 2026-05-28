@@ -19,28 +19,27 @@
 Проект перезапущен с чистого листа. Старая кодовая база LucX удалена.
 Релизы v0.1.0 и v0.1.1 остаются доступны в GitHub Releases.
 
-### Реализовано
+### Реализовано (backend)
 
-- SSH-деплой sing-box и xray на удалённые машины с systemd
-- Генерация transport-конфигов (VLESS+Reality/TCP) и user-конфигов (VLESS/WS)
-- ApplyConfig, Remove, GetStatus, Reload через SSH
-- Управление цепочками нод (chain create/list/show/delete, apply-chain)
-- apply-chain с автоматической генерацией конфигов для всех hop-ов
-- JSON-хранилище хостов и цепочек
-- CLI с подкомандами (deploy, status, config, apply, remove, reload, host, chain, apply-chain, serve)
-- HTTP API в режиме демона (/health, /api/status)
-- Web UI (HTMX + a-h/templ + DaisyUI + Tailwind CDN, по практикам Pagoda/TemplUI):
-  - Боковая навигация, переключение страниц без перезагрузки
-  - Полноценная страница Hosts: таблица, кнопка добавления (модалка), форма, live create/delete через HTMX
-  - Полноценная страница Chains: список, создание цепочки (выбор хостов чекбоксами + стратегия), кнопки Apply/Delete
-  - Apply выполняет реальный apply-chain (с генерацией Reality-параметров и деплоем на все хопы)
-  - Дашборд + заглушка Status
+- SSH-деплой sing-box (primary) и xray (secondary/best-effort) с systemd + checksum + rollback
+- Полноценный интерфейс Backend (Deploy / ApplyConfig / GenerateConfig / GetStatus / Reload / Remove)
+- Модульные обфускационные профили 2026 (russia_2026, iran_2026, china_2026, maximum_stealth_2026) — XHTTP + Reality + TUIC + AWG параметры
+- Глобальный профиль из конфига + per-chain override + валидация
+- Поддержка внешних пресетов (presets_file в конфиге — свои профили для лабораторий/кастомных стран)
+- Transport между нодами: XHTTP (рекомендуется) или Reality+TCP
+- User entry: TUIC v5 и AmneziaWG (полная генерация Curve25519 + amnezia параметры из профиля)
+- apply-chain: генерация связанных конфигов (transport in/out + user entry на первой ноде), бэкапы, sing-box check, reload/restart с откатом, детальная диагностика по каждой ноде
+- Удобная работа с AWG клиентскими ключами: --client-pubkey при генерации/apply, примеры клиентских конфигов в выводе `config -type user --protocol awg`
+- Standalone генерация `angry-box config -type user/transport` полностью уравнена с апплаером (учитывает текущий профиль, поддерживает --profile, --client-pubkey, --protocol)
+- Хранение хостов/цепочек в JSON, ResolveNodes, chain create с --transport/--user-protocol/--profile
+- SSH клиент с таймаутами и хорошими ошибками
+- Сборка под Linux (amd64/arm64) + Keenetic (mipsel) через Makefile + install-скрипты
 
-### В разработке
+### Backend готов
 
-- Полноценная страница Chains (создание цепочки, визуальный список, кнопка Apply)
-- Pull-статус нод и прокси (авто-обновление по открытию UI + периодически)
-- Улучшения UX (toast-уведомления, live polling статуса, редактирование хостов)
+Backend (генерация конфигов, профили 2026, XHTTP/TUIC/AWG, apply-chain с диагностикой, AWG client keys, standalone config, деплой) завершён и готов к совместному тестированию.
+
+UI (serve) и некоторые UX-мелочи можно дорабатывать по мере использования.
 
 ## Установка
 
@@ -101,6 +100,39 @@ angry-box apply-chain mychain
 # 4. Проверить статус
 angry-box status -addr 10.0.0.1 -user root -key ~/.ssh/id_ed25519
 angry-box chain show mychain
+```
+
+## Профили обфускации (2026)
+
+Глобальный профиль задаётся в конфиге (`default_obfuscation_profile`) или через `--profile` при создании цепочки / генерации конфига.
+
+Доступные: `russia_2026`, `iran_2026`, `china_2026`, `maximum_stealth_2026`.
+
+Профиль влияет на:
+- XHTTP (методы/пути/заголовки/hosts) — для транспорта между нодами
+- Reality SNI + fingerprint
+- TUIC congestion_control + auth_timeout
+- AWG (jc, jmin, jmax, h1-h4, s1/s2)
+
+## AmneziaWG (AWG) — клиентские ключи
+
+При использовании `--user-protocol awg`:
+
+1. Сгенерируйте клиентскую пару на своей машине:
+   ```bash
+   wg genkey | tee client.priv | wg pubkey > client.pub
+   ```
+
+2. Передайте публичный ключ при apply/generation:
+   ```bash
+   angry-box apply-chain mychain   # если профиль уже содержит AWG
+   # или для standalone:
+   angry-box config -type user --protocol awg --client-pubkey "$(cat client.pub)" --profile russia_2026
+   ```
+
+3. apply-chain / config выведет подсказки с SERVER_PUBLIC_KEY (нужен клиентам в [Peer] PublicKey).
+
+Серверная приватная часть остаётся только на entry-ноде (никогда не покидает её).
 ```
 
 ## Сборка из исходников
