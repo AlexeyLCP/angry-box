@@ -99,7 +99,10 @@
         "Content-Type": ["application/json"]
       },
       "idle_timeout": "15s",
-      "ping_timeout": "15s"
+      "ping_timeout": "15s",
+      "padding_bytes": "400-1600",
+      "multiplex": true,
+      "max_concurrency": "6-24"
     },
     "awg": {
       "jc": [4, 16],
@@ -138,7 +141,10 @@
         "Content-Type": ["application/json", "application/octet-stream"]
       },
       "idle_timeout": "15s",
-      "ping_timeout": "15s"
+      "ping_timeout": "15s",
+      "padding_bytes": "300-1400",
+      "multiplex": true,
+      "max_concurrency": "8-32"
     },
     "awg": {
       "jc": [4, 16],

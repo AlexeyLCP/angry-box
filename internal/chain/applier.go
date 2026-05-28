@@ -784,6 +784,16 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 	}
 
 	data, _ := json.Marshal(inb)
+
+	// Apply advanced XHTTP obfuscation (padding, XMUX-style, realistic headers etc.)
+	// generated from research on Xray XHTTP, Naive, etc.
+	if xhttp != nil {
+		if tr, ok := inb["transport"].(map[string]any); ok {
+			ApplyXHTTPObfuscation(tr, xhttp)
+			data, _ = json.Marshal(inb)
+		}
+	}
+
 	return data
 }
 

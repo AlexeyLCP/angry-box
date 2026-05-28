@@ -206,3 +206,24 @@ scripts/
 ## Лицензия
 
 PolyForm Noncommercial License 1.0.0
+
+## Acknowledgments / Credits
+
+Angry-BOX stands on the shoulders of the broader anti-censorship community. We drew heavy inspiration (and in some cases directly ported ideas for our preset generators) from the following projects and researchers. Huge thanks to all contributors.
+
+### Core Obfuscation Techniques & Research
+- **pumbaX / awg-multi-script** — The excellent AmneziaWG CPS/I1–I5 generators (QUIC Initial 1200B Chrome-like, SIP REGISTER, DNS+EDNS0, Pro ranges, Gecko-style thinking). We took "бери все" from it for our AWG implementation.
+- **XTLS / Xray-core team (especially RPRX)** — The groundbreaking XHTTP transport and the deep "XHTTP: Beyond REALITY" research (https://github.com/XTLS/Xray-core/discussions/4113). Header padding ranges, XMUX controls, upstream/downstream separation, packet-up/stream-up modes — directly influenced our XHTTPPreset and generators.
+- **klzgrad / NaiveProxy** — Real Chromium network stack + realistic preamble behavior. The gold standard for fingerprint resistance.
+- **apernet / Hysteria2 team** — Salamander and the new (2026) Gecko obfuscation (QUIC Initial fragmentation + padding). Inspirational for fragmentation-style thinking we apply to HTTP/XHTTP.
+- **telemt / telemt** (and related double-hop work) — Modern high-quality Fake-TLS MTProto proxy with excellent SOCKS5 upstream and documented double-hop patterns.
+
+### Community Configs, Installers & Presets
+- TheyCallMeSecond/config-examples — Outstanding collection of working presets for Hysteria2, Reality, Naive, etc.
+- mack-a/v2ray-agent — Battle-tested all-in-one installer supporting many of the same protocols.
+- Hiddify-Manager — Production-grade multi-user panel with smart routing optimized for censored regions.
+- CELERITY-panel, 3x-ui forks, and many Russian/Iranian/Chinese community configs that informed our regional 2026 presets.
+
+If we used ideas or code patterns from your work and you are not listed — please open an issue or PR. We are happy to add proper credit.
+
+Special thanks to everyone publishing real-world test results against RKN, GFW, and Iranian DPI in 2025–2026. This project would not exist without that collective knowledge.

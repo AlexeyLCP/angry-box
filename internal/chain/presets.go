@@ -56,7 +56,9 @@ type RealityPreset struct {
 	ShortIDLen   int      `json:"short_id_len"` // длина short_id
 }
 
-// XHTTPPreset — настройки для XHTTP транспорта (очень сильный вариант в 2025-2026)
+// XHTTPPreset — настройки для XHTTP транспорта.
+// Расширено на основе лучших практик 2025-2026 (Xray XHTTP discussion, Naive real-browser patterns,
+// Hysteria Gecko fragmentation ideas и community research).
 type XHTTPPreset struct {
 	Methods     []string            `json:"methods"`
 	Paths       []string            `json:"paths"`
@@ -64,6 +66,18 @@ type XHTTPPreset struct {
 	Headers     map[string][]string `json:"headers"`
 	IdleTimeout string              `json:"idle_timeout"`
 	PingTimeout string              `json:"ping_timeout"`
+
+	// Advanced obfuscation (inspired by Xray XHTTP #4113 and community)
+	PaddingBytes   string `json:"padding_bytes,omitempty"`    // e.g. "100-1200" or "400-1600" — random per request like xPaddingBytes
+	Multiplex      bool   `json:"multiplex,omitempty"`
+	MaxConcurrency string `json:"max_concurrency,omitempty"` // "8-32" range style (XMUX inspiration)
+	MaxConnections string `json:"max_connections,omitempty"`
+
+	// Upstream / Downstream separation hints (powerful against behavioral DPI)
+	UpstreamHost   string `json:"upstream_host,omitempty"`
+	DownstreamHost string `json:"downstream_host,omitempty"`
+	UpstreamAlpn   string `json:"upstream_alpn,omitempty"`   // "h2", "h3", etc.
+	DownstreamAlpn string `json:"downstream_alpn,omitempty"`
 }
 
 // TUICPreset — настройки для TUIC
