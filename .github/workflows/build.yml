@@ -83,7 +83,7 @@ jobs:
           VERSION: "pr-${{ github.event.pull_request.number || github.sha }}"
         run: |
           echo "==> Building test .ipk for Keenetic"
-          ./scripts/build-keenetic-opkg.sh "dist/angry-box-keenetic-mipsel" "$VERSION" dist
+          ./scripts/build-opkg.sh "dist/angry-box-keenetic-mipsel" mipsel_24kc "$VERSION" dist
           ls -lh dist/*.ipk || true
 
       - name: Build arm64 .ipk (for testing)
