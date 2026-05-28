@@ -2,6 +2,7 @@ package chain
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"math/big"
@@ -249,6 +250,72 @@ func BuildAWGClientMaterialFromPreset(p ConnectionPreset, serverHost string) AWG
 	}
 
 	return GenerateAWGObfsMaterial(level, mimicry)
+}
+
+// BuildAmneziaSection is the exported version of the amnezia map builder used by
+// both the chain applier and the standalone sing-box config generator.
+// It is the single place that applies CPS/I1-I5 for the 2026 stealth presets.
+func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]any {
+	// Delegate to the internal implementation that already exists in applier.go
+	// (we keep one copy of the logic by re-exporting the behavior here for the
+	// singbox backend package).
+	// For v0.2.0 we inline the same logic to avoid import cycles.
+	level := 0
+	mimicry := "none"
+
+	if preset != nil {
+		if preset.CPSLevel > 0 {
+			level = preset.CPSLevel
+			mimicry = preset.AWGMimicry
+		} else if awg != nil && awg.CPSLevel > 0 {
+			level = awg.CPSLevel
+			mimicry = awg.Mimicry
+		}
+	}
+
+	section := map[string]any{
+		"jc":   awg.JC,
+		"jmin": awg.JMIN,
+		"jmax": awg.JMAX,
+		"s1":   awg.S1,
+		"s2":   awg.S2,
+		"h1":   awg.H1,
+		"h2":   awg.H2,
+		"h3":   awg.H3,
+		"h4":   awg.H4,
+	}
+
+	if level > 0 && mimicry != "none" {
+		mat := GenerateAWGObfsMaterial(level, mimicry)
+		if len(mat.I1) > 0 {
+			section["i1"] = base64.StdEncoding.EncodeToString(mat.I1)
+		}
+		if len(mat.I2) > 0 {
+			section["i2"] = base64.StdEncoding.EncodeToString(mat.I2)
+		}
+		if len(mat.I3) > 0 {
+			section["i3"] = base64.StdEncoding.EncodeToString(mat.I3)
+		}
+		if len(mat.I4) > 0 {
+			section["i4"] = base64.StdEncoding.EncodeToString(mat.I4)
+		}
+		if len(mat.I5) > 0 {
+			section["i5"] = base64.StdEncoding.EncodeToString(mat.I5)
+		}
+		switch mimicry {
+		case "quic":
+			section["packet"] = "quic"
+		case "sip":
+			section["packet"] = "sip"
+		case "dns":
+			section["packet"] = "dns"
+		default:
+			section["packet"] = "quic"
+		}
+	} else {
+		section["packet"] = "none"
+	}
+	return section
 }
 
 // --- helpers ---

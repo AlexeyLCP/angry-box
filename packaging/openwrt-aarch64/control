@@ -1,8 +1,0 @@
-Package: angry-box
-Version: 0.2.0
-Architecture: aarch64_cortex-a53
-Maintainer: Alexey LCP <alexey@lucx.io>
-Section: net
-Priority: optional
-Description: Lightweight SSH-only orchestrator for sing-box and xray (OpenWRT aarch64)
-Depends: libc, libgcc, ca-bundle

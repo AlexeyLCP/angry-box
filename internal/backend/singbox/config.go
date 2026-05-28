@@ -373,18 +373,7 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 			},
 		},
 		"mtu": 1420,
-		"amnezia": map[string]any{
-			"jc":     awg.JC,
-			"jmin":   awg.JMIN,
-			"jmax":   awg.JMAX,
-			"s1":     awg.S1,
-			"s2":     awg.S2,
-			"h1":     awg.H1,
-			"h2":     awg.H2,
-			"h3":     awg.H3,
-			"h4":     awg.H4,
-			"packet": "none",
-		},
+		"amnezia": chain.BuildAmneziaSection(awg, preset),
 	}
 
 	inboundJSON, _ := json.Marshal(inbound)

@@ -1,4 +1,0 @@
-#!/bin/sh
-set -e
-mkdir -p /etc/angry-box
-echo "Angry-BOX for OpenWRT aarch64 installed."

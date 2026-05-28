@@ -1,4 +1,0 @@
-#!/bin/sh
-set -e
-mkdir -p /opt/etc/angry-box
-echo "Angry-BOX for Keenetic installed. Configure on :8090"

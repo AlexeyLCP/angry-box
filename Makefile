@@ -140,6 +140,7 @@ version:
 
 # ==================== opkg / .ipk packaging (for Keenetic + OpenWRT) ====================
 # These targets produce installable .ipk packages for real router users.
+# The packaging logic lives entirely in scripts/build-opkg.sh (self-contained).
 # Requires a previously cross-built binary (see build-cross or CI).
 
 .PHONY: build-keenetic-opkg
