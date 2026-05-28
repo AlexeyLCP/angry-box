@@ -3,13 +3,9 @@ package chain
 import (
 	"context"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"strings"
 
@@ -38,7 +34,7 @@ func NewApplier(factory ports.Factory) *Applier {
 // The previous hop needs these to build its outbound.
 type hopParams struct {
 	UUID       string
-	PrivateKey string // PEM-encoded PKCS8 private key
+	PrivateKey string // base64-encoded PKCS8 DER private key (sing-box 1.12+ format)
 	ShortID    string // hex string
 	ServerName string
 	Port       int
@@ -82,31 +78,26 @@ type AWGClientMaterial struct {
 	I1Type   string `json:"i1_type,omitempty"`
 }
 
-// publicKeyDER returns the DER-encoded raw public key for Reality.
-func (h *hopParams) publicKeyDER() ([]byte, error) {
-	block, _ := pem.Decode([]byte(h.PrivateKey))
-	if block == nil {
-		return nil, fmt.Errorf("chain: failed to decode PEM private key")
-	}
-	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+// publicKeyB64 returns the base64-encoded X25519 public key for Reality outbound.
+// In sing-box 1.12.0+, the reality public_key field is a base64-encoded 32-byte public key.
+func (h *hopParams) publicKeyB64() (string, error) {
+	privBytes, err := base64.RawURLEncoding.DecodeString(h.PrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("chain: parse private key: %w", err)
+		return "", fmt.Errorf("chain: decode private key: %w", err)
 	}
-	rsaKey, ok := key.(*rsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("chain: private key is not RSA")
+	if len(privBytes) != 32 {
+		return "", fmt.Errorf("chain: private key is not 32 bytes")
 	}
-	return x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
-}
 
-// publicKeyHex returns the hex-encoded SHA256 of the DER public key (sing-box format).
-func (h *hopParams) publicKeyHex() (string, error) {
-	der, err := h.publicKeyDER()
-	if err != nil {
-		return "", err
-	}
-	hash := sha256.Sum256(der)
-	return hex.EncodeToString(hash[:]), nil
+	var priv, pub [32]byte
+	copy(priv[:], privBytes)
+	// Clamp private key (X25519 requirement)
+	priv[0] &= 248
+	priv[31] &= 127
+	priv[31] |= 64
+
+	curve25519.ScalarBaseMult(&pub, &priv)
+	return base64.RawURLEncoding.EncodeToString(pub[:]), nil
 }
 
 // ApplyChain generates configs for every node in the chain and pushes them via SSH.
@@ -318,20 +309,12 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 }
 
 func generateHopParams(port int, preset *ConnectionPreset) (*hopParams, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("generate key: %w", err)
+	// sing-box 1.12.0+ uses 32-byte random keys for Reality (X25519), not RSA.
+	privKeyBytes := make([]byte, 32)
+	if _, err := rand.Read(privKeyBytes); err != nil {
+		return nil, fmt.Errorf("generate reality key: %w", err)
 	}
-
-	privKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("marshal key: %w", err)
-	}
-
-	privKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privKeyBytes,
-	})
+	privKeyB64 := base64.RawURLEncoding.EncodeToString(privKeyBytes)
 
 	shortID := make([]byte, 8)
 	if _, err := rand.Read(shortID); err != nil {
@@ -353,7 +336,7 @@ func generateHopParams(port int, preset *ConnectionPreset) (*hopParams, error) {
 
 	return &hopParams{
 		UUID:       fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16]),
-		PrivateKey: string(privKeyPEM),
+		PrivateKey: privKeyB64,
 		ShortID:    hex.EncodeToString(shortID),
 		ServerName: serverName,
 		Port:       port,
@@ -562,10 +545,8 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 	inb := map[string]any{
 		"type": "vless",
 		"tag":  tag,
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    p.Port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": p.Port,
 		"users": []map[string]any{
 			{
 				"name": tag,
@@ -575,9 +556,7 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 		},
 		"tls": map[string]any{
 			"enabled": true,
-			"server_name": map[string]any{
-				"default": p.ServerName,
-			},
+			"server_name": p.ServerName,
 			"reality": map[string]any{
 				"enabled":     true,
 				"private_key": p.PrivateKey,
@@ -600,10 +579,8 @@ func buildUserInbound(port int, uuid, tag string) json.RawMessage {
 	inb := map[string]any{
 		"type": "vless",
 		"tag":  tag,
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"users": []map[string]any{
 			{
 				"name": tag,
@@ -625,7 +602,7 @@ func buildUserInbound(port int, uuid, tag string) json.RawMessage {
 }
 
 func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMessage, error) {
-	pubKeyHex, err := next.publicKeyHex()
+	pubKeyHex, err := next.publicKeyB64()
 	if err != nil {
 		return nil, fmt.Errorf("derive public key: %w", err)
 	}
@@ -764,10 +741,8 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 	inb := map[string]any{
 		"type": "vless",
 		"tag":  tag,
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    p.Port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": p.Port,
 		"users": []map[string]any{
 			{
 				"name": tag,
@@ -777,9 +752,7 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 		},
 		"tls": map[string]any{
 			"enabled": true,
-			"server_name": map[string]any{
-				"default": p.ServerName,
-			},
+			"server_name": p.ServerName,
 			"reality": map[string]any{
 				"enabled":     true,
 				"private_key": p.PrivateKey,
@@ -797,7 +770,7 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 }
 
 func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset *ConnectionPreset) (json.RawMessage, error) {
-	pubKeyHex, err := next.publicKeyHex()
+	pubKeyHex, err := next.publicKeyB64()
 	if err != nil {
 		return nil, fmt.Errorf("derive public key: %w", err)
 	}
@@ -901,10 +874,8 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset) 
 	inb := map[string]any{
 		"type": "tuic",
 		"tag":  tag,
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"users": []map[string]any{
 			{
 				"uuid":     uuid,
@@ -976,10 +947,8 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 	inb := map[string]any{
 		"type": "wireguard",
 		"tag":  tag,
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"private_key": privKeyB64,
 		"peers": []map[string]any{
 			{
@@ -1022,7 +991,7 @@ func deriveWireGuardPublicFromPrivate(privB64 string) (string, error) {
 // BuildXHTTPTransportInboundForStandalone builds a vless+reality+xhttp inbound
 // suitable for standalone "config -type transport" use. It pulls the obfuscation
 // details (paths, methods, headers, fingerprint) from the given preset.
-func BuildXHTTPTransportInboundForStandalone(port int, uuid, privKeyPEM, shortID, serverName string, preset *ConnectionPreset) json.RawMessage {
+func BuildXHTTPTransportInboundForStandalone(port int, uuid, privKeyB64, shortID, serverName string, preset *ConnectionPreset) json.RawMessage {
 	xhttp := preset.XHTTP
 	if xhttp == nil || len(xhttp.Methods) == 0 || len(xhttp.Paths) == 0 {
 		// Use the same rich fallback as the chain builders for consistency
@@ -1053,10 +1022,8 @@ func BuildXHTTPTransportInboundForStandalone(port int, uuid, privKeyPEM, shortID
 	inb := map[string]any{
 		"type": "vless",
 		"tag":  "transport-in",
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"users": []map[string]any{{
 			"name": "transport",
 			"uuid": uuid,
@@ -1064,10 +1031,10 @@ func BuildXHTTPTransportInboundForStandalone(port int, uuid, privKeyPEM, shortID
 		}},
 		"tls": map[string]any{
 			"enabled":     true,
-			"server_name": map[string]any{"default": serverName},
+			"server_name": serverName,
 			"reality": map[string]any{
 				"enabled":     true,
-				"private_key": privKeyPEM,
+	"private_key": privKeyB64,
 				"short_id":    []string{shortID},
 			},
 		},

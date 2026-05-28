@@ -2,12 +2,9 @@ package singbox
 
 import (
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"strings"
 
@@ -59,19 +56,12 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 		transportKind = "reality"
 	}
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
+	// sing-box 1.12.0+ uses 32-byte X25519 keys for Reality
+	privKeyBytes := make([]byte, 32)
+	if _, err := rand.Read(privKeyBytes); err != nil {
 		return nil, fmt.Errorf("singbox: generate reality key: %w", err)
 	}
-
-	privKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("singbox: marshal private key: %w", err)
-	}
-	privKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privKeyBytes,
-	})
+	privKeyB64 := base64.RawURLEncoding.EncodeToString(privKeyBytes)
 
 	shortID := make([]byte, 8)
 	if _, err := rand.Read(shortID); err != nil {
@@ -90,16 +80,14 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 
 	var inboundJSON json.RawMessage
 	if transportKind == "xhttp" {
-		inboundJSON = chain.BuildXHTTPTransportInboundForStandalone(port, uuid, string(privKeyPEM), shortIDHex, serverName, &preset)
+		inboundJSON = chain.BuildXHTTPTransportInboundForStandalone(port, uuid, privKeyB64, shortIDHex, serverName, &preset)
 	} else {
 		// Classic Reality+TCP fallback
 		inb := map[string]any{
 			"type": "vless",
 			"tag":  "transport-in",
-			"listen": map[string]any{
-				"address": "0.0.0.0",
-				"port":    port,
-			},
+			"listen":      "0.0.0.0",
+			"listen_port": port,
 			"users": []map[string]any{{
 				"name": "transport",
 				"uuid": uuid,
@@ -107,10 +95,10 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 			}},
 			"tls": map[string]any{
 				"enabled":     true,
-				"server_name": map[string]any{"default": serverName},
+				"server_name": serverName,
 				"reality": map[string]any{
 					"enabled":     true,
-					"private_key": string(privKeyPEM),
+					"private_key": privKeyB64,
 					"short_id":    []string{shortIDHex},
 				},
 			},
@@ -178,12 +166,12 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 	}
 
 	// Fallback to VLESS+Reality
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
+	// sing-box 1.12.0+ uses 32-byte X25519 keys for Reality
+	privKeyBytes := make([]byte, 32)
+	if _, err := rand.Read(privKeyBytes); err != nil {
 		return nil, fmt.Errorf("singbox: generate user reality key: %w", err)
 	}
-	privKeyBytes, _ := x509.MarshalPKCS8PrivateKey(privateKey)
-	privKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privKeyBytes})
+	privKeyB64 := base64.RawURLEncoding.EncodeToString(privKeyBytes)
 
 	shortID := make([]byte, 8)
 	rand.Read(shortID)
@@ -197,10 +185,8 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 	inbound := map[string]any{
 		"type": "vless",
 		"tag":  "user-in",
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"users": []map[string]any{
 			{
 				"name": "user",
@@ -213,7 +199,7 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 			"server_name": serverName,
 			"reality": map[string]any{
 				"enabled":     true,
-				"private_key": string(privKeyPEM),
+				"private_key": privKeyB64,
 				"short_id":    []string{shortIDHex},
 			},
 		},
@@ -306,10 +292,8 @@ func (b *Backend) generateTUICUser(params model.ConfigParams, preset *chain.Conn
 	inbound := map[string]any{
 		"type": "tuic",
 		"tag":  "user-in",
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"users": []map[string]any{
 			{
 				"uuid":     uuid,
@@ -361,10 +345,8 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 	inbound := map[string]any{
 		"type": "wireguard",
 		"tag":  "user-in",
-		"listen": map[string]any{
-			"address": "0.0.0.0",
-			"port":    port,
-		},
+		"listen":      "0.0.0.0",
+		"listen_port": port,
 		"private_key": privB64,
 		"peers": []map[string]any{
 			{

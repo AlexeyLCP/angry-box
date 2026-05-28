@@ -89,7 +89,7 @@ curl -fsSL '%s' -o sing-box.tar.gz
 		downloadURL,
 	)
 
-	if hasChecksum {
+	if hasChecksum && expectedChecksum != "" {
 		installScript += fmt.Sprintf(
 			`echo '%s  sing-box.tar.gz' | sha256sum -c -
 `,
