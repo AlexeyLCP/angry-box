@@ -2,6 +2,9 @@
 
 **Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
 
+[![Build & Test](https://github.com/alexeylcp/angry-box/actions/workflows/build.yml/badge.svg)](https://github.com/alexeylcp/angry-box/actions/workflows/build.yml)
+[![Release](https://github.com/alexeylcp/angry-box/actions/workflows/release.yml/badge.svg)](https://github.com/alexeylcp/angry-box/actions/workflows/release.yml)
+
 Lightweight orchestrator for managing high-obfuscation proxy chains on remote machines **via SSH only**.
 
 **sing-box** is the primary backend. **xray** is supported as secondary (best-effort).
@@ -44,6 +47,17 @@ We ported and implemented many state-of-the-art techniques:
 These are available both for sing-box and xray backends.
 
 ## Installation
+
+### From GitHub Releases (recommended)
+
+Download the latest tarball for your architecture from [Releases](https://github.com/alexeylcp/angry-box/releases), or use the installer:
+
+```bash
+# Latest stable
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
+```
+
+### From source / development
 
 The recommended way is the official installer script:
 

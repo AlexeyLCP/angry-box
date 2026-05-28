@@ -131,7 +131,10 @@ jobs:
           mkdir -p "${TAR_DIR}"
 
           cp "${BIN}" "${TAR_DIR}/${APP}"
-          cp README.md "${TAR_DIR}/"
+          cp README.md "${TAR_DIR}/" 2>/dev/null || true
+          cp README.*.md "${TAR_DIR}/" 2>/dev/null || true
+          cp config.example.toml "${TAR_DIR}/" 2>/dev/null || true
+          cp LICENSE "${TAR_DIR}/" 2>/dev/null || true
           cp scripts/install.sh "${TAR_DIR}/" 2>/dev/null || true
 
           tar czf "build/${TAR_NAME}.tar.gz" -C build "${TAR_NAME}"
