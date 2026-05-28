@@ -704,6 +704,10 @@ func serveCmd() {
 	ui := web.NewServer(storePath)
 	ui.Register(mux)
 
+	// Start background metrics collection based on panel settings
+	settings, _ := chain.NewStore(storePath).GetSettings()
+	ui.StartBackgroundMetrics(settings.MetricsInterval)
+
 	// Existing API routes
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

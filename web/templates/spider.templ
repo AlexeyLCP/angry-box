@@ -72,7 +72,100 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 			</div>
 		</div>
 
-		<!-- Add connection form -->
+		
+		<script>
+			(function() {
+				var svg = document.getElementById('spider-svg');
+				if (!svg) return;
+				var dragged = null;
+				var offsetX = 0, offsetY = 0;
+
+				svg.addEventListener('mousedown', function(e) {
+					var node = e.target.closest('.spider-node');
+					if (!node) return;
+					// Don't drag if clicking + button
+					if (e.target.classList.contains('node-add-btn') || e.target.classList.contains('node-add-text')) return;
+					dragged = node;
+					var ct = svg.createSVGPoint();
+					ct.x = e.clientX;
+					ct.y = e.clientY;
+					var pt = ct.matrixTransform(svg.getScreenCTM().inverse());
+					var inner = node.querySelector('.node-inner');
+					offsetX = parseFloat(inner.getAttribute('cx')) - pt.x;
+					offsetY = parseFloat(inner.getAttribute('cy')) - pt.y;
+					node.style.cursor = 'grabbing';
+					e.preventDefault();
+				});
+
+				svg.addEventListener('mousemove', function(e) {
+					if (!dragged) return;
+					var ct = svg.createSVGPoint();
+					ct.x = e.clientX;
+					ct.y = e.clientY;
+					var pt = ct.matrixTransform(svg.getScreenCTM().inverse());
+					var nx = pt.x + offsetX;
+					var ny = pt.y + offsetY;
+					var circles = dragged.querySelectorAll('circle');
+					circles[0].setAttribute('cx', nx);
+					circles[0].setAttribute('cy', ny);
+					circles[1].setAttribute('cx', nx);
+					circles[1].setAttribute('cy', ny);
+					circles[2].setAttribute('cx', nx + 18);
+					circles[2].setAttribute('cy', ny - 18);
+					if (circles[3]) { circles[3].setAttribute('cx', nx + 24); circles[3].setAttribute('cy', ny + 22); }
+					var texts = dragged.querySelectorAll('text');
+					texts[0] && texts[0].setAttribute('x', nx);
+					texts[0] && texts[0].setAttribute('y', ny - 8);
+					texts[1] && texts[1].setAttribute('x', nx);
+					texts[1] && texts[1].setAttribute('y', ny + 10);
+					texts[2] && texts[2].setAttribute('x', nx);
+					texts[2] && texts[2].setAttribute('y', ny + 24);
+					if (texts[3]) { texts[3].setAttribute('x', nx + 24); texts[3].setAttribute('y', ny + 26); }
+				});
+
+				svg.addEventListener('mouseup', function() {
+					if (!dragged) return;
+					dragged.style.cursor = 'move';
+					dragged = null;
+				});
+
+				svg.addEventListener('mouseleave', function() {
+					if (!dragged) return;
+					dragged.style.cursor = 'move';
+					dragged = null;
+				});
+
+				// Show + button on hover
+				svg.addEventListener('mouseover', function(e) {
+					var node = e.target.closest('.spider-node');
+					if (!node) return;
+					var addBtn = node.querySelector('.node-add-btn');
+					var addTxt = node.querySelector('.node-add-text');
+					if (addBtn) addBtn.setAttribute('opacity', '1');
+					if (addTxt) addTxt.setAttribute('opacity', '1');
+				});
+				svg.addEventListener('mouseout', function(e) {
+					var node = e.target.closest('.spider-node');
+					if (!node) return;
+					var addBtn = node.querySelector('.node-add-btn');
+					var addTxt = node.querySelector('.node-add-text');
+					if (addBtn) addBtn.setAttribute('opacity', '0');
+					if (addTxt) addTxt.setAttribute('opacity', '0');
+				});
+
+				// + button click: pre-fill connection form
+				svg.addEventListener('click', function(e) {
+					if (!e.target.classList.contains('node-add-btn') && !e.target.classList.contains('node-add-text')) return;
+					var node = e.target.closest('.spider-node');
+					if (!node) return;
+					var nodeId = node.getAttribute('data-node-id');
+					var sel = document.querySelector('select[name="from_node"]');
+					if (sel) sel.value = nodeId;
+				});
+			})();
+		</script>
+
+<!-- Add connection form -->
 		<div class="card bg-base-100 shadow">
 			<div class="card-body p-4">
 				<h3 class="font-semibold mb-3">Create New Connection</h3>

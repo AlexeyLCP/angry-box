@@ -23,10 +23,64 @@ import (
 // Server provides the HTMX web UI.
 type Server struct {
 	storePath string
+	stopCh    chan struct{}
 }
 
 func NewServer(storePath string) *Server {
-	return &Server{storePath: storePath}
+	return &Server{storePath: storePath, stopCh: make(chan struct{})}
+}
+
+// StartBackgroundMetrics begins periodic metrics collection.
+// interval is in minutes. Call Stop() to halt.
+func (s *Server) StartBackgroundMetrics(intervalMinutes int) {
+	if intervalMinutes <= 0 {
+		intervalMinutes = 240 // default 4 hours
+	}
+	go func() {
+		ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.collectAllMetrics()
+			case <-s.stopCh:
+				return
+			}
+		}
+	}()
+}
+
+// Stop halts background collection.
+func (s *Server) Stop() {
+	select {
+	case <-s.stopCh:
+	default:
+		close(s.stopCh)
+	}
+}
+
+// collectAllMetrics checks all hosts and records their status.
+func (s *Server) collectAllMetrics() {
+	st := s.store()
+	hosts, _ := st.ListHosts()
+	settings, _ := st.GetSettings()
+	f := factory.New()
+	b := f.Create()
+	ctx := context.Background()
+
+	for _, h := range hosts {
+		status, err := b.GetStatus(ctx, *h)
+		if err != nil {
+			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false})
+			continue
+		}
+		st.SaveMetrics(&model.NodeMetrics{
+			HostID:  h.ID,
+			Online:  status.Running,
+			Version: status.Version,
+		})
+		_ = settings
+	}
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -54,6 +108,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/nodes/{id}/edit", s.handleUpdateNode)
 	mux.HandleFunc("DELETE /ui/nodes/{id}", s.handleDeleteNode)
 	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.handleCaptureNode)
+	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.handleNodeCaptureForm)
 	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.handleNodeInboundsForm)
 	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.handleSaveNodeInbounds)
 
@@ -344,6 +399,18 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	)})
 }
 
+func (s *Server) handleNodeCaptureForm(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	host, err := st.GetHost(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	settings, _ := st.GetSettings()
+	s.render(w, templates.NodeCaptureForm(host, settings))
+}
+
 func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	info, err := s.store().GetNodeInfo(id)
@@ -513,6 +580,16 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	users, _ := st.ListUsers()
 	chains, _ := st.ListChains()
+
+	// Auto-deactivate expired users on every view
+	now := time.Now()
+	for _, u := range users {
+		if u.Active && !u.ExpiresAt.IsZero() && now.After(u.ExpiresAt) {
+			u.Active = false
+			st.SaveUser(u)
+		}
+	}
+
 	s.renderContent(w, r, "Users", templates.Users(users, chains))
 }
 

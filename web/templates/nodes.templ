@@ -91,6 +91,13 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
 			<div class="flex gap-1">
 				<button
 					class="btn btn-ghost btn-xs"
+					hx-get={"/ui/nodes/" + h.ID + "/capture"}
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					Capture
+				</button>
+				<button
+					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/edit"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
@@ -303,6 +310,69 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
 	</template>
 }
 
+// ─── Node Capture Form ──────────────────────────────────────────────────────────
+
+templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings) {
+	<dialog id="capture-modal" class="modal" open>
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-4">Capture Node: { host.ID }</h3>
+			<div class="text-xs text-base-content/50 mb-4">Connect via SSH and bring node under management.</div>
+
+			<form
+				hx-post={"/ui/nodes/" + host.ID + "/capture"}
+				hx-target="#capture-result"
+				hx-swap="innerHTML"
+				class="space-y-4">
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">SSH Key</span></label>
+					<select name="ssh_key" class="select select-bordered">
+						<option value="">Select key from settings...</option>
+						for _, k := range settings.SSHKeys {
+							<option value={ k.KeyPath }>{ k.Name } ({ k.KeyPath })</option>
+						}
+					</select>
+				</div>
+
+				<div class="text-sm text-base-content/50 text-center">— or use login + password —</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div class="form-control">
+						<label class="label"><span class="label-text">Login User</span></label>
+						<input type="text" name="login_user" class="input input-bordered" value={ host.User } placeholder="root" />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">Password</span></label>
+						<input type="password" name="login_pass" class="input input-bordered" placeholder="Enter SSH password" />
+					</div>
+				</div>
+
+				<div class="form-control">
+					<label class="label cursor-pointer">
+						<span class="label-text">Auto-install SSH key on server after successful login</span>
+						<input type="checkbox" name="auto_install_key" class="checkbox checkbox-sm" checked />
+					</label>
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">SSH Key Path (for auto-install)</span></label>
+					<input type="text" name="keyPath" class="input input-bordered" value={ host.KeyPath } placeholder="~/.ssh/id_ed25519" />
+				</div>
+
+				<div class="modal-action">
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+					<button type="submit" class="btn btn-primary">Capture</button>
+				</div>
+			</form>
+
+			<div id="capture-result" class="mt-2"></div>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
 func findInfo(id string, infos []*model.NodeInfo) *model.NodeInfo {
@@ -343,3 +413,4 @@ func niSource(nodeInfo []*model.NodeInfo) string {
 	}
 	return ""
 }
+
