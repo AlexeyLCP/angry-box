@@ -23,7 +23,7 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64
-          install-mode: binary
+          install-mode: goinstall   # build using the Go 1.26 we just set up, to avoid "requires newer Go version" typecheck errors
           args: --timeout=5m --issues-exit-code=1
 
       - name: Test
