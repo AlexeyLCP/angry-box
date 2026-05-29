@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
@@ -69,13 +70,18 @@ templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
 		<td class="font-semibold text-sm">{ c.Name }</td>
 		<td>
-			<div class="flex flex-wrap gap-0.5">
-				for _, n := range c.Nodes {
-					<span class="badge badge-outline badge-xs font-mono text-[10px]" title={ n.Addr }>{ n.ID }</span>
+			<div class="flex flex-wrap gap-0.5 items-center">
+				for i, n := range c.Nodes {
+					if i < 2 {
+						<span class="badge badge-outline badge-xs font-mono text-[10px]" title={ n.Addr }>{ n.ID }</span>
+					}
+				}
+				if len(c.Nodes) > 2 {
+					<span class="badge badge-ghost badge-xs text-[10px]" title={ nodeListStr(c.Nodes) }>+{ moreNodesStr(c.Nodes) }</span>
 				}
 			</div>
 		</td>
-		<td class="text-xs whitespace-nowrap">
+		<td class="text-xs">
 			<span class="font-mono">{ c.Strategy }</span>
 			if c.Transport != "" {
 				<span class="opacity-50">/{ c.Transport }</span>
@@ -337,6 +343,13 @@ func nodeListStr(nodes []model.ChainNode) string {
 		s += n.ID
 	}
 	return s
+}
+
+func moreNodesStr(nodes []model.ChainNode) string {
+	if len(nodes) <= 2 {
+		return ""
+	}
+	return fmt.Sprintf("%d", len(nodes)-2)
 }
 
 func chainHasNode(c *model.Chain, nodeID string) bool {
