@@ -368,7 +368,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" readonly></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH Address</span></label> <input type=\"text\" name=\"addr\" class=\"input input-bordered\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" readonly></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH Address</span><span class=\"label-text-alt text-base-content/50\">IP:port</span></label> <input type=\"text\" name=\"addr\" class=\"input input-bordered\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -381,7 +381,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" required></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH User</span></label> <input type=\"text\" name=\"user\" class=\"input input-bordered\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" required placeholder=\"e.g. 203.0.113.10:22\"></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH User</span><span class=\"label-text-alt text-base-content/50\">usually root</span></label> <input type=\"text\" name=\"user\" class=\"input input-bordered\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

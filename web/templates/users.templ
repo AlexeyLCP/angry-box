@@ -223,14 +223,23 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 	<div class="grid grid-cols-2 gap-4">
 		<div class="form-control">
 			<label class="label"><span class="label-text">Import Secret (optional)</span></label>
-			<select name="secret_type" class="select select-bordered select-sm mb-1">
+			<div class="label"><span class="label-text-alt text-base-content/50">Migrate an existing key from another system (Telemt, AWG Toolza, etc.). The secret will be used when generating configs for this user.</span></div>
+			<select name="secret_type" class="select select-bordered select-sm mb-2">
 				<option value="" if u == nil || u.SecretType == "" { selected }>None</option>
-				<option value="awg" if u != nil && u.SecretType == "awg" { selected }>AWG Private Key</option>
-				<option value="tuic" if u != nil && u.SecretType == "tuic" { selected }>TUIC UUID</option>
-				<option value="vless-reality" if u != nil && u.SecretType == "vless-reality" { selected }>VLESS Reality Key</option>
+				<option value="awg" if u != nil && u.SecretType == "awg" { selected }>AWG — Private Key</option>
+				<option value="tuic" if u != nil && u.SecretType == "tuic" { selected }>TUIC v5 — UUID</option>
+				<option value="vless-reality" if u != nil && u.SecretType == "vless-reality" { selected }>VLESS Reality — Private Key</option>
+				<option value="shadowsocks" if u != nil && u.SecretType == "shadowsocks" { selected }>Shadowsocks — Password/Key</option>
+				<option value="trojan" if u != nil && u.SecretType == "trojan" { selected }>Trojan — Password</option>
+				<option value="vmess" if u != nil && u.SecretType == "vmess" { selected }>VMess — UUID</option>
+				<option value="hysteria2" if u != nil && u.SecretType == "hysteria2" { selected }>Hysteria2 — Password/Key</option>
 			</select>
 			<input type="text" name="imported_secret" class="input input-bordered input-sm"
-				if u != nil { value={ u.ImportedSecret } } placeholder="Paste existing key/UUID..." />
+				if u != nil { value={ u.ImportedSecret } } placeholder="e.g. for Telemt: paste the WireGuard private key (starts with gO...)" />
+			<label class="label"><span class="label-text-alt text-base-content/50">
+				Telemt example: <code class="text-xs">gOPlk...abc=</code> (AWG private key, 44 chars base64)<br/>
+				TUIC example: <code class="text-xs">550e8400-e29b-41d4-a716-446655440000</code>
+			</span></label>
 		</div>
 		<div class="form-control">
 			<label class="label"><span class="label-text">&nbsp;</span></label>

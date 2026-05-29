@@ -147,11 +147,11 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 						<input type="text" name="id" class="input input-bordered" value={ h.ID } readonly />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH Address</span></label>
-						<input type="text" name="addr" class="input input-bordered" value={ h.Addr } required />
+						<label class="label"><span class="label-text">SSH Address</span><span class="label-text-alt text-base-content/50">IP:port</span></label>
+						<input type="text" name="addr" class="input input-bordered" value={ h.Addr } required placeholder="e.g. 203.0.113.10:22" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH User</span></label>
+						<label class="label"><span class="label-text">SSH User</span><span class="label-text-alt text-base-content/50">usually root</span></label>
 						<input type="text" name="user" class="input input-bordered" value={ h.User } />
 					</div>
 <div class="form-control">
