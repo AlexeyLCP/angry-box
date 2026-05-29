@@ -677,8 +677,8 @@ func buildUserInbound(port int, uuid, tag string) json.RawMessage {
 			"enabled": false,
 		},
 		"transport": map[string]any{
-			"type":        "ws",
-			"ws_settings": map[string]any{"path": "/ws"},
+			"type": "ws",
+			"path": "/ws",
 		},
 	}
 
