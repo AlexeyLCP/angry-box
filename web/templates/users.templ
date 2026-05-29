@@ -265,7 +265,7 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 			for _, c := range chains {
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="checkbox" name="chains" value={ c.Name } class="checkbox checkbox-sm"
-						if u != nil && containsProtocol(u.ChainNames, c.Name) { checked } />
+						if u == nil || containsProtocol(u.ChainNames, c.Name) { checked } />
 					<span class="text-sm font-mono">{ c.Name } ({ len(c.Nodes) } hops)</span>
 				</label>
 			}
@@ -346,7 +346,7 @@ templ UserQRView(u *model.User, links []string) {
 							<!-- QR code placeholder: use external API or JS for real QR -->
 							<div class="bg-white p-2 inline-block rounded">
 								<img
-									src={ "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + strings.ReplaceAll(link, "#", "%23") }
+									src={ "https://chart.googleapis.com/chart?chs=150x150&cht=qr&chl=" + link + "&choe=UTF-8" }
 									alt="QR Code"
 									width="150"
 									height="150"

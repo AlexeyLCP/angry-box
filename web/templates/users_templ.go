@@ -696,7 +696,7 @@ func userFormBody(u *model.User, chains []*model.Chain) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if u != nil && containsProtocol(u.ChainNames, c.Name) {
+			if u == nil || containsProtocol(u.ChainNames, c.Name) {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, " checked")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -974,9 +974,9 @@ func UserQRView(u *model.User, links []string) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var40 string
-				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue("https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + strings.ReplaceAll(link, "#", "%23"))
+				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue("https://chart.googleapis.com/chart?chs=150x150&cht=qr&chl=" + link + "&choe=UTF-8")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/users.templ`, Line: 349, Col: 118}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/users.templ`, Line: 349, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 				if templ_7745c5c3_Err != nil {
