@@ -10,7 +10,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 #
 #   # Or with options:
-#   sh install.sh --version 0.5.2
+#   sh install.sh --version X.Y.Z
 #   sh install.sh --local ./angry-box          # install from local binary
 #   sh install.sh --no-start                    # don't start the service
 #   sh install.sh --uninstall                   # remove angry-box
@@ -180,7 +180,7 @@ install_binary() {
 
     tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
 
-    # The tarball contains a subdirectory (e.g. angry-box-0.5.0-linux-amd64/)
+    # The tarball contains a subdirectory (e.g. angry-box-X.Y.Z-linux-amd64/)
     # We need to find the binary inside it.
     BINARY_PATH=$(find "$TMPDIR" -type f -name "angry-box" | head -1)
 
