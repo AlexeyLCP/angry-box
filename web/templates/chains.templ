@@ -31,14 +31,14 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 
 		<div class="card bg-base-100 shadow">
 			<div class="overflow-x-auto">
-				<table class="table">
+				<table class="table table-sm table-fixed">
 					<thead>
 						<tr>
-							<th>Name</th>
+							<th class="w-[14ch]">Name</th>
 							<th>Nodes</th>
-							<th>Strategy</th>
-							<th>Proto</th>
-							<th class="w-px"></th>
+							<th class="w-[12ch]">Strategy</th>
+							<th class="w-[10ch]">Proto</th>
+							<th class="w-[100px]"></th>
 						</tr>
 					</thead>
 					<tbody id="chains-tbody">
@@ -68,21 +68,21 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 // ChainRow renders one row in the chains table.
 templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
-		<td class="font-semibold text-sm">{ c.Name }</td>
+		<td class="text-xs font-semibold truncate" title={ c.Name }>{ c.Name }</td>
 		<td>
 			<div class="flex flex-wrap gap-0.5">
 				for _, n := range c.Nodes {
-					<span class="badge badge-outline badge-xs font-mono max-w-[100px] truncate" title={ n.ID }>{ n.ID }</span>
+					<span class="badge badge-outline badge-xs font-mono text-[10px] max-w-[80px] truncate" title={ n.ID }>{ n.ID }</span>
 				}
 			</div>
 		</td>
-		<td class="text-xs">
+		<td class="text-[10px] truncate">
 			<span class="font-mono">{ c.Strategy }</span>
 			if c.Transport != "" {
 				<span class="opacity-50">/{ c.Transport }</span>
 			}
 		</td>
-		<td class="text-xs">
+		<td class="text-[10px]">
 			if c.UserProtocol != "" {
 				<span class="opacity-60">{ c.UserProtocol }</span>
 			}
