@@ -1,0 +1,16 @@
+/* Angry-BOX custom styles (non-Tailwind) */
+
+/* HTMX loading indicator */
+#htmx-loading-bar {
+    position: fixed; top: 0; left: 0; height: 3px; z-index: 9999;
+    background: linear-gradient(90deg, oklch(var(--p)), oklch(var(--s)), oklch(var(--p)));
+    background-size: 200% 100%;
+    animation: htmx-loading-slide 1s linear infinite;
+    width: 0; opacity: 0; transition: opacity 0.15s;
+}
+#htmx-loading-bar.active { opacity: 1; width: 100%; }
+@keyframes htmx-loading-slide {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+.dev-test { color: red; }

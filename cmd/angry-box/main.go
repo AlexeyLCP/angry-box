@@ -696,12 +696,19 @@ func serveCmd() {
 
 	listen := fs.String("listen", defaultListen, "HTTP listen address")
 	fs.StringVar(&storePath, "file", defaultStore, "store file path")
+	devMode := fs.Bool("dev", false, "development mode: load UI from web/ instead of embedded")
 	_ = fs.Parse(os.Args[2:])
+
+	// Dev mode can also be enabled via environment variable
+	if !*devMode {
+		devEnv := strings.ToLower(os.Getenv("ANGRY_BOX_DEV"))
+		*devMode = devEnv == "1" || devEnv == "true" || devEnv == "on"
+	}
 
 	mux := http.NewServeMux()
 
 	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI)
-	ui := web.NewServer(storePath)
+	ui := web.NewServer(storePath, *devMode)
 	ui.Register(mux)
 
 	// Start background metrics collection based on panel settings

@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
 )
 
@@ -23,10 +27,42 @@ import (
 type Server struct {
 	storePath string
 	stopCh    chan struct{}
+	devMode   bool
 }
 
-func NewServer(storePath string) *Server {
-	return &Server{storePath: storePath, stopCh: make(chan struct{})}
+// NewServer creates a web UI server.
+// If devMode is true, static files are served from web/static/ instead of the embedded filesystem.
+func NewServer(storePath string, devMode bool) *Server {
+	if devMode {
+		log.Println("[dev] Loading UI from filesystem (web/static/)")
+	} else {
+		log.Println("[prod] Loading embedded UI")
+	}
+	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode}
+}
+
+// isDev returns true if the server is in development mode.
+func (s *Server) isDev() bool { return s.devMode }
+
+// staticFS returns the filesystem to use for static assets.
+func (s *Server) staticFS() (fs.FS, error) {
+	if s.devMode {
+		// Find web/static/ relative to CWD or module root
+		dirs := []string{"web/static", "../web/static", "../../web/static"}
+		for _, d := range dirs {
+			if info, err := os.Stat(d); err == nil && info.IsDir() {
+				log.Printf("[dev] Serving static files from %s", d)
+				return os.DirFS(d), nil
+			}
+		}
+		return nil, fmt.Errorf("web/static/ not found in any of %v (run from project root)", dirs)
+	}
+	// Production: use embedded filesystem
+	sub, err := fs.Sub(webassets.StaticFS, "static")
+	if err != nil {
+		return nil, fmt.Errorf("embedded static: %w", err)
+	}
+	return sub, nil
 }
 
 // StartBackgroundMetrics begins periodic metrics collection.
@@ -81,6 +117,14 @@ func (s *Server) collectAllMetrics() {
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
+	// Static files (CSS, JS, images) — from disk in dev, from embed in prod
+	staticFS, err := s.staticFS()
+	if err != nil {
+		log.Printf("WARNING: static files unavailable: %v", err)
+	} else {
+		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	}
+
 	mux.HandleFunc("GET /ui", s.handleDashboard)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui", http.StatusSeeOther)

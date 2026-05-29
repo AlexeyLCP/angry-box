@@ -44,6 +44,21 @@ build: generate
 	go build $(LDFLAGS) -o $(BINARY) $(CMD_DIR)
 	@echo "    $(BINARY) built"
 
+# ─── Development mode ─────────────────────────────────────────────────────────
+
+.PHONY: dev
+dev:
+	@echo "==> Starting Angry-BOX in dev mode..."
+	@echo "    [dev] Static files:   web/static/ (edit without rebuild)"
+	@echo "    [dev] Templates:      run 'make dev-watch' for hot template reload"
+	@echo ""
+	go run ./cmd/angry-box serve --dev
+
+.PHONY: dev-watch
+dev-watch:
+	@echo "==> Watching templates + auto-restart on changes..."
+	templ generate --watch --cmd "go run ./cmd/angry-box serve --dev"
+
 .PHONY: install
 install: build
 	@echo "==> Installing $(BINARY) to $(DESTDIR)$(BINDIR)..."
@@ -55,7 +70,7 @@ install: build
 	$(INSTALL_DIR) "$(DESTDIR)$(DATADIR)"
 
 	@if [ ! -f "$(DESTDIR)$(CONFDIR)/store.json" ]; then \
-		echo '{"hosts":[],"chains":[]}' > "$(DESTDIR)$(CONFDIR)/store.json"; \
+		echo '{"hosts":[],"chains":[],"users":[],"settings":{"metrics_interval":240},"node_infos":[],"metrics":[]}' > "$(DESTDIR)$(CONFDIR)/store.json"; \
 		echo "    Default store created at $(DESTDIR)$(CONFDIR)/store.json"; \
 	fi
 

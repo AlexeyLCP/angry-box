@@ -19,19 +19,8 @@ templ Base(title string, content templ.Component) {
 			.status-online { @apply bg-success; }
 			.status-offline { @apply bg-error; }
 			.status-degraded { @apply bg-warning; }
-			#htmx-loading-bar {
-				position: fixed; top: 0; left: 0; height: 3px; z-index: 9999;
-				background: linear-gradient(90deg, oklch(var(--p)), oklch(var(--s)), oklch(var(--p)));
-				background-size: 200% 100%;
-				animation: htmx-loading-slide 1s linear infinite;
-				width: 0; opacity: 0; transition: opacity 0.15s;
-			}
-			#htmx-loading-bar.active { opacity: 1; width: 100%; }
-			@keyframes htmx-loading-slide {
-				0% { background-position: 200% 0; }
-				100% { background-position: -200% 0; }
-			}
 		</style>
+		<link href="/static/css/app.css" rel="stylesheet" />
 	</head>
 	<body class="min-h-screen bg-base-200">
 		<div id="htmx-loading-bar"></div>
@@ -89,49 +78,7 @@ templ Base(title string, content templ.Component) {
 			</div>
 		</div>
 
-		<script>
-			function addSSHKey() {
-				var d = document.createElement('div');
-				d.className = 'flex gap-2 items-end';
-				d.innerHTML = '<div class="form-control flex-1"><input type="text" name="ssh_key_name" class="input input-bordered input-sm" placeholder="Key name" /></div><div class="form-control flex-1"><input type="text" name="ssh_key_path" class="input input-bordered input-sm" placeholder="/path/to/key" /></div><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.parentElement.remove()">✕</button>';
-				document.getElementById('ssh-keys-list').appendChild(d);
-			}
-			function addInboundRow() {
-				var tmpl = document.getElementById('inbound-tmpl');
-				if (!tmpl) return;
-				var clone = tmpl.content.firstElementChild.cloneNode(true);
-				var wrapper = document.createElement('div');
-				wrapper.className = 'border border-base-300 rounded-lg p-3';
-				wrapper.appendChild(clone);
-				var list = document.getElementById('inbounds-list');
-				if (list) list.appendChild(wrapper);
-			}
-			// Page title + sidebar highlight
-			(function() {
-				function updateUI() {
-					var main = document.getElementById('main-content');
-					if (main) {
-						var h2 = main.querySelector('h2');
-						if (h2 && h2.textContent) {
-							document.title = h2.textContent.trim() + ' | Angry-BOX';
-							var pt = document.getElementById('page-title');
-							if (pt) pt.textContent = h2.textContent.trim();
-						}
-					}
-					var path = window.location.pathname;
-					document.querySelectorAll('.menu a').forEach(function(link) {
-						link.classList.remove('sidebar-active');
-						if (link.getAttribute('hx-get') === path) link.classList.add('sidebar-active');
-					});
-				}
-				document.body.addEventListener('htmx:afterSettle', updateUI);
-				updateUI();
-			})();
-			// HTMX loading bar
-			var loadingBar = document.getElementById('htmx-loading-bar');
-			document.body.addEventListener('htmx:beforeRequest', function() { loadingBar.classList.add('active'); });
-			document.body.addEventListener('htmx:afterRequest', function() { loadingBar.classList.remove('active'); });
-		</script>
+		<script src="/static/js/app.js"></script>
 	</body>
 	</html>
 }
