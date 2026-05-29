@@ -733,7 +733,7 @@ func StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) templ.Compone
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</tbody></table></div></div><p class=\"text-xs opacity-60\">Tip: Use the Nodes page for full management. Status here is on-demand.</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</tbody></table></div></div><p class=\"text-xs opacity-60\">Tip: Use the Nodes page for full management. Auto-refreshes every 60 seconds.</p><!-- Auto-refresh every 60s --><div hx-get=\"/ui/status\" hx-trigger=\"every 60s\" hx-target=\"#main-content\" hx-swap=\"outerHTML\" class=\"hidden\"></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -775,7 +775,7 @@ func metricVersionCell(hostID string, metrics []*model.NodeMetrics) templ.Compon
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(m.Version)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/chains.templ`, Line: 304, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/chains.templ`, Line: 306, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -829,7 +829,7 @@ func metricLastCheckedCell(hostID string, metrics []*model.NodeMetrics) templ.Co
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(time.Since(m.LastChecked).Round(time.Second).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/chains.templ`, Line: 316, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/chains.templ`, Line: 318, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {

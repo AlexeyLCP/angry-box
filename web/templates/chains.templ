@@ -293,7 +293,9 @@ templ StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) {
 				</table>
 			</div>
 		</div>
-		<p class="text-xs opacity-60">Tip: Use the Nodes page for full management. Status here is on-demand.</p>
+		<p class="text-xs opacity-60">Tip: Use the Nodes page for full management. Auto-refreshes every 60 seconds.</p>
+		<!-- Auto-refresh every 60s -->
+		<div hx-get="/ui/status" hx-trigger="every 60s" hx-target="#main-content" hx-swap="outerHTML" class="hidden"></div>
 	</div>
 }
 
