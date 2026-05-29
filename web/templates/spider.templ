@@ -28,13 +28,13 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 			<div class="p-4 border-b border-base-300">
 				<div class="text-sm text-base-content/60">Visual map of all nodes and connections. Click a node to add it to a chain.</div>
 			</div>
-			<div class="bg-base-200" style="min-height: 500px; position: relative;">
+			<div class="bg-base-200" style="min-height: 320px; position: relative;">
 				if len(hosts) == 0 {
 					<div class="flex items-center justify-center h-64 text-base-content/50">
 						No nodes registered. <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary ml-1">Add nodes first</a>.
 					</div>
 				} else {
-					<svg id="spider-svg" viewBox="0 0 800 500" class="w-full" style="min-height: 500px;">
+					<svg id="spider-svg" viewBox="0 0 800 320" class="w-full" style="min-height: 320px;">
 						<defs>
 							<marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
 								<polygon points="0 0, 10 3.5, 0 7" fill="oklch(var(--p))" />
@@ -192,17 +192,17 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 
 <!-- Add connection form -->
 		<div class="card bg-base-100 shadow">
-			<div class="card-body p-4">
-				<h3 class="font-semibold mb-3">Create New Connection</h3>
+			<div class="card-body p-3">
+				<h3 class="font-semibold mb-2">Create New Connection</h3>
 				<form
 					hx-post="/ui/spider/links"
 					hx-target="#main-content"
 					hx-swap="outerHTML"
-					class="space-y-3">
+					class="space-y-2">
 
 					<div class="grid grid-cols-1 md:grid-cols-5 gap-3">
 						<div class="form-control">
-							<label class="label"><span class="label-text">From Node</span></label>
+							<label class="label py-1"><span class="label-text text-xs">From Node</span></label>
 							<select name="from_node" class="select select-bordered select-sm" required>
 								<option value="">Select...</option>
 								for _, h := range hosts {
@@ -211,7 +211,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label"><span class="label-text">To Node</span></label>
+							<label class="label py-1"><span class="label-text text-xs">To Node</span></label>
 							<select name="to_node" class="select select-bordered select-sm" required>
 								<option value="">Select...</option>
 								for _, h := range hosts {
@@ -220,7 +220,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label"><span class="label-text">Transport</span><span class="label-text-alt text-base-content/50">max obfuscation always applied</span></label>
+							<label class="label py-1"><span class="label-text text-xs">Transport</span><span class="label-text-alt text-base-content/50 text-[10px]">max obfuscation</span></label>
 							<select name="transport" class="select select-bordered select-sm">
 								<option value="xhttp" selected>XHTTP (max obfuscation, recommended)</option>
 								<option value="reality">Reality + XHTTP (max obfuscation)</option>
@@ -229,10 +229,10 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label"><span class="label-text">Chain Name</span></label>
+							<label class="label py-1"><span class="label-text text-xs">Chain Name</span></label>
 							<input type="text" name="chain_name" class="input input-bordered input-sm" required placeholder="my-chain" />
 						</div>
-						<div class="form-control justify-end">
+						<div class="form-control justify-end pt-5">
 							<button type="submit" class="btn btn-primary btn-sm">Create Link</button>
 						</div>
 					</div>
@@ -243,8 +243,8 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 		<!-- Existing Chains -->
 		if len(chains) > 0 {
 			<div class="card bg-base-100 shadow">
-				<div class="card-body p-4">
-					<h3 class="font-semibold mb-3">Chains</h3>
+				<div class="card-body p-3">
+					<h3 class="font-semibold mb-2">Chains</h3>
 					<div class="space-y-2">
 						for _, c := range chains {
 							<div class="flex items-center justify-between border border-base-300 rounded-lg p-3">
@@ -345,15 +345,15 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64)
 // nodePosition computes a circular layout position for a node
 func nodePosition(id string, hosts []*model.Host, idx int, total int) (float64, float64) {
 	if total == 0 {
-		return 400, 250
+		return 400, 160
 	}
 	angle := float64(idx)*2.0*math.Pi/float64(total) - math.Pi/2.0
-	r := 180.0
+	r := 130.0
 	if total <= 3 {
-		r = 140.0
+		r = 100.0
 	}
 	x := 400.0 + r*math.Cos(angle)
-	y := 250.0 + r*math.Sin(angle)
+	y := 160.0 + r*math.Sin(angle)
 	return x, y
 }
 
