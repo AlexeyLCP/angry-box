@@ -70,9 +70,13 @@ templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
 		<td class="font-semibold text-sm">{ c.Name }</td>
 		<td>
-			<span class="text-xs font-mono opacity-70" title={ nodeListStr(c.Nodes) }>{ len(c.Nodes) } node(s)</span>
+			<div class="flex flex-wrap gap-0.5">
+				for _, n := range c.Nodes {
+					<span class="badge badge-outline badge-xs font-mono text-[10px]" title={ n.Addr }>{ n.ID }</span>
+				}
+			</div>
 		</td>
-		<td class="text-xs">
+		<td class="text-xs whitespace-nowrap">
 			<span class="font-mono">{ c.Strategy }</span>
 			if c.Transport != "" {
 				<span class="opacity-50">/{ c.Transport }</span>
@@ -212,7 +216,7 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 							} else {
 								<span class="text-error font-semibold">FAIL</span>
 								if n.Error != "" {
-									<span class="opacity-70"> — { n.Error }</span>
+									<span class="opacity-70 cursor-help max-w-[300px] truncate inline-block align-bottom" title={ n.Error }> — { n.Error }</span>
 								}
 							}
 						</div>
