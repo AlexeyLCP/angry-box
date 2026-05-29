@@ -44,7 +44,7 @@ angry-box apply-chain mychain
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # نسخه خاص
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.1
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.5.2
 ```
 
 ### باینری‌های از پیش ساخته‌شده
@@ -53,13 +53,13 @@ curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/in
 
 **لینوکس**
 ```bash
-tar -xzf angry-box-0.2.1-linux-amd64.tar.gz
-cd angry-box-0.2.1-linux-amd64
+tar -xzf angry-box-0.5.2-linux-amd64.tar.gz
+cd angry-box-0.5.2-linux-amd64
 ./angry-box --help
 ```
 
 **ویندوز**
-- فایل `angry-box-0.2.1-windows-amd64.zip` یا `.exe` را دانلود کنید
+- فایل `angry-box-0.5.2-windows-amd64.zip` یا `.exe` را دانلود کنید
 - اجرا کنید: `angry-box.exe`
 - رابط وب: `http://localhost:8090`
 
@@ -125,4 +125,4 @@ PolyForm Noncommercial License 1.0.0
 
 ---
 
-**نسخه فعلی:** 0.2.1 — بهبود بسته‌بندی روترها، پشتیبانی از ویندوز و مستندات.
+**نسخه فعلی:** 0.5.2 — بهبود بسته‌بندی روترها، پشتیبانی از ویندوز و مستندات.

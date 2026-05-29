@@ -44,7 +44,7 @@ Web UI 默认地址：`http://localhost:8090`
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # 指定版本
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.1
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.5.2
 ```
 
 ### 预编译二进制
@@ -53,13 +53,13 @@ curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/in
 
 **Linux**
 ```bash
-tar -xzf angry-box-0.2.1-linux-amd64.tar.gz
-cd angry-box-0.2.1-linux-amd64
+tar -xzf angry-box-0.5.2-linux-amd64.tar.gz
+cd angry-box-0.5.2-linux-amd64
 ./angry-box --help
 ```
 
 **Windows**
-- 下载 `angry-box-0.2.1-windows-amd64.zip` 或 `.exe`
+- 下载 `angry-box-0.5.2-windows-amd64.zip` 或 `.exe`
 - 解压后直接运行 `angry-box.exe`
 - Web UI: `http://localhost:8090`
 
@@ -127,4 +127,4 @@ PolyForm Noncommercial License 1.0.0
 
 ---
 
-**当前版本：** 0.2.1 — 改进路由器打包、Windows 支持及文档。
+**当前版本：** 0.5.2 — 改进路由器打包、Windows 支持及文档。

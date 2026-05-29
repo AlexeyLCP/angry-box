@@ -44,7 +44,7 @@ The web interface will be available at `http://localhost:8090`.
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.2.1
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.5.2
 ```
 
 ### Pre-built binaries
@@ -53,13 +53,13 @@ Download from [Releases](https://github.com/AlexeyLCP/angry-box/releases).
 
 **Linux**
 ```bash
-tar -xzf angry-box-0.2.1-linux-amd64.tar.gz
-cd angry-box-0.2.1-linux-amd64
+tar -xzf angry-box-0.5.2-linux-amd64.tar.gz
+cd angry-box-0.5.2-linux-amd64
 ./angry-box --help
 ```
 
 **Windows**
-- Download `angry-box-0.2.1-windows-amd64.zip`
+- Download `angry-box-0.5.2-windows-amd64.zip`
 - Extract and run `angry-box.exe`
 - Web UI: `http://localhost:8090`
 
@@ -96,12 +96,10 @@ The project ships with research-grade presets tuned for current DPI systems:
 
 Angry-BOX provides native `.ipk` packages for routers.
 
-| Platform          | Architecture       | Package example                        | Notes                     |
-|-------------------|--------------------|----------------------------------------|---------------------------|
-| Keenetic (Entware)| `aarch64-3.10`     | `angry-box_0.2.1_aarch64-3.10.ipk`     | Recommended for most KN   |
-| Keenetic          | `mipsel_24kc`      | `angry-box_0.2.1_mipsel_24kc.ipk`      | Older MIPS models         |
-| OpenWRT           | `aarch64_cortex-a53` | `angry-box_0.2.1_aarch64_cortex-a53.ipk` | Standard OpenWRT        |
-| OpenWRT           | `mips_24kc`        | `angry-box_0.2.1_mips_24kc.ipk`        | OpenWRT MIPS              |
+| Platform          | Architecture         | Package example                          | Notes                  |
+|-------------------|----------------------|------------------------------------------|------------------------|
+| Keenetic          | `mipsel_24kc`        | `angry-box_X.Y.Z_mipsel_24kc.ipk`        | MIPS models            |
+| Keenetic/OpenWRT  | `aarch64_cortex-a53` | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk` | ARM64 models           |
 
 All router packages use the **outer-tar format** (MagiTrickle style) and fully static binaries.
 
