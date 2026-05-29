@@ -545,7 +545,7 @@ func userFormBody(u *model.User, chains []*model.Chain) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, " placeholder=\"user@example.com\"></div></div><div class=\"grid grid-cols-2 gap-4\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Import Secret (optional)</span></label><div class=\"label\"><span class=\"label-text-alt text-base-content/50\">Migrate an existing key from another system (Telemt, AWG Toolza, etc.). The secret will be used when generating configs for this user.</span></div><select name=\"secret_type\" class=\"select select-bordered select-sm mb-2\"><option value=\"\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, " placeholder=\"user@example.com\"></div></div><div class=\"grid grid-cols-2 gap-4\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Import Secret (optional)</span></label><div class=\"label\"><span class=\"label-text-alt text-base-content/50\">Migrate an existing key from Telemt, AWG Toolza, or another system. Paste the key below — it will be used instead of generating a new one.</span></div><select name=\"secret_type\" class=\"select select-bordered select-sm mb-2\"><option value=\"\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -565,7 +565,7 @@ func userFormBody(u *model.User, chains []*model.Chain) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, ">AWG — Private Key</option> <option value=\"tuic\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, ">Telemt / AWG — Private Key (base64, 44 chars)</option> <option value=\"tuic\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -625,7 +625,7 @@ func userFormBody(u *model.User, chains []*model.Chain) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, ">Hysteria2 — Password/Key</option></select> <input type=\"text\" name=\"imported_secret\" class=\"input input-bordered input-sm\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, ">Hysteria2 — Password/Key</option></select> <input type=\"text\" name=\"imported_secret\" class=\"input input-bordered input-sm font-mono\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -648,7 +648,7 @@ func userFormBody(u *model.User, chains []*model.Chain) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, " placeholder=\"e.g. for Telemt: paste the WireGuard private key (starts with gO...)\"> <label class=\"label\"><span class=\"label-text-alt text-base-content/50\">Telemt example: <code class=\"text-xs\">gOPlk...abc=</code> (AWG private key, 44 chars base64)<br>TUIC example: <code class=\"text-xs\">550e8400-e29b-41d4-a716-446655440000</code></span></label></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">&nbsp;</span></label> <label class=\"flex items-center gap-2 cursor-pointer h-full\"><input type=\"checkbox\" name=\"active\" class=\"checkbox checkbox-sm\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, " placeholder=\"Paste your existing key here...\"> <label class=\"label\"><span class=\"label-text-alt text-base-content/50\"><strong>Telemt / AWG Toolza:</strong> paste the WireGuard private key<br><code class=\"text-[10px] bg-base-200 px-1 rounded\">gOPlk...abc=</code> (44 chars, base64)<br><strong>TUIC:</strong> paste the UUID<br><code class=\"text-[10px] bg-base-200 px-1 rounded\">550e8400-e29b-41d4-a716-446655440000</code></span></label></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">&nbsp;</span></label> <label class=\"flex items-center gap-2 cursor-pointer h-full\"><input type=\"checkbox\" name=\"active\" class=\"checkbox checkbox-sm\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
