@@ -107,7 +107,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 									<td class="font-mono text-sm">{ h.ID }</td>
 									<td class="font-mono text-xs">{ h.Addr }</td>
 									<td>
-										@nodeInfoField(h.ID, infos, func(ni *model.NodeInfo) string { return ni.Country })
+										@dashCountry(h.ID, infos)
 									</td>
 									<td>
 										@metricBadge(h.ID, metrics)
@@ -161,10 +161,14 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 }
 
 // Helper: find NodeInfo for a host ID and extract a field
-templ nodeInfoField(hostID string, infos []*model.NodeInfo, fn func(*model.NodeInfo) string) {
+templ dashCountry(hostID string, infos []*model.NodeInfo) {
 	for _, ni := range infos {
 		if ni.ID == hostID {
-			<span>{ fn(ni) }</span>
+			if ni.Country != "" {
+				<span>{ ni.Country }</span>
+			} else {
+				<span class="text-base-content/30">—</span>
+			}
 			return
 		}
 	}

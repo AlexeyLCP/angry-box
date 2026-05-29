@@ -765,11 +765,13 @@ func pushConfig(client *sshclient.Client, cfgContent string, userProtocol model.
 		return "", fmt.Errorf("config validation failed (rollback attempted): %w", err)
 	}
 
-	// Apply config: restart and verify sing-box came up.
-	applyCmd := "systemctl restart sing-box && sleep 2 && systemctl is-active --quiet sing-box"
+	// Apply config: restart sing-box.
+	applyCmd := "systemctl restart sing-box 2>&1"
 	out, err := client.Run(applyCmd)
 	if err != nil {
-		return "", fmt.Errorf("failed to apply config (protocol=%s): %w", userProtocol, err)
+		// Get service status for diagnostics
+		diag, _ := client.Run("systemctl status sing-box --no-pager -n 5 2>&1 || true")
+		return "", fmt.Errorf("failed to restart sing-box (protocol=%s): %w\nStatus: %s", userProtocol, err, diag)
 	}
 
 	return out, nil
