@@ -135,13 +135,14 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 						<label class="label"><span class="label-text">Transport</span></label>
 						<select name="transport" class="select select-bordered">
 							<option value="xhttp" selected>XHTTP (recommended)</option>
-							<option value="reality">Reality + TCP</option>
+							<option value="reality">Reality + XHTTP</option>
 						</select>
 					</div>
 
 					<div class="form-control">
 						<label class="label"><span class="label-text">User Protocol (entry)</span></label>
 						<select name="user_protocol" class="select select-bordered">
+							<option value="telemt">Telemt (MTProto)</option>
 							<option value="awg" selected>AWG (AmneziaWG)</option>
 							<option value="tuic">TUIC v5</option>
 							<option value="vless-reality">VLESS + Reality</option>

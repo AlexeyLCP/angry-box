@@ -267,7 +267,9 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Protocol</span></label>
 									<select name="proto" class="select select-bordered select-sm">
-										<option value="awg" selected>AWG (AmneziaWG)</option>
+										<option value="telemt">Telemt (MTProto)</option>
+										<option value="telemt">Telemt (MTProto)</option>
+					<option value="awg" selected>AWG (AmneziaWG)</option>
 										<option value="tuic">TUIC v5</option>
 										<option value="vless-reality">VLESS Reality</option>
 										<option value="shadowsocks">Shadowsocks</option>
@@ -313,7 +315,8 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Protocol</span></label>
 									<select name="proto" class="select select-bordered select-sm">
-										<option value="awg" if ib.Protocol == "awg" { selected }>AWG (AmneziaWG)</option>
+										<option value="telemt" if ib.Protocol == "telemt" { selected }>Telemt (MTProto)</option>
+									<option value="awg" if ib.Protocol == "awg" { selected }>AWG (AmneziaWG)</option>
 										<option value="tuic" if ib.Protocol == "tuic" { selected }>TUIC v5</option>
 										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>VLESS Reality</option>
 										<option value="shadowsocks" if ib.Protocol == "shadowsocks" { selected }>Shadowsocks</option>
@@ -379,6 +382,8 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 			<div class="form-control">
 				<label class="label"><span class="label-text text-xs">Protocol</span></label>
 				<select name="proto" class="select select-bordered select-sm">
+					<option value="telemt">Telemt (MTProto)</option>
+										<option value="telemt">Telemt (MTProto)</option>
 					<option value="awg" selected>AWG (AmneziaWG)</option>
 					<option value="tuic">TUIC v5</option>
 					<option value="vless-reality">VLESS Reality</option>
