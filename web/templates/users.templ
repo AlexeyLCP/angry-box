@@ -242,26 +242,8 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 		</div>
 	</div>
 
-	<div class="form-control">
-		<label class="label"><span class="label-text">Protocols</span></label>
-		<div class="flex flex-wrap gap-4 border border-base-300 rounded-lg p-3">
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="checkbox" name="protocols" value="awg" class="checkbox checkbox-sm"
-					if u == nil || containsProtocol(u.Protocols, "awg") { checked } />
-				<span class="text-sm">AWG (AmneziaWG)</span>
-			</label>
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="checkbox" name="protocols" value="tuic" class="checkbox checkbox-sm"
-					if u != nil && containsProtocol(u.Protocols, "tuic") { checked } />
-				<span class="text-sm">TUIC v5</span>
-			</label>
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="checkbox" name="protocols" value="vless-reality" class="checkbox checkbox-sm"
-					if u != nil && containsProtocol(u.Protocols, "vless-reality") { checked } />
-				<span class="text-sm">VLESS Reality</span>
-			</label>
-		</div>
-	</div>
+	<input type="hidden" name="protocols" value="awg" />
+	<div class="text-xs text-base-content/50 mb-2">User protocols are determined by the chains and node inbounds they are assigned to.</div>
 
 	<div class="form-control">
 		<label class="label"><span class="label-text">Assigned Chains</span></label>
