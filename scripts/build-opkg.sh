@@ -13,7 +13,7 @@ set -euo pipefail
 
 BIN=${1:-}
 ARCH=${2:-}
-VERSION=${3:-0.2.0}
+VERSION=${3:-0.5.0}
 OUT=${4:-./release}
 
 if [[ -z "$BIN" || -z "$ARCH" ]]; then
@@ -40,6 +40,9 @@ cp "$BIN" "$PKG_DIR/usr/bin/angry-box"
 chmod 755 "$PKG_DIR/usr/bin/angry-box"
 
 # Control file (opkg metadata)
+# For Keenetic devices, use the architecture reported by "opkg print-architecture"
+# (e.g. aarch64-3.10 or aarch64-3.10_kn). Using the generic name from the toolchain
+# (like aarch64_cortex-a53) can sometimes cause installation issues.
 cat > "$PKG_DIR/CONTROL/control" <<EOF
 Package: angry-box
 Version: ${VERSION}
