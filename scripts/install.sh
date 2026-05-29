@@ -498,43 +498,52 @@ echo "==> Detected: $TARGET ($([ "$IS_KEENETIC" = true ] && echo "Keenetic" || e
 echo "==> Installing to: $INSTALL_PATH"
 
 # ─── Public IP warning (skip for routers) ────────────────────────────────────
+# Check if any local network interface has a public IP directly assigned.
+# We examine the machine's own interfaces, not an external service —
+# an external service only sees the NAT gateway, not whether this
+# specific machine is directly reachable from the internet.
 if [ "$IS_KEENETIC" != true ]; then
-    PUBLIC_IP=""
-    if command -v curl >/dev/null 2>&1; then
-        PUBLIC_IP=$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || true)
+    HAS_PUBLIC_IFACE=false
+    PUBLIC_ADDRS=""
+    if command -v ip >/dev/null 2>&1; then
+        PUBLIC_ADDRS=$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)
+    elif command -v ifconfig >/dev/null 2>&1; then
+        PUBLIC_ADDRS=$(ifconfig 2>/dev/null | grep -oP 'inet \K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | grep -v '127\.' || true)
     fi
-    if [ -z "$PUBLIC_IP" ] && command -v wget >/dev/null 2>&1; then
-        PUBLIC_IP=$(wget -qO- --timeout=3 https://api.ipify.org 2>/dev/null || true)
+    if [ -n "$PUBLIC_ADDRS" ]; then
+        for addr in $PUBLIC_ADDRS; do
+            case "$addr" in
+                127.*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|0.*|169.254.*|100.6[4-9].*|100.[7-9][0-9].*|100.1[0-1][0-9].*|100.12[0-7].*)
+                    # Private / loopback / link-local / CGNAT — skip
+                    ;;
+                *)
+                    HAS_PUBLIC_IFACE=true
+                    break
+                    ;;
+            esac
+        done
     fi
-    if [ -n "$PUBLIC_IP" ]; then
-        # Check if it's not a private IP
-        case "$PUBLIC_IP" in
-            127.*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*)
-                # Private IP, no warning needed
-                ;;
-            *)
-                echo ""
-                echo "===================================================================="
-                echo "  WARNING: You are installing Angry-BOX on a server with a public"
-                echo "  IP address ($PUBLIC_IP)."
-                echo ""
-                echo "  In the current version, the Web UI is NOT password-protected."
-                echo "  This is UNSAFE for public servers without additional security:"
-                echo "    - Firewall (iptables/nftables)"
-                echo "    - Reverse proxy with authentication"
-                echo "    - VPN / WireGuard tunnel"
-                echo ""
-                echo "  Admin password will be added in a future version."
-                echo "===================================================================="
-                echo ""
-                printf "Continue anyway? [y/N] "
-                read -r answer < /dev/tty 2>/dev/null || true
-                if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
-                    echo "Installation cancelled."
-                    exit 1
-                fi
-                ;;
-        esac
+    if [ "$HAS_PUBLIC_IFACE" = true ]; then
+        echo ""
+        echo "===================================================================="
+        echo "  WARNING: This machine has a public IP address on a local interface."
+        echo "  The Web UI is directly reachable from the internet."
+        echo ""
+        echo "  In the current version, the Web UI is NOT password-protected."
+        echo "  This is UNSAFE for public servers without additional security:"
+        echo "    - Firewall (iptables/nftables)"
+        echo "    - Reverse proxy with authentication"
+        echo "    - VPN / WireGuard tunnel"
+        echo ""
+        echo "  Admin password will be added in a future version."
+        echo "===================================================================="
+        echo ""
+        printf "Continue anyway? [y/N] "
+        read -r answer < /dev/tty 2>/dev/null || true
+        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+            echo "Installation cancelled."
+            exit 1
+        fi
     fi
 fi
 
