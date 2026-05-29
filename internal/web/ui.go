@@ -497,7 +497,8 @@ func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) 
 		info = &model.NodeInfo{Host: model.Host{ID: id}}
 	}
 	users, _ := s.store().ListUsers()
-	s.render(w, templates.NodeInboundsForm(info, users))
+	presets := chain.ListPresets()
+	s.render(w, templates.NodeInboundsForm(info, users, presets))
 }
 
 func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) {

@@ -250,7 +250,7 @@ templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 
 // ─── Node Inbounds Form ─────────────────────────────────────────────────────────
 
-templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
+templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []string) {
 	<dialog id="inbounds-modal" class="modal" open>
 		<div class="modal-box max-w-2xl">
 			<h3 class="font-bold text-lg mb-4">Inbounds for { info.ID }</h3>
@@ -268,9 +268,13 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Protocol</span></label>
 									<select name="proto" class="select select-bordered select-sm">
-										<option value="awg" if ib.Protocol == "awg" { selected }>AWG</option>
-										<option value="tuic" if ib.Protocol == "tuic" { selected }>TUIC</option>
+										<option value="awg" if ib.Protocol == "awg" { selected }>AWG (AmneziaWG)</option>
+										<option value="tuic" if ib.Protocol == "tuic" { selected }>TUIC v5</option>
 										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>VLESS Reality</option>
+										<option value="shadowsocks" if ib.Protocol == "shadowsocks" { selected }>Shadowsocks</option>
+										<option value="trojan" if ib.Protocol == "trojan" { selected }>Trojan</option>
+										<option value="vmess" if ib.Protocol == "vmess" { selected }>VMess</option>
+										<option value="hysteria2" if ib.Protocol == "hysteria2" { selected }>Hysteria2</option>
 									</select>
 								</div>
 								<div class="form-control">
@@ -282,8 +286,13 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
 									<input type="text" name="for_users" class="input input-bordered input-sm" value={ strings.Join(ib.ForUsers, ",") } />
 								</div>
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Obfuscation</span></label>
-									<input type="text" name="obfuscation" class="input input-bordered input-sm" value={ ib.Obfuscation } placeholder="max" />
+									<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+									<select name="obfuscation" class="select select-bordered select-sm">
+										<option value="">None</option>
+										for _, p := range presets {
+											<option value={ p } if ib.Obfuscation == p { selected }>{ p }</option>
+										}
+									</select>
 								</div>
 							</div>
 						</div>
@@ -313,9 +322,13 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
 			<div class="form-control">
 				<label class="label"><span class="label-text text-xs">Protocol</span></label>
 				<select name="proto" class="select select-bordered select-sm">
-					<option value="awg" selected>AWG</option>
-					<option value="tuic">TUIC</option>
+					<option value="awg" selected>AWG (AmneziaWG)</option>
+					<option value="tuic">TUIC v5</option>
 					<option value="vless-reality">VLESS Reality</option>
+					<option value="shadowsocks">Shadowsocks</option>
+					<option value="trojan">Trojan</option>
+					<option value="vmess">VMess</option>
+					<option value="hysteria2">Hysteria2</option>
 				</select>
 			</div>
 			<div class="form-control">
@@ -327,8 +340,10 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
 				<input type="text" name="for_users" class="input input-bordered input-sm" placeholder="user1,user2" />
 			</div>
 			<div class="form-control">
-				<label class="label"><span class="label-text text-xs">Obfuscation</span></label>
-				<input type="text" name="obfuscation" class="input input-bordered input-sm" value="max" placeholder="max" />
+				<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+				<select name="obfuscation" class="select select-bordered select-sm">
+					<option value="">None</option>
+				</select>
 			</div>
 		</div>
 	</template>
