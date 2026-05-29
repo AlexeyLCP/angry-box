@@ -765,8 +765,8 @@ func pushConfig(client *sshclient.Client, cfgContent string, userProtocol model.
 		return "", fmt.Errorf("config validation failed (rollback attempted): %w", err)
 	}
 
-	// Apply config: start service if needed, reload if already running.
-	applyCmd := "systemctl start sing-box 2>/dev/null || true; if systemctl is-active --quiet sing-box 2>/dev/null; then sing-box reload -c /etc/sing-box/config.json; else systemctl restart sing-box; fi"
+	// Apply config: restart sing-box to pick up the new config.
+	applyCmd := "systemctl restart sing-box"
 	out, err := client.Run(applyCmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to apply config (protocol=%s): %w", userProtocol, err)
