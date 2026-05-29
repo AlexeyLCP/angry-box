@@ -420,15 +420,18 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	loginUser := strings.TrimSpace(r.FormValue("login_user"))
 	loginPass := strings.TrimSpace(r.FormValue("login_pass"))
 	autoInstallKey := r.FormValue("auto_install_key") == "on"
+	manualKeyData := strings.TrimSpace(r.FormValue("ssh_key_manual"))
 
-	if selectedKey != "" {
-		host.KeyPath = selectedKey
+	// Resolve key ID to actual credentials
+	settings, _ := st.GetSettings()
+	resolvedPath, isTemp := resolveSSHKeyPath(selectedKey, settings, manualKeyData)
+	if resolvedPath != "" {
+		host.KeyPath = resolvedPath
 	}
 	if loginUser != "" {
 		host.User = loginUser
 	}
 	if loginPass != "" {
-		// Store password-based auth for capture
 		host.KeyPath = "password:" + loginPass
 	}
 
@@ -438,6 +441,11 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	status, sshErr := b.GetStatus(ctx, *host)
 
+	// Clean up temp file
+	if isTemp && resolvedPath != "" {
+		os.Remove(resolvedPath)
+	}
+
 	if sshErr != nil {
 		s.render(w, &simpleHTML{html: fmt.Sprintf(
 			`<div class="alert alert-error"><span>Capture failed: %v</span></div>`, sshErr,
@@ -445,8 +453,9 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host.KeyPath = strings.TrimSpace(r.FormValue("keyPath"))
-	if autoInstallKey && host.KeyPath != "" {
+	// Save keyPath used for this host
+	host.KeyPath = resolvedPath
+	if autoInstallKey && host.KeyPath != "" && !strings.HasPrefix(host.KeyPath, "password:") {
 		st.SaveHost(host)
 	}
 
@@ -995,6 +1004,50 @@ func detectSystemKeys() []model.SSHKeyEntry {
 		})
 	}
 	return keys
+}
+
+// resolveSSHKeyPath converts a key ID to an actual filesystem path suitable for SSH.
+// Returns (path, isTemp) — isTemp is true if a temporary file was created and should be cleaned up.
+func resolveSSHKeyPath(keyID string, settings *model.PanelSettings, manualData string) (string, bool) {
+	if keyID == "" {
+		return "", false
+	}
+	// Manual entry — write to temp file
+	if keyID == "manual" && manualData != "" {
+		f, err := os.CreateTemp("", "angry-box-key-*")
+		if err != nil {
+			return "", false
+		}
+		f.WriteString(manualData)
+		f.Chmod(0o600)
+		f.Close()
+		return f.Name(), true
+	}
+	// System key — use the actual filesystem path
+	if strings.HasPrefix(keyID, "system-") {
+		sysKeys := detectSystemKeys()
+		for _, k := range sysKeys {
+			if k.ID == keyID {
+				return k.KeyPath, false
+			}
+		}
+		return "", false
+	}
+	// Stored key — write to temp file
+	for _, k := range settings.SSHKeys {
+		if k.ID == keyID && k.KeyData != "" {
+			f, err := os.CreateTemp("", "angry-box-key-*")
+			if err != nil {
+				return "", false
+			}
+			f.WriteString(k.KeyData)
+			f.Chmod(0o600)
+			f.Close()
+			return f.Name(), true
+		}
+	}
+	// Fallback: use as plain path (old format or direct path)
+	return keyID, false
 }
 
 // looksLikePrivateKey does a quick check for PEM private key header.
