@@ -477,7 +477,8 @@ func (s *Server) handleNodeCaptureForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings, _ := st.GetSettings()
-	s.render(w, templates.NodeCaptureForm(host, settings))
+	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
+	s.render(w, templates.NodeCaptureForm(host, settings, allKeys))
 }
 
 func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) {
@@ -976,26 +977,19 @@ func detectSystemKeys() []model.SSHKeyEntry {
 			continue
 		}
 		name := e.Name()
-		// Skip public keys, config, known_hosts, etc.
-		if strings.HasSuffix(name, ".pub") || strings.HasPrefix(name, "known_hosts") ||
-			name == "config" || name == "authorized_keys" || strings.HasSuffix(name, ".swp") {
+		// Skip public keys, config, known_hosts, PuTTY keys, etc.
+		if strings.HasSuffix(name, ".pub") || strings.Contains(name, "known_hosts") ||
+			name == "config" || name == "authorized_keys" || strings.HasSuffix(name, ".swp") ||
+			strings.HasSuffix(name, ".ppk") || strings.HasSuffix(name, ".old") {
 			continue
 		}
-		// Only include common private key names
-		base := name
-		isPrivateKey := strings.HasPrefix(name, "id_") ||
-			strings.Contains(name, "ed25519") || strings.Contains(name, "rsa") ||
-			strings.Contains(name, "ecdsa") || strings.Contains(name, "dsa")
-		if !isPrivateKey {
+		if seen[name] {
 			continue
 		}
-		if seen[base] {
-			continue
-		}
-		seen[base] = true
+		seen[name] = true
 		keys = append(keys, model.SSHKeyEntry{
-			ID:      "system-" + base,
-			Name:    base + " (system)",
+			ID:      "system-" + name,
+			Name:    name + " (system)",
 			KeyPath: sshDir + "/" + name,
 			Source:  "system",
 		})

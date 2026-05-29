@@ -336,7 +336,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User) {
 
 // ─── Node Capture Form ──────────────────────────────────────────────────────────
 
-templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings) {
+templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {
 	<dialog id="capture-modal" class="modal" open>
 		<div class="modal-box">
 			<h3 class="font-bold text-lg mb-4">Capture Node: { host.ID }</h3>
@@ -351,11 +351,17 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings) {
 				<div class="form-control">
 					<label class="label"><span class="label-text">SSH Key</span></label>
 					<select name="ssh_key" class="select select-bordered">
-						<option value="">Select key from settings...</option>
-						for _, k := range settings.SSHKeys {
-							<option value={ k.KeyPath }>{ k.Name } ({ k.KeyPath })</option>
+						<option value="">Select key...</option>
+						for _, k := range allKeys {
+							<option value={ k.ID }>{ k.Name }</option>
 						}
+						<option value="manual">== Enter manually ==</option>
 					</select>
+					<textarea name="ssh_key_manual" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
+						rows="3" style="display:none"
+						placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----"></textarea>
 				</div>
 
 				<div class="text-sm text-base-content/50 text-center">— or use login + password —</div>
@@ -379,8 +385,14 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings) {
 				</div>
 
 				<div class="form-control">
-					<label class="label"><span class="label-text">SSH Key Path (for auto-install)</span></label>
-					<input type="text" name="keyPath" class="input input-bordered" value={ host.KeyPath } placeholder="~/.ssh/id_ed25519" />
+					<label class="label"><span class="label-text">SSH Key for auto-install</span></label>
+					<select name="auto_key_id" class="select select-bordered">
+						<option value="">Same as above</option>
+						for _, k := range allKeys {
+							<option value={ k.ID }>{ k.Name }</option>
+						}
+					</select>
+					<div class="label"><span class="label-text-alt text-base-content/50">Key to install on the target server after successful login</span></div>
 				</div>
 
 				<div class="modal-action">
