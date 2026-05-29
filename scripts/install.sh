@@ -6,7 +6,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 #
 #   # Or with options:
-#   sh install.sh --version 0.5.0
+#   sh install.sh --version 0.5.1
 #   sh install.sh --local ./angry-box          # install from local binary
 #   sh install.sh --no-start                    # don't start the service
 #   sh install.sh --uninstall                   # remove angry-box
@@ -416,9 +416,8 @@ print_done() {
     echo "  API:  http://localhost:8090/health"
     echo ""
     echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation from Releases:"
-    echo "    opkg install angry-box_0.5.0_aarch64-3.10.ipk        # Keenetic aarch64 (recommended)"
-    echo "    opkg install angry-box_0.5.0_mipsel_24kc.ipk         # Keenetic MIPS"
-    echo "    opkg install angry-box_0.5.0_aarch64_cortex-a53.ipk  # OpenWRT aarch64"
+    echo "    opkg install angry-box_${VERSION}_mipsel_24kc.ipk         # Keenetic MIPS"
+    echo "    opkg install angry-box_${VERSION}_aarch64_cortex-a53.ipk  # Keenetic/OpenWRT aarch64"
     echo ""
 }
 
