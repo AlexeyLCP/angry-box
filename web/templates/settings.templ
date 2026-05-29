@@ -7,7 +7,7 @@ import (
 )
 
 // Settings renders the panel settings page.
-templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain) {
+templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain, systemKeys ...[]model.SSHKeyEntry) {
 	<div class="space-y-6">
 		<h2 class="text-2xl font-semibold">Panel Settings</h2>
 
@@ -60,31 +60,64 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					<!-- SSH Keys -->
 					<div class="border-t border-base-300 pt-4 mt-4">
 						<h4 class="font-medium mb-2">SSH Keys</h4>
-						<p class="text-xs text-base-content/50 mb-3">Manage SSH keys used for node capture and management.</p>
+						<p class="text-xs text-base-content/50 mb-3">Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.</p>
 
 						<div id="ssh-keys-list" class="space-y-2">
+							<!-- Stored keys -->
 							for _, key := range settings.SSHKeys {
-								<div class="flex gap-2 items-end">
-									<div class="form-control flex-1">
-										<input type="text" name="ssh_key_name" class="input input-bordered input-sm"
-											value={ key.Name } placeholder="Key name" />
+								<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2">
+									<div class="flex-1">
+										<div class="text-sm font-medium">{ key.Name }</div>
+										<div class="text-xs text-base-content/50">
+											<span class="badge badge-primary badge-xs">Stored</span>
+											if len(key.KeyData) > 0 {
+												<span class="ml-1">({ fmt.Sprintf("%d", len(key.KeyData)) } bytes)</span>
+											}
+										</div>
 									</div>
-									<div class="form-control flex-1">
-										<input type="text" name="ssh_key_path" class="input input-bordered input-sm"
-											value={ key.KeyPath } placeholder="/path/to/key" />
-									</div>
-									<button type="button" class="btn btn-ghost btn-xs text-error"
-										onclick="this.parentElement.remove()">
-										✕
+									<button class="btn btn-ghost btn-xs text-error"
+										hx-delete={"/ui/settings/ssh-keys/" + key.ID}
+										hx-target="#ssh-keys-list"
+										hx-swap="outerHTML">
+										Delete
 									</button>
 								</div>
 							}
+							<!-- System keys (auto-detected) -->
+							if len(systemKeys) > 0 {
+								for _, key := range systemKeys[0] {
+									<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2 opacity-70">
+										<div class="flex-1">
+											<div class="text-sm font-medium">{ key.Name }</div>
+											<div class="text-xs text-base-content/50">
+												<span class="badge badge-ghost badge-xs">System</span>
+												<span class="ml-1">— { key.KeyPath }</span>
+											</div>
+										</div>
+									</div>
+								}
+							}
 						</div>
 
-						<button type="button" class="btn btn-ghost btn-sm mt-2"
-							onclick="addSSHKey()">
-							+ Add SSH Key
-						</button>
+						<!-- Add new key form -->
+						<div class="mt-3 border border-dashed border-base-300 rounded-lg p-3">
+							<form
+								hx-post="/ui/settings/ssh-keys"
+								hx-target="#ssh-keys-list"
+								hx-swap="outerHTML"
+								hx-on::after-request="this.reset()"
+								class="space-y-2">
+								<div class="text-sm font-medium mb-1">Add New SSH Key</div>
+								<div class="form-control">
+									<input type="text" name="name" class="input input-bordered input-sm" required placeholder="Key name (e.g. Home Server)" />
+								</div>
+								<div class="form-control">
+									<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
+										required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+								</div>
+								<button type="submit" class="btn btn-primary btn-sm">Save Key</button>
+							</form>
+						</div>
 					</div>
 
 					<div class="pt-2">
@@ -144,5 +177,62 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 				</div>
 			</div>
 		</div>
+	</div>
+}
+
+// SSHKeyList renders just the SSH key list (used for HTMX partial updates).
+templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) {
+	<!-- Stored keys -->
+	for _, key := range settings.SSHKeys {
+		<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2">
+			<div class="flex-1">
+				<div class="text-sm font-medium">{ key.Name }</div>
+				<div class="text-xs text-base-content/50">
+					<span class="badge badge-primary badge-xs">Stored</span>
+					if len(key.KeyData) > 0 {
+						<span class="ml-1">({ fmt.Sprintf("%d", len(key.KeyData)) } bytes)</span>
+					}
+				</div>
+			</div>
+			<button class="btn btn-ghost btn-xs text-error"
+				hx-delete={"/ui/settings/ssh-keys/" + key.ID}
+				hx-target="closest .flex"
+				hx-swap="delete">
+				Delete
+			</button>
+		</div>
+	}
+	<!-- System keys (auto-detected) -->
+	for _, key := range systemKeys {
+		<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2 opacity-70">
+			<div class="flex-1">
+				<div class="text-sm font-medium">{ key.Name }</div>
+				<div class="text-xs text-base-content/50">
+					<span class="badge badge-ghost badge-xs">System</span>
+					<span class="ml-1">— { key.KeyPath }</span>
+				</div>
+			</div>
+		</div>
+	}
+	<!-- Add new key form -->
+	<div class="mt-3 border border-dashed border-base-300 rounded-lg p-3">
+		<form
+			hx-post="/ui/settings/ssh-keys"
+			hx-target="closest #ssh-keys-list"
+			hx-swap="outerHTML"
+			hx-on::after-request="this.reset()"
+			class="space-y-2">
+			<div class="text-sm font-medium mb-1">Add New SSH Key</div>
+			<div class="form-control">
+				<input type="text" name="name" class="input input-bordered input-sm" required placeholder="Key name (e.g. Home Server)" />
+			</div>
+			<div class="form-control">
+				<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
+					required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----"></textarea>
+			</div>
+			<button type="submit" class="btn btn-primary btn-sm">Save Key</button>
+		</form>
 	</div>
 }

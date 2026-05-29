@@ -180,6 +180,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// Settings
 	mux.HandleFunc("GET /ui/settings", s.handleSettings)
 	mux.HandleFunc("POST /ui/settings", s.handleSaveSettings)
+	// SSH Keys management
+	mux.HandleFunc("POST /ui/settings/ssh-keys", s.handleAddSSHKey)
+	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.handleDeleteSSHKey)
 
 	// Status
 	mux.HandleFunc("GET /ui/status", s.handleStatus)
@@ -302,7 +305,8 @@ func (s *Server) handleNewHostForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleNewNodeForm(w http.ResponseWriter, r *http.Request) {
 	settings, _ := s.store().GetSettings()
-	s.render(w, templates.NodeForm(nil, settings))
+	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
+	s.render(w, templates.NodeForm(nil, settings, allKeys))
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -351,7 +355,8 @@ func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
 	}
 	info, _ := st.GetNodeInfo(id)
 	settings, _ := st.GetSettings()
-	s.render(w, templates.NodeForm(host, settings, info))
+	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
+	s.render(w, templates.NodeForm(host, settings, allKeys, info))
 }
 
 func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
@@ -860,7 +865,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	settings, _ := st.GetSettings()
 	hosts, _ := st.ListHosts()
 	chains, _ := st.ListChains()
-	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains))
+	sysKeys := detectSystemKeys()
+	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, sysKeys))
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
@@ -895,6 +901,119 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 	st.SaveSettings(settings)
 	s.render(w, &simpleHTML{html: `<div class="alert alert-success"><span>Settings saved.</span></div>`})
+}
+
+// ─── SSH Keys ──────────────────────────────────────────────────────────────────
+
+func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	keyData := strings.TrimSpace(r.FormValue("key_data"))
+	if name == "" || keyData == "" {
+		s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Name and key data are required.</span></div>`})
+		return
+	}
+	// Validate key format
+	if !looksLikePrivateKey(keyData) {
+		s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).</span></div>`})
+		return
+	}
+	st := s.store()
+	settings, _ := st.GetSettings()
+	id := fmt.Sprintf("key-%d", len(settings.SSHKeys)+1)
+	settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
+		ID:      id,
+		Name:    name,
+		KeyData: keyData,
+		Source:  "stored",
+	})
+	st.SaveSettings(settings)
+	// Return updated key list
+	sysKeys := detectSystemKeys()
+	s.render(w, templates.SSHKeyList(settings, sysKeys))
+}
+
+func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	settings, _ := st.GetSettings()
+	filtered := settings.SSHKeys[:0]
+	found := false
+	for _, k := range settings.SSHKeys {
+		if k.ID == id {
+			found = true
+			continue
+		}
+		filtered = append(filtered, k)
+	}
+	if !found {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	settings.SSHKeys = filtered
+	st.SaveSettings(settings)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// detectSystemKeys scans ~/.ssh/ for common key files.
+func detectSystemKeys() []model.SSHKeyEntry {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	sshDir := home + "/.ssh"
+	entries, err := os.ReadDir(sshDir)
+	if err != nil {
+		return nil
+	}
+	var keys []model.SSHKeyEntry
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// Skip public keys, config, known_hosts, etc.
+		if strings.HasSuffix(name, ".pub") || strings.HasPrefix(name, "known_hosts") ||
+			name == "config" || name == "authorized_keys" || strings.HasSuffix(name, ".swp") {
+			continue
+		}
+		// Only include common private key names
+		base := name
+		isPrivateKey := strings.HasPrefix(name, "id_") ||
+			strings.Contains(name, "ed25519") || strings.Contains(name, "rsa") ||
+			strings.Contains(name, "ecdsa") || strings.Contains(name, "dsa")
+		if !isPrivateKey {
+			continue
+		}
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
+		keys = append(keys, model.SSHKeyEntry{
+			ID:      "system-" + base,
+			Name:    base + " (system)",
+			KeyPath: sshDir + "/" + name,
+			Source:  "system",
+		})
+	}
+	return keys
+}
+
+// looksLikePrivateKey does a quick check for PEM private key header.
+func looksLikePrivateKey(data string) bool {
+	return strings.Contains(data, "BEGIN") && strings.Contains(data, "PRIVATE KEY")
+}
+
+// mergeSSHKeys combines stored and system keys into one list.
+func mergeSSHKeys(stored, system []model.SSHKeyEntry) []model.SSHKeyEntry {
+	all := make([]model.SSHKeyEntry, 0, len(stored)+len(system))
+	all = append(all, stored...)
+	all = append(all, system...)
+	return all
 }
 
 // ─── Existing handlers (kept for backward compatibility) ───────────────────────

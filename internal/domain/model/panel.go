@@ -38,10 +38,13 @@ type PanelSettings struct {
 	DefaultProtocol   string `json:"default_protocol,omitempty"` // "awg", "tuic", "vless-reality"
 }
 
-// SSHKeyEntry is a named SSH key stored in the panel.
+// SSHKeyEntry is an SSH key stored in the panel.
 type SSHKeyEntry struct {
-	Name    string `json:"name"`
-	KeyPath string `json:"key_path"` // path to private key file
+	ID      string `json:"id"`                // unique identifier
+	Name    string `json:"name"`              // display name
+	KeyPath string `json:"key_path,omitempty"` // filesystem path (system keys)
+	KeyData string `json:"key_data,omitempty"` // private key content (user/manual keys)
+	Source  string `json:"source"`            // "stored", "system", "manual"
 }
 
 // NodeMetrics holds the latest health/metrics snapshot for a node.
