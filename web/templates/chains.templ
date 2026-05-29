@@ -31,7 +31,7 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 
 		<div class="card bg-base-100 shadow">
 			<div class="overflow-x-auto">
-				<table class="table">
+				<table class="table table-sm">
 					<thead>
 						<tr>
 							<th>Name</th>
@@ -47,7 +47,7 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 						}
 						if len(chains) == 0 {
 							<tr>
-								<td colspan="5" class="text-center py-8 text-base-content/50">
+								<td colspan="4" class="text-center py-8 text-base-content/50">
 									No chains yet. Create your first multi-hop proxy chain.
 								</td>
 							</tr>
@@ -70,21 +70,15 @@ templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
 		<td class="font-semibold text-sm">{ c.Name }</td>
 		<td>
-			<div class="flex flex-wrap gap-0.5 max-w-[180px]">
-				for _, n := range c.Nodes {
-					<span class="badge badge-outline badge-xs font-mono text-[10px] truncate max-w-[80px]" title={ n.ID }>{ n.ID }</span>
-				}
-			</div>
+			<span class="text-xs font-mono opacity-70" title={ nodeListStr(c.Nodes) }>{ len(c.Nodes) } node(s)</span>
 		</td>
 		<td class="text-xs">
 			<span class="font-mono">{ c.Strategy }</span>
 			if c.Transport != "" {
 				<span class="opacity-50">/{ c.Transport }</span>
 			}
-		</td>
-		<td class="text-xs">
 			if c.UserProtocol != "" {
-				<span class="opacity-60">{ c.UserProtocol }</span>
+				<span class="opacity-40 ml-1">({ c.UserProtocol })</span>
 			}
 		</td>
 		<td>
@@ -245,6 +239,15 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 	</div>
 }
 
+func nodeListStr(nodes []model.ChainNode) string {
+	s := ""
+	for i, n := range nodes {
+		if i > 0 { s += ", " }
+		s += n.ID
+	}
+	return s
+}
+
 func alertClass(success bool) string {
 	if success {
 		return "alert-success"
@@ -258,7 +261,7 @@ templ StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) {
 		<h2 class="text-2xl font-semibold">System Status</h2>
 		<div class="card bg-base-100 shadow">
 			<div class="overflow-x-auto">
-				<table class="table">
+				<table class="table table-sm">
 					<thead>
 						<tr>
 							<th>Host</th>
