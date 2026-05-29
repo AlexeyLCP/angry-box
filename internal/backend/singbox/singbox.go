@@ -326,9 +326,14 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 		Running: strings.TrimSpace(output) == "active",
 	}
 
-	// Get version.
-	if verOut, err := client.Run("sing-box version 2>/dev/null || echo NONE"); err == nil {
-		status.Version = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(verOut), "sing-box version "))
+	// Get version (first line only, ignore environment/tags details).
+	if verOut, err := client.Run("sing-box version 2>/dev/null | head -1 || echo NONE"); err == nil {
+		ver := strings.TrimSpace(verOut)
+		ver = strings.TrimPrefix(ver, "sing-box version ")
+		if idx := strings.Index(ver, "\n"); idx > 0 {
+			ver = ver[:idx]
+		}
+		status.Version = ver
 	}
 
 	// Get PID and uptime.

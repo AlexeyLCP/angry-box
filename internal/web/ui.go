@@ -69,9 +69,11 @@ func (s *Server) staticFS() (fs.FS, error) {
 // interval is in minutes. Call Stop() to halt.
 func (s *Server) StartBackgroundMetrics(intervalMinutes int) {
 	if intervalMinutes <= 0 {
-		intervalMinutes = 240 // default 4 hours
+		intervalMinutes = 15 // default 15 minutes
 	}
+	// Collect immediately on startup, then periodically.
 	go func() {
+		s.collectAllMetrics()
 		ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
 		defer ticker.Stop()
 		for {

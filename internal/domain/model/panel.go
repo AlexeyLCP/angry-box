@@ -33,7 +33,7 @@ func (u *User) IsExpired() bool {
 type PanelSettings struct {
 	AdminPasswordHash string `json:"admin_password_hash"`
 	PanelCountry      string `json:"panel_country,omitempty"`   // e.g. "RU", "IR", "CN"
-	MetricsInterval   int    `json:"metrics_interval,omitempty"` // minutes, default 240 (4 hours)
+	MetricsInterval   int    `json:"metrics_interval,omitempty"` // minutes, default 15 minutes
 	SSHKeys           []SSHKeyEntry `json:"ssh_keys,omitempty"`
 	DefaultProtocol   string `json:"default_protocol,omitempty"` // "awg", "tuic", "vless-reality"
 }

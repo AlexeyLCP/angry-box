@@ -343,15 +343,15 @@ func (s *Store) GetSettings() (*model.PanelSettings, error) {
 	sf, err := s.readStore()
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &model.PanelSettings{MetricsInterval: 240}, nil
+			return &model.PanelSettings{MetricsInterval: 15}, nil
 		}
 		return nil, err
 	}
 	if sf.Settings == nil {
-		return &model.PanelSettings{MetricsInterval: 240}, nil
+		return &model.PanelSettings{MetricsInterval: 15}, nil
 	}
 	if sf.Settings.MetricsInterval <= 0 {
-		sf.Settings.MetricsInterval = 240
+		sf.Settings.MetricsInterval = 15
 	}
 	return sf.Settings, nil
 }
