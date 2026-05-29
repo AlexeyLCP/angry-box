@@ -334,10 +334,15 @@ func BuildStrategyOutbound(strategy string, outboundTags []string) *StrategyOutb
 			Default:   def,
 		}
 	case "failover":
+		// sing-box-extended doesn't support "failover" type with string[] outbounds.
+		// urltest provides equivalent behavior: health-check, skip unhealthy, pick best.
 		return &StrategyOutbound{
-			Type:      "failover",
+			Type:      "urltest",
 			Tag:       "auto",
 			Outbounds: outboundTags,
+			URL:       "https://www.gstatic.com/generate_204",
+			Interval:  "3m",
+			Tolerance: 100,
 		}
 	default:
 		return nil
