@@ -26,15 +26,15 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 		<!-- SVG Canvas for spider web topology -->
 		<div class="card bg-base-100 shadow overflow-hidden">
 			<div class="p-4 border-b border-base-300">
-				<div class="text-sm text-base-content/60">Visual map of all nodes and connections. Click a node to add it to a chain.</div>
+				<div class="text-sm text-base-content/60">Visual map of all nodes and connections. Drag nodes to rearrange. Green = online.</div>
 			</div>
-			<div class="bg-base-200" style="min-height: 320px; position: relative;">
+			<div class="bg-base-200" style="min-height: 450px; position: relative;">
 				if len(hosts) == 0 {
 					<div class="flex items-center justify-center h-64 text-base-content/50">
 						No nodes registered. <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary ml-1">Add nodes first</a>.
 					</div>
 				} else {
-					<svg id="spider-svg" viewBox="0 0 800 320" class="w-full" style="min-height: 320px;">
+					<svg id="spider-svg" viewBox="0 0 800 450" class="w-full" style="min-height: 450px;">
 						<defs>
 							<marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
 								<polygon points="0 0, 10 3.5, 0 7" fill="oklch(var(--p))" />
@@ -345,15 +345,15 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64)
 // nodePosition computes a circular layout position for a node
 func nodePosition(id string, hosts []*model.Host, idx int, total int) (float64, float64) {
 	if total == 0 {
-		return 400, 160
+		return 400, 225
 	}
 	angle := float64(idx)*2.0*math.Pi/float64(total) - math.Pi/2.0
-	r := 130.0
+	r := 170.0
 	if total <= 3 {
-		r = 100.0
+		r = 130.0
 	}
 	x := 400.0 + r*math.Cos(angle)
-	y := 160.0 + r*math.Sin(angle)
+	y := 225.0 + r*math.Sin(angle)
 	return x, y
 }
 

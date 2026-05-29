@@ -37,7 +37,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"flex items-center justify-between\"><h2 class=\"text-2xl font-semibold\">Spider Web</h2><div class=\"flex gap-2\"><button class=\"btn btn-ghost btn-sm\" hx-get=\"/ui/spider\" hx-target=\"#main-content\" hx-swap=\"outerHTML\">Refresh</button></div></div><!-- SVG Canvas for spider web topology --><div class=\"card bg-base-100 shadow overflow-hidden\"><div class=\"p-4 border-b border-base-300\"><div class=\"text-sm text-base-content/60\">Visual map of all nodes and connections. Click a node to add it to a chain.</div></div><div class=\"bg-base-200\" style=\"min-height: 320px; position: relative;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"flex items-center justify-between\"><h2 class=\"text-2xl font-semibold\">Spider Web</h2><div class=\"flex gap-2\"><button class=\"btn btn-ghost btn-sm\" hx-get=\"/ui/spider\" hx-target=\"#main-content\" hx-swap=\"outerHTML\">Refresh</button></div></div><!-- SVG Canvas for spider web topology --><div class=\"card bg-base-100 shadow overflow-hidden\"><div class=\"p-4 border-b border-base-300\"><div class=\"text-sm text-base-content/60\">Visual map of all nodes and connections. Drag nodes to rearrange. Green = online.</div></div><div class=\"bg-base-200\" style=\"min-height: 450px; position: relative;\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -47,7 +47,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<svg id=\"spider-svg\" viewBox=\"0 0 800 320\" class=\"w-full\" style=\"min-height: 320px;\"><defs><marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"oklch(var(--p))\"></polygon></marker></defs><!-- Connection links from chains -->")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<svg id=\"spider-svg\" viewBox=\"0 0 800 450\" class=\"w-full\" style=\"min-height: 450px;\"><defs><marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\"><polygon points=\"0 0, 10 3.5, 0 7\" fill=\"oklch(var(--p))\"></polygon></marker></defs><!-- Connection links from chains -->")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -679,15 +679,15 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 // nodePosition computes a circular layout position for a node
 func nodePosition(id string, hosts []*model.Host, idx int, total int) (float64, float64) {
 	if total == 0 {
-		return 400, 160
+		return 400, 225
 	}
 	angle := float64(idx)*2.0*math.Pi/float64(total) - math.Pi/2.0
-	r := 130.0
+	r := 170.0
 	if total <= 3 {
-		r = 100.0
+		r = 130.0
 	}
 	x := 400.0 + r*math.Cos(angle)
-	y := 160.0 + r*math.Sin(angle)
+	y := 225.0 + r*math.Sin(angle)
 	return x, y
 }
 
