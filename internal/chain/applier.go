@@ -657,9 +657,6 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 		"multiplex": map[string]any{
 			"enabled": true,
 		},
-		"transport": map[string]any{
-			"type": "tcp",
-		},
 	}
 
 	data, _ := json.Marshal(inb)
@@ -720,9 +717,6 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 		},
 		"multiplex": map[string]any{
 			"enabled": true,
-		},
-		"transport": map[string]any{
-			"type": "tcp",
 		},
 	}
 
