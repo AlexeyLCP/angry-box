@@ -229,11 +229,29 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 		DefaultDomainResolver: "dns-direct",
 	}
 
+	ruleTags := map[string]bool{}
 
-	// Rule-set based rules are skipped (remote URLs may be unavailable).
-	// Only domain-suffix and domain rules are used.
+	// Direct geoip rules (route specific countries directly)
+	for _, geo := range preset.Routing.DirectGeoIP {
+		tag := "geoip-" + geo
+		ruleTags[tag] = true
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			RuleSet:  []string{tag},
+			Outbound: "direct-out",
+		})
+	}
 
-	// Direct domain suffixes
+	// Direct geosite rules (route specific sites directly)
+	for _, gs := range preset.Routing.DirectGeoSite {
+		tag := gs
+		ruleTags[tag] = true
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			RuleSet:  []string{tag},
+			Outbound: "direct-out",
+		})
+	}
+
+	// Direct domain suffixes (always direct, no rule_set needed)
 	if len(preset.Routing.DirectDomains) > 0 {
 		section.Rules = append(section.Rules, RouteRuleEntry{
 			DomainSuffix: preset.Routing.DirectDomains,
@@ -241,9 +259,42 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 		})
 	}
 
-	// Block rules via rule-set are skipped (remote URLs may be unavailable).
+	// Block rules (ads, malware, etc.)
+	for _, gs := range preset.Routing.BlockGeoSite {
+		tag := gs
+		ruleTags[tag] = true
+		section.Rules = append(section.Rules, RouteRuleEntry{
+			RuleSet:  []string{tag},
+			Outbound: "block",
+		})
+	}
 
-	// Rule sets are skipped for now — remote URLs may be unavailable.
+	// Build rule_set entries with direct download detour
+	for tag := range ruleTags {
+		entry := RuleSetEntry{
+			Tag:            tag,
+			Type:           "remote",
+			Format:         "binary",
+			DownloadDetour: "direct-out",
+			UpdateInterval: "24h",
+		}
+
+		// Determine URL based on tag prefix
+		isGeoIP := false
+		for _, g := range preset.Routing.DirectGeoIP {
+			if "geoip-"+g == tag {
+				isGeoIP = true
+				break
+			}
+		}
+
+		if isGeoIP {
+			entry.URL = ruleSetBaseURL + "/" + tag + ".srs"
+		} else {
+			entry.URL = ruleSetGeoSiteURL + "/" + tag + ".srs"
+		}
+		section.RuleSet = append(section.RuleSet, entry)
+	}
 
 	return section
 }
@@ -284,10 +335,9 @@ func BuildStrategyOutbound(strategy string, outboundTags []string) *StrategyOutb
 		}
 	case "failover":
 		return &StrategyOutbound{
-			Type:      "selector",
+			Type:      "failover",
 			Tag:       "auto",
 			Outbounds: outboundTags,
-			Default:   outboundTags[0],
 		}
 	default:
 		return nil

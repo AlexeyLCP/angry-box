@@ -128,7 +128,7 @@
       "auth_timeout": "5s"
     },
     "routing": {
-      "block_geosite": ["geosite-category-ads-all", "geosite-malware"]
+      "block_geosite": ["geosite-category-ads-all"]
     }
   },
   {
