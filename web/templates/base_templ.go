@@ -57,14 +57,14 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</h1></div><div class=\"flex items-center gap-2\"><div class=\"text-sm text-base-content/60 flex items-center gap-2\"><span>Profile: <span class=\"font-mono text-primary\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</h1></div><div class=\"flex items-center gap-4\"><span class=\"text-[10px] text-base-content/20\">PolyForm Noncommercial 1.0.0 &middot; Personal/Educational use only</span><div class=\"text-sm text-base-content/60 flex items-center gap-2\"><span>Profile: <span class=\"font-mono text-primary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(chain.GetDefaultPresetName())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 69, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 70, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -78,7 +78,7 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div><!-- Footer --><div class=\"text-center text-xs text-base-content/30 py-2 border-t border-base-300 bg-base-100\">Angry-BOX &middot; PolyForm Noncommercial License 1.0.0 &middot; Personal / Educational use only</div></div><script src=\"/static/js/app.js\"></script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div></div><script src=\"/static/js/app.js\"></script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
