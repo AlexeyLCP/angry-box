@@ -309,22 +309,22 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 							} else {
 								<span class="text-error font-semibold">FAIL</span>
 								if n.Error != "" {
-									<span class="opacity-70 cursor-help max-w-[300px] truncate inline-block align-bottom" title={ n.Error }> — { n.Error }</span>
+									<span class="opacity-70 max-w-[300px] truncate inline-block align-bottom cursor-pointer"
+										onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none'"
+										title="Click to expand"> — { n.Error }</span>
+									<span class="hidden text-[10px] font-mono opacity-60 mt-1 block max-w-full break-all">{ n.Error }</span>
 								}
 							}
 						</div>
 					}
 
-					if report.AWG != nil {
+					if success && report.AWG != nil {
 						<div class="mt-2 p-2 bg-base-300 rounded font-mono text-[11px]">
-							<div class="font-semibold mb-0.5">AWG Client Keys (for first node)</div>
+							<div class="font-semibold mb-0.5">AWG Client Keys</div>
 							<div>Server Public: <span class="select-all">{ report.AWG.ServerPub }</span></div>
-							<div>Client Public used: <span class="select-all">{ report.AWG.ClientPubUsed }</span></div>
+							<div>Client Public: <span class="select-all">{ report.AWG.ClientPubUsed }</span></div>
 							if report.AWG.ClientPriv != "" {
-								<div class="text-warning">Sample Client Private: <span class="select-all">{ report.AWG.ClientPriv }</span></div>
-							}
-							if report.AWG.Note != "" {
-								<div class="opacity-70 text-[10px]">{ report.AWG.Note }</div>
+								<div class="text-warning">Client Private: <span class="select-all">{ report.AWG.ClientPriv }</span></div>
 							}
 						</div>
 					}
