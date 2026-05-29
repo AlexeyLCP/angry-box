@@ -220,12 +220,12 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label"><span class="label-text">Transport</span></label>
+							<label class="label"><span class="label-text">Transport</span><span class="label-text-alt text-base-content/50">max obfuscation always applied</span></label>
 							<select name="transport" class="select select-bordered select-sm">
-								<option value="xhttp" selected>XHTTP (max obfuscation)</option>
-								<option value="reality">Reality + XHTTP</option>
-								<option value="awg">AWG (AmneziaWG)</option>
-								<option value="hysteria2">Hysteria2</option>
+								<option value="xhttp" selected>XHTTP (max obfuscation, recommended)</option>
+								<option value="reality">Reality + XHTTP (max obfuscation)</option>
+								<option value="awg">AWG / AmneziaWG (encrypted tunnel)</option>
+								<option value="hysteria2">Hysteria2 (max obfuscation, QUIC)</option>
 							</select>
 						</div>
 						<div class="form-control">

@@ -134,10 +134,10 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 					<div class="form-control">
 						<label class="label"><span class="label-text">Transport</span></label>
 						<select name="transport" class="select select-bordered">
-							<option value="xhttp" selected>XHTTP (recommended)</option>
-							<option value="reality">Reality + XHTTP</option>
-							<option value="awg">AWG (AmneziaWG)</option>
-							<option value="hysteria2">Hysteria2</option>
+							<option value="xhttp" selected>XHTTP (max obfuscation, recommended)</option>
+							<option value="reality">Reality + XHTTP (max obfuscation)</option>
+							<option value="awg">AWG / AmneziaWG (encrypted tunnel)</option>
+							<option value="hysteria2">Hysteria2 (max obfuscation, QUIC)</option>
 						</select>
 					</div>
 
