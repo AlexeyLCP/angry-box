@@ -51,8 +51,10 @@ const (
 type TransportType string
 
 const (
-	TransportReality TransportType = "reality"
-	TransportXHTTP   TransportType = "xhttp"
+	TransportReality   TransportType = "reality"
+	TransportXHTTP     TransportType = "xhttp"
+	TransportAWG       TransportType = "awg"
+	TransportHysteria2 TransportType = "hysteria2"
 )
 
 // Host converts a ChainNode to a Host for SSH operations.
