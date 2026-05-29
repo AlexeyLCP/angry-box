@@ -98,6 +98,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 								<th>Address</th>
 								<th>Country</th>
 								<th>Status</th>
+								<th>Latency</th>
 								<th>Last Checked</th>
 							</tr>
 						</thead>
@@ -113,13 +114,16 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 										@metricBadge(h.ID, metrics)
 									</td>
 									<td>
+										@metricLatency(h.ID, metrics)
+									</td>
+									<td>
 										@metricTime(h.ID, metrics)
 									</td>
 								</tr>
 							}
 							if len(hosts) == 0 {
 								<tr>
-									<td colspan="5" class="text-center py-6 text-base-content/50">
+									<td colspan="6" class="text-center py-6 text-base-content/50">
 										No nodes registered yet. <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary">Add your first node</a>.
 									</td>
 								</tr>
@@ -191,6 +195,24 @@ templ metricBadge(hostID string, metrics []*model.NodeMetrics) {
 }
 
 // Helper: show last checked time from metrics
+templ metricLatency(hostID string, metrics []*model.NodeMetrics) {
+	for _, m := range metrics {
+		if m.HostID == hostID {
+			if m.LatencyMs > 0 {
+				if m.LatencyMs < 100 {
+					<span class="text-success text-xs">{ m.LatencyMs }ms</span>
+				} else if m.LatencyMs < 300 {
+					<span class="text-warning text-xs">{ m.LatencyMs }ms</span>
+				} else {
+					<span class="text-error text-xs">{ m.LatencyMs }ms</span>
+				}
+				return
+			}
+		}
+	}
+	<span class="text-base-content/30 text-xs">—</span>
+}
+
 templ metricTime(hostID string, metrics []*model.NodeMetrics) {
 	for _, m := range metrics {
 		if m.HostID == hostID {

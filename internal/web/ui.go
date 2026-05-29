@@ -105,15 +105,18 @@ func (s *Server) collectAllMetrics() {
 	ctx := context.Background()
 
 	for _, h := range hosts {
+		start := time.Now()
 		status, err := b.GetStatus(ctx, *h)
+		latency := time.Since(start).Milliseconds()
 		if err != nil {
-			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false})
+			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false, LatencyMs: latency})
 			continue
 		}
 		st.SaveMetrics(&model.NodeMetrics{
-			HostID:  h.ID,
-			Online:  status.Running,
-			Version: status.Version,
+			HostID:     h.ID,
+			Online:     status.Running,
+			Version:    status.Version,
+			LatencyMs:  latency,
 		})
 	}
 }
