@@ -559,6 +559,15 @@ else
     fi
 fi
 
+# Wait for the process to fully exit (up to 5 seconds)
+# This prevents "Text file busy" when overwriting the running binary
+for i in 1 2 3 4 5; do
+    if ! pgrep -x angry-box >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done 2>/dev/null || true
+
 install_binary
 install_dirs
 install_service
