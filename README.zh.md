@@ -96,15 +96,22 @@ Angry-BOX 仅作为**控制平面**存在。
 
 Angry-BOX 提供原生 `.ipk` 包。
 
-推荐直接从 Releases 下载对应架构的包安装。
+| 平台              | 架构                  | 包名示例                                 |
+|-------------------|-----------------------|------------------------------------------|
+| Keenetic          | `mipsel_24kc`         | `angry-box_X.Y.Z_mipsel_24kc.ipk`        |
+| Keenetic/OpenWRT  | `aarch64_cortex-a53`  | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk` |
 
 ## 从源码构建
 
 ```bash
 git clone https://github.com/alexeylcp/angry-box.git
 cd angry-box
-CGO_ENABLED=0 go build -o angry-box ./cmd/angry-box
-make package-all
+
+# 生产构建（全部嵌入二进制文件）
+make build
+
+# 开发模式（静态文件从磁盘读取，无需重新编译即可编辑）
+make dev
 ```
 
 ## 致谢
@@ -118,7 +125,15 @@ make package-all
 
 ## 许可证
 
-PolyForm Noncommercial License 1.0.0
+**PolyForm Noncommercial License 1.0.0**
+
+本项目基于 PolyForm Noncommercial License 1.0.0 分发。  
+仅允许用于**个人、非商业、教育和科学目的**。  
+**任何商业用途均被禁止。**
+
+软件按"原样"提供，不附带任何形式的保证。作者对因使用本软件而产生的任何损害不承担责任。
+
+详见 [LICENSE](LICENSE)。
 
 ## 支持
 
@@ -127,4 +142,4 @@ PolyForm Noncommercial License 1.0.0
 
 ---
 
-**当前版本：** 0.5.2 — 改进路由器打包、Windows 支持及文档。
+**当前版本：** 0.5.2 — Web UI、开发/生产混合模式、法律声明。

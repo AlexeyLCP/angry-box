@@ -96,13 +96,22 @@ Angry-BOX فقط **صفحه کنترل** است.
 
 Angry-BOX پکیج‌های بومی `.ipk` ارائه می‌دهد.
 
+| پلتفرم            | معماری                | نام پکیج                                 |
+|-------------------|-----------------------|------------------------------------------|
+| Keenetic          | `mipsel_24kc`         | `angry-box_X.Y.Z_mipsel_24kc.ipk`        |
+| Keenetic/OpenWRT  | `aarch64_cortex-a53`  | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk` |
+
 ## ساخت از منبع
 
 ```bash
 git clone https://github.com/alexeylcp/angry-box.git
 cd angry-box
-CGO_ENABLED=0 go build -o angry-box ./cmd/angry-box
-make package-all
+
+# ساخت تولید (همه چیز در باینری جاسازی شده)
+make build
+
+# حالت توسعه (فایل‌های استاتیک از دیسک خوانده می‌شوند)
+make dev
 ```
 
 ## قدردانی
@@ -116,7 +125,15 @@ make package-all
 
 ## لایسنس
 
-PolyForm Noncommercial License 1.0.0
+**PolyForm Noncommercial License 1.0.0**
+
+این پروژه تحت مجوز PolyForm Noncommercial License 1.0.0 توزیع می‌شود.  
+استفاده تنها برای **مقاصد شخصی، غیرتجاری، آموزشی و علمی** مجاز است.  
+**هرگونه استفاده تجاری ممنوع است.**
+
+نرم‌افزار "همانطور که هست" ارائه می‌شود، بدون هیچ‌گونه ضمانتی. نویسنده هیچ مسئولیتی در قبال خسارات ناشی از استفاده از این نرم‌افزار ندارد.
+
+مشاهده [LICENSE](LICENSE).
 
 ## پشتیبانی
 
@@ -125,4 +142,4 @@ PolyForm Noncommercial License 1.0.0
 
 ---
 
-**نسخه فعلی:** 0.5.2 — بهبود بسته‌بندی روترها، پشتیبانی از ویندوز و مستندات.
+**نسخه فعلی:** 0.5.2 — رابط وب، حالت توسعه/تولید ترکیبی، اعلان‌های حقوقی.

@@ -111,11 +111,11 @@ See the [Releases](https://github.com/AlexeyLCP/angry-box/releases) page for the
 git clone https://github.com/alexeylcp/angry-box.git
 cd angry-box
 
-# Build static binary
-CGO_ENABLED=0 go build -o angry-box ./cmd/angry-box
+# Production build (everything embedded in binary)
+make build
 
-# Package router .ipk files
-make package-all
+# Development mode (static files from disk, edit without rebuild)
+make dev
 ```
 
 ## Credits & Acknowledgments
