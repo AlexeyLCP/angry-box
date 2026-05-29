@@ -397,7 +397,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 
 		switch userProto {
 		case model.UserProtocolTUIC:
-			inb := buildTUICUserInbound(port, params[i].UUID, tag, preset)
+			inb := buildTUICUserInbound(port, params[i].UUID, tag, preset, params[i])
 			inbounds = append(inbounds, inb)
 		case model.UserProtocolAWG:
 			ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
@@ -936,7 +936,7 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 
 // ==================== User Protocols (TUIC, AWG) ====================
 
-func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset) json.RawMessage {
+func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset, p *hopParams) json.RawMessage {
 	tuic := preset.TUIC
 	if tuic == nil {
 		tuic = &TUICPreset{
@@ -982,12 +982,11 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset) 
 	inb["tls"] = map[string]any{
 		"enabled":     true,
 		"server_name": serverName,
-	}
-
-	// If the chosen country preset has Reality settings defined, we can layer Reality on top of TUIC
-	// (very strong combination in some environments). Keys are intentionally left for future generation logic.
-	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
-		// TUIC + Reality user entry combination is not supported in v0.2.0 (documented limitation).
+		"reality": map[string]any{
+			"enabled":     true,
+			"private_key": p.PrivateKey,
+			"short_id":    []string{p.ShortID},
+		},
 	}
 
 	data, _ := json.Marshal(inb)
