@@ -6,7 +6,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 #
 #   # Or with options:
-#   sh install.sh --version 0.2.1
+#   sh install.sh --version 0.5.0
 #   sh install.sh --local ./angry-box          # install from local binary
 #   sh install.sh --no-start                    # don't start the service
 #   sh install.sh --uninstall                   # remove angry-box
@@ -15,10 +15,11 @@ set -e
 
 # ─── Defaults ──────────────────────────────────────────────────────────────────
 
-VERSION="${VERSION:-0.2.1}"
+VERSION="${VERSION:-latest}"
 LOCAL_BIN=""
 NO_START=false
 UNINSTALL=false
+USER_MODE=false
 GITHUB_REPO="alexeylcp/angry-box"
 BASE_URL="https://github.com/${GITHUB_REPO}/releases/download"
 
@@ -175,7 +176,7 @@ install_binary() {
 
     tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
 
-    # The tarball contains a subdirectory (e.g. angry-box-0.2.1-linux-amd64/)
+    # The tarball contains a subdirectory (e.g. angry-box-0.5.0-linux-amd64/)
     # We need to find the binary inside it.
     BINARY_PATH=$(find "$TMPDIR" -type f -name "angry-box" | head -1)
 
@@ -200,9 +201,20 @@ install_dirs() {
     mkdir -p "$DATA_DIR"
     mkdir -p "$LOG_DIR"
 
-    # Create default store.json for backward compatibility
+    # Create default store.json (v0.5.0 format with users, settings, node infos, metrics)
     if [ ! -f "$CONFIG_DIR/store.json" ]; then
-        echo '{"hosts":[],"chains":[]}' > "$CONFIG_DIR/store.json"
+        cat > "$CONFIG_DIR/store.json" << 'STORE_EOF'
+{
+  "hosts": [],
+  "chains": [],
+  "users": [],
+  "settings": {
+    "metrics_interval": 240
+  },
+  "node_infos": [],
+  "metrics": []
+}
+STORE_EOF
     fi
 
     # Create a minimal modern config.toml if it doesn't exist
@@ -385,9 +397,9 @@ print_done() {
     echo "  API:  http://localhost:8090/health"
     echo ""
     echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation from Releases:"
-    echo "    opkg install angry-box_0.2.1_aarch64-3.10.ipk        # Keenetic aarch64 (recommended)"
-    echo "    opkg install angry-box_0.2.1_mipsel_24kc.ipk         # Keenetic MIPS"
-    echo "    opkg install angry-box_0.2.1_aarch64_cortex-a53.ipk  # OpenWRT aarch64"
+    echo "    opkg install angry-box_0.5.0_aarch64-3.10.ipk        # Keenetic aarch64 (recommended)"
+    echo "    opkg install angry-box_0.5.0_mipsel_24kc.ipk         # Keenetic MIPS"
+    echo "    opkg install angry-box_0.5.0_aarch64_cortex-a53.ipk  # OpenWRT aarch64"
     echo ""
 }
 
@@ -407,7 +419,14 @@ if [ "$IS_KEENETIC" = false ]; then
         echo "  2. Install only for current user (no sudo needed)"
         echo ""
         printf "Install for current user only? [Y/n] "
-        read -r answer
+        read -r answer < /dev/tty 2>/dev/null || {
+            echo ""
+            echo "ERROR: Cannot read from terminal (piped install?)."
+            echo "Please download and run the script directly:"
+            echo "  wget https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh"
+            echo "  sh install.sh"
+            exit 1
+        }
         case "$answer" in
             [nN]*)
                 echo "Exiting. Run with sudo for system-wide install."
