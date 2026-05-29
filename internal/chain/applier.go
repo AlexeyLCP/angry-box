@@ -125,7 +125,7 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 		chain.Transport = model.TransportXHTTP
 	}
 	if chain.UserProtocol == "" {
-		chain.UserProtocol = model.UserProtocolTUIC
+		chain.UserProtocol = model.UserProtocolAWG
 	}
 
 	n := len(chain.Nodes)
@@ -372,9 +372,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		}
 		outbounds = append(outbounds, outb)
 	}
-	if i == n-1 {
-		outbounds = append(outbounds, buildDirectOutbound("direct-out"))
-	}
+	outbounds = append(outbounds, buildDirectOutbound("direct-out"))
 
 	// Every node except the first (entry) gets a transport inbound for the previous hop.
 	if i > 0 {
@@ -766,7 +764,7 @@ func pushConfig(client *sshclient.Client, cfgContent string, userProtocol model.
 	}
 
 	// Apply config: restart sing-box.
-	applyCmd := "systemctl restart sing-box 2>&1"
+	applyCmd := "ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
 	out, err := client.Run(applyCmd)
 	if err != nil {
 		// Get service status for diagnostics

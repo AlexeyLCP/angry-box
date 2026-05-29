@@ -46,6 +46,7 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	}
 	defer client.Close()
 
+
 	// Check if already installed.
 	output, err := client.Run("sing-box version 2>/dev/null || echo NOT_INSTALLED")
 	if err != nil {
@@ -139,6 +140,7 @@ WantedBy=multi-user.target
 		_, _ = client.Run(fmt.Sprintf("rm -f %s", installPath))
 		return nil, fmt.Errorf("singbox: deploy: create systemd unit: %w", err)
 	}
+
 
 	// Reload systemd, enable and start.
 	_, err = client.Run("systemctl daemon-reload && systemctl enable sing-box && systemctl start sing-box")

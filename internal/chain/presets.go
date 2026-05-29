@@ -229,27 +229,9 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 		DefaultDomainResolver: "dns-direct",
 	}
 
-	ruleTags := map[string]bool{}
 
-	// Direct geoip rules
-	for _, geo := range preset.Routing.DirectGeoIP {
-		tag := "geoip-" + geo
-		ruleTags[tag] = true
-		section.Rules = append(section.Rules, RouteRuleEntry{
-			RuleSet:  []string{tag},
-			Outbound: "direct-out",
-		})
-	}
-
-	// Direct geosite rules
-	for _, gs := range preset.Routing.DirectGeoSite {
-		tag := gs
-		ruleTags[tag] = true
-		section.Rules = append(section.Rules, RouteRuleEntry{
-			RuleSet:  []string{tag},
-			Outbound: "direct-out",
-		})
-	}
+	// Rule-set based rules are skipped (remote URLs may be unavailable).
+	// Only domain-suffix and domain rules are used.
 
 	// Direct domain suffixes
 	if len(preset.Routing.DirectDomains) > 0 {
@@ -259,39 +241,9 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 		})
 	}
 
-	// Block rules
-	for _, gs := range preset.Routing.BlockGeoSite {
-		tag := gs
-		ruleTags[tag] = true
-		section.Rules = append(section.Rules, RouteRuleEntry{
-			RuleSet:  []string{tag},
-			Outbound: "block",
-		})
-	}
+	// Block rules via rule-set are skipped (remote URLs may be unavailable).
 
-	// Build rule_set entries
-	for tag := range ruleTags {
-		entry := RuleSetEntry{
-			Tag:    tag,
-			Type:   "remote",
-			Format: "binary",
-		}
-
-		isGeoIP := false
-		for _, g := range preset.Routing.DirectGeoIP {
-			if "geoip-"+g == tag {
-				isGeoIP = true
-				break
-			}
-		}
-
-		if isGeoIP {
-			entry.URL = ruleSetBaseURL + "/" + tag + ".srs"
-		} else {
-			entry.URL = ruleSetGeoSiteURL + "/" + tag + ".srs"
-		}
-		section.RuleSet = append(section.RuleSet, entry)
-	}
+	// Rule sets are skipped for now — remote URLs may be unavailable.
 
 	return section
 }
