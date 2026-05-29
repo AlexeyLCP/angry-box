@@ -70,9 +70,9 @@ templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
 		<td class="font-semibold text-sm">{ c.Name }</td>
 		<td>
-			<div class="flex flex-wrap gap-0.5">
+			<div class="flex flex-wrap gap-0.5 max-w-[180px]">
 				for _, n := range c.Nodes {
-					<span class="badge badge-outline badge-xs font-mono max-w-[100px] truncate" title={ n.ID }>{ n.ID }</span>
+					<span class="badge badge-outline badge-xs font-mono text-[10px] truncate max-w-[80px]" title={ n.ID }>{ n.ID }</span>
 				}
 			</div>
 		</td>
