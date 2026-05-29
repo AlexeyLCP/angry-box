@@ -16,6 +16,15 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templates
+        run: templ generate --check
+
+      - name: Tidy modules
+        run: go mod tidy
+
       - name: Vet
         run: go vet ./...
 
@@ -66,6 +75,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templates
+        run: templ generate
 
       - name: Build
         env:

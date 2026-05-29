@@ -61,6 +61,15 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templates
+        run: templ generate --check
+
+      - name: Tidy modules
+        run: go mod tidy
+
       - name: Compute version
         id: ver
         env:
