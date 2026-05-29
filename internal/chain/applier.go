@@ -237,6 +237,15 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "ssh connect: " + err.Error()})
 			continue
 		}
+
+		// Ensure sing-box-extended is installed before pushing config
+		backend := a.factory.Create()
+		if _, deployErr := backend.Deploy(ctx, node.Host()); deployErr != nil {
+			client.Close()
+			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "deploy sing-box: " + deployErr.Error()})
+			continue
+		}
+
 		_, err = pushConfig(client, cfg, chain.UserProtocol)
 		client.Close()
 		if err != nil {
