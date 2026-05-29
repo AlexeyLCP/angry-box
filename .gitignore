@@ -13,6 +13,9 @@ build/
 *.tar.gz
 *.ipk
 *.deb
+/angry-box-*/
+/build-opkg.sh
+/chains.json
 
 # Go
 # Binaries for programs and plugins
