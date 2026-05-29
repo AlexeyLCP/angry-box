@@ -832,43 +832,7 @@ func NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" placeholder=\"root\"></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Password</span></label> <input type=\"password\" name=\"login_pass\" class=\"input input-bordered\" placeholder=\"Enter SSH password\"></div></div><div class=\"form-control\"><label class=\"label cursor-pointer\"><span class=\"label-text\">Auto-install SSH key on server after successful login</span> <input type=\"checkbox\" name=\"auto_install_key\" class=\"checkbox checkbox-sm\" checked></label></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH Key for auto-install</span></label> <select name=\"auto_key_id\" class=\"select select-bordered\"><option value=\"\">Same as above</option> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		for _, k := range allKeys {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<option value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var41 string
-			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(k.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 392, Col: 27}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(k.Name)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 392, Col: 38}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</option>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</select><div class=\"label\"><span class=\"label-text-alt text-base-content/50\">Key to install on the target server after successful login</span></div></div><div class=\"modal-action\"><button type=\"button\" class=\"btn\" onclick=\"this.closest('dialog').close()\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Capture</button></div></form><div id=\"capture-result\" class=\"mt-2\"></div></div><form method=\"dialog\" class=\"modal-backdrop\"><button>close</button></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" placeholder=\"root\"></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Password</span></label> <input type=\"password\" name=\"login_pass\" class=\"input input-bordered\" placeholder=\"Enter SSH password\"></div></div><div class=\"form-control\"><label class=\"label cursor-pointer\"><span class=\"label-text\">Auto-install SSH key on server after successful login</span> <input type=\"checkbox\" name=\"auto_install_key\" class=\"checkbox checkbox-sm\" checked></label></div><div class=\"label\"><span class=\"label-text-alt text-base-content/50\">If checked, the SSH key selected above will be installed on the target server for future passwordless access.</span></div><div class=\"modal-action\"><button type=\"button\" class=\"btn\" onclick=\"this.closest('dialog').close()\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Capture</button></div></form><div id=\"capture-result\" class=\"mt-2\"></div></div><form method=\"dialog\" class=\"modal-backdrop\"><button>close</button></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

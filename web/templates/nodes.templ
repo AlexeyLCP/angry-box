@@ -384,16 +384,7 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys [
 					</label>
 				</div>
 
-				<div class="form-control">
-					<label class="label"><span class="label-text">SSH Key for auto-install</span></label>
-					<select name="auto_key_id" class="select select-bordered">
-						<option value="">Same as above</option>
-						for _, k := range allKeys {
-							<option value={ k.ID }>{ k.Name }</option>
-						}
-					</select>
-					<div class="label"><span class="label-text-alt text-base-content/50">Key to install on the target server after successful login</span></div>
-				</div>
+				<div class="label"><span class="label-text-alt text-base-content/50">If checked, the SSH key selected above will be installed on the target server for future passwordless access.</span></div>
 
 				<div class="modal-action">
 					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
