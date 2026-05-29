@@ -37,6 +37,7 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 							<th>Name</th>
 							<th>Nodes</th>
 							<th>Strategy</th>
+							<th>Proto</th>
 							<th class="w-px"></th>
 						</tr>
 					</thead>
@@ -46,7 +47,7 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 						}
 						if len(chains) == 0 {
 							<tr>
-								<td colspan="4" class="text-center py-8 text-base-content/50">
+								<td colspan="5" class="text-center py-8 text-base-content/50">
 									No chains yet. Create your first multi-hop proxy chain.
 								</td>
 							</tr>
@@ -67,28 +68,27 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 // ChainRow renders one row in the chains table.
 templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
-		<td class="font-semibold">{ c.Name }</td>
+		<td class="font-semibold text-sm">{ c.Name }</td>
 		<td>
-			<div class="flex flex-wrap gap-1">
+			<div class="flex flex-wrap gap-0.5">
 				for _, n := range c.Nodes {
-					<span class="badge badge-outline badge-sm font-mono">{ n.ID }</span>
-				}
-			</div>
-			<div class="text-xs text-base-content/50 mt-0.5">{ len(c.Nodes) } hop(s)</div>
-		</td>
-		<td>
-			<div class="flex flex-col gap-0.5">
-				<span class="badge badge-ghost badge-sm">{ c.Strategy }</span>
-				if c.Transport != "" {
-					<span class="text-[10px] opacity-60">{ c.Transport }</span>
-				}
-				if c.UserProtocol != "" {
-					<span class="text-[10px] opacity-60">{ c.UserProtocol }</span>
+					<span class="badge badge-outline badge-xs font-mono max-w-[100px] truncate" title={ n.ID }>{ n.ID }</span>
 				}
 			</div>
 		</td>
+		<td class="text-xs">
+			<span class="font-mono">{ c.Strategy }</span>
+			if c.Transport != "" {
+				<span class="opacity-50">/{ c.Transport }</span>
+			}
+		</td>
+		<td class="text-xs">
+			if c.UserProtocol != "" {
+				<span class="opacity-60">{ c.UserProtocol }</span>
+			}
+		</td>
 		<td>
-			<div class="flex gap-2">
+			<div class="flex gap-1">
 				<button
 					class="btn btn-primary btn-xs"
 					hx-post={"/ui/chains/" + c.Name + "/apply"}
@@ -105,7 +105,7 @@ templ ChainRow(c *model.Chain) {
 					hx-confirm={"Delete chain " + c.Name + "?"}
 					hx-target="closest tr"
 					hx-swap="delete">
-					Delete
+					Del
 				</button>
 			</div>
 		</td>
