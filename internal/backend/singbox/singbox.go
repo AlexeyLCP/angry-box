@@ -162,10 +162,17 @@ WantedBy=multi-user.target
 // installAWGModule ensures the amneziawg kernel module is installed and loaded.
 // This is required for AWG (AmneziaWG) wireguard inbound support in sing-box-extended.
 func (b *Backend) installAWGModule(client *sshclient.Client) error {
-	// Check if module is already loaded and working.
+	// Check if module is already loaded and persistent.
 	out, _ := client.Run("lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded")
+	persistent, _ := client.Run("test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no")
+	if strings.TrimSpace(out) == "loaded" && strings.TrimSpace(persistent) == "yes" {
+		return nil // already loaded and persistent
+	}
+
+	// If loaded but not persistent, set up persistence for existing module.
 	if strings.TrimSpace(out) == "loaded" {
-		return nil // already working
+		client.Run("set -e; KVER=$(uname -r); mkdir -p /lib/modules/$KVER/extra/; find /tmp/amneziawg -name amneziawg.ko 2>/dev/null | head -1 | xargs -I{} cp {} /lib/modules/$KVER/extra/ 2>/dev/null || true; depmod -a 2>/dev/null || true; echo amneziawg > /etc/modules-load.d/amneziawg.conf; echo udp_tunnel > /etc/modules-load.d/awg-deps.conf; echo ip6_udp_tunnel >> /etc/modules-load.d/awg-deps.conf; echo libcurve25519-generic >> /etc/modules-load.d/awg-deps.conf; echo curve25519-x86_64 >> /etc/modules-load.d/awg-deps.conf")
+		return nil
 	}
 
 	// Full installation sequence: headers → build tools → clone → build → load.
@@ -192,6 +199,17 @@ modprobe ip6_udp_tunnel 2>/dev/null || true
 modprobe libcurve25519-generic 2>/dev/null || true
 modprobe curve25519-x86_64 2>/dev/null || true
 insmod amneziawg.ko 2>/dev/null
+
+	echo "[awg] Installing persistently (survives reboot)..."
+	KVER=$(uname -r)
+	mkdir -p /lib/modules/$KVER/extra/
+	cp amneziawg.ko /lib/modules/$KVER/extra/ 2>/dev/null
+	depmod -a 2>/dev/null
+	echo "amneziawg" > /etc/modules-load.d/amneziawg.conf
+	echo "udp_tunnel" > /etc/modules-load.d/awg-deps.conf
+	echo "ip6_udp_tunnel" >> /etc/modules-load.d/awg-deps.conf
+	echo "libcurve25519-generic" >> /etc/modules-load.d/awg-deps.conf
+	echo "curve25519-x86_64" >> /etc/modules-load.d/awg-deps.conf
 
 echo "[awg] Verifying..."
 lsmod | grep amneziawg
