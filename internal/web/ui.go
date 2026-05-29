@@ -162,6 +162,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /ui/chains/{name}", s.handleDeleteChain)
 	mux.HandleFunc("POST /ui/chains/{name}/apply", s.handleApplyChain)
 	mux.HandleFunc("GET /ui/chains/new", s.handleNewChainForm)
+	mux.HandleFunc("GET /ui/chains/{name}/edit", s.handleEditChainForm)
+	mux.HandleFunc("POST /ui/chains/{name}/edit", s.handleUpdateChain)
 
 	// Spider Web (visual chain editor)
 	mux.HandleFunc("GET /ui/spider", s.handleSpiderWeb)
@@ -1261,6 +1263,82 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
 		return
 	}
+	s.render(w, templates.ChainRow(c))
+}
+
+func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	st := s.store()
+	c, err := st.GetChain(name)
+	if err != nil {
+		http.Error(w, "chain not found", http.StatusNotFound)
+		return
+	}
+	hosts, _ := st.ListHosts()
+	profiles := chain.ListPresets()
+	s.render(w, templates.EditChainForm(c, hosts, profiles))
+}
+
+func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	c, err := st.GetChain(name)
+	if err != nil {
+		http.Error(w, "chain not found", http.StatusNotFound)
+		return
+	}
+
+	c.Strategy = model.Strategy(strings.TrimSpace(r.FormValue("strategy")))
+	if c.Strategy == "" {
+		c.Strategy = "urltest"
+	}
+	transport := model.TransportType(strings.TrimSpace(r.FormValue("transport")))
+	if transport != "" {
+		c.Transport = transport
+	}
+	userProto := model.UserProtocol(strings.TrimSpace(r.FormValue("user_protocol")))
+	if userProto != "" {
+		c.UserProtocol = userProto
+	}
+	c.ObfuscationProfile = strings.TrimSpace(r.FormValue("profile"))
+
+	// Update nodes if new ones selected
+	nodeIDs := r.Form["nodes"]
+	if len(nodeIDs) == 0 {
+		nodeIDs = r.PostForm["nodes"]
+	}
+	if len(nodeIDs) > 0 {
+		seen := map[string]bool{}
+		uniqueNodes := []string{}
+		for _, id := range nodeIDs {
+			id = strings.TrimSpace(id)
+			if id != "" && !seen[id] {
+				seen[id] = true
+				uniqueNodes = append(uniqueNodes, id)
+			}
+		}
+		nodes := make([]model.ChainNode, 0, len(uniqueNodes))
+		for _, id := range uniqueNodes {
+			h, err := st.GetHost(id)
+			if err != nil {
+				continue
+			}
+			nodes = append(nodes, model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath})
+		}
+		if len(nodes) > 0 {
+			c.Nodes = nodes
+		}
+	}
+
+	if err := st.SaveChain(c); err != nil {
+		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
+		return
+	}
+	// Return updated row
 	s.render(w, templates.ChainRow(c))
 }
 
