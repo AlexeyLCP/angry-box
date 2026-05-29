@@ -46,6 +46,10 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	}
 	defer client.Close()
 
+	// Install AmneziaWG kernel module (required for AWG wireguard inbound).
+	if err := b.installAWGModule(client); err != nil {
+		return nil, fmt.Errorf("singbox: deploy: amneziawg: %w", err)
+	}
 
 	// Check if already installed.
 	output, err := client.Run("sing-box version 2>/dev/null || echo NOT_INSTALLED")
@@ -153,6 +157,56 @@ WantedBy=multi-user.target
 		Version: singBoxVersion,
 		Message: fmt.Sprintf("sing-box %s installed and started", singBoxVersion),
 	}, nil
+}
+
+// installAWGModule ensures the amneziawg kernel module is installed and loaded.
+// This is required for AWG (AmneziaWG) wireguard inbound support in sing-box-extended.
+func (b *Backend) installAWGModule(client *sshclient.Client) error {
+	// Check if module is already loaded and working.
+	out, _ := client.Run("lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded")
+	if strings.TrimSpace(out) == "loaded" {
+		return nil // already working
+	}
+
+	// Full installation sequence: headers → build tools → clone → build → load.
+	// The amneziawg module is NOT packaged as .deb — it must be built from source.
+	installCmd := `set -e
+export DEBIAN_FRONTEND=noninteractive
+
+echo "[awg] Installing kernel headers and build tools..."
+apt-get update -qq 2>/dev/null
+apt-get install -y -qq linux-headers-$(uname -r) dkms git build-essential 2>/dev/null
+
+echo "[awg] Cloning amneziawg kernel module..."
+cd /tmp
+rm -rf amneziawg 2>/dev/null
+git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-linux-kernel-module.git amneziawg 2>/dev/null
+
+echo "[awg] Building module..."
+cd /tmp/amneziawg/src
+make -j$(nproc) 2>/dev/null
+
+echo "[awg] Loading dependencies then module..."
+modprobe udp_tunnel 2>/dev/null || true
+modprobe ip6_udp_tunnel 2>/dev/null || true
+modprobe libcurve25519-generic 2>/dev/null || true
+modprobe curve25519-x86_64 2>/dev/null || true
+insmod amneziawg.ko 2>/dev/null
+
+echo "[awg] Verifying..."
+lsmod | grep amneziawg
+`
+	if _, err := client.Run(installCmd); err != nil {
+		return fmt.Errorf("amneziawg install failed: %w", err)
+	}
+
+	// Final verification.
+	verify, _ := client.Run("lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo failed")
+	if strings.TrimSpace(verify) != "loaded" {
+		return fmt.Errorf("amneziawg module not loaded after install")
+	}
+
+	return nil
 }
 
 // ApplyConfig generates a config and pushes it to the remote host.

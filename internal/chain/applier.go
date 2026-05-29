@@ -533,9 +533,8 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 			return "", fmt.Errorf("build outbound: %w", err)
 		}
 		outbounds = append(outbounds, outb)
-	} else {
-		outbounds = append(outbounds, buildDirectOutbound("direct-out"))
 	}
+	outbounds = append(outbounds, buildDirectOutbound("direct-out"))
 
 	// Entry node + AWG: wireguard endpoint + TUN inbound
 	port := defaultUserPort // always use user port for entry

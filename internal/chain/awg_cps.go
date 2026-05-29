@@ -277,15 +277,19 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]an
 		"jc":   awg.JC,
 		"jmin": awg.JMIN,
 		"jmax": awg.JMAX,
-		"s1":   awg.S1,
-		"s2":   awg.S2,
-		"h1":   awg.H1,
-		"h2":   awg.H2,
-		"h3":   awg.H3,
-		"h4":   awg.H4,
 	}
 
+	// CPS headers (s1,s2,h1-h4,i1-i5) are only added when CPS is explicitly enabled.
+	// The basic AWG kernel module doesn't support them and will fail with
+	// "headers must not overlap" if CPS headers are present without I1-I5 packets.
 	if level > 0 && mimicry != "none" {
+		section["s1"] = awg.S1
+		section["s2"] = awg.S2
+		section["h1"] = awg.H1
+		section["h2"] = awg.H2
+		section["h3"] = awg.H3
+		section["h4"] = awg.H4
+
 		mat := GenerateAWGObfsMaterial(level, mimicry)
 		if len(mat.I1) > 0 {
 			section["i1"] = base64.StdEncoding.EncodeToString(mat.I1)
