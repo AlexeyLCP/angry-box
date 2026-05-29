@@ -812,14 +812,22 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// If no chains assigned, generate a generic config for each protocol
+	// If no chains assigned, list available chains for the user to choose from
 	if len(configs) == 0 {
-		for _, proto := range u.Protocols {
+		allChains, _ := st.ListChains()
+		if len(allChains) > 0 {
 			configs = append(configs, templates.UserChainConfig{
-				ChainName:   "standalone",
-				Protocol:    proto,
-				ConfigLink:  fmt.Sprintf("# generate via CLI: angry-box config -type user -protocol %s", proto),
-				Description: "No chains assigned. Use CLI to generate config.",
+				ChainName:   "unassigned",
+				Protocol:    "any",
+				ConfigLink:  "# Assign chains to this user in the Edit form to generate configs.",
+				Description: fmt.Sprintf("User has no chains assigned. %d chain(s) available — edit user to assign.", len(allChains)),
+			})
+		} else {
+			configs = append(configs, templates.UserChainConfig{
+				ChainName:   "no-chains",
+				Protocol:    "any",
+				ConfigLink:  "# Create a chain first, then assign it to this user.",
+				Description: "No chains exist yet. Create a chain via Spider Web or Chains page.",
 			})
 		}
 	}
@@ -837,11 +845,21 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 		proto = "awg"
 	}
 
+	// Use imported secret if available (from Telemt, AWG Toolza, etc.)
 	switch proto {
 	case "awg":
+		pub := c.AWGEntryServerPub
+		if u.ImportedSecret != "" && u.SecretType == "awg" {
+			return fmt.Sprintf("# Imported AWG key used.\n[Interface]\nPrivateKey = %s\nAddress = 10.8.0.2/32\nMTU = 1420\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s:8443\nPersistentKeepalive = 25",
+				u.ImportedSecret, pub, entry.Addr)
+		}
 		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420",
-			entry.Addr, 8443, c.AWGEntryServerPub)
+			entry.Addr, 8443, pub)
 	case "tuic":
+		if u.ImportedSecret != "" && u.SecretType == "tuic" {
+			return fmt.Sprintf("tuic://%s:%s@%s:%d?congestion_control=bbr&alpn=h3",
+				u.ImportedSecret, u.ImportedSecret, entry.Addr, 8443)
+		}
 		return fmt.Sprintf("tuic://%s:%s@%s:%d?congestion_control=bbr&alpn=h3",
 			c.TUICEntryUserUUID, c.TUICEntryUserPassword, entry.Addr, 8443)
 	default:
