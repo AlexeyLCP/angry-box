@@ -201,7 +201,7 @@ install_dirs() {
     mkdir -p "$DATA_DIR"
     mkdir -p "$LOG_DIR"
 
-    # Create default store.json (v0.5.0 format with users, settings, node infos, metrics)
+    # Create or upgrade store.json to v0.5.0 format
     if [ ! -f "$CONFIG_DIR/store.json" ]; then
         cat > "$CONFIG_DIR/store.json" << 'STORE_EOF'
 {
@@ -215,6 +215,25 @@ install_dirs() {
   "metrics": []
 }
 STORE_EOF
+        echo "    Created default store.json (v0.5.0)"
+    elif ! grep -q '"users"' "$CONFIG_DIR/store.json" 2>/dev/null; then
+        echo "    Upgrading store.json to v0.5.0 format..."
+        if command -v python3 >/dev/null 2>&1; then
+            python3 -c "
+import json
+d = json.load(open('$CONFIG_DIR/store.json'))
+d.setdefault('users', [])
+d.setdefault('settings', {'metrics_interval': 240})
+d.setdefault('node_infos', [])
+d.setdefault('metrics', [])
+json.dump(d, open('$CONFIG_DIR/store.json','w'), indent=2)
+"
+        elif command -v jq >/dev/null 2>&1; then
+            jq '. + {users: [], settings: {metrics_interval: 240}, node_infos: [], metrics: []}' \
+                "$CONFIG_DIR/store.json" > "${CONFIG_DIR}/store.json.tmp" && \
+                mv "${CONFIG_DIR}/store.json.tmp" "$CONFIG_DIR/store.json"
+        fi
+        echo "    Store upgraded"
     fi
 
     # Create a minimal modern config.toml if it doesn't exist
@@ -470,6 +489,18 @@ fi
 
 echo "==> Detected: $TARGET ($([ "$IS_KEENETIC" = true ] && echo "Keenetic" || echo "Linux"))"
 echo "==> Installing to: $INSTALL_PATH"
+
+# Stop existing service before replacing binary
+echo "==> Stopping existing service (if any)..."
+if [ "$IS_KEENETIC" = true ]; then
+    /opt/etc/init.d/S99angry-box stop 2>/dev/null || true
+else
+    if [ "$USER_MODE" = true ]; then
+        systemctl --user stop angry-box 2>/dev/null || true
+    else
+        systemctl stop angry-box 2>/dev/null || true
+    fi
+fi
 
 install_binary
 install_dirs
