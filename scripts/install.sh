@@ -2,11 +2,15 @@
 #
 # Angry-BOX installer — installs the orchestrator on Linux (systemd) or Keenetic (NDMS).
 #
+# License: PolyForm Noncommercial License 1.0.0
+# Permitted use: personal, non-commercial, educational, and scientific purposes only.
+# Any commercial use is prohibited. No warranty. Use at your own risk.
+#
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 #
 #   # Or with options:
-#   sh install.sh --version 0.5.1
+#   sh install.sh --version 0.5.2
 #   sh install.sh --local ./angry-box          # install from local binary
 #   sh install.sh --no-start                    # don't start the service
 #   sh install.sh --uninstall                   # remove angry-box
@@ -419,6 +423,10 @@ print_done() {
     echo "    opkg install angry-box_${VERSION}_mipsel_24kc.ipk         # Keenetic MIPS"
     echo "    opkg install angry-box_${VERSION}_aarch64_cortex-a53.ipk  # Keenetic/OpenWRT aarch64"
     echo ""
+    echo "  License: PolyForm Noncommercial License 1.0.0"
+    echo "  Permitted: personal, non-commercial, educational, scientific use only."
+    echo "  No warranty. Use at your own risk."
+    echo ""
 }
 
 # ─── Main ──────────────────────────────────────────────────────────────────────
@@ -488,6 +496,47 @@ fi
 
 echo "==> Detected: $TARGET ($([ "$IS_KEENETIC" = true ] && echo "Keenetic" || echo "Linux"))"
 echo "==> Installing to: $INSTALL_PATH"
+
+# ─── Public IP warning (skip for routers) ────────────────────────────────────
+if [ "$IS_KEENETIC" != true ]; then
+    PUBLIC_IP=""
+    if command -v curl >/dev/null 2>&1; then
+        PUBLIC_IP=$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || true)
+    fi
+    if [ -z "$PUBLIC_IP" ] && command -v wget >/dev/null 2>&1; then
+        PUBLIC_IP=$(wget -qO- --timeout=3 https://api.ipify.org 2>/dev/null || true)
+    fi
+    if [ -n "$PUBLIC_IP" ]; then
+        # Check if it's not a private IP
+        case "$PUBLIC_IP" in
+            127.*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*)
+                # Private IP, no warning needed
+                ;;
+            *)
+                echo ""
+                echo "===================================================================="
+                echo "  WARNING: You are installing Angry-BOX on a server with a public"
+                echo "  IP address ($PUBLIC_IP)."
+                echo ""
+                echo "  In the current version, the Web UI is NOT password-protected."
+                echo "  This is UNSAFE for public servers without additional security:"
+                echo "    - Firewall (iptables/nftables)"
+                echo "    - Reverse proxy with authentication"
+                echo "    - VPN / WireGuard tunnel"
+                echo ""
+                echo "  Admin password will be added in a future version."
+                echo "===================================================================="
+                echo ""
+                printf "Continue anyway? [y/N] "
+                read -r answer < /dev/tty 2>/dev/null || true
+                if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+                    echo "Installation cancelled."
+                    exit 1
+                fi
+                ;;
+        esac
+    fi
+fi
 
 # Stop existing service before replacing binary
 echo "==> Stopping existing service (if any)..."

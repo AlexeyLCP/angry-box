@@ -133,7 +133,16 @@ Full credits are available in the repository.
 
 ## License
 
-PolyForm Noncommercial License 1.0.0
+**PolyForm Noncommercial License 1.0.0**
+
+This project is distributed under the PolyForm Noncommercial License 1.0.0.  
+Permitted use: **personal, non-commercial, educational, and scientific purposes only.**  
+**Any commercial use is prohibited.**
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The author assumes no responsibility for any damage resulting from the use of this software.  
+See [LICENSE](LICENSE) for the full text.
 
 ## Support
 
@@ -143,4 +152,4 @@ PolyForm Noncommercial License 1.0.0
 
 ---
 
-**Current version:** 0.2.1 — improved router packaging, Windows support, and documentation.
+**Current version:** 0.5.2 — Web UI, hybrid dev/prod mode, legal notices.
