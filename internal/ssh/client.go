@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -15,22 +16,30 @@ type Client struct {
 	client *ssh.Client
 }
 
-// Connect establishes an SSH connection to host using key-based authentication.
+// Connect establishes an SSH connection to host using key-based or password authentication.
 func Connect(addr, user, keyPath string) (*Client, error) {
-	key, err := os.ReadFile(keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("ssh: read key %q: %w", keyPath, err)
-	}
+	var authMethod ssh.AuthMethod
 
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, fmt.Errorf("ssh: parse key: %w", err)
+	if strings.HasPrefix(keyPath, "password:") {
+		pass := strings.TrimPrefix(keyPath, "password:")
+		authMethod = ssh.Password(pass)
+	} else {
+		key, err := os.ReadFile(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("ssh: read key %q: %w", keyPath, err)
+		}
+
+		signer, err := ssh.ParsePrivateKey(key)
+		if err != nil {
+			return nil, fmt.Errorf("ssh: parse key: %w", err)
+		}
+		authMethod = ssh.PublicKeys(signer)
 	}
 
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
+			authMethod,
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         15 * time.Second,

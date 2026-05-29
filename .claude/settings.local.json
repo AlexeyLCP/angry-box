@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_serena_serena__list_dir",
+      "Bash(git *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(go build *)",
+      "Read(//usr/local/go/bin/**)",
+      "Read(//usr/lib/go/bin/**)",
+      "Bash(find / -path '*/bin/go' -type f)",
+      "Bash(export PATH=\"$HOME/.local/go/bin:$HOME/go/bin:$PATH\")",
+      "Bash(go version *)",
+      "Bash(go vet *)"
+    ]
+  }
+}

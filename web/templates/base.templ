@@ -10,23 +10,31 @@ templ Base(title string, content templ.Component) {
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>{ title } | Angry-BOX</title>
 
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 		<link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet" type="text/css" />
 		<script src="https://cdn.tailwindcss.com"></script>
 		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
 
 		<style>
-			.sidebar-active { @apply bg-primary text-primary-content; }
+			body { font-family: 'Inter', sans-serif; }
+			.sidebar-active { @apply bg-primary/20 text-primary border-r-2 border-primary; }
 			.status-online { @apply bg-success; }
 			.status-offline { @apply bg-error; }
 			.status-degraded { @apply bg-warning; }
+			
+			/* Custom Scrollbar */
+			::-webkit-scrollbar { width: 8px; height: 8px; }
+			::-webkit-scrollbar-track { background: transparent; }
+			::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+			::-webkit-scrollbar-thumb:hover { background: #4B5563; }
 		</style>
 		<link href="/static/css/app.css" rel="stylesheet" />
 	</head>
-	<body class="min-h-screen bg-base-200">
+	<body class="min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased">
 		<div id="htmx-loading-bar"></div>
-		<div class="flex h-screen">
-			<div class="w-64 bg-base-100 border-r border-base-300 flex flex-col">
-				<div class="p-4 border-b border-base-300">
+		<div class="flex h-screen overflow-hidden">
+			<div class="w-64 bg-base-200/50 backdrop-blur-md border-r border-base-content/10 flex flex-col shadow-xl z-20">
+				<div class="p-6 border-b border-base-content/10">
 					<div class="flex items-center gap-2">
 						<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
 							<span class="text-primary-content font-bold text-lg">A</span>
@@ -54,13 +62,13 @@ templ Base(title string, content templ.Component) {
 					</ul>
 				</div>
 
-				<div class="p-4 border-t border-base-300 text-xs text-base-content/50">
-					Angry-BOX • Lightweight Orchestrator
+				<div class="p-4 border-t border-base-content/10 text-xs text-base-content/40 text-center font-medium">
+					Angry-BOX • Orchestrator
 				</div>
 			</div>
 
-			<div class="flex-1 flex flex-col overflow-hidden">
-				<div class="h-14 border-b border-base-300 bg-base-100 px-4 flex items-center justify-between">
+			<div class="flex-1 flex flex-col overflow-hidden relative">
+				<div class="h-16 border-b border-base-content/10 bg-base-100/40 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-10 shadow-sm">
 					<div class="flex items-center gap-4">
 						<h1 class="text-lg font-semibold" id="page-title">{ title }</h1>
 					</div>
