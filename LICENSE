@@ -51,3 +51,28 @@ https://polyformproject.org/licenses/noncommercial/1.0.0/
 ---
 
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+---
+
+## Third-Party Software and Licenses
+
+Angry-BOX acts as an orchestrator and depends on several critical third-party open-source projects. By using Angry-BOX, you also agree to the licensing terms of these underlying components.
+
+### 1. sing-box and sing-box-extended
+Angry-BOX automatically downloads and installs `sing-box-extended`, a community fork of `sing-box`.
+* **Repository:** [SagerNet/sing-box](https://github.com/SagerNet/sing-box) / [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended)
+* **License:** GNU General Public License v3.0 (GPLv3)
+* **Copyright:** SagerNet and contributors.
+
+### 2. AmneziaWG Linux Kernel Module
+For WireGuard/AmneziaWG support, Angry-BOX builds and installs the `amneziawg-linux-kernel-module`.
+* **Repository:** [amnezia-vpn/amneziawg-linux-kernel-module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)
+* **License:** GNU General Public License v2.0 (GPLv2)
+* **Copyright:** Amnezia VPN and original WireGuard authors (Jason A. Donenfeld).
+
+### 3. HTMX and TailwindCSS / DaisyUI (Web UI)
+* **HTMX:** [BSD 2-Clause License](https://github.com/bigskysoftware/htmx/blob/master/LICENSE)
+* **TailwindCSS:** [MIT License](https://github.com/tailwindlabs/tailwindcss/blob/master/LICENSE)
+* **DaisyUI:** [MIT License](https://github.com/saadeghi/daisyui/blob/master/LICENSE)
+
+*All trademarks, logos and brand names are the property of their respective owners. All company, product and service names used in this project are for identification purposes only.*

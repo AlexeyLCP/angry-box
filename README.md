@@ -1,153 +1,115 @@
-**Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+<div align="center">
+  <img src="docs/assets/logo.png" alt="Angry-BOX Logo" width="250"/>
+  <h1>Angry-BOX</h1>
+  <p><strong>The Ultimate Automated Proxy Orchestrator for sing-box-extended</strong></p>
 
-# Angry-BOX
-
-**Lightweight SSH-only orchestrator** for **sing-box** (primary) and **xray** (secondary).
-
-No agents on the nodes. Everything is managed over SSH. Deploy minimal proxy configs on remote machines and routers (including Keenetic).
-
-## Features
-
-- Pure SSH control plane — zero persistent agents on targets
-- Strong 2026 obfuscation presets (Russia / Iran / China / Maximum Stealth)
-- Advanced AWG with full CPS + realistic QUIC/SIP/DNS generators
-- High-quality XHTTP transport (padding, XMUX, realistic headers) on both sing-box and xray
-- Stable user credentials (AWG keys + CPS generated once per chain)
-- First-class router support (Keenetic .ipk + OpenWRT)
-- Native Windows build
-- Web UI + full CLI
-
-## Quick Start
-
-```bash
-# 1. Install
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
-
-# 2. Add hosts
-angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
-
-# 3. Create a chain with a strong 2026 preset
-angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
-
-# 4. Deploy
-angry-box apply-chain mychain
-```
-
-The web interface will be available at `http://localhost:8090`.
-
-## Installation
-
-### One-line installer (Linux + Keenetic)
-
-```bash
-# Latest
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
-
-# Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.5.2
-```
-
-### Pre-built binaries
-
-Download from [Releases](https://github.com/AlexeyLCP/angry-box/releases).
-
-**Linux**
-```bash
-tar -xzf angry-box-0.5.2-linux-amd64.tar.gz
-cd angry-box-0.5.2-linux-amd64
-./angry-box --help
-```
-
-**Windows**
-- Download `angry-box-0.5.2-windows-amd64.zip`
-- Extract and run `angry-box.exe`
-- Web UI: `http://localhost:8090`
-
-### Routers (Keenetic & OpenWRT)
-
-See the detailed router installation guide below.
-
-## Architecture
-
-Angry-BOX is a **control plane only**.
-
-- It never forwards traffic itself.
-- All management happens over SSH.
-- On remote nodes you deploy only a lightweight proxy (sing-box or xray) + small config.
-
-**Two types of connections:**
-- **Transport** — internal hops for chaining (XHTTP recommended)
-- **User** — real client entry points (TUIC v5 or AmneziaWG)
-
-## 2026 Stealth Presets
-
-The project ships with research-grade presets tuned for current DPI systems:
-
-| Preset                    | Focus                  | Key Techniques                     |
-|---------------------------|------------------------|------------------------------------|
-| `russia_2026`             | Russia                 | Balanced XHTTP + AWG               |
-| `iran_2026`               | Iran                   | Aggressive XHTTP + Reality         |
-| `china_2026`              | China                  | Strong obfuscation + fragmentation |
-| `maximum_stealth_2026`    | Maximum resistance     | Full XHTTP + AWG CPS               |
-| `pro_2026`                | Professional use       | Force CPS level 3 + 1200B QUIC     |
-| `xhttp_max_stealth_2026`  | Extreme XHTTP          | Maximum padding + XMUX             |
-
-## Router Support
-
-Angry-BOX provides native `.ipk` packages for routers.
-
-| Platform          | Architecture         | Package example                          | Notes                  |
-|-------------------|----------------------|------------------------------------------|------------------------|
-| Keenetic          | `mipsel_24kc`        | `angry-box_X.Y.Z_mipsel_24kc.ipk`        | MIPS models            |
-| Keenetic/OpenWRT  | `aarch64_cortex-a53` | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk` | ARM64 models           |
-
-All router packages use the **outer-tar format** (MagiTrickle style) and fully static binaries.
-
-See the [Releases](https://github.com/AlexeyLCP/angry-box/releases) page for the latest packages.
-
-## Building from Source
-
-```bash
-git clone https://github.com/alexeylcp/angry-box.git
-cd angry-box
-
-# Production build (everything embedded in binary)
-make build
-
-# Development mode (static files from disk, edit without rebuild)
-make dev
-```
-
-## Credits & Acknowledgments
-
-Angry-BOX would not exist without the incredible public research from the anti-censorship community.
-
-**Core techniques:**
-- pumbaX / awg-multi-script — CPS, QUIC, SIP, DNS generators
-- Xray team (RPRX) — XHTTP transport and advanced obfuscation
-- Hysteria2, NaiveProxy, Telemt and many community researchers
-
-Full credits are available in the repository.
-
-## License
-
-**PolyForm Noncommercial License 1.0.0**
-
-This project is distributed under the PolyForm Noncommercial License 1.0.0.  
-Permitted use: **personal, non-commercial, educational, and scientific purposes only.**  
-**Any commercial use is prohibited.**
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-The author assumes no responsibility for any damage resulting from the use of this software.  
-See [LICENSE](LICENSE) for the full text.
-
-## Support
-
-- Bug reports & feature requests → [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
-- General discussion → GitHub Discussions
-- Real-world DPI test results (Russia, Iran, China) are extremely valuable.
+  <p>
+    <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
+    <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
+  </p>
+  <p>
+    <i>Build impenetrable multi-hop, heavily obfuscated VPN chains with zero manual configuration.</i>
+  </p>
+</div>
 
 ---
 
-**Current version:** 0.5.2 — Web UI, hybrid dev/prod mode, legal notices.
+**[🇷🇺 Читать на русском](README_ru.md)**
+
+## 🚀 Overview
+
+**Angry-BOX** is an advanced, lightweight orchestrator designed to fully automate the deployment, configuration, and management of anti-DPI proxy nodes across multiple servers. 
+
+Built exclusively around **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)**, Angry-BOX seamlessly configures complex proxy topologies (such as multi-hop chains with `VLESS-Reality`, `XHTTP`, and `AmneziaWG`) directly over SSH, removing all the friction from setting up robust, censorship-resistant infrastructure.
+
+## ✨ Features
+
+- **Automated Orchestration:** No need to manually write complex `sing-box` JSON configs. Angry-BOX generates, validates, and deploys configs over SSH in seconds.
+- **Advanced Obfuscation Protocols:** Native support for `AmneziaWG`, `XHTTP`, `VLESS-Reality`, and `Hysteria2`.
+- **Multi-Hop Chains:** Easily construct 2-node or 3-node proxy chains to route traffic securely through multiple jurisdictions.
+- **Failover & Load Balancing:** Built-in support for `urltest`, `failover`, and `selector` strategies.
+- **Modern Web UI:** Control everything from a sleek, responsive dashboard built with HTMX and TailwindCSS (protected by automatic authentication).
+- **100% Independent:** Angry-BOX stores all critical dependencies (like `sing-box-extended` binaries and `amneziawg` kernel modules) locally, ensuring your deployments won't break if third-party repos go down.
+- **Zero-Footprint:** Node servers only run the bare `sing-box` core. The orchestrator lives entirely on your control machine.
+
+## 📸 Screenshots
+
+<div align="center">
+  <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>The Angry-BOX Web UI Dashboard</em>
+</div>
+
+## 🏗 Architecture
+
+Unlike traditional panels that require heavy agents on every server, Angry-BOX takes a **stateless agentless approach**:
+
+```mermaid
+graph LR
+    Client((Client<br/>AmneziaWG)) -->|Obfuscated Traffic| Node1[Entry Node<br/>VPS 1]
+    Node1 -->|XHTTP / Reality| Node2[Exit Node<br/>VPS 2]
+    Node2 -->|Clean Traffic| Web((Internet))
+    
+    Orchestrator[Angry-BOX<br/>Control Server] -.->|SSH / Config Push| Node1
+    Orchestrator -.->|SSH / Config Push| Node2
+```
+
+## 🛠 Getting Started
+
+### 1. Installation
+
+Download the latest release for your platform (Linux/Windows/macOS) from the [Releases](https://github.com/AlexeyLCP/angry-box/releases) page, or run the convenient install script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/angry-box/main/scripts/install.sh | sh
+```
+
+### 2. Starting the Daemon (Web UI)
+
+Run Angry-BOX as a systemd service, or start it manually:
+
+```bash
+angry-box serve -listen 0.0.0.0:8090
+```
+
+*Note: On the first run, a random secure password will be generated for the Web UI. Check your console logs or `journalctl -u angry-box` to find it.*
+
+### 3. CLI Quick Start
+
+You can orchestrate your network entirely via CLI:
+
+```bash
+# 1. Add your VPS nodes
+angry-box host add entry-node --addr 1.2.3.4:22 --user root --key ~/.ssh/id_ed25519
+angry-box host add exit-node --addr 5.6.7.8:22 --user root --key ~/.ssh/id_ed25519
+
+# 2. Deploy sing-box core to the nodes
+angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519
+angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519
+
+# 3. Create a chain using AmneziaWG entry and XHTTP transport
+angry-box chain create my-chain --nodes entry-node,exit-node --user-protocol awg --transport xhttp
+
+# 4. Apply the chain to generate and push configs automatically!
+angry-box apply-chain my-chain
+```
+
+Angry-BOX will output a **ready-to-use AmneziaWG client configuration block** right in the console!
+
+## 📜 Third-Party Open Source Components
+
+Angry-BOX stands on the shoulders of giants. We would like to acknowledge and thank the following projects that make this orchestrator possible:
+
+- **[sing-box](https://github.com/SagerNet/sing-box)** and **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (Licensed under GPLv3)
+- **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (Licensed under GPLv2)
+- **HTMX, TailwindCSS, and DaisyUI** (MIT / BSD Licenses)
+
+Please see the [LICENSE](LICENSE) file for the full copyright notices and licensing details of these components.
+
+## 📄 License
+
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**.
+
+**This means you are free to use Angry-BOX for personal, educational, and research purposes.** 
+*Any commercial use (e.g., selling VPN services based on this orchestration, offering SaaS, etc.) is STRICTLY PROHIBITED without direct written permission from the author.*
