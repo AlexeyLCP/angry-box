@@ -31,8 +31,8 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 		}
 
 		<div class="card bg-base-100 shadow">
-			<div class="w-full">
-				<table class="table table-sm">
+			<div class="w-full overflow-x-auto">
+				<table class="table table-sm w-full">
 					<thead>
 						<tr>
 							<th>Name</th>
@@ -68,20 +68,20 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 // ChainRow renders one row in the chains table.
 templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
-		<td class="font-semibold text-sm">{ c.Name }</td>
-		<td>
+		<td class="font-semibold text-sm whitespace-normal break-all">{ c.Name }</td>
+		<td class="whitespace-normal">
 			<div class="flex flex-wrap gap-0.5 items-center">
 				for i, n := range c.Nodes {
 					if i < 2 {
-						<span class="badge badge-outline badge-xs font-mono text-[10px]" title={ n.Addr }>{ n.ID }</span>
+						<span class="badge badge-outline badge-xs font-mono text-[10px] break-all h-auto py-0.5" title={ n.Addr }>{ n.ID }</span>
 					}
 				}
 				if len(c.Nodes) > 2 {
-					<span class="badge badge-ghost badge-xs text-[10px]" title={ nodeListStr(c.Nodes) }>+{ moreNodesStr(c.Nodes) }</span>
+					<span class="badge badge-ghost badge-xs text-[10px] h-auto" title={ nodeListStr(c.Nodes) }>+{ moreNodesStr(c.Nodes) }</span>
 				}
 			</div>
 		</td>
-		<td class="text-xs">
+		<td class="text-xs whitespace-normal break-all">
 			<span class="font-mono">{ c.Strategy }</span>
 			if c.Transport != "" {
 				<span class="opacity-50">/{ c.Transport }</span>
@@ -90,7 +90,7 @@ templ ChainRow(c *model.Chain) {
 				<span class="opacity-40 ml-1">({ c.UserProtocol })</span>
 			}
 		</td>
-		<td>
+		<td class="whitespace-nowrap">
 			<div class="flex gap-1">
 				<button
 					class="btn btn-primary btn-xs"

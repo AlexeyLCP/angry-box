@@ -436,7 +436,8 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }
 
 func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
@@ -688,7 +689,8 @@ func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) 
 		c.Nodes = filtered
 		st.SaveChain(c)
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }
 
 // ─── Users ─────────────────────────────────────────────────────────────────────
@@ -822,7 +824,8 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }
 
 func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
@@ -965,12 +968,21 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			configNeedsSave = true
 		}
 
+		newAuthEnabled := r.FormValue("auth_enabled") == "on"
+		if newAuthEnabled != s.cfg.AuthEnabled {
+			s.cfg.AuthEnabled = newAuthEnabled
+			configNeedsSave = true
+			if newAuthEnabled {
+				w.Header().Set("HX-Refresh", "true")
+			}
+		}
+
 		newPassword := strings.TrimSpace(r.FormValue("auth_new_password"))
 		oldPassword := strings.TrimSpace(r.FormValue("auth_old_password"))
 
 		if newPassword != "" {
-			if s.cfg.AuthPasswordHash != "" {
-				// Require valid old password
+			if s.cfg.AuthPasswordHash != "" && s.cfg.AuthEnabled {
+				// Require valid old password if auth is currently enabled
 				err := bcrypt.CompareHashAndPassword([]byte(s.cfg.AuthPasswordHash), []byte(oldPassword))
 				if err != nil {
 					s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Failed to change password: old password is incorrect.</span></div>`})
@@ -1073,7 +1085,8 @@ func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
 	}
 	settings.SSHKeys = filtered
 	st.SaveSettings(settings)
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }
 
 // detectSystemKeys scans ~/.ssh/ for common key files.
@@ -1207,7 +1220,8 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }
 
 func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
@@ -1437,7 +1451,8 @@ func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
 }
 
 func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {

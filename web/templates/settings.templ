@@ -20,6 +20,17 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					hx-swap="innerHTML"
 					class="space-y-4">
 
+					<div class="grid grid-cols-1 gap-4 border-b border-base-300 pb-4 mb-4">
+						<div class="form-control">
+							<label class="label cursor-pointer justify-start gap-3">
+								<input type="checkbox" name="auth_enabled" class="toggle toggle-primary"
+									if authEnabled { checked } />
+								<span class="label-text font-medium">Enable Web UI Authentication</span>
+							</label>
+							<div class="text-xs text-base-content/50 ml-12">If disabled, anyone can access the orchestrator without a password.</div>
+						</div>
+					</div>
+
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-base-300 pb-4 mb-4">
 						<div class="form-control">
 							<label class="label"><span class="label-text">Web UI Username</span></label>
