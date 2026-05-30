@@ -2,6 +2,8 @@ package ssh
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
@@ -115,4 +117,58 @@ func (c *Client) Run(cmd string) (string, error) {
 // Close terminates the SSH connection.
 func (c *Client) Close() error {
 	return c.client.Close()
+}
+
+// InstallPublicKey connects via password and adds the provided private key's corresponding public key to authorized_keys.
+func InstallPublicKey(addr, user, password, privKeyPath string) error {
+	client, err := Connect(addr, user, "password:"+password)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	key, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		return fmt.Errorf("read priv key: %w", err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("parse priv key: %w", err)
+	}
+
+	pubKeyStr := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
+	pubKeyStr = strings.TrimSpace(pubKeyStr)
+
+	// Add to remote authorized_keys
+	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "%s" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`, pubKeyStr)
+	_, err = client.Run(cmd)
+	if err != nil {
+		return fmt.Errorf("install pub key: %w", err)
+	}
+
+	return nil
+}
+
+// GenerateSSHKeypair generates a new ed25519 SSH keypair.
+// Returns the PEM-encoded private key and the OpenSSH-formatted public key.
+func GenerateSSHKeypair() (string, string, error) {
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return "", "", err
+	}
+
+	privBlock, err := ssh.MarshalPrivateKey(privKey, "")
+	if err != nil {
+		return "", "", err
+	}
+	privPEM := pem.EncodeToMemory(privBlock)
+
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return "", "", err
+	}
+	pubBytes := ssh.MarshalAuthorizedKey(sshPubKey)
+
+	return string(privPEM), string(pubBytes), nil
 }

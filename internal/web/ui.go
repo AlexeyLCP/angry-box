@@ -487,26 +487,29 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	// Resolve key ID to actual credentials
 	settings, _ := st.GetSettings()
 	resolvedPath, isTemp := resolveSSHKeyPath(selectedKey, settings, manualKeyData)
-	if resolvedPath != "" {
-		host.KeyPath = resolvedPath
-	}
+	defer func() {
+		if isTemp && resolvedPath != "" {
+			os.Remove(resolvedPath)
+		}
+	}()
+
 	if loginUser != "" {
 		host.User = loginUser
 	}
+
+	authMethod := resolvedPath
 	if loginPass != "" {
-		host.KeyPath = "password:" + loginPass
+		authMethod = "password:" + loginPass
 	}
+	
+	hostCopy := *host
+	hostCopy.KeyPath = authMethod
 
 	// Try SSH connection
 	f := factory.New()
 	b := f.Create()
 	ctx := context.Background()
-	status, sshErr := b.GetStatus(ctx, *host)
-
-	// Clean up temp file
-	if isTemp && resolvedPath != "" {
-		os.Remove(resolvedPath)
-	}
+	status, sshErr := b.GetStatus(ctx, hostCopy)
 
 	if sshErr != nil {
 		var hkErr *sshclient.HostKeyError
@@ -520,11 +523,61 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save keyPath used for this host
-	host.KeyPath = resolvedPath
-	if autoInstallKey && host.KeyPath != "" && !strings.HasPrefix(host.KeyPath, "password:") {
-		st.SaveHost(host)
+	// Connection successful. Handle SSH key auto-install.
+	installMsg := ""
+	if autoInstallKey && loginPass != "" {
+		if resolvedPath == "" {
+			// Auto-generate a new keypair
+			privPEM, _, err := sshclient.GenerateSSHKeypair()
+			if err != nil {
+				installMsg = fmt.Sprintf(" <b>Note:</b> SSH key auto-generation failed: %v", err)
+				host.KeyPath = "password:" + loginPass
+			} else {
+				// Save it as a temporary file to install it
+				f, err := os.CreateTemp("", "angry-box-gen-key-*")
+				if err == nil {
+					f.WriteString(privPEM)
+					f.Chmod(0o600)
+					f.Close()
+					resolvedPath = f.Name()
+					defer os.Remove(resolvedPath)
+					
+					// Also save it to settings so we can use it later
+					keyName := fmt.Sprintf("auto-%s", host.Addr)
+					if strings.Contains(host.Addr, ":") {
+						keyName = fmt.Sprintf("auto-%s", strings.Split(host.Addr, ":")[0])
+					}
+					keyID := fmt.Sprintf("key-auto-%d", time.Now().Unix())
+					
+					settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
+						ID:      keyID,
+						Name:    keyName,
+						KeyData: privPEM,
+					})
+					st.SaveSettings(settings)
+					
+					selectedKey = keyID
+					hostCopy.KeyPath = resolvedPath // update for install
+				}
+			}
+		}
+
+		if resolvedPath != "" {
+			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, resolvedPath); err != nil {
+				installMsg = fmt.Sprintf(" <b>Note:</b> SSH key installation failed: %v", err)
+				host.KeyPath = "password:" + loginPass
+			} else {
+				// Key installed successfully! Use the key instead of password.
+				host.KeyPath = selectedKey
+			}
+		}
+	} else if loginPass != "" {
+		host.KeyPath = "password:" + loginPass
+	} else if selectedKey != "" {
+		host.KeyPath = selectedKey
 	}
+
+	st.SaveHost(host)
 
 	info := &model.NodeInfo{
 		Host:   *host,
@@ -538,9 +591,9 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
-		`<div class="alert alert-success"><span>Node %s captured! Running: %v, Version: %s</span>
+		`<div class="alert alert-success"><span>Node %s captured! Running: %v, Version: %s.%s</span>
 		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">Refresh Nodes</button></div>`,
-		id, status.Running, status.Version,
+		id, status.Running, status.Version, installMsg,
 	)})
 }
 
