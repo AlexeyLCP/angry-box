@@ -96,16 +96,25 @@ var (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Print(usage)
-		os.Exit(1)
+		fmt.Println("No command provided. Defaulting to 'serve' mode...")
+		os.Args = append(os.Args, "serve")
 	}
 
 	// Load orchestrator config (if present). Flags can still override.
-	cfgPath := os.Getenv("ANGRY_BOX_CONFIG")
-	if cfgPath == "" {
-		cfgPath = config.DefaultConfigPath()
+	configPath = os.Getenv("ANGRY_BOX_CONFIG")
+	if configPath == "" {
+		configPath = config.DefaultConfigPath()
 	}
-	orchCfg, _ := config.Load(cfgPath) // ignore error, fall back to defaults
+
+	// Quick pre-parse for global --config flag (before subcommand flag sets)
+	for i, arg := range os.Args {
+		if arg == "--config" && i+1 < len(os.Args) {
+			configPath = os.Args[i+1]
+			break
+		}
+	}
+
+	orchCfg, _ := config.Load(configPath) // ignore error, fall back to defaults
 
 	// Apply global profile + load any external presets for *all* commands (not just serve)
 	// This fixes the previous --config flag limitation for profile/presets.
@@ -122,20 +131,6 @@ func main() {
 	if cmd == "-h" || cmd == "--help" || cmd == "help" {
 		fmt.Print(usage)
 		os.Exit(0)
-	}
-
-	// Quick pre-parse for global --config flag (before subcommand flag sets)
-	for i, arg := range os.Args {
-		if arg == "--config" && i+1 < len(os.Args) {
-			configPath = os.Args[i+1]
-			break
-		}
-	}
-	if configPath != "" {
-		if c, err := config.Load(configPath); err == nil {
-			// Use loaded values as base (flags can still override per-command)
-			_ = c
-		}
 	}
 
 	// For commands that use SSH and a store path flag, the actual `storePath` might be parsed later.

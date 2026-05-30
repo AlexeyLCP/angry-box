@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/BurntSushi/toml"
 	"golang.org/x/crypto/bcrypt"
@@ -36,9 +37,14 @@ type Config struct {
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
+	storeFile := "/etc/angry-box/store.json"
+	if runtime.GOOS == "windows" {
+		storeFile = "store.json"
+	}
+
 	return &Config{
 		ListenAddr:                ":8090",
-		StoreFile:                 "/etc/angry-box/store.json",
+		StoreFile:                 storeFile,
 		DefaultBackend:            "sing-box",
 		DefaultObfuscationProfile: "maximum_stealth_2026", // безопасный дефолт
 		PresetsFile:               "",                     // no extra presets by default
@@ -52,11 +58,10 @@ func DefaultConfig() *Config {
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
+	fileExtisted := true
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return cfg, nil
-	}
-
-	if _, err := toml.DecodeFile(path, cfg); err != nil {
+		fileExtisted = false
+	} else if _, err := toml.DecodeFile(path, cfg); err != nil {
 		return nil, err
 	}
 
@@ -77,7 +82,7 @@ func Load(path string) (*Config, error) {
 		cfg.AuthUsername = "admin"
 	}
 
-	needsSave := false
+	needsSave := !fileExtisted
 
 	// Если аутентификация включена, но пароль не задан, сгенерируем случайный.
 	if cfg.AuthEnabled && cfg.AuthPasswordHash == "" {
@@ -122,6 +127,9 @@ func (c *Config) Save(path string) error {
 
 // DefaultConfigPath returns the standard location for the orchestrator config.
 func DefaultConfigPath() string {
+	if runtime.GOOS == "windows" {
+		return "angry-box.toml"
+	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "angry-box", "angry-box.toml")
 	}
