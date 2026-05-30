@@ -75,11 +75,11 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	arch := strings.TrimSpace(archOut)
 	goArch := archToGoArch(arch)
 
-	// Download and install sing-box-extended from shtorm-7 community releases.
+	// Download and install sing-box-extended from our own repository to ensure independence.
 	// This fork includes AmneziaWG (wireguard inbound) and advanced obfuscation support.
 	downloadURL := fmt.Sprintf(
-		"https://github.com/shtorm-7/sing-box-extended/releases/download/v%s/sing-box-%s-linux-%s.tar.gz",
-		singBoxVersion, singBoxVersion, goArch,
+		"https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/sing-box-%s-linux-%s.tar.gz",
+		singBoxVersion, goArch,
 	)
 
 	expectedChecksum, hasChecksum := singBoxChecksums[goArch]
@@ -184,10 +184,12 @@ echo "[awg] Installing kernel headers and build tools..."
 apt-get update -qq 2>/dev/null
 apt-get install -y -qq linux-headers-$(uname -r) dkms git build-essential 2>/dev/null
 
-echo "[awg] Cloning amneziawg kernel module..."
+echo "[awg] Downloading amneziawg kernel module..."
 cd /tmp
 rm -rf amneziawg 2>/dev/null
-git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-linux-kernel-module.git amneziawg 2>/dev/null
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/amneziawg-src.tar.gz -o amneziawg-src.tar.gz 2>/dev/null
+tar xzf amneziawg-src.tar.gz 2>/dev/null
+mv amneziawg-linux-kernel-module-master amneziawg 2>/dev/null
 
 echo "[awg] Building module..."
 cd /tmp/amneziawg/src
