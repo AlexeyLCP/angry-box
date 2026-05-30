@@ -28,21 +28,22 @@ import (
 
 // Server provides the HTMX web UI.
 type Server struct {
-	storePath string
-	stopCh    chan struct{}
-	devMode   bool
-	cfg       *config.Config
+	storePath        string
+	stopCh           chan struct{}
+	devMode          bool
+	cfg              *config.Config
+	ActiveListenAddr string
 }
 
 // NewServer creates a web UI server.
 // If devMode is true, static files are served from web/static/ instead of the embedded filesystem.
-func NewServer(storePath string, devMode bool, cfg *config.Config) *Server {
+func NewServer(storePath string, devMode bool, cfg *config.Config, activeListenAddr string) *Server {
 	if devMode {
 		log.Println("[dev] Loading UI from filesystem (web/static/)")
 	} else {
 		log.Println("[prod] Loading embedded UI")
 	}
-	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg}
+	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg, ActiveListenAddr: activeListenAddr}
 }
 
 // isDev returns true if the server is in development mode.
@@ -442,7 +443,10 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	st := s.store()
 	if err := st.DeleteHost(id); err != nil {
-		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
+		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">Failed to delete: %v. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(msg))
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -959,7 +963,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		listenAddr = s.cfg.ListenAddr
 	}
 
-	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, authEnabled, authUsername, listenAddr, sysKeys))
+	activeListenAddr := s.ActiveListenAddr
+	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, authEnabled, authUsername, listenAddr, activeListenAddr, sysKeys))
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
@@ -972,6 +977,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Config updates (Auth)
 	configNeedsSave := false
+	portChanged := false
 	if s.cfg != nil {
 		newUsername := strings.TrimSpace(r.FormValue("auth_username"))
 		if newUsername != "" && newUsername != s.cfg.AuthUsername {
@@ -979,7 +985,6 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			configNeedsSave = true
 		}
 
-		portChanged := false
 		newListenAddr := strings.TrimSpace(r.FormValue("listen_addr"))
 		if newListenAddr != "" && newListenAddr != s.cfg.ListenAddr {
 			s.cfg.ListenAddr = newListenAddr
@@ -1027,26 +1032,17 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 				s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>Settings saved, but config write failed: %v</span></div>`, err)})
 				return
 			}
-			
-			if portChanged {
-				msg := `
-				<div class="alert alert-error shadow-lg mt-2">
-					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-					<div>
-						<h3 class="font-bold">Port changed!</h3>
-						<div class="text-xs mt-1">Please restart the angry-box service manually to apply the new port.</div>
-						<div class="mt-2 text-xs font-mono bg-base-300 p-1.5 rounded inline-block">systemctl restart angry-box</div>
-					</div>
-				</div>`
-				s.render(w, r, &simpleHTML{html: msg})
-				return
-			}
 		}
 	}
 
 	// 2. PanelSettings updates (store.json)
 	settings.PanelCountry = strings.TrimSpace(r.FormValue("panel_country"))
+	oldLang := settings.Language
 	settings.Language = strings.TrimSpace(r.FormValue("language"))
+	if oldLang != settings.Language {
+		w.Header().Set("HX-Refresh", "true")
+	}
+	
 	if intervalStr := strings.TrimSpace(r.FormValue("metrics_interval")); intervalStr != "" {
 		settings.MetricsInterval, _ = strconv.Atoi(intervalStr)
 	}
@@ -1064,6 +1060,21 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	settings.SSHKeys = keys
 
 	st.SaveSettings(settings)
+	
+	if portChanged {
+		msg := fmt.Sprintf(`
+		<div class="alert alert-warning shadow-lg mt-2">
+			<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+			<div>
+				<h3 class="font-bold">%s</h3>
+				<div class="text-xs mt-1">%s</div>
+				<div class="mt-2 text-xs font-mono bg-base-300 p-1.5 rounded inline-block">systemctl restart angry-box</div>
+			</div>
+		</div>`, i18n.T(r.Context(), "Port changed!"), i18n.T(r.Context(), "Please restart the angry-box service manually to apply the new port."))
+		s.render(w, r, &simpleHTML{html: msg})
+		return
+	}
+	
 	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>Settings saved.</span></div>`})
 }
 
@@ -1251,7 +1262,10 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store().DeleteHost(id); err != nil {
-		http.Error(w, fmt.Sprintf("failed: %v", err), http.StatusInternalServerError)
+		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">Failed to delete: %v. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(msg))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

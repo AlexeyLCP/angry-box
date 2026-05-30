@@ -722,7 +722,7 @@ func serveCmd() {
 	mux := http.NewServeMux()
 
 	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI)
-	ui := web.NewServer(storePath, *devMode, cfg)
+	ui := web.NewServer(storePath, *devMode, cfg, *listen)
 	ui.Register(mux)
 
 	// Start background metrics collection based on panel settings

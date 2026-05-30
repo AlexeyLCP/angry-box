@@ -5,20 +5,21 @@ import (
 	"math"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
 )
 
 // SpiderWeb renders the visual chain editor (SVG-based spider web).
 templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
-			<h2 class="text-2xl font-semibold">Spider Web</h2>
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Spider Web") }</h2>
 			<div class="flex gap-2">
 				<button
 					class="btn btn-ghost btn-sm"
 					hx-get="/ui/spider"
 					hx-target="#main-content"
 					hx-swap="outerHTML">
-					Refresh
+					{ i18n.T(ctx, "Refresh") }
 				</button>
 			</div>
 		</div>
@@ -26,12 +27,12 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 		<!-- SVG Canvas for spider web topology -->
 		<div class="card bg-base-100 shadow overflow-hidden">
 			<div class="p-4 border-b border-base-300">
-				<div class="text-sm text-base-content/60">Visual map of all nodes and connections. Drag nodes to rearrange. Green = online.</div>
+				<div class="text-sm text-base-content/60">{ i18n.T(ctx, "Visual map of all nodes and connections. Drag nodes to rearrange. Green = online.") }</div>
 			</div>
 			<div class="bg-base-200" style="min-height: 450px; position: relative;">
 				if len(hosts) == 0 {
 					<div class="flex items-center justify-center h-64 text-base-content/50">
-						No nodes registered. <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary ml-1">Add nodes first</a>.
+						{ i18n.T(ctx, "No nodes registered.") } <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary ml-1">{ i18n.T(ctx, "Add nodes first") }</a>.
 					</div>
 				} else {
 					<svg id="spider-svg" viewBox="0 0 800 450" class="w-full" style="min-height: 450px;">
@@ -193,7 +194,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 <!-- Add connection form -->
 		<div class="card bg-base-100 shadow">
 			<div class="card-body p-3">
-				<h3 class="font-semibold mb-2">Create New Connection</h3>
+				<h3 class="font-semibold mb-2">{ i18n.T(ctx, "Create New Connection") }</h3>
 				<form
 					hx-post="/ui/spider/links"
 					hx-target="#main-content"
@@ -202,38 +203,38 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 
 					<div class="grid grid-cols-1 md:grid-cols-5 gap-3">
 						<div class="form-control">
-							<label class="label py-1"><span class="label-text text-xs">From Node</span></label>
+							<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "From Node") }</span></label>
 							<select name="from_node" class="select select-bordered select-sm" required>
-								<option value="">Select...</option>
+								<option value="">{ i18n.T(ctx, "Select...") }</option>
 								for _, h := range hosts {
 									<option value={ h.ID }>{ h.ID } ({ h.Addr })</option>
 								}
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label py-1"><span class="label-text text-xs">To Node</span></label>
+							<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "To Node") }</span></label>
 							<select name="to_node" class="select select-bordered select-sm" required>
-								<option value="">Select...</option>
+								<option value="">{ i18n.T(ctx, "Select...") }</option>
 								for _, h := range hosts {
 									<option value={ h.ID }>{ h.ID } ({ h.Addr })</option>
 								}
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label py-1"><span class="label-text text-xs">Transport</span><span class="label-text-alt text-base-content/50 text-[10px]">max obfuscation</span></label>
+							<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Transport") }</span><span class="label-text-alt text-base-content/50 text-[10px]">{ i18n.T(ctx, "max obfuscation") }</span></label>
 							<select name="transport" class="select select-bordered select-sm">
-								<option value="xhttp" selected>XHTTP (max obfuscation, recommended)</option>
-								<option value="reality">Reality + XHTTP (max obfuscation)</option>
-								<option value="awg">AWG / AmneziaWG (encrypted tunnel)</option>
-								<option value="hysteria2">Hysteria2 (max obfuscation, QUIC)</option>
+								<option value="xhttp" selected>{ i18n.T(ctx, "XHTTP (max obfuscation, recommended)") }</option>
+								<option value="reality">{ i18n.T(ctx, "Reality + XHTTP (max obfuscation)") }</option>
+								<option value="awg">{ i18n.T(ctx, "AWG / AmneziaWG (encrypted tunnel)") }</option>
+								<option value="hysteria2">{ i18n.T(ctx, "Hysteria2 (max obfuscation, QUIC)") }</option>
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label py-1"><span class="label-text text-xs">Chain Name</span></label>
+							<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Chain Name") }</span></label>
 							<input type="text" name="chain_name" class="input input-bordered input-sm" required placeholder="my-chain" />
 						</div>
 						<div class="form-control justify-end pt-5">
-							<button type="submit" class="btn btn-primary btn-sm">Create Link</button>
+							<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Create Link") }</button>
 						</div>
 					</div>
 				</form>
@@ -244,7 +245,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 		if len(chains) > 0 {
 			<div class="card bg-base-100 shadow">
 				<div class="card-body p-3">
-					<h3 class="font-semibold mb-2">Chains</h3>
+					<h3 class="font-semibold mb-2">{ i18n.T(ctx, "Chains") }</h3>
 					<div class="space-y-2">
 						for _, c := range chains {
 							<div class="flex items-center justify-between border border-base-300 rounded-lg p-3">
@@ -261,15 +262,15 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 										hx-post={"/ui/chains/" + c.Name + "/apply"}
 										hx-target="#spider-apply-result"
 										hx-swap="innerHTML">
-										Apply
+										{ i18n.T(ctx, "Apply") }
 									</button>
 									<button
 										class="btn btn-ghost btn-xs text-error"
 										hx-delete={"/ui/chains/" + c.Name}
-										hx-confirm={"Delete chain " + c.Name + "?"}
+										hx-confirm={i18n.T(ctx, "Delete chain ") + c.Name + "?"}
 										hx-target="closest .border"
-										hx-swap="delete">
-										Delete
+										hx-swap="outerHTML">
+										{ i18n.T(ctx, "Delete") }
 									</button>
 								</div>
 							</div>

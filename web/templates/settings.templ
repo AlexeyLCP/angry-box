@@ -8,7 +8,7 @@ import (
 )
 
 // Settings renders the panel settings page.
-templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain, authEnabled bool, authUsername string, listenAddr string, systemKeys ...[]model.SSHKeyEntry) {
+templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain, authEnabled bool, authUsername string, listenAddr string, activeListenAddr string, systemKeys ...[]model.SSHKeyEntry) {
 	<div class="space-y-6">
 		<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Panel Settings") }</h2>
 
@@ -28,41 +28,46 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 									if authEnabled { checked } />
 								<span class="label-text font-medium">{ i18n.T(ctx, "Enable Web UI Authentication") }</span>
 							</label>
-							<div class="text-xs text-base-content/50 ml-12">If disabled, anyone can access the orchestrator without a password.</div>
+							<div class="text-xs text-base-content/50 ml-12">{ i18n.T(ctx, "If disabled, anyone can access the orchestrator without a password.") }</div>
 						</div>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-base-300 pb-4 mb-4">
 						<div class="form-control">
-							<label class="label"><span class="label-text">Web UI Username</span></label>
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "Web UI Username") }</span></label>
 							<input type="text" name="auth_username" class="input input-bordered"
 								value={ authUsername } required />
-							<div class="label"><span class="label-text-alt text-base-content/50">For Basic Authentication</span></div>
+							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "For Basic Authentication") }</span></div>
 						</div>
 						
 						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Web UI Listen Port") }</span></label>
+							<label class="label">
+								<span class="label-text">{ i18n.T(ctx, "Web UI Listen Port") }</span>
+								if activeListenAddr != "" && listenAddr != activeListenAddr {
+									<span class="badge badge-warning badge-sm">{ i18n.T(ctx, "Currently active on: ") }{ activeListenAddr }</span>
+								}
+							</label>
 							<input type="text" name="listen_addr" class="input input-bordered"
 								value={ listenAddr } required />
-							<div class="label"><span class="label-text-alt text-base-content/50">e.g., :8090 or 127.0.0.1:8090</span></div>
+							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "e.g., :8090 or 127.0.0.1:8090") }</span></div>
 						</div>
 						
 						<div class="form-control">
-							<label class="label"><span class="label-text">Old Password (required to change)</span></label>
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "Old Password (required to change)") }</span></label>
 							<input type="password" name="auth_old_password" class="input input-bordered"
-								placeholder="Enter current password" autocomplete="current-password" />
+								placeholder={ i18n.T(ctx, "Enter current password") } autocomplete="current-password" />
 						</div>
 
 						<div class="form-control">
-							<label class="label"><span class="label-text">New Password</span></label>
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "New Password") }</span></label>
 							<input type="password" name="auth_new_password" class="input input-bordered"
-								placeholder="Leave empty to keep current" autocomplete="new-password" />
+								placeholder={ i18n.T(ctx, "Leave empty to keep current") } autocomplete="new-password" />
 						</div>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div class="form-control">
-							<label class="label"><span class="label-text">Language</span></label>
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "Language") }</span></label>
 							<select name="language" class="select select-bordered">
 								<option value="en" if settings.Language == "en" || settings.Language == "" { selected }>English</option>
 								<option value="ru" if settings.Language == "ru" { selected }>Русский</option>
@@ -70,38 +75,38 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 						</div>
 
 						<div class="form-control">
-							<label class="label"><span class="label-text">Panel Country</span></label>
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "Panel Country") }</span></label>
 							<select name="panel_country" class="select select-bordered">
-								<option value="" if settings.PanelCountry == "" { selected }>Auto-detect</option>
-								<option value="RU" if settings.PanelCountry == "RU" { selected }>Russia (RU)</option>
-								<option value="IR" if settings.PanelCountry == "IR" { selected }>Iran (IR)</option>
-								<option value="CN" if settings.PanelCountry == "CN" { selected }>China (CN)</option>
-								<option value="OTHER" if settings.PanelCountry == "OTHER" { selected }>Other</option>
+								<option value="" if settings.PanelCountry == "" { selected }>{ i18n.T(ctx, "Auto-detect") }</option>
+								<option value="RU" if settings.PanelCountry == "RU" { selected }>{ i18n.T(ctx, "Russia (RU)") }</option>
+								<option value="IR" if settings.PanelCountry == "IR" { selected }>{ i18n.T(ctx, "Iran (IR)") }</option>
+								<option value="CN" if settings.PanelCountry == "CN" { selected }>{ i18n.T(ctx, "China (CN)") }</option>
+								<option value="OTHER" if settings.PanelCountry == "OTHER" { selected }>{ i18n.T(ctx, "Other") }</option>
 							</select>
-							<div class="label"><span class="label-text-alt text-base-content/50">Affects recommended obfuscation presets</span></div>
+							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Affects recommended obfuscation presets") }</span></div>
 						</div>
 
 						<div class="form-control">
-							<label class="label"><span class="label-text">Metrics Refresh Interval (minutes)</span></label>
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "Metrics Refresh Interval (minutes)") }</span></label>
 							<input type="number" name="metrics_interval" class="input input-bordered"
 								value={ fmt.Sprintf("%d", settings.MetricsInterval) } min="1" max="1440" />
-							<div class="label"><span class="label-text-alt text-base-content/50">How often to poll hosts when UI is closed (default: 240)</span></div>
+							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "How often to poll hosts when UI is closed (default: 240)") }</span></div>
 						</div>
 					</div>
 
 					<div class="form-control">
-						<label class="label"><span class="label-text">Default Protocol</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Default Protocol") }</span></label>
 						<select name="default_protocol" class="select select-bordered max-w-sm">
-							<option value="awg" if settings.DefaultProtocol == "awg" { selected }>AWG (AmneziaWG)</option>
-							<option value="tuic" if settings.DefaultProtocol == "tuic" { selected }>TUIC v5</option>
-							<option value="vless-reality" if settings.DefaultProtocol == "vless-reality" { selected }>VLESS Reality</option>
+							<option value="awg" if settings.DefaultProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
+							<option value="tuic" if settings.DefaultProtocol == "tuic" { selected }>{ i18n.T(ctx, "TUIC v5") }</option>
+							<option value="vless-reality" if settings.DefaultProtocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
 						</select>
 					</div>
 
 					<!-- SSH Keys -->
 					<div class="border-t border-base-300 pt-4 mt-4">
 						<h4 class="font-medium mb-2">{ i18n.T(ctx, "SSH Keys") }</h4>
-						<p class="text-xs text-base-content/50 mb-3">Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.</p>
+						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.") }</p>
 
 						<div id="ssh-keys-list" class="space-y-2">
 							<!-- Stored keys -->
@@ -110,7 +115,7 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 									<div class="flex-1">
 										<div class="text-sm font-medium">{ key.Name }</div>
 										<div class="text-xs text-base-content/50">
-											<span class="badge badge-primary badge-xs">Stored</span>
+											<span class="badge badge-primary badge-xs">{ i18n.T(ctx, "Stored") }</span>
 											if len(key.KeyData) > 0 {
 												<span class="ml-1">({ fmt.Sprintf("%d", len(key.KeyData)) } bytes)</span>
 											}
@@ -120,7 +125,7 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 										hx-delete={"/ui/settings/ssh-keys/" + key.ID}
 										hx-target="#ssh-keys-list"
 										hx-swap="outerHTML">
-										Delete
+										{ i18n.T(ctx, "Delete") }
 									</button>
 								</div>
 							}
@@ -131,7 +136,7 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 										<div class="flex-1">
 											<div class="text-sm font-medium">{ key.Name }</div>
 											<div class="text-xs text-base-content/50">
-												<span class="badge badge-ghost badge-xs">System</span>
+												<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "System") }</span>
 												<span class="ml-1">— { key.KeyPath }</span>
 											</div>
 										</div>
@@ -148,21 +153,21 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 								hx-swap="outerHTML"
 								hx-on::after-request="this.reset()"
 								class="space-y-2">
-								<div class="text-sm font-medium mb-1">Add New SSH Key</div>
-								<div class="form-control">
-									<input type="text" name="name" class="input input-bordered input-sm" required placeholder="Key name (e.g. Home Server)" />
-								</div>
+							<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
+							<div class="form-control">
+								<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
+							</div>
 								<div class="form-control">
 									<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
 										required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
 								</div>
-								<button type="submit" class="btn btn-primary btn-sm">Save Key</button>
+							<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
 							</form>
 						</div>
 					</div>
 
 					<div class="pt-2">
-						<button type="submit" class="btn btn-primary">Save Settings</button>
+						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Settings") }</button>
 					</div>
 				</form>
 
@@ -173,28 +178,28 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 		<!-- System Info -->
 		<div class="card bg-base-100 shadow">
 			<div class="card-body p-4">
-				<h3 class="font-semibold mb-3">System Info</h3>
+				<h3 class="font-semibold mb-3">{ i18n.T(ctx, "System Info") }</h3>
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 					<div>
-						<div class="text-base-content/60">Nodes</div>
+						<div class="text-base-content/60">{ i18n.T(ctx, "Nodes") }</div>
 						<div class="font-semibold">{ fmt.Sprintf("%d", len(hosts)) }</div>
 					</div>
 					<div>
-						<div class="text-base-content/60">Chains</div>
+						<div class="text-base-content/60">{ i18n.T(ctx, "Chains") }</div>
 						<div class="font-semibold">{ fmt.Sprintf("%d", len(chains)) }</div>
 					</div>
 					<div>
-						<div class="text-base-content/60">Default Obfuscation</div>
+						<div class="text-base-content/60">{ i18n.T(ctx, "Default Obfuscation") }</div>
 						<div class="font-semibold text-sm">
 							if settings.PanelCountry != "" {
 								<span>{ settings.PanelCountry }</span>
 							} else {
-								<span class="text-base-content/50">Global default</span>
+								<span class="text-base-content/50">{ i18n.T(ctx, "Global default") }</span>
 							}
 						</div>
 					</div>
 					<div>
-						<div class="text-base-content/60">Metrics Interval</div>
+						<div class="text-base-content/60">{ i18n.T(ctx, "Metrics Interval") }</div>
 						<div class="font-semibold">{ fmt.Sprintf("%d min", settings.MetricsInterval) }</div>
 					</div>
 				</div>
@@ -229,7 +234,7 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 			<div class="flex-1">
 				<div class="text-sm font-medium">{ key.Name }</div>
 				<div class="text-xs text-base-content/50">
-					<span class="badge badge-primary badge-xs">Stored</span>
+					<span class="badge badge-primary badge-xs">{ i18n.T(ctx, "Stored") }</span>
 					if len(key.KeyData) > 0 {
 						<span class="ml-1">({ fmt.Sprintf("%d", len(key.KeyData)) } bytes)</span>
 					}
@@ -239,7 +244,7 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 				hx-delete={"/ui/settings/ssh-keys/" + key.ID}
 				hx-target="closest .flex"
 				hx-swap="delete">
-				Delete
+				{ i18n.T(ctx, "Delete") }
 			</button>
 		</div>
 	}
@@ -249,7 +254,7 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 			<div class="flex-1">
 				<div class="text-sm font-medium">{ key.Name }</div>
 				<div class="text-xs text-base-content/50">
-					<span class="badge badge-ghost badge-xs">System</span>
+					<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "System") }</span>
 					<span class="ml-1">— { key.KeyPath }</span>
 				</div>
 			</div>
@@ -263,9 +268,9 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 			hx-swap="outerHTML"
 			hx-on::after-request="this.reset()"
 			class="space-y-2">
-			<div class="text-sm font-medium mb-1">Add New SSH Key</div>
+			<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
 			<div class="form-control">
-				<input type="text" name="name" class="input input-bordered input-sm" required placeholder="Key name (e.g. Home Server)" />
+				<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
 			</div>
 			<div class="form-control">
 				<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
@@ -273,7 +278,7 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 ...
 -----END OPENSSH PRIVATE KEY-----"></textarea>
 			</div>
-			<button type="submit" class="btn btn-primary btn-sm">Save Key</button>
+			<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
 		</form>
 	</div>
 }

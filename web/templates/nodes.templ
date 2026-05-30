@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
 )
 
 // ─── Nodes List ─────────────────────────────────────────────────────────────────
@@ -11,14 +12,14 @@ import (
 templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMetrics) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
-			<h2 class="text-2xl font-semibold">Nodes</h2>
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Nodes") }</h2>
 			<button
 				class="btn btn-primary btn-sm shadow-md hover:shadow-lg transition-shadow"
 				hx-get="/ui/nodes/new"
 				hx-target="#modal-container"
 				hx-swap="innerHTML">
 				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-				Add Node
+				{ i18n.T(ctx, "Add Node") }
 			</button>
 		</div>
 
@@ -28,10 +29,10 @@ templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeM
 					<thead class="text-base-content/60 text-sm">
 						<tr class="border-b border-base-content/10">
 							<th class="font-medium">ID</th>
-							<th class="font-medium">Address</th>
-							<th class="font-medium">Country</th>
-							<th class="font-medium">Bandwidth</th>
-							<th class="font-medium">Status</th>
+							<th class="font-medium">{ i18n.T(ctx, "Address") }</th>
+							<th class="font-medium">{ i18n.T(ctx, "Country") }</th>
+							<th class="font-medium">{ i18n.T(ctx, "Bandwidth") }</th>
+							<th class="font-medium">{ i18n.T(ctx, "Status") }</th>
 							<th class="w-px"></th>
 						</tr>
 					</thead>
@@ -44,7 +45,7 @@ templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeM
 								<td colspan="6" class="text-center py-12 text-base-content/50">
 									<div class="flex flex-col items-center gap-3">
 										<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
-										<p>No nodes yet. Add your first remote node.</p>
+										<p>{ i18n.T(ctx, "No nodes yet. Add your first remote node.") }</p>
 									</div>
 								</td>
 							</tr>
@@ -84,9 +85,9 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
 				hx-target="this"
 				hx-swap="innerHTML">
 				if m != nil && m.Online {
-					<span class="badge badge-success badge-sm">Online</span>
+					<span class="badge badge-success badge-sm">{ i18n.T(ctx, "Online") }</span>
 				} else {
-					<button class="btn btn-ghost btn-xs">Check</button>
+					<button class="btn btn-ghost btn-xs">{ i18n.T(ctx, "Check") }</button>
 				}
 			</div>
 		</td>
@@ -97,29 +98,29 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
 					hx-get={"/ui/nodes/" + h.ID + "/capture"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
-					Capture
+					{ i18n.T(ctx, "Capture") }
 				</button>
 				<button
 					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/edit"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
-					Edit
+					{ i18n.T(ctx, "Edit") }
 				</button>
 				<button
 					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/inbounds"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
-					Inbounds
+					{ i18n.T(ctx, "Inbounds") }
 				</button>
 				<button
 					class="btn btn-ghost btn-xs text-error"
 					hx-delete={"/ui/nodes/" + h.ID}
-					hx-confirm={"Delete node " + h.ID + "?"}
+					hx-confirm={i18n.T(ctx, "Delete node ") + h.ID + "?"}
 					hx-target="closest tr"
-					hx-swap="delete">
-					Delete
+					hx-swap="outerHTML">
+					{ i18n.T(ctx, "Delete") }
 				</button>
 			</div>
 		</td>
