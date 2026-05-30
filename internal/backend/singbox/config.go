@@ -366,9 +366,18 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 	epJSON, _ := json.Marshal(endpoint)
 	outboundJSON, _ := json.Marshal(config.DirectOutbound{Type: "direct", Tag: "direct-out"})
 
+	tunInbound := config.TUNInbound{
+		Type:      "tun",
+		Tag:       "tun-in",
+		Address:   []string{"172.16.250.1/30"},
+		AutoRoute: true,
+	}
+	inbJSON, _ := json.Marshal(tunInbound)
+
 	cfg := singBoxConfig{
 		Log:       &logConfig{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
 		Endpoints: []json.RawMessage{epJSON},
+		Inbounds:  []json.RawMessage{inbJSON},
 		Outbounds: []json.RawMessage{outboundJSON},
 	}
 

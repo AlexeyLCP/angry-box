@@ -72,7 +72,6 @@ func TestXHTTPTransportJSONCompatibility(t *testing.T) {
 			{
 				"name": tag,
 				"uuid": p.UUID,
-				"flow": "xtls-rprx-vision",
 			},
 		},
 		"tls": map[string]any{
@@ -80,14 +79,15 @@ func TestXHTTPTransportJSONCompatibility(t *testing.T) {
 			"server_name": p.ServerName,
 			"reality": map[string]any{
 				"enabled":     true,
+				"handshake": map[string]any{
+					"server":      p.ServerName,
+					"server_port": 443,
+				},
 				"private_key": p.PrivateKey,
 				"short_id":    []string{p.ShortID},
 			},
 		},
 		"transport": transport,
-		"multiplex": map[string]any{
-			"enabled": true,
-		},
 	}
 	
 	expectedJSONBytes, _ := json.Marshal(expectedInb)
@@ -135,6 +135,10 @@ func TestTransportInboundJSONParity(t *testing.T) {
 			"server_name": p.ServerName,
 			"reality": map[string]any{
 				"enabled":     true,
+				"handshake": map[string]any{
+					"server":      p.ServerName,
+					"server_port": 443,
+				},
 				"private_key": p.PrivateKey,
 				"short_id":    []string{p.ShortID},
 			},
