@@ -15,7 +15,7 @@
 
 ---
 
-**[🇬🇧 Read in English](README.md)**
+**[🇬🇧 English](README.md) | [🇷🇺 Русский](README_ru.md) | [🇨🇳 简体中文](README_zh.md) | [🇮🇷 فارسی](README_fa.md)**
 
 ## 🚀 О проекте
 
