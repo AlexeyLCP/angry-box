@@ -10,11 +10,28 @@ function addInboundRow() {
     var tmpl = document.getElementById('inbound-tmpl');
     if (!tmpl) return;
     var clone = tmpl.content.firstElementChild.cloneNode(true);
-    var wrapper = document.createElement('div');
-    wrapper.className = 'border border-base-300 rounded-lg p-3';
-    wrapper.appendChild(clone);
+    var idx = Date.now().toString(); // unique ID
+    
+    // Add hidden index field
+    var hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'inbound_index';
+    hidden.value = idx;
+    clone.appendChild(hidden);
+    
+    // Rename for_users checkboxes
+    var checkboxes = clone.querySelectorAll('input[name="for_users"]');
+    checkboxes.forEach(function(cb) {
+        cb.name = 'for_users_' + idx;
+    });
+    
     var list = document.getElementById('inbounds-list');
-    if (list) list.appendChild(wrapper);
+    if (list) {
+        list.appendChild(clone);
+        if (typeof htmx !== 'undefined') {
+            htmx.process(clone);
+        }
+    }
 }
 
 // Page title + sidebar highlight

@@ -635,20 +635,30 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 
 	protocols := r.Form["proto"]
 	ports := r.Form["port"]
-	usersPerInbound := r.Form["for_users"]
+	indexes := r.Form["inbound_index"]
+	obfuscations := r.Form["obfuscation"]
 
-	inbounds := make([]model.NodeInbound, len(protocols))
+	inbounds := make([]model.NodeInbound, 0, len(protocols))
 	for i := range protocols {
+		if i >= len(indexes) {
+			continue
+		}
 		port, _ := strconv.Atoi(ports[i])
-		forUsers := []string{}
-		if i < len(usersPerInbound) {
-			forUsers = strings.Split(usersPerInbound[i], ",")
+		idx := indexes[i]
+		
+		forUsers := r.Form["for_users_"+idx]
+		
+		obf := ""
+		if i < len(obfuscations) {
+			obf = obfuscations[i]
 		}
-		inbounds[i] = model.NodeInbound{
-			Protocol: protocols[i],
-			Port:     port,
-			ForUsers: forUsers,
-		}
+		
+		inbounds = append(inbounds, model.NodeInbound{
+			Protocol:    protocols[i],
+			Port:        port,
+			ForUsers:    forUsers,
+			Obfuscation: obf,
+		})
 	}
 	info.Inbounds = inbounds
 	st.SaveNodeInfo(info)
