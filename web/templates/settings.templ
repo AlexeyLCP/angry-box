@@ -145,25 +145,6 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 							}
 						</div>
 
-						<!-- Add new key form -->
-						<div class="mt-3 border border-dashed border-base-300 rounded-lg p-3">
-							<form
-								hx-post="/ui/settings/ssh-keys"
-								hx-target="#ssh-keys-list"
-								hx-swap="outerHTML"
-								hx-on::after-request="this.reset()"
-								class="space-y-2">
-							<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
-							<div class="form-control">
-								<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
-							</div>
-								<div class="form-control">
-									<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
-										required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
-								</div>
-							<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
-							</form>
-						</div>
 					</div>
 
 					<div class="pt-2">
@@ -172,6 +153,26 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 				</form>
 
 				<div id="settings-result" class="mt-2"></div>
+
+				<!-- Add new key form (moved outside main form) -->
+				<div class="mt-4 border border-dashed border-base-300 rounded-lg p-3">
+					<form
+						hx-post="/ui/settings/ssh-keys"
+						hx-target="#ssh-keys-list"
+						hx-swap="outerHTML"
+						hx-on::after-request="this.reset()"
+						class="space-y-2">
+					<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
+					<div class="form-control">
+						<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
+					</div>
+						<div class="form-control">
+							<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
+								required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+						</div>
+					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
+					</form>
+				</div>
 			</div>
 		</div>
 
