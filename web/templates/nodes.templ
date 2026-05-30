@@ -9,7 +9,7 @@ import (
 
 // ─── Nodes List ─────────────────────────────────────────────────────────────────
 
-templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMetrics) {
+templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMetrics, activeChains map[string]string) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Nodes") }</h2>
@@ -32,13 +32,14 @@ templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeM
 							<th class="font-medium">{ i18n.T(ctx, "Address") }</th>
 							<th class="font-medium">{ i18n.T(ctx, "Country") }</th>
 							<th class="font-medium">{ i18n.T(ctx, "Bandwidth") }</th>
-							<th class="font-medium">{ i18n.T(ctx, "Status") }</th>
+							<th class="font-medium">{ i18n.T(ctx, "Deploy Role") }</th>
+							<th class="font-medium">{ i18n.T(ctx, "Health") }</th>
 							<th class="w-px"></th>
 						</tr>
 					</thead>
 					<tbody id="nodes-tbody" class="text-base-content/80">
 						for _, h := range hosts {
-							@NodeRow(h, findInfo(h.ID, infos), findMetric(h.ID, metrics))
+							@NodeRow(h, findInfo(h.ID, infos), findMetric(h.ID, metrics), activeChains[h.ID])
 						}
 						if len(hosts) == 0 {
 							<tr>
@@ -61,7 +62,7 @@ templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeM
 
 // ─── Node Row ───────────────────────────────────────────────────────────────────
 
-templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
+templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainName string) {
 	<tr id={"node-" + h.ID} class="hover:bg-base-200/50 transition-colors border-b border-base-content/5">
 		<td class="font-mono text-sm font-semibold">{ h.ID }</td>
 		<td class="font-mono text-xs opacity-70">{ h.Addr }</td>
@@ -80,6 +81,17 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
 			}
 		</td>
 		<td>
+			if chainName != "" {
+				<div class="tooltip" data-tip={"Managed by chain: " + chainName}>
+					<span class="badge badge-secondary badge-sm cursor-help shadow-sm">In Chain</span>
+				</div>
+			} else {
+				<div class="tooltip" data-tip="Can be deployed as a standalone server">
+					<span class="badge badge-neutral badge-sm cursor-help opacity-70">Standalone</span>
+				</div>
+			}
+		</td>
+		<td>
 			<div
 				hx-get={"/ui/hosts/" + h.ID + "/status"}
 				hx-target="this"
@@ -92,7 +104,36 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) {
 			</div>
 		</td>
 		<td>
-			<div class="flex gap-1">
+			<div class="flex items-center gap-1">
+					<div class="flex flex-col items-center">
+						<button
+							class={ "btn btn-xs", templ.KV("btn-primary", chainName == ""), templ.KV("btn-secondary", chainName != "") }
+							hx-post={"/ui/nodes/" + h.ID + "/apply"}
+							hx-target="#modal-container"
+							hx-swap="innerHTML"
+							if chainName != "" {
+								title={ fmt.Sprintf("Apply via Chain '%s' (includes standalone inbounds)", chainName) }
+							} else {
+								title={i18n.T(ctx, "Deploy Standalone Config")}
+							}>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
+								<path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+							</svg>
+							if chainName != "" {
+								Apply (Chain)
+							} else {
+								{ i18n.T(ctx, "Apply") }
+							}
+						</button>
+						if info != nil && len(info.Inbounds) > 0 {
+							<span class="text-[9px] opacity-60 mt-0.5">{ fmt.Sprintf("%d inbounds", len(info.Inbounds)) }</span>
+						} else {
+							<span class="text-[9px] opacity-60 mt-0.5 text-warning">0 inbounds</span>
+						}
+					</div>
+				
+				<div class="divider divider-horizontal mx-0"></div>
+
 				<button
 					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/capture"}
@@ -316,13 +357,17 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 						</div>
 					}
 					for i, ib := range info.Inbounds {
-						<div class="border border-base-300 rounded-lg p-3 relative inbound-row">
-							<input type="hidden" name="inbound_index" value={ fmt.Sprintf("%d", i) } />
-							<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
+						<div class={ "border rounded-lg p-3 relative inbound-row", templ.KV("border-base-300", ib.Source == ""), templ.KV("border-secondary/50 bg-secondary/5", ib.Source != "") }>
+							if ib.Source == "" {
+								<input type="hidden" name="inbound_index" value={ fmt.Sprintf("%d", i) } />
+								<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
+							} else {
+								<div class="absolute top-2 right-2 badge badge-secondary badge-sm">[Chain] { ib.Source[6:] }</div>
+							}
 							<div class="grid grid-cols-5 gap-2">
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Protocol</span></label>
-									<select name="proto" class="select select-bordered select-sm">
+									<select name={ templ.KV("proto", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" }>
 										<option value="telemt" if ib.Protocol == "telemt" { selected }>Telemt (MTProto)</option>
 									<option value="awg" if ib.Protocol == "awg" { selected }>AWG (AmneziaWG)</option>
 										<option value="tuic" if ib.Protocol == "tuic" { selected }>TUIC v5</option>
@@ -335,7 +380,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								</div>
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Port</span></label>
-									<input type="number" name="port" class="input input-bordered input-sm" value={ fmt.Sprintf("%d", ib.Port) } />
+									<input type="number" name={ templ.KV("port", ib.Source == "") } class="input input-bordered input-sm" value={ fmt.Sprintf("%d", ib.Port) } disabled?={ ib.Source != "" } />
 								</div>
 								<div class="form-control col-span-2">
 								<label class="label"><span class="label-text text-xs">For Users</span></label>
@@ -346,8 +391,8 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									}
 									for _, u := range users {
 										<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-											<input type="checkbox" name={ fmt.Sprintf("for_users_%d", i) } value={ u.ID } class="checkbox checkbox-xs"
-												if containsStr(ib.ForUsers, u.ID) { checked } />
+											<input type="checkbox" name={ templ.KV(fmt.Sprintf("for_users_%d", i), ib.Source == "") } value={ u.ID } class="checkbox checkbox-xs"
+												if containsStr(ib.ForUsers, u.ID) { checked } disabled?={ ib.Source != "" } />
 											<span>{ u.Name }</span>
 										</label>
 									}
@@ -355,7 +400,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 							</div>
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
-									<select name="obfuscation" class="select select-bordered select-sm">
+									<select name={ templ.KV("obfuscation", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" }>
 										<option value="">None</option>
 										for _, p := range presets {
 											<option value={ p } if ib.Obfuscation == p { selected }>{ p }</option>

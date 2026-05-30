@@ -143,8 +143,9 @@ func main() {
 	// But `storePath` string flag default is "chains.json". It's safe to initialize the HostKeyManager
 	// here. If a command overrides the `-file` flag, it should ideally re-initialize, but for most
 	// cases (like serve), we can initialize it inside the command after parsing. To be safe, we'll initialize 
-	// a default here, and re-initialize in node commands and serve.
-	sshclient.SetHostKeyManager(chain.NewStore("chains.json"))
+	s := chain.NewStore("chains.json")
+	sshclient.SetHostKeyManager(s)
+	sshclient.SetKeyResolver(s)
 
 	switch cmd {
 	case "host":
@@ -462,6 +463,7 @@ func applyChainCmd() {
 	f := factory.New()
 	applier := chain.NewApplier(f)
 	sshclient.SetHostKeyManager(s)
+	sshclient.SetKeyResolver(s)
 
 	ctx := context.Background()
 	report, err := applier.ApplyChain(ctx, c, clientPubKey)
@@ -478,7 +480,19 @@ func applyChainCmd() {
 }
 
 func printApplyReport(r *chain.ApplyReport) {
-	fmt.Printf("\n✓ chain %q applied successfully\n", r.ChainName)
+	hasErrors := false
+	for _, n := range r.Nodes {
+		if !n.Success {
+			hasErrors = true
+			break
+		}
+	}
+
+	if hasErrors {
+		fmt.Printf("\n❌ chain %q applied with ERRORS\n", r.ChainName)
+	} else {
+		fmt.Printf("\n✓ chain %q applied successfully\n", r.ChainName)
+	}
 	fmt.Printf("  profile: %s  transport: %s  user: %s\n", r.Profile, r.Transport, r.UserProto)
 
 	for _, n := range r.Nodes {
@@ -565,8 +579,9 @@ func nodeCmd(cmd string) {
 	_ = fs.Parse(os.Args[2:])
 
 	// For single node commands, we don't have a storePath flag directly defined in nodeCmd,
-	// but we can assume default or from orchCfg.
-	sshclient.SetHostKeyManager(chain.NewStore("chains.json"))
+	s := chain.NewStore("chains.json")
+	sshclient.SetHostKeyManager(s)
+	sshclient.SetKeyResolver(s)
 
 	f := factory.New()
 	b := f.Create()
@@ -723,7 +738,9 @@ func serveCmd() {
 		*devMode = devEnv == "1" || devEnv == "true" || devEnv == "on"
 	}
 
-	sshclient.SetHostKeyManager(chain.NewStore(storePath))
+	store := chain.NewStore(storePath)
+	sshclient.SetHostKeyManager(store)
+	sshclient.SetKeyResolver(store)
 
 	mux := http.NewServeMux()
 

@@ -19,6 +19,7 @@ type ConfigType int
 const (
 	ConfigTransport ConfigType = iota
 	ConfigUser
+	ConfigStandaloneNode
 )
 
 // Host describes a remote machine accessible via SSH.
@@ -75,6 +76,8 @@ func (c ConfigType) String() string {
 		return "transport"
 	case ConfigUser:
 		return "user"
+	case ConfigStandaloneNode:
+		return "standalone"
 	default:
 		return fmt.Sprintf("ConfigType(%d)", c)
 	}

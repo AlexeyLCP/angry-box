@@ -274,3 +274,26 @@ type DirectInbound struct {
 	Tag     string `json:"tag"`
 	Network string `json:"network,omitempty"`
 }
+
+// Hysteria2Inbound represents a sing-box Hysteria2 inbound.
+type Hysteria2Inbound struct {
+	Type       string             `json:"type"` // "hysteria2"
+	Tag        string             `json:"tag"`
+	Listen     string             `json:"listen,omitempty"`
+	ListenPort int                `json:"listen_port,omitempty"`
+	Users      []Hysteria2User    `json:"users"`
+	UpMbps     int                `json:"up_mbps,omitempty"`
+	DownMbps   int                `json:"down_mbps,omitempty"`
+	Obfs       *Hysteria2Obfs     `json:"obfs,omitempty"`
+	TLS        *InboundTLSOptions `json:"tls,omitempty"`
+}
+
+type Hysteria2User struct {
+	Name     string `json:"name,omitempty"`
+	Password string `json:"password"`
+}
+
+type Hysteria2Obfs struct {
+	Type     string `json:"type"` // e.g. "salamander"
+	Password string `json:"password"`
+}

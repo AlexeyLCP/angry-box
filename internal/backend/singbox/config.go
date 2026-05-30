@@ -36,6 +36,8 @@ func (b *Backend) GenerateConfig(cfgType model.ConfigType, params model.ConfigPa
 		return b.generateTransport(params)
 	case model.ConfigUser:
 		return b.generateUser(params)
+	case model.ConfigStandaloneNode:
+		return b.generateStandaloneNode(params)
 	default:
 		return nil, fmt.Errorf("singbox: unknown config type %s", cfgType)
 	}
@@ -291,6 +293,11 @@ func (b *Backend) generateTUICUser(params model.ConfigParams, preset *chain.Conn
 		serverName = preset.Reality.ServerNames[0]
 	}
 
+	password := uuid
+	if v, ok := params.Extra["tuicPassword"].(string); ok && v != "" {
+		password = v
+	}
+
 	inbound := config.TUICInbound{
 		Type:       "tuic",
 		Tag:        "user-in",
@@ -299,7 +306,7 @@ func (b *Backend) generateTUICUser(params model.ConfigParams, preset *chain.Conn
 		Users: []config.TUICUser{
 			{
 				UUID:     uuid,
-				Password: uuid,
+				Password: password,
 			},
 		},
 		CongestionControl: congestion,
@@ -333,10 +340,18 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		awg = &chain.AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
 	}
 
-	// Always generate a fresh server keypair for this AWG entry point.
-	privB64, pubB64, err := generateWireGuardKeypair()
-	if err != nil {
-		return nil, "", fmt.Errorf("generate awg keypair: %w", err)
+	privB64 := ""
+	pubB64 := ""
+	if v, ok := params.Extra["serverPrivKey"].(string); ok && v != "" {
+		privB64 = v
+		// We could derive pubB64, but we don't strictly need it here to build the config, 
+		// though returning it is nice. If missing, we'll just return what we have.
+	} else {
+		var err error
+		privB64, pubB64, err = generateWireGuardKeypair()
+		if err != nil {
+			return nil, "", fmt.Errorf("generate awg keypair: %w", err)
+		}
 	}
 
 	peerPub := clientPubKey
@@ -383,4 +398,135 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 
 	content, _ := json.MarshalIndent(cfg, "", "  ")
 	return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, pubB64, nil
+}
+
+func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Config, error) {
+	inboundsData, ok := params.Extra["inbounds"].([]model.NodeInbound)
+	if !ok {
+		return nil, fmt.Errorf("singbox: missing or invalid inbounds for standalone node")
+	}
+
+	preset := chain.GetDefaultPreset()
+
+	var finalEndpoints []json.RawMessage
+	var finalInbounds []json.RawMessage
+
+	for i, ib := range inboundsData {
+		uuid := ib.UUID
+		tag := fmt.Sprintf("inbound-%d-%s", i, ib.Protocol)
+		
+		switch ib.Protocol {
+		case "awg":
+			paramsAWG := model.ConfigParams{Extra: map[string]any{"serverPrivKey": ib.ServerPrivKey}}
+			cfg, _, err := b.generateAWGUser(paramsAWG, &preset, uuid, ib.Port, "")
+			if err != nil {
+				continue
+			}
+			var scfg singBoxConfig
+			if err := json.Unmarshal([]byte(cfg.Content), &scfg); err == nil {
+				finalEndpoints = append(finalEndpoints, scfg.Endpoints...)
+				finalInbounds = append(finalInbounds, scfg.Inbounds...)
+			}
+		case "tuic":
+			paramsTUIC := model.ConfigParams{Extra: map[string]any{"tuicPassword": ib.ServerPrivKey}}
+			cfg, err := b.generateTUICUser(paramsTUIC, &preset, uuid, ib.Port)
+			if err == nil {
+				var scfg singBoxConfig
+				if err := json.Unmarshal([]byte(cfg.Content), &scfg); err == nil {
+					finalInbounds = append(finalInbounds, scfg.Inbounds...)
+				}
+			}
+		case "vless-reality":
+			privKeyB64 := ib.ServerPrivKey
+			shortIDHex := ib.ShortID
+			
+			serverName := "www.microsoft.com"
+			if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+				serverName = preset.Reality.ServerNames[0]
+			}
+			inb := config.VLESSInbound{
+				Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+				Users: []config.VLESSUser{{Name: "user", UUID: uuid, Flow: "xtls-rprx-vision"}},
+				TLS: &config.InboundTLSOptions{
+					Enabled: true, ServerName: serverName,
+					Reality: &config.InboundRealityOptions{
+						Enabled: true, PrivateKey: privKeyB64, ShortID: []string{shortIDHex},
+						Handshake: &config.RealityHandshake{
+							Server:     serverName,
+							ServerPort: 443,
+						},
+					},
+				},
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
+		case "xhttp":
+			// Basic XHTTP standalone
+			inb := config.VLESSInbound{
+				Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+				Users: []config.VLESSUser{{Name: "user", UUID: uuid}},
+				TLS: &config.InboundTLSOptions{Enabled: false}, // Assume offloaded or no TLS for raw test
+				Transport: &config.TransportOptions{
+					Type: "http", Path: "/api", Method: "POST",
+					Headers: map[string][]string{"Content-Type": {"application/json"}},
+				},
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
+		case "hysteria2":
+			// Basic Hysteria2 standalone
+			inb := config.Hysteria2Inbound{
+				Type: "hysteria2", Tag: tag, Listen: "::", ListenPort: ib.Port,
+				Users: []config.Hysteria2User{{Password: uuid}},
+				UpMbps: 1000, DownMbps: 1000,
+				Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: "salamander_pass"},
+				// Note: Hysteria2 requires TLS, this is a placeholder that might fail sing-box check without certs.
+				// For real use, ACME or Keypair must be generated.
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
+		default:
+			// Fallback user inbound (ws)
+			inb := config.VLESSInbound{
+				Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+				Users: []config.VLESSUser{{Name: "user", UUID: uuid, Flow: "xtls-rprx-vision"}},
+				TLS: &config.InboundTLSOptions{Enabled: false},
+				Transport: &config.TransportOptions{Type: "ws", Path: "/ws"},
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
+		}
+	}
+	
+	outbound := config.DirectOutbound{Type: "direct", Tag: "direct-out"}
+	outboundJSON, _ := json.Marshal(outbound)
+	
+	// Better routing support using the chain builder
+	routingSection := chain.BuildRoutingSection(&preset, "direct-out")
+	dnsSection := chain.BuildDNSWithDetour("direct-out", preset.Routing.DirectDomains)
+	
+	cfg := singBoxConfig{
+		Log: &logConfig{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
+		Endpoints: finalEndpoints,
+		Inbounds: finalInbounds,
+		Outbounds: []json.RawMessage{outboundJSON},
+	}
+	
+	type singBoxConfigWithRoute struct {
+		singBoxConfig
+		Route *config.RoutingSection `json:"route,omitempty"`
+		DNS   *config.DNSConfig      `json:"dns,omitempty"`
+	}
+	
+	fullCfg := singBoxConfigWithRoute{
+		singBoxConfig: cfg,
+		Route: &routingSection,
+		DNS: dnsSection,
+	}
+	
+	content, err := json.MarshalIndent(fullCfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, nil
 }

@@ -112,17 +112,7 @@ func (s *Server) collectAllMetrics() {
 	for _, h := range hosts {
 		start := time.Now()
 		
-		settings, _ := st.GetSettings()
-		resolvedPath, isTemp := resolveSSHKeyPath(h.KeyPath, settings, "")
-		
-		hostCopy := *h
-		hostCopy.KeyPath = resolvedPath
-		
-		status, err := b.GetStatus(ctx, hostCopy)
-		
-		if isTemp && resolvedPath != "" {
-			os.Remove(resolvedPath)
-		}
+		status, err := b.GetStatus(ctx, *h)
 		
 		latency := time.Since(start).Milliseconds()
 		if err != nil {
@@ -188,6 +178,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/nodes/{id}/trust", s.auth(s.handleTrustHostKey))
 	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
+	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
 
 	// Chains (existing)
 	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
@@ -354,7 +345,14 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	hosts, _ := st.ListHosts()
 	infos, _ := st.ListNodeInfos()
 	metrics, _ := st.ListMetrics()
-	s.renderContent(w, r, "Nodes", templates.Nodes(hosts, infos, metrics))
+	chains, _ := st.ListChains()
+	activeChains := make(map[string]string)
+	for _, c := range chains {
+		for _, n := range c.Nodes {
+			activeChains[n.ID] = c.Name
+		}
+	}
+	s.renderContent(w, r, "Nodes", templates.Nodes(hosts, infos, metrics, activeChains))
 }
 
 func (s *Server) handleNewHostForm(w http.ResponseWriter, r *http.Request) {
@@ -399,8 +397,18 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		Source:    "ssh_key",
 	})
 
+	chains, _ := st.ListChains()
+	chainName := ""
+	for _, c := range chains {
+		for _, n := range c.Nodes {
+			if n.ID == id {
+				chainName = c.Name
+			}
+		}
+	}
+
 	s.render(w, r, templates.NodeRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath},
-		&model.NodeInfo{Country: country, Bandwidth: bandwidth, Source: "ssh_key"}, nil))
+		&model.NodeInfo{Country: country, Bandwidth: bandwidth, Source: "ssh_key"}, nil, chainName))
 }
 
 func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
@@ -445,7 +453,16 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	st.SaveNodeInfo(info)
 
 	if isHTMXRequest(r) {
-		s.render(w, r, templates.NodeRow(host, info, nil))
+		chains, _ := st.ListChains()
+		chainName := ""
+		for _, c := range chains {
+			for _, n := range c.Nodes {
+				if n.ID == id {
+					chainName = c.Name
+				}
+			}
+		}
+		s.render(w, r, templates.NodeRow(host, info, nil, chainName))
 	} else {
 		http.Redirect(w, r, "/ui/nodes", http.StatusSeeOther)
 	}
@@ -484,20 +501,30 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	autoInstallKey := r.FormValue("auto_install_key") == "on"
 	manualKeyData := strings.TrimSpace(r.FormValue("ssh_key_manual"))
 
-	// Resolve key ID to actual credentials
-	settings, _ := st.GetSettings()
-	resolvedPath, isTemp := resolveSSHKeyPath(selectedKey, settings, manualKeyData)
-	defer func() {
-		if isTemp && resolvedPath != "" {
-			os.Remove(resolvedPath)
+	// If the user pasted a manual key, save it persistently to the database
+	if selectedKey == "manual" && manualKeyData != "" {
+		settings, _ := st.GetSettings()
+		keyName := fmt.Sprintf("manual-%s", host.Addr)
+		if strings.Contains(host.Addr, ":") {
+			keyName = fmt.Sprintf("manual-%s", strings.Split(host.Addr, ":")[0])
 		}
-	}()
+		keyID := fmt.Sprintf("key-manual-%d", time.Now().Unix())
+
+		settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
+			ID:      keyID,
+			Name:    keyName,
+			KeyData: manualKeyData,
+		})
+		st.SaveSettings(settings)
+		selectedKey = keyID
+	}
+
+	authMethod := selectedKey
 
 	if loginUser != "" {
 		host.User = loginUser
 	}
 
-	authMethod := resolvedPath
 	if loginPass != "" {
 		authMethod = "password:" + loginPass
 	}
@@ -526,44 +553,35 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	// Connection successful. Handle SSH key auto-install.
 	installMsg := ""
 	if autoInstallKey && loginPass != "" {
-		if resolvedPath == "" {
+		if selectedKey == "" || strings.HasPrefix(selectedKey, "system-") {
 			// Auto-generate a new keypair
 			privPEM, _, err := sshclient.GenerateSSHKeypair()
 			if err != nil {
 				installMsg = fmt.Sprintf(" <b>Note:</b> SSH key auto-generation failed: %v", err)
 				host.KeyPath = "password:" + loginPass
 			} else {
-				// Save it as a temporary file to install it
-				f, err := os.CreateTemp("", "angry-box-gen-key-*")
-				if err == nil {
-					f.WriteString(privPEM)
-					f.Chmod(0o600)
-					f.Close()
-					resolvedPath = f.Name()
-					defer os.Remove(resolvedPath)
-					
-					// Also save it to settings so we can use it later
-					keyName := fmt.Sprintf("auto-%s", host.Addr)
-					if strings.Contains(host.Addr, ":") {
-						keyName = fmt.Sprintf("auto-%s", strings.Split(host.Addr, ":")[0])
-					}
-					keyID := fmt.Sprintf("key-auto-%d", time.Now().Unix())
-					
-					settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
-						ID:      keyID,
-						Name:    keyName,
-						KeyData: privPEM,
-					})
-					st.SaveSettings(settings)
-					
-					selectedKey = keyID
-					hostCopy.KeyPath = resolvedPath // update for install
+				// Save it to settings so we can use it
+				keyName := fmt.Sprintf("auto-%s", host.Addr)
+				if strings.Contains(host.Addr, ":") {
+					keyName = fmt.Sprintf("auto-%s", strings.Split(host.Addr, ":")[0])
 				}
+				keyID := fmt.Sprintf("key-auto-%d", time.Now().Unix())
+				
+				settings, _ := st.GetSettings()
+				settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
+					ID:      keyID,
+					Name:    keyName,
+					KeyData: privPEM,
+				})
+				st.SaveSettings(settings)
+				
+				selectedKey = keyID
+				hostCopy.KeyPath = keyID // update for install
 			}
 		}
 
-		if resolvedPath != "" {
-			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, resolvedPath); err != nil {
+		if selectedKey != "" {
+			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, selectedKey); err != nil {
 				installMsg = fmt.Sprintf(" <b>Note:</b> SSH key installation failed: %v", err)
 				host.KeyPath = "password:" + loginPass
 			} else {
@@ -638,6 +656,32 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	indexes := r.Form["inbound_index"]
 	obfuscations := r.Form["obfuscation"]
 
+	// Port conflict check against chains
+	chains, _ := st.ListChains()
+	chainPorts := make(map[int]string) // port -> chainName
+	for _, c := range chains {
+		for i, n := range c.Nodes {
+			if n.ID == id {
+				// Node 0 has user inbound on 8443 (defaultUserPort)
+				if i == 0 {
+					chainPorts[8443] = c.Name
+				}
+				// Nodes > 0 have transit inbound on 443 (defaultTransportPort)
+				if i > 0 {
+					chainPorts[443] = c.Name
+				}
+			}
+		}
+	}
+
+	for _, pStr := range ports {
+		port, _ := strconv.Atoi(pStr)
+		if cName, ok := chainPorts[port]; ok {
+			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Port %d is reserved for chain "%s" on this node and cannot be used for standalone inbounds.</div>`, port, cName)})
+			return
+		}
+	}
+
 	inbounds := make([]model.NodeInbound, 0, len(protocols))
 	for i := range protocols {
 		if i >= len(indexes) {
@@ -653,12 +697,25 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 			obf = obfuscations[i]
 		}
 		
-		inbounds = append(inbounds, model.NodeInbound{
+		newIb := model.NodeInbound{
 			Protocol:    protocols[i],
 			Port:        port,
 			ForUsers:    forUsers,
 			Obfuscation: obf,
-		})
+		}
+		
+		// Preserve existing generated credentials if port and protocol match
+		for _, oldIb := range info.Inbounds {
+			if oldIb.Protocol == newIb.Protocol && oldIb.Port == newIb.Port {
+				newIb.UUID = oldIb.UUID
+				newIb.ServerPrivKey = oldIb.ServerPrivKey
+				newIb.ServerPubKey = oldIb.ServerPubKey
+				newIb.ShortID = oldIb.ShortID
+				break
+			}
+		}
+		
+		inbounds = append(inbounds, newIb)
 	}
 	info.Inbounds = inbounds
 	st.SaveNodeInfo(info)
@@ -942,22 +999,38 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// If no chains assigned, list available chains for the user to choose from
+	// Generate configs for standalone inbounds assigned to this user
+	nodes, _ := st.ListNodeInfos()
+	for _, node := range nodes {
+		for _, ib := range node.Inbounds {
+			if contains(ib.ForUsers, u.ID) {
+				link := buildStandaloneLink(node.Addr, ib, u)
+				configs = append(configs, templates.UserChainConfig{
+					ChainName:   "node: " + node.ID,
+					Protocol:    ib.Protocol,
+					ConfigLink:  link,
+					Description: fmt.Sprintf("Standalone inbound on %s (port %d)", node.ID, ib.Port),
+				})
+			}
+		}
+	}
+
+	// If no configs assigned, list available chains for the user to choose from
 	if len(configs) == 0 {
 		allChains, _ := st.ListChains()
 		if len(allChains) > 0 {
 			configs = append(configs, templates.UserChainConfig{
 				ChainName:   "unassigned",
 				Protocol:    "any",
-				ConfigLink:  "# Assign chains to this user in the Edit form to generate configs.",
+				ConfigLink:  "# Assign chains or node inbounds to this user to generate configs.",
 				Description: fmt.Sprintf("User has no chains assigned. %d chain(s) available — edit user to assign.", len(allChains)),
 			})
 		} else {
 			configs = append(configs, templates.UserChainConfig{
 				ChainName:   "no-chains",
 				Protocol:    "any",
-				ConfigLink:  "# Create a chain first, then assign it to this user.",
-				Description: "No chains exist yet. Create a chain via Spider Web or Chains page.",
+				ConfigLink:  "# Create a chain or node inbound first, then assign it to this user.",
+				Description: "No chains or standalone inbounds exist yet.",
 			})
 		}
 	}
@@ -975,25 +1048,59 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 		proto = "awg"
 	}
 
-	// Use imported secret if available (from Telemt, AWG Toolza, etc.)
+	return buildClientURI(proto, entry.Addr, 8443, c.TUICEntryUserUUID, c.TUICEntryUserPassword, c.AWGEntryServerPub, "", c.Name, u)
+}
+
+func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
+	ip := strings.Split(addr, ":")[0]
+	return buildClientURI(ib.Protocol, ip, ib.Port, ib.UUID, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u)
+}
+
+func contains(slice []string, val string) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
+}
+
+// buildClientURI is a unified helper for generating copy-pasteable client configurations (URIs)
+func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, name string, u *model.User) string {
 	switch proto {
 	case "awg":
-		pub := c.AWGEntryServerPub
 		if u.ImportedSecret != "" && u.SecretType == "awg" {
-			return fmt.Sprintf("# Imported AWG key used.\n[Interface]\nPrivateKey = %s\nAddress = 10.8.0.2/32\nMTU = 1420\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s:8443\nPersistentKeepalive = 25",
-				u.ImportedSecret, pub, entry.Addr)
+			return fmt.Sprintf("# Imported AWG key used.\n[Interface]\nPrivateKey = %s\nAddress = 10.8.0.2/32\nMTU = 1420\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s:%d\nPersistentKeepalive = 25",
+				u.ImportedSecret, pubKey, ip, port)
 		}
-		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420",
-			entry.Addr, 8443, pub)
+		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420", ip, port, pubKey)
 	case "tuic":
 		if u.ImportedSecret != "" && u.SecretType == "tuic" {
 			return fmt.Sprintf("tuic://%s:%s@%s:%d?congestion_control=bbr&alpn=h3",
-				u.ImportedSecret, u.ImportedSecret, entry.Addr, 8443)
+				u.ImportedSecret, u.ImportedSecret, ip, port)
 		}
+		// For standalone TUIC, password is in privKey. For chains, it's passed explicitly in privKey argument.
 		return fmt.Sprintf("tuic://%s:%s@%s:%d?congestion_control=bbr&alpn=h3",
-			c.TUICEntryUserUUID, c.TUICEntryUserPassword, entry.Addr, 8443)
+			uuid, privKey, ip, port)
+	case "vless-reality":
+		serverName := "www.microsoft.com"
+		if preset := chain.GetDefaultPreset(); preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+			serverName = preset.Reality.ServerNames[0]
+		}
+		return fmt.Sprintf("vless://%s@%s:%d?type=tcp&security=reality&pbk=%s&sni=%s&sid=%s&fp=chrome&flow=xtls-rprx-vision",
+			uuid, ip, port, pubKey, serverName, shortID)
+	case "xhttp":
+		serverName := "www.microsoft.com"
+		if preset := chain.GetDefaultPreset(); preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
+			serverName = preset.XHTTP.Hosts[0]
+		}
+		return fmt.Sprintf("vless://%s@%s:%d?type=xhttp&security=none&host=%s&path=%%2Fapi",
+			uuid, ip, port, serverName)
+	case "hysteria2":
+		return fmt.Sprintf("hysteria2://%s@%s:%d?obfs=salamander&obfs-password=salamander_pass&insecure=1",
+			uuid, ip, port)
 	default:
-		return fmt.Sprintf("# %s config for chain %s — see CLI", proto, c.Name)
+		return fmt.Sprintf("# %s config for %s:%d", proto, ip, port)
 	}
 }
 
@@ -1247,49 +1354,7 @@ func detectSystemKeys() []model.SSHKeyEntry {
 	return keys
 }
 
-// resolveSSHKeyPath converts a key ID to an actual filesystem path suitable for SSH.
-// Returns (path, isTemp) — isTemp is true if a temporary file was created and should be cleaned up.
-func resolveSSHKeyPath(keyID string, settings *model.PanelSettings, manualData string) (string, bool) {
-	if keyID == "" {
-		return "", false
-	}
-	// Manual entry — write to temp file
-	if keyID == "manual" && manualData != "" {
-		f, err := os.CreateTemp("", "angry-box-key-*")
-		if err != nil {
-			return "", false
-		}
-		f.WriteString(manualData)
-		f.Chmod(0o600)
-		f.Close()
-		return f.Name(), true
-	}
-	// System key — use the actual filesystem path
-	if strings.HasPrefix(keyID, "system-") {
-		sysKeys := detectSystemKeys()
-		for _, k := range sysKeys {
-			if k.ID == keyID {
-				return k.KeyPath, false
-			}
-		}
-		return "", false
-	}
-	// Stored key — write to temp file
-	for _, k := range settings.SSHKeys {
-		if k.ID == keyID && k.KeyData != "" {
-			f, err := os.CreateTemp("", "angry-box-key-*")
-			if err != nil {
-				return "", false
-			}
-			f.WriteString(k.KeyData)
-			f.Chmod(0o600)
-			f.Close()
-			return f.Name(), true
-		}
-	}
-	// Fallback: use as plain path (old format or direct path)
-	return keyID, false
-}
+
 
 // looksLikePrivateKey does a quick check for PEM private key header.
 func looksLikePrivateKey(data string) bool {
@@ -1384,17 +1449,9 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	b := f.Create()
 	ctx := context.Background()
 	
-	settings, _ := st.GetSettings()
-	resolvedPath, isTemp := resolveSSHKeyPath(host.KeyPath, settings, "")
-	
 	hostCopy := *host
-	hostCopy.KeyPath = resolvedPath
 	
 	status, err := b.GetStatus(ctx, hostCopy)
-	
-	if isTemp && resolvedPath != "" {
-		os.Remove(resolvedPath)
-	}
 	
 	if err != nil {
 		// Record offline metric
@@ -1607,6 +1664,9 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, templates.ApplyResult(name, false, nil, err.Error()))
 		return
 	}
+	
+
+	
 	c.Nodes = resolved
 
 	f := factory.New()
@@ -1626,6 +1686,44 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, templates.ApplyResult(name, true, report, ""))
+}
+
+func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil {
+		s.render(w, r, templates.ApplyResult(id, false, nil, "node not found"))
+		return
+	}
+
+
+
+	f := factory.New()
+	applier := chain.NewApplier(f)
+	ctx := context.Background()
+	
+	report, err := applier.ApplyStandaloneNode(ctx, info)
+	
+	st.SaveNodeInfo(info) // Save generated credentials for inbounds
+
+	if err != nil {
+		msg := err.Error()
+		if report != nil && len(report.Nodes) > 0 {
+			for _, n := range report.Nodes {
+				if !n.Success && n.Error != "" {
+					msg += " | " + n.ID + ": " + n.Error
+				}
+			}
+		}
+		s.render(w, r, templates.ApplyResult(id, false, report, msg))
+		return
+	}
+	s.render(w, r, templates.ApplyResult(id, true, report, ""))
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
