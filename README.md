@@ -108,6 +108,10 @@ Angry-BOX stands on the shoulders of giants. We would like to acknowledge and th
 
 Please see the [LICENSE](LICENSE) file for the full copyright notices and licensing details of these components.
 
+## 🙏 Acknowledgements
+
+- Special thanks to **Aleksandr SacredX** for extensive testing, providing valuable ideas, and helping to identify critical edge cases that significantly improved Angry-BOX.
+
 ## 📄 License
 
 This project is licensed under the **PolyForm Noncommercial License 1.0.0**.
