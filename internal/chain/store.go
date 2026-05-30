@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,8 +15,22 @@ import (
 
 // Store provides JSON-file persistence for hosts and chains.
 type Store struct {
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	path string
+}
+
+// withLock executes the given function under a full write lock.
+func (s *Store) withLock(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn()
+}
+
+// withRLock executes the given function under a read lock.
+func (s *Store) withRLock(fn func()) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	fn()
 }
 
 // NewStore creates a store backed by the given JSON file.
@@ -64,8 +79,8 @@ func (s *Store) SaveHost(h *model.Host) error {
 
 // GetHost returns a host by ID.
 func (s *Store) GetHost(id string) (*model.Host, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
@@ -85,8 +100,8 @@ func (s *Store) GetHost(id string) (*model.Host, error) {
 
 // ListHosts returns all stored hosts.
 func (s *Store) ListHosts() ([]*model.Host, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	sf, err := s.readStore()
 	if err != nil {
@@ -168,8 +183,8 @@ func (s *Store) SaveChain(chain *model.Chain) error {
 
 // GetChain returns a chain by name.
 func (s *Store) GetChain(name string) (*model.Chain, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
@@ -189,8 +204,8 @@ func (s *Store) GetChain(name string) (*model.Chain, error) {
 
 // ListChains returns all stored chains.
 func (s *Store) ListChains() ([]*model.Chain, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	sf, err := s.readStore()
 	if err != nil {
@@ -200,6 +215,24 @@ func (s *Store) ListChains() ([]*model.Chain, error) {
 		return nil, fmt.Errorf("store: read: %w", err)
 	}
 	return sf.Chains, nil
+}
+
+// GetChainsForNode returns all chains that contain the given node ID.
+func (s *Store) GetChainsForNode(nodeID string) ([]*model.Chain, error) {
+	chains, err := s.ListChains()
+	if err != nil {
+		return nil, err
+	}
+	var result []*model.Chain
+	for _, c := range chains {
+		for _, n := range c.Nodes {
+			if n.ID == nodeID {
+				result = append(result, c)
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 // DeleteChain removes a chain by name.
@@ -240,12 +273,19 @@ func (s *Store) ResolveNodes(chain *model.Chain) ([]model.ChainNode, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve node %q: %w", n.ID, err)
 		}
+		
+		info, _ := s.GetNodeInfo(n.ID)
+		
 		resolved = append(resolved, model.ChainNode{
 			ID:      host.ID,
 			Addr:    host.Addr,
 			User:    host.User,
 			KeyPath: host.KeyPath,
-			Port:    n.Port,
+			Port:           n.Port,
+			Inbounds:       info.Inbounds,
+			TransitPrivKey: n.TransitPrivKey,
+			TransitShortID: n.TransitShortID,
+			TransitUUID:    n.TransitUUID,
 		})
 	}
 	return resolved, nil
@@ -285,8 +325,8 @@ func (s *Store) SaveUser(u *model.User) error {
 
 // GetUser returns a user by ID.
 func (s *Store) GetUser(id string) (*model.User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		return nil, err
@@ -301,8 +341,8 @@ func (s *Store) GetUser(id string) (*model.User, error) {
 
 // ListUsers returns all users.
 func (s *Store) ListUsers() ([]*model.User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -341,8 +381,8 @@ func (s *Store) DeleteUser(id string) error {
 
 // GetSettings returns panel settings (or defaults if not set).
 func (s *Store) GetSettings() (*model.PanelSettings, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -395,8 +435,8 @@ func (s *Store) SaveNodeInfo(ni *model.NodeInfo) error {
 }
 
 func (s *Store) GetNodeInfo(id string) (*model.NodeInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		return nil, err
@@ -410,8 +450,8 @@ func (s *Store) GetNodeInfo(id string) (*model.NodeInfo, error) {
 }
 
 func (s *Store) ListNodeInfos() ([]*model.NodeInfo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -445,8 +485,8 @@ func (s *Store) SaveMetrics(m *model.NodeMetrics) error {
 }
 
 func (s *Store) GetMetrics(hostID string) (*model.NodeMetrics, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		return nil, err
@@ -460,8 +500,8 @@ func (s *Store) GetMetrics(hostID string) (*model.NodeMetrics, error) {
 }
 
 func (s *Store) ListMetrics() ([]*model.NodeMetrics, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -477,8 +517,8 @@ func timeNow() time.Time { return time.Now() }
 // ─── KnownHosts / HostKeyManager ───────────────────────────────────────────────
 
 func (s *Store) GetKnownHost(addr string) (*model.KnownHost, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	sf, err := s.readStore()
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -545,6 +585,40 @@ func (s *Store) CheckHostKey(addr string, remoteKey ssh.PublicKey) error {
 	}
 
 	return nil
+}
+
+// ResolveKey implements sshclient.KeyResolver.
+func (s *Store) ResolveKey(keyID string) (string, bool) {
+	if keyID == "" {
+		return "", false
+	}
+
+	// Manual entry is not handled here, it's usually passed directly via "password:" or written to temp in UI
+
+	// Stored keys from settings
+	settings, err := s.GetSettings()
+	if err == nil {
+		for _, k := range settings.SSHKeys {
+			if k.ID == keyID && k.KeyData != "" {
+				return k.KeyData, true
+			}
+		}
+	}
+
+	// System keys
+	if strings.HasPrefix(keyID, "system-") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			fileName := strings.TrimPrefix(keyID, "system-")
+			path := home + "/.ssh/" + fileName
+			data, err := os.ReadFile(path)
+			if err == nil {
+				return string(data), true
+			}
+		}
+	}
+
+	return "", false
 }
 
 // ─── internals ─────────────────────────────────────────────────────────────────

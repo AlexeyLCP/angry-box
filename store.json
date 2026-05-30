@@ -1,0 +1,168 @@
+{
+  "hosts": [
+    {
+      "ID": "vps-test",
+      "Addr": "34.40.120.7:22",
+      "User": "root",
+      "KeyPath": "key-auto-1780166181"
+    },
+    {
+      "ID": "node1",
+      "Addr": "34.40.120.7:22",
+      "User": "root",
+      "KeyPath": "C:\\Users\\dante\\.ssh\\id_ed25519"
+    }
+  ],
+  "chains": [
+    {
+      "name": "e2e-chain",
+      "nodes": [
+        {
+          "id": "node1",
+          "addr": "34.40.120.7:22",
+          "user": "root",
+          "keyPath": "C:\\Users\\dante\\.ssh\\id_ed25519",
+          "port": 0
+        }
+      ],
+      "strategy": "urltest",
+      "transport": "xhttp",
+      "user_protocol": "awg",
+      "awg_entry_server_priv": "0E8Xdzecva6iMRc5H35bs1khP4VNjvIBBLoR5221Emc=",
+      "awg_entry_server_pub": "HI5fPvuPhEe7eILRhmoWRwXbOuDB45uYA6FsgWaEvm4="
+    },
+    {
+      "name": "qa_test_chain",
+      "nodes": [
+        {
+          "id": "vps-test",
+          "addr": "",
+          "user": "",
+          "keyPath": "",
+          "port": 0
+        }
+      ],
+      "strategy": "roundrobin",
+      "transport": "xhttp",
+      "user_protocol": "tuic",
+      "tuic_entry_user_uuid": "3b2c42f7-3029-439a-a567-109e048ff8d9",
+      "tuic_entry_user_password": "3b2c42f7-3029-439a-a567-109e048ff8d9"
+    }
+  ],
+  "users": [
+    {
+      "id": "qa_vless-reality",
+      "name": "qa_vless-reality",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "active": true,
+      "protocols": [
+        "vless-reality"
+      ],
+      "created_at": "2026-05-31T02:01:24.3780135+03:00"
+    },
+    {
+      "id": "qa_xhttp",
+      "name": "qa_xhttp",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "active": true,
+      "protocols": [
+        "xhttp"
+      ],
+      "created_at": "2026-05-31T02:01:33.7551275+03:00"
+    },
+    {
+      "id": "qa_awg",
+      "name": "qa_awg",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "active": true,
+      "protocols": [
+        "awg"
+      ],
+      "created_at": "2026-05-31T01:47:42.3210159+03:00"
+    },
+    {
+      "id": "qa_tuic",
+      "name": "qa_tuic",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "active": true,
+      "protocols": [
+        "tuic"
+      ],
+      "created_at": "2026-05-31T01:35:13.7633037+03:00"
+    },
+    {
+      "id": "qa_hysteria2",
+      "name": "qa_hysteria2",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "active": true,
+      "protocols": [
+        "hysteria2"
+      ],
+      "created_at": "2026-05-31T01:35:17.8987671+03:00"
+    }
+  ],
+  "settings": {
+    "admin_password_hash": "",
+    "language": "ru",
+    "metrics_interval": 15,
+    "ssh_keys": [
+      {
+        "id": "key-auto-1780166181",
+        "name": "auto-34.40.120.7",
+        "key_data": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtz\nc2gtZWQyNTUxOQAAACBwgYsIW9gnT4MqiQK2BFG9+V2OAw1xw1DCA6LdmA/PKwAA\nAIio5hbGqOYWxgAAAAtzc2gtZWQyNTUxOQAAACBwgYsIW9gnT4MqiQK2BFG9+V2O\nAw1xw1DCA6LdmA/PKwAAAEBe+Ei/ujjnXXACa6hrogDtATXb9kLKPw/tvzdkM1j5\nYXCBiwhb2CdPgyqJArYEUb35XY4DDXHDUMIDot2YD88rAAAAAAECAwQF\n-----END OPENSSH PRIVATE KEY-----\n",
+        "source": ""
+      }
+    ],
+    "default_protocol": "awg"
+  },
+  "node_infos": [
+    {
+      "ID": "vps-test",
+      "Addr": "34.40.120.7:22",
+      "User": "root",
+      "KeyPath": "key-auto-1780166181",
+      "source": "captured",
+      "inbounds": [
+        {
+          "protocol": "xhttp",
+          "port": 8443,
+          "for_users": [
+            "qa_xhttp"
+          ],
+          "uuid": "beff8cbf-d26d-4a6c-a9da-0a4fd5e38c54"
+        }
+      ]
+    },
+    {
+      "ID": "node1",
+      "Addr": "34.40.120.7:22",
+      "User": "root",
+      "KeyPath": "C:\\Users\\dante\\.ssh\\id_ed25519",
+      "source": "ssh_key"
+    }
+  ],
+  "metrics": [
+    {
+      "host_id": "vps-test",
+      "online": true,
+      "version": "1.13.11-extended-2.1.0",
+      "latency_ms": 2406,
+      "last_checked": "2026-05-31T02:01:02.6047379+03:00"
+    },
+    {
+      "host_id": "node1",
+      "online": true,
+      "version": "1.13.11-extended-2.1.0",
+      "latency_ms": 1092,
+      "last_checked": "2026-05-31T02:01:03.6988275+03:00"
+    }
+  ],
+  "known_hosts": [
+    {
+      "addr": "34.40.120.7:22",
+      "fingerprint": "SHA256:ON12cYqZYzUhjg4CpWINfDtNtFxkz02ICUT68WYhrA4",
+      "first_seen": "2026-05-30T21:35:02.1750778+03:00",
+      "trusted": true
+    }
+  ]
+}

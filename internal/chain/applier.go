@@ -1253,3 +1253,90 @@ func generateStableUUID() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
+
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+// ApplyStandaloneNode generates and pushes config for standalone inbounds.
+func (a *Applier) ApplyStandaloneNode(ctx context.Context, info *model.NodeInfo) (*ApplyReport, error) {
+	if len(info.Inbounds) == 0 {
+		return nil, fmt.Errorf("node %s has no inbounds configured", info.ID)
+	}
+
+	for i := range info.Inbounds {
+		ib := &info.Inbounds[i]
+		if ib.UUID == "" {
+			ib.UUID = generateUUID()
+		}
+		if ib.ServerPrivKey == "" {
+			switch ib.Protocol {
+			case "vless-reality":
+				privBytes := make([]byte, 32)
+				rand.Read(privBytes)
+				ib.ServerPrivKey = base64.RawURLEncoding.EncodeToString(privBytes)
+				
+				var pubBytes [32]byte
+				curve25519.ScalarBaseMult(&pubBytes, (*[32]byte)(privBytes))
+				ib.ServerPubKey = base64.RawURLEncoding.EncodeToString(pubBytes[:])
+				
+				shortBytes := make([]byte, 8)
+				rand.Read(shortBytes)
+				ib.ShortID = hex.EncodeToString(shortBytes)
+			case "awg":
+				if priv, pub, kerr := generateWireGuardKeypair(); kerr == nil {
+					ib.ServerPrivKey = priv
+					ib.ServerPubKey = pub
+				}
+			case "tuic":
+				privBytes := make([]byte, 32)
+				rand.Read(privBytes)
+				ib.ServerPrivKey = base64.RawURLEncoding.EncodeToString(privBytes) // password
+			}
+		}
+	}
+
+	backend := a.factory.Create()
+	
+	params := model.ConfigParams{
+		Extra: map[string]any{
+			"inbounds": info.Inbounds,
+		},
+	}
+	
+	cfg, err := backend.GenerateConfig(model.ConfigStandaloneNode, params)
+	if err != nil {
+		return nil, fmt.Errorf("generate standalone config: %w", err)
+	}
+	
+	client, err := sshclient.Connect(info.Addr, info.User, info.KeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("ssh connect: %w", err)
+	}
+	defer client.Close()
+	
+	if _, deployErr := backend.Deploy(ctx, info.Host); deployErr != nil {
+		return nil, fmt.Errorf("deploy sing-box: %w", deployErr)
+	}
+	
+	// We pass empty UserProtocol because we don't have a single specific user protocol here
+	_, err = pushConfig(client, cfg.Content, "")
+	if err != nil {
+		if strings.Contains(err.Error(), "rollback successful") {
+			return nil, fmt.Errorf("ROLLBACK APPLIED: %w", err)
+		}
+		return nil, fmt.Errorf("push config: %w", err)
+	}
+	
+	return &ApplyReport{
+		ChainName: "<standalone>",
+		Profile:   "default",
+		Nodes: []NodeResult{
+			{ID: info.ID, Success: true},
+		},
+	}, nil
+}

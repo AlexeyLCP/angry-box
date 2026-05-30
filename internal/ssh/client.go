@@ -25,6 +25,18 @@ func SetHostKeyManager(m HostKeyManager) {
 	globalManager = m
 }
 
+// KeyResolver is used to retrieve SSH private keys from the database by ID.
+type KeyResolver interface {
+	ResolveKey(keyID string) (string, bool)
+}
+
+var globalKeyResolver KeyResolver
+
+// SetKeyResolver sets the global SSH key resolver.
+func SetKeyResolver(r KeyResolver) {
+	globalKeyResolver = r
+}
+
 // HostKeyError indicates a problem with the remote host key (mismatch or untrusted).
 type HostKeyError struct {
 	RemoteFingerprint string
@@ -51,9 +63,20 @@ func Connect(addr, user, keyPath string) (*Client, error) {
 		pass := strings.TrimPrefix(keyPath, "password:")
 		authMethod = ssh.Password(pass)
 	} else {
-		key, err := os.ReadFile(keyPath)
-		if err != nil {
-			return nil, fmt.Errorf("ssh: read key %q: %w", keyPath, err)
+		var key []byte
+		var err error
+
+		if globalKeyResolver != nil {
+			if data, ok := globalKeyResolver.ResolveKey(keyPath); ok {
+				key = []byte(data)
+			}
+		}
+
+		if len(key) == 0 {
+			key, err = os.ReadFile(keyPath)
+			if err != nil {
+				return nil, fmt.Errorf("ssh: read key %q: %w", keyPath, err)
+			}
 		}
 
 		signer, err := ssh.ParsePrivateKey(key)
@@ -127,9 +150,20 @@ func InstallPublicKey(addr, user, password, privKeyPath string) error {
 	}
 	defer client.Close()
 
-	key, err := os.ReadFile(privKeyPath)
-	if err != nil {
-		return fmt.Errorf("read priv key: %w", err)
+	var key []byte
+	var readErr error
+
+	if globalKeyResolver != nil {
+		if data, ok := globalKeyResolver.ResolveKey(privKeyPath); ok {
+			key = []byte(data)
+		}
+	}
+
+	if len(key) == 0 {
+		key, readErr = os.ReadFile(privKeyPath)
+		if readErr != nil {
+			return fmt.Errorf("read priv key: %w", readErr)
+		}
 	}
 
 	signer, err := ssh.ParsePrivateKey(key)

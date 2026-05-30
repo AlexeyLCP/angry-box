@@ -73,10 +73,18 @@ type NodeInfo struct {
 
 // NodeInbound describes a user-facing inbound on a node.
 type NodeInbound struct {
-	Protocol    string `json:"protocol"`    // "awg", "tuic", "vless-reality"
-	Port        int    `json:"port"`
-	Obfuscation string `json:"obfuscation,omitempty"` // extra obfuscation notes
-	ForUsers    []string `json:"for_users,omitempty"`  // user IDs this inbound serves
+	Protocol    string   `json:"protocol"`              // "awg", "tuic", "vless-reality"
+	Port        int      `json:"port"`
+	Obfuscation string   `json:"obfuscation,omitempty"` // extra obfuscation notes
+	ForUsers    []string `json:"for_users,omitempty"`    // user IDs this inbound serves
+	OutboundTag string   `json:"outbound_tag,omitempty"` // target outbound tag; empty = "direct-out"
+	Source      string   `json:"source,omitempty"`       // "standalone" or "chain:<chain_name>"
+
+	// Persisted server-side credentials
+	UUID          string `json:"uuid,omitempty"`
+	ServerPrivKey string `json:"server_priv_key,omitempty"`
+	ServerPubKey  string `json:"server_pub_key,omitempty"`
+	ShortID       string `json:"short_id,omitempty"`
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).

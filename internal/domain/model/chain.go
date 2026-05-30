@@ -17,6 +17,11 @@ type ChainNode struct {
 	User    string `json:"user"`    // SSH user
 	KeyPath string `json:"keyPath"` // path to SSH private key
 	Port    int    `json:"port"`    // inbound port for transport on this node
+
+	TransitPrivKey string        `json:"transit_priv_key,omitempty"` // For Reality
+	TransitShortID string        `json:"transit_short_id,omitempty"` // For Reality
+	TransitUUID    string        `json:"transit_uuid,omitempty"`     // Shared UUID for auth
+	Inbounds       []NodeInbound `json:"inbounds,omitempty"`         // Standalone inbounds configured for this node
 }
 
 // Chain is an ordered list of nodes forming a multi-hop proxy path.
