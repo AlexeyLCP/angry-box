@@ -19,6 +19,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
@@ -125,7 +126,15 @@ func (s *Server) collectAllMetrics() {
 }
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
-	return BasicAuthMiddleware(h, s.cfg)
+	return BasicAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		settings, _ := s.store().GetSettings()
+		lang := settings.Language
+		if lang == "" {
+			lang = "en"
+		}
+		ctx := context.WithValue(r.Context(), i18n.LangKey, lang)
+		h(w, r.WithContext(ctx))
+	}), s.cfg)
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -207,19 +216,19 @@ func (s *Server) store() *chain.Store { return chain.NewStore(s.storePath) }
 
 func isHTMXRequest(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
 
-func (s *Server) render(w http.ResponseWriter, c templ.Component) {
+func (s *Server) render(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := c.Render(context.Background(), w); err != nil {
+	if err := c.Render(r.Context(), w); err != nil {
 		http.Error(w, "render error", http.StatusInternalServerError)
 	}
 }
 
 func (s *Server) renderContent(w http.ResponseWriter, r *http.Request, title string, content templ.Component) {
 	if isHTMXRequest(r) {
-		s.render(w, content)
+		s.render(w, r, content)
 		return
 	}
-	s.render(w, templates.Base(title, content))
+	s.render(w, r, templates.Base(title, content))
 }
 
 func (s *Server) renderJSON(w http.ResponseWriter, data any) {
@@ -316,7 +325,7 @@ func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request
 		TotalChains: len(chains),
 		TotalUsers:  len(users),
 	}
-	s.render(w, templates.StatsCards(stats))
+	s.render(w, r, templates.StatsCards(stats))
 }
 
 func (s *Server) handleMetricsJSON(w http.ResponseWriter, r *http.Request) {
@@ -336,13 +345,13 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNewHostForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, templates.NewHostForm())
+	s.render(w, r, templates.NewHostForm())
 }
 
 func (s *Server) handleNewNodeForm(w http.ResponseWriter, r *http.Request) {
 	settings, _ := s.store().GetSettings()
 	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
-	s.render(w, templates.NodeForm(nil, settings, allKeys))
+	s.render(w, r, templates.NodeForm(nil, settings, allKeys))
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +386,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		Source:    "ssh_key",
 	})
 
-	s.render(w, templates.NodeRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath},
+	s.render(w, r, templates.NodeRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath},
 		&model.NodeInfo{Country: country, Bandwidth: bandwidth, Source: "ssh_key"}, nil))
 }
 
@@ -392,7 +401,7 @@ func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
 	info, _ := st.GetNodeInfo(id)
 	settings, _ := st.GetSettings()
 	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
-	s.render(w, templates.NodeForm(host, settings, allKeys, info))
+	s.render(w, r, templates.NodeForm(host, settings, allKeys, info))
 }
 
 func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
@@ -423,7 +432,7 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	st.SaveNodeInfo(info)
 
 	if isHTMXRequest(r) {
-		s.render(w, templates.NodeRow(host, info, nil))
+		s.render(w, r, templates.NodeRow(host, info, nil))
 	} else {
 		http.Redirect(w, r, "/ui/nodes", http.StatusSeeOther)
 	}
@@ -486,10 +495,10 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	if sshErr != nil {
 		var hkErr *sshclient.HostKeyError
 		if errors.As(sshErr, &hkErr) {
-			s.render(w, templates.HostKeyWarning(*host, hkErr.RemoteFingerprint, hkErr.Changed))
+			s.render(w, r, templates.HostKeyWarning(*host, hkErr.RemoteFingerprint, hkErr.Changed))
 			return
 		}
-		s.render(w, &simpleHTML{html: fmt.Sprintf(
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(
 			`<div class="alert alert-error"><span>Capture failed: %v</span></div>`, sshErr,
 		)})
 		return
@@ -512,7 +521,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 		Version: status.Version,
 	})
 
-	s.render(w, &simpleHTML{html: fmt.Sprintf(
+	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
 		`<div class="alert alert-success"><span>Node %s captured! Running: %v, Version: %s</span>
 		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">Refresh Nodes</button></div>`,
 		id, status.Running, status.Version,
@@ -529,7 +538,7 @@ func (s *Server) handleNodeCaptureForm(w http.ResponseWriter, r *http.Request) {
 	}
 	settings, _ := st.GetSettings()
 	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
-	s.render(w, templates.NodeCaptureForm(host, settings, allKeys))
+	s.render(w, r, templates.NodeCaptureForm(host, settings, allKeys))
 }
 
 func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) {
@@ -540,7 +549,7 @@ func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) 
 	}
 	users, _ := s.store().ListUsers()
 	presets := chain.ListPresets()
-	s.render(w, templates.NodeInboundsForm(info, users, presets))
+	s.render(w, r, templates.NodeInboundsForm(info, users, presets))
 }
 
 func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) {
@@ -574,7 +583,7 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	}
 	info.Inbounds = inbounds
 	st.SaveNodeInfo(info)
-	s.render(w, &simpleHTML{html: `<div class="alert alert-success">Inbounds saved.</div>`})
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">Inbounds saved.</div>`})
 }
 
 // ─── Spider Web ────────────────────────────────────────────────────────────────
@@ -660,7 +669,7 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	allHosts, _ := st.ListHosts()
 	allChains, _ := st.ListChains()
 	allInfos, _ := st.ListNodeInfos()
-	s.render(w, templates.SpiderWeb(allHosts, allChains, allInfos))
+	s.render(w, r, templates.SpiderWeb(allHosts, allChains, allInfos))
 }
 
 func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) {
@@ -714,7 +723,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleNewUserForm(w http.ResponseWriter, r *http.Request) {
 	chains, _ := s.store().ListChains()
-	s.render(w, templates.UserForm(nil, chains))
+	s.render(w, r, templates.UserForm(nil, chains))
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -765,7 +774,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, templates.UserRow(u))
+	s.render(w, r, templates.UserRow(u))
 }
 
 func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
@@ -776,7 +785,7 @@ func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chains, _ := s.store().ListChains()
-	s.render(w, templates.UserForm(u, chains))
+	s.render(w, r, templates.UserForm(u, chains))
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -812,7 +821,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	st.SaveUser(u)
 	if isHTMXRequest(r) {
-		s.render(w, templates.UserRow(u))
+		s.render(w, r, templates.UserRow(u))
 	} else {
 		http.Redirect(w, r, "/ui/users", http.StatusSeeOther)
 	}
@@ -874,7 +883,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.render(w, templates.UserConfigView(u, configs))
+	s.render(w, r, templates.UserConfigView(u, configs))
 }
 
 func buildConnectionLink(c *model.Chain, u *model.User) string {
@@ -928,7 +937,7 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 		links = append(links, link)
 	}
 
-	s.render(w, templates.UserQRView(u, links))
+	s.render(w, r, templates.UserQRView(u, links))
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────────────
@@ -943,12 +952,14 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	// Ensure we pass the config properties (safe fallbacks if cfg is nil in some tests)
 	authEnabled := false
 	authUsername := ""
+	listenAddr := ""
 	if s.cfg != nil {
 		authEnabled = s.cfg.AuthEnabled
 		authUsername = s.cfg.AuthUsername
+		listenAddr = s.cfg.ListenAddr
 	}
 
-	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, authEnabled, authUsername, sysKeys))
+	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, authEnabled, authUsername, listenAddr, sysKeys))
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
@@ -968,6 +979,14 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			configNeedsSave = true
 		}
 
+		portChanged := false
+		newListenAddr := strings.TrimSpace(r.FormValue("listen_addr"))
+		if newListenAddr != "" && newListenAddr != s.cfg.ListenAddr {
+			s.cfg.ListenAddr = newListenAddr
+			configNeedsSave = true
+			portChanged = true
+		}
+
 		newAuthEnabled := r.FormValue("auth_enabled") == "on"
 		if newAuthEnabled != s.cfg.AuthEnabled {
 			s.cfg.AuthEnabled = newAuthEnabled
@@ -985,7 +1004,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 				// Require valid old password if auth is currently enabled
 				err := bcrypt.CompareHashAndPassword([]byte(s.cfg.AuthPasswordHash), []byte(oldPassword))
 				if err != nil {
-					s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Failed to change password: old password is incorrect.</span></div>`})
+					s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>Failed to change password: old password is incorrect.</span></div>`})
 					return
 				}
 			}
@@ -1005,7 +1024,21 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			// Save config to default location
 			if err := s.cfg.Save(config.DefaultConfigPath()); err != nil {
 				log.Printf("failed to save config: %v", err)
-				s.render(w, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>Settings saved, but config write failed: %v</span></div>`, err)})
+				s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>Settings saved, but config write failed: %v</span></div>`, err)})
+				return
+			}
+			
+			if portChanged {
+				msg := `
+				<div class="alert alert-error shadow-lg mt-2">
+					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+					<div>
+						<h3 class="font-bold">Port changed!</h3>
+						<div class="text-xs mt-1">Please restart the angry-box service manually to apply the new port.</div>
+						<div class="mt-2 text-xs font-mono bg-base-300 p-1.5 rounded inline-block">systemctl restart angry-box</div>
+					</div>
+				</div>`
+				s.render(w, r, &simpleHTML{html: msg})
 				return
 			}
 		}
@@ -1013,6 +1046,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 	// 2. PanelSettings updates (store.json)
 	settings.PanelCountry = strings.TrimSpace(r.FormValue("panel_country"))
+	settings.Language = strings.TrimSpace(r.FormValue("language"))
 	if intervalStr := strings.TrimSpace(r.FormValue("metrics_interval")); intervalStr != "" {
 		settings.MetricsInterval, _ = strconv.Atoi(intervalStr)
 	}
@@ -1030,7 +1064,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	settings.SSHKeys = keys
 
 	st.SaveSettings(settings)
-	s.render(w, &simpleHTML{html: `<div class="alert alert-success"><span>Settings saved.</span></div>`})
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>Settings saved.</span></div>`})
 }
 
 // ─── SSH Keys ──────────────────────────────────────────────────────────────────
@@ -1043,12 +1077,12 @@ func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	keyData := strings.TrimSpace(r.FormValue("key_data"))
 	if name == "" || keyData == "" {
-		s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Name and key data are required.</span></div>`})
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>Name and key data are required.</span></div>`})
 		return
 	}
 	// Validate key format
 	if !looksLikePrivateKey(keyData) {
-		s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).</span></div>`})
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).</span></div>`})
 		return
 	}
 	st := s.store()
@@ -1063,7 +1097,7 @@ func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 	st.SaveSettings(settings)
 	// Return updated key list
 	sysKeys := detectSystemKeys()
-	s.render(w, templates.SSHKeyList(settings, sysKeys))
+	s.render(w, r, templates.SSHKeyList(settings, sysKeys))
 }
 
 func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
@@ -1207,7 +1241,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("save failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, templates.HostRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}))
+	s.render(w, r, templates.HostRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}))
 }
 
 func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
@@ -1254,7 +1288,7 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	host, err := st.GetHost(id)
 	if err != nil {
-		s.render(w, &simpleHTML{html: `<span class="text-error text-xs">Host not found</span>`})
+		s.render(w, r, &simpleHTML{html: `<span class="text-error text-xs">Host not found</span>`})
 		return
 	}
 	f := factory.New()
@@ -1264,7 +1298,7 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Record offline metric
 		st.SaveMetrics(&model.NodeMetrics{HostID: id, Online: false})
-		s.render(w, &simpleHTML{html: `<span class="badge badge-error badge-sm">Error</span>`})
+		s.render(w, r, &simpleHTML{html: `<span class="badge badge-error badge-sm">Error</span>`})
 		return
 	}
 	st.SaveMetrics(&model.NodeMetrics{
@@ -1272,7 +1306,7 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 		Online:  status.Running,
 		Version: status.Version,
 	})
-	s.render(w, templates.HostStatus(status))
+	s.render(w, r, templates.HostStatus(status))
 }
 
 // ─── Chain handlers ───────────────────────────────────────────────────────────
@@ -1281,7 +1315,7 @@ func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	hosts, _ := st.ListHosts()
 	profiles := chain.ListPresets()
-	s.render(w, templates.NewChainForm(hosts, profiles))
+	s.render(w, r, templates.NewChainForm(hosts, profiles))
 }
 
 func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
@@ -1362,7 +1396,7 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, templates.ChainRow(c))
+	s.render(w, r, templates.ChainRow(c))
 }
 
 func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
@@ -1375,7 +1409,7 @@ func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
 	}
 	hosts, _ := st.ListHosts()
 	profiles := chain.ListPresets()
-	s.render(w, templates.EditChainForm(c, hosts, profiles))
+	s.render(w, r, templates.EditChainForm(c, hosts, profiles))
 }
 
 func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
@@ -1438,7 +1472,7 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Return updated row
-	s.render(w, templates.ChainRow(c))
+	s.render(w, r, templates.ChainRow(c))
 }
 
 func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
@@ -1464,12 +1498,12 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	c, err := st.GetChain(name)
 	if err != nil {
-		s.render(w, templates.ApplyResult(name, false, nil, "chain not found"))
+		s.render(w, r, templates.ApplyResult(name, false, nil, "chain not found"))
 		return
 	}
 	resolved, err := st.ResolveNodes(c)
 	if err != nil {
-		s.render(w, templates.ApplyResult(name, false, nil, err.Error()))
+		s.render(w, r, templates.ApplyResult(name, false, nil, err.Error()))
 		return
 	}
 	c.Nodes = resolved
@@ -1487,10 +1521,10 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		s.render(w, templates.ApplyResult(name, false, report, msg))
+		s.render(w, r, templates.ApplyResult(name, false, report, msg))
 		return
 	}
-	s.render(w, templates.ApplyResult(name, true, report, ""))
+	s.render(w, r, templates.ApplyResult(name, true, report, ""))
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
