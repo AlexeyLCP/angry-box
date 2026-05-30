@@ -138,6 +138,8 @@ var locales = map[string]map[string]string{
 		// Dashboard / General
 		"Manage Nodes": "Управление нодами",
 		"Name": "Название",
+		"Host": "Сервер",
+		"Version": "Версия",
 		"Latency": "Задержка",
 		"Last Checked": "Последняя проверка",
 		"Check": "Проверить",
@@ -152,6 +154,23 @@ var locales = map[string]map[string]string{
 		"hops": "узлов",
 		"Never": "Никогда",
 		"ago": "назад",
+		"Tip: Use the Nodes page for full management. Auto-refreshes every 60 seconds.": "Совет: Используйте страницу Нод для полного управления. Автообновление каждые 60 секунд.",
+		
+		// Hosts
+		"+ Add Host": "+ Добавить ноду",
+		"ID": "ID",
+		"User": "Пользователь",
+		"Key": "Ключ",
+		"No hosts yet. Add your first remote node.": "Пока нет нод. Добавьте свою первую удаленную ноду.",
+		"Delete host ": "Удалить ноду ",
+		"Add New Host": "Добавить новую ноду",
+		"SSH Address": "Адрес SSH",
+		"SSH User": "Пользователь SSH",
+		"Path to SSH Private Key": "Путь к приватному ключу SSH",
+		"Cancel": "Отмена",
+		"Add Host": "Добавить ноду",
+		"Running": "Работает",
+		"Stopped": "Остановлен",
 
 		// Spider
 		"Refresh": "Обновить",

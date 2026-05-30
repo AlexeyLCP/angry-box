@@ -1,17 +1,20 @@
 package templates
 
-import "github.com/alexeylcp/angry-box/internal/domain/model"
+import (
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
 
 templ Hosts(hosts []*model.Host) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
-			<h2 class="text-2xl font-semibold">Hosts</h2>
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Hosts") }</h2>
 			<button 
 				class="btn btn-primary btn-sm"
 				hx-get="/ui/hosts/new"
 				hx-target="#modal-container"
 				hx-swap="innerHTML">
-				+ Add Host
+				{ i18n.T(ctx, "+ Add Host") }
 			</button>
 		</div>
 
@@ -20,11 +23,11 @@ templ Hosts(hosts []*model.Host) {
 				<table class="table">
 					<thead>
 						<tr>
-							<th>ID</th>
-							<th>Address</th>
-							<th>User</th>
-							<th>Key</th>
-							<th>Status</th>
+							<th>{ i18n.T(ctx, "ID") }</th>
+							<th>{ i18n.T(ctx, "Address") }</th>
+							<th>{ i18n.T(ctx, "User") }</th>
+							<th>{ i18n.T(ctx, "Key") }</th>
+							<th>{ i18n.T(ctx, "Status") }</th>
 							<th class="w-px"></th>
 						</tr>
 					</thead>
@@ -35,7 +38,7 @@ templ Hosts(hosts []*model.Host) {
 						if len(hosts) == 0 {
 							<tr>
 								<td colspan="6" class="text-center py-8 text-base-content/50">
-									No hosts yet. Add your first remote node.
+									{ i18n.T(ctx, "No hosts yet. Add your first remote node.") }
 								</td>
 							</tr>
 						}
@@ -60,17 +63,17 @@ templ HostRow(h *model.Host) {
 				hx-get={"/ui/hosts/" + h.ID + "/status"}
 				hx-target="this"
 				hx-swap="innerHTML">
-				<button class="btn btn-ghost btn-xs">Check</button>
+				<button class="btn btn-ghost btn-xs">{ i18n.T(ctx, "Check") }</button>
 			</div>
 		</td>
 		<td>
 			<button
 				class="btn btn-ghost btn-xs text-error"
 				hx-delete={"/ui/hosts/" + h.ID}
-				hx-confirm={"Delete host " + h.ID + "?"}
+				hx-confirm={i18n.T(ctx, "Delete host ") + h.ID + "?"}
 				hx-target="closest tr"
 				hx-swap="delete">
-				Delete
+				{ i18n.T(ctx, "Delete") }
 			</button>
 		</td>
 	</tr>
@@ -79,7 +82,7 @@ templ HostRow(h *model.Host) {
 templ NewHostForm() {
 	<dialog id="host-modal" class="modal" open>
 		<div class="modal-box">
-			<h3 class="font-bold text-lg mb-4">Add New Host</h3>
+			<h3 class="font-bold text-lg mb-4">{ i18n.T(ctx, "Add New Host") }</h3>
 			
 			<form 
 				hx-post="/ui/hosts"
@@ -89,29 +92,29 @@ templ NewHostForm() {
 				class="space-y-4">
 
 				<div class="form-control">
-					<label class="label"><span class="label-text">ID (unique)</span></label>
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "ID (unique)") }</span></label>
 					<input type="text" name="id" class="input input-bordered" required placeholder="node1" />
 				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH Address</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Address") }</span></label>
 						<input type="text" name="addr" class="input input-bordered" required placeholder="192.168.1.10:22" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH User</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH User") }</span></label>
 						<input type="text" name="user" class="input input-bordered" value="root" />
 					</div>
 				</div>
 
 				<div class="form-control">
-					<label class="label"><span class="label-text">Path to SSH Private Key</span></label>
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Path to SSH Private Key") }</span></label>
 					<input type="text" name="keyPath" class="input input-bordered" required placeholder="~/.ssh/id_ed25519" />
 				</div>
 
 				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-					<button type="submit" class="btn btn-primary">Add Host</button>
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Add Host") }</button>
 				</div>
 			</form>
 		</div>
@@ -125,10 +128,10 @@ templ NewHostForm() {
 templ HostStatus(status *model.Status) {
 	<div class="flex flex-col gap-0.5 text-xs">
 		if status.Running {
-			<span class="badge badge-success badge-sm">Running</span>
+			<span class="badge badge-success badge-sm">{ i18n.T(ctx, "Running") }</span>
 			<span class="font-mono text-[10px] opacity-70">{ status.Version }</span>
 		} else {
-			<span class="badge badge-error badge-sm">Stopped</span>
+			<span class="badge badge-error badge-sm">{ i18n.T(ctx, "Stopped") }</span>
 		}
 		if status.Error != "" {
 			<span class="text-error text-[10px] truncate max-w-[120px]" title={status.Error}>

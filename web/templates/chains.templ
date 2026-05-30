@@ -372,17 +372,17 @@ func alertClass(success bool) string {
 // Minimal StatusPage for now (hosts with on-demand check)
 templ StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) {
 	<div class="space-y-6">
-		<h2 class="text-2xl font-semibold">System Status</h2>
+		<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "System Status") }</h2>
 		<div class="card bg-base-100 shadow">
 			<div class="w-full">
 				<table class="table table-sm">
 					<thead>
 						<tr>
-							<th>Host</th>
-							<th>Address</th>
-							<th>Status</th>
-							<th>Version</th>
-							<th>Last Checked</th>
+							<th>{ i18n.T(ctx, "Host") }</th>
+							<th>{ i18n.T(ctx, "Address") }</th>
+							<th>{ i18n.T(ctx, "Status") }</th>
+							<th>{ i18n.T(ctx, "Version") }</th>
+							<th>{ i18n.T(ctx, "Last Checked") }</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -392,7 +392,7 @@ templ StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) {
 								<td class="font-mono text-sm">{ h.Addr }</td>
 								<td>
 									<div hx-get={"/ui/hosts/" + h.ID + "/status"} hx-target="this" hx-swap="innerHTML">
-										<button class="btn btn-xs">Check</button>
+										<button class="btn btn-xs">{ i18n.T(ctx, "Check") }</button>
 									</div>
 								</td>
 								@metricVersionCell(h.ID, metrics)
@@ -403,7 +403,7 @@ templ StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) {
 				</table>
 			</div>
 		</div>
-		<p class="text-xs opacity-60">Tip: Use the Nodes page for full management. Auto-refreshes every 60 seconds.</p>
+		<p class="text-xs opacity-60">{ i18n.T(ctx, "Tip: Use the Nodes page for full management. Auto-refreshes every 60 seconds.") }</p>
 		<!-- Auto-refresh every 60s -->
 		<div hx-get="/ui/status" hx-trigger="every 60s" hx-target="#main-content" hx-swap="outerHTML" class="hidden"></div>
 	</div>
@@ -425,7 +425,7 @@ templ metricLastCheckedCell(hostID string, metrics []*model.NodeMetrics) {
 	<td>
 		for _, m := range metrics {
 			if m.HostID == hostID && !m.LastChecked.IsZero() {
-				<span class="text-xs text-base-content/50">{ time.Since(m.LastChecked).Round(time.Second).String() } ago</span>
+				<span class="text-xs text-base-content/50">{ time.Since(m.LastChecked).Round(time.Second).String() } { i18n.T(ctx, "ago") }</span>
 				return
 			}
 		}
