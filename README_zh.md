@@ -101,8 +101,9 @@ Angry-BOX 将在控制台中直接输出一个 **随时可用 (ready-to-use) 的
 
 Angry-BOX 是站在巨人的肩膀上构建的。我们要感谢以下使该编排器成为可能的优秀项目：
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** 和 **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (在 GPLv3 许可证下发布)
+- **[sing-box](https://github.com/SagerNet/sing-box)** 和 **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (在 GPLv3 许可证下发布) - *非常感谢扩展核心！*
 - **[AmneziaWG Linux 内核模块](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (在 GPLv2 许可证下发布)
+- **[pumbaX 的 awg-multi-script](https://github.com/pumbaX/awg-multi-script)** - *感谢其在 AmneziaWG 混淆最佳实践方面的出色研究，这启发了我们的默认预设。*
 - **HTMX, TailwindCSS, 以及 DaisyUI** (MIT / BSD 许可证)
 
 请参阅 [LICENSE](LICENSE) 文件以获取完整的版权声明和许可详细信息。

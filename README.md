@@ -101,8 +101,9 @@ Angry-BOX will output a **ready-to-use AmneziaWG client configuration block** ri
 
 Angry-BOX stands on the shoulders of giants. We would like to acknowledge and thank the following projects that make this orchestrator possible:
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** and **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (Licensed under GPLv3)
+- **[sing-box](https://github.com/SagerNet/sing-box)** and **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (Licensed under GPLv3) - *Huge thanks for the extended core!*
 - **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (Licensed under GPLv2)
+- **[awg-multi-script by pumbaX](https://github.com/pumbaX/awg-multi-script)** - *Incredible research and implementation of AmneziaWG obfuscation best practices that inspired our default presets.*
 - **HTMX, TailwindCSS, and DaisyUI** (MIT / BSD Licenses)
 
 Please see the [LICENSE](LICENSE) file for the full copyright notices and licensing details of these components.

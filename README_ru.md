@@ -101,8 +101,9 @@ angry-box apply-chain my-chain
 
 Angry-BOX выступает в роли оркестратора и полагается на потрясающие технологии. Мы выражаем огромную благодарность следующим проектам:
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** и **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (Лицензия GPLv3)
+- **[sing-box](https://github.com/SagerNet/sing-box)** и **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (Лицензия GPLv3) — *Огромная благодарность за расширенное ядро!*
 - **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (Лицензия GPLv2)
+- **[awg-multi-script от pumbaX](https://github.com/pumbaX/awg-multi-script)** — *За невероятные исследования и лучшие практики обфускации AmneziaWG, которые легли в основу наших пресетов.*
 - **HTMX, TailwindCSS и DaisyUI** (Лицензии MIT / BSD)
 
 Пожалуйста, ознакомьтесь с файлом [LICENSE](LICENSE) для получения полных сведений о копирайтах и лицензиях.

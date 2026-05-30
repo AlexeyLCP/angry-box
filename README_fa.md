@@ -115,8 +115,9 @@ angry-box apply-chain my-chain
 
 این پروژه بدون ابزارهای فوق‌العاده‌ای که توسط کامیونیتی ایجاد شده‌اند، ممکن نبود. از پروژه‌های زیر سپاسگزاری می‌کنیم:
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** و **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (تحت لایسنس GPLv3)
+- **[sing-box](https://github.com/SagerNet/sing-box)** و **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (تحت لایسنس GPLv3) - *تشکر ویژه برای توسعه هسته!*
 - **[ماژول کرنل لینوکس AmneziaWG](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (تحت لایسنس GPLv2)
+- **[اسکریپت awg-multi از pumbaX](https://github.com/pumbaX/awg-multi-script)** - *تحقیق و پیاده‌سازی بی‌نظیر بهترین روش‌های مبهم‌سازی AmneziaWG که الهام‌بخش تنظیمات پیش‌فرض ما بود.*
 - **HTMX، TailwindCSS و DaisyUI** (لایسنس‌های MIT / BSD)
 
 لطفاً فایل [LICENSE](LICENSE) را برای جزئیات کامل حق چاپ و لایسنس این اجزا مطالعه کنید.
