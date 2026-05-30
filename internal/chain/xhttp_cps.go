@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 // xhttp_cps.go
@@ -85,25 +87,50 @@ func GenerateRealisticHeaders(host string) map[string][]string {
 	return headers
 }
 
-// GenerateXMUX returns a multiplexing control map with random ranges.
+// XrayXMUX represents Xray-core XMUX configuration.
+type XrayXMUX struct {
+	Enabled        bool   `json:"enabled"`
+	MaxConcurrency string `json:"max_concurrency,omitempty"`
+	MaxConnections int    `json:"max_connections,omitempty"`
+	HMaxReusable   string `json:"h_max_reusable,omitempty"`
+	HMaxRequests   string `json:"h_max_requests,omitempty"`
+	KeepAlive      string `json:"keep_alive,omitempty"`
+}
+
+// XrayFragmentation represents Xray-core fragmentation config.
+type XrayFragmentation struct {
+	Enabled    bool `json:"enabled"`
+	MinPackets int  `json:"min_packets,omitempty"`
+	MaxPackets int  `json:"max_packets,omitempty"`
+}
+
+// XrayXHTTPExtra represents the extra XHTTP block for Xray.
+type XrayXHTTPExtra struct {
+	Mode          string              `json:"mode,omitempty"`
+	XPaddingBytes string              `json:"x_padding_bytes,omitempty"`
+	Headers       map[string][]string `json:"headers,omitempty"`
+	XMUX          *XrayXMUX           `json:"xmux,omitempty"`
+	Fragmentation *XrayFragmentation  `json:"fragmentation,omitempty"`
+}
+
+// GenerateXMUX returns a multiplexing control struct with random ranges.
 // Directly inspired by Xray XHTTP XMUX (maxConcurrency, hMaxReusableSecs, etc.).
-// These can be mapped to sing-box multiplex settings or passed via extra in Xray.
-func GenerateXMUX() map[string]any {
-	return map[string]any{
-		"enabled":         true,
-		"max_concurrency": fmt.Sprintf("%d-%d", RandRange(4, 12), RandRange(16, 48)),
-		"max_connections": 0, // unlimited or controlled
-		"h_max_reusable":  fmt.Sprintf("%d-%d", RandRange(1800, 3600), RandRange(7200, 14400)),
-		"h_max_requests":  fmt.Sprintf("%d-%d", RandRange(400, 900), RandRange(800, 2000)),
-		"keep_alive":      "30s",
+func GenerateXMUX() *XrayXMUX {
+	return &XrayXMUX{
+		Enabled:        true,
+		MaxConcurrency: fmt.Sprintf("%d-%d", RandRange(4, 12), RandRange(16, 48)),
+		MaxConnections: 0, // unlimited or controlled
+		HMaxReusable:   fmt.Sprintf("%d-%d", RandRange(1800, 3600), RandRange(7200, 14400)),
+		HMaxRequests:   fmt.Sprintf("%d-%d", RandRange(400, 900), RandRange(800, 2000)),
+		KeepAlive:      "30s",
 	}
 }
 
 // ApplyXHTTPObfuscation takes a base transport map and enriches it with
 // the advanced obfuscation parameters from the preset + generators.
 // This is the main integration point used by both applier and standalone generators.
-func ApplyXHTTPObfuscation(transport map[string]any, preset *XHTTPPreset) {
-	if preset == nil {
+func ApplyXHTTPObfuscation(transport *config.TransportOptions, preset *XHTTPPreset) {
+	if preset == nil || transport == nil {
 		return
 	}
 
@@ -113,9 +140,11 @@ func ApplyXHTTPObfuscation(transport map[string]any, preset *XHTTPPreset) {
 		if len(preset.Hosts) > 0 {
 			host = preset.Hosts[0]
 		}
-		transport["headers"] = GenerateRealisticHeaders(host)
+		transport.Headers = GenerateRealisticHeaders(host)
 	}
 }
+
+
 
 // GenerateXHTTPMode returns a recommended XHTTP mode based on stealth level.
 // 0 = packet-up (max compat), 1-2 = mixed, 3 = stream-up + fragmentation style (max stealth).
@@ -130,32 +159,32 @@ func GenerateXHTTPMode(stealthLevel int) string {
 }
 
 // GenerateXHTTPExtra produces a full "extra" object that can be dropped into
-// advanced Xray or sing-box XHTTP configs. This is one of the most powerful
-// things we took from the Xray XHTTP research.
-func GenerateXHTTPExtra(stealthLevel int, host string) map[string]any {
+// advanced Xray configs. This is one of the most powerful things we took from the Xray XHTTP research.
+func GenerateXHTTPExtra(stealthLevel int, host string) *XrayXHTTPExtra {
 	mode := GenerateXHTTPMode(stealthLevel)
 
-	extra := map[string]any{
-		"mode":            mode,
-		"x_padding_bytes": fmt.Sprintf("%d-%d", RandRange(200, 700), RandRange(900, 1800)),
-		"headers":         GenerateRealisticHeaders(host),
+	extra := &XrayXHTTPExtra{
+		Mode:          mode,
+		XPaddingBytes: fmt.Sprintf("%d-%d", RandRange(200, 700), RandRange(900, 1800)),
+		Headers:       GenerateRealisticHeaders(host),
 	}
 
 	// Strong multiplexing controls for high stealth
 	if stealthLevel >= 2 {
-		extra["xmux"] = map[string]any{
-			"max_concurrency": fmt.Sprintf("%d-%d", RandRange(3, 10), RandRange(12, 40)),
-			"h_max_reusable":  fmt.Sprintf("%d-%d", RandRange(1200, 3000), RandRange(5000, 12000)),
-			"h_max_requests":  fmt.Sprintf("%d-%d", RandRange(300, 700), RandRange(600, 1500)),
+		extra.XMUX = &XrayXMUX{
+			Enabled:        true,
+			MaxConcurrency: fmt.Sprintf("%d-%d", RandRange(3, 10), RandRange(12, 40)),
+			HMaxReusable:   fmt.Sprintf("%d-%d", RandRange(1200, 3000), RandRange(5000, 12000)),
+			HMaxRequests:   fmt.Sprintf("%d-%d", RandRange(300, 700), RandRange(600, 1500)),
 		}
 	}
 
 	// Add fragmentation-style hint (inspired by Gecko thinking)
 	if stealthLevel >= 3 {
-		extra["fragmentation"] = map[string]any{
-			"enabled":     true,
-			"min_packets": 2,
-			"max_packets": 6,
+		extra.Fragmentation = &XrayFragmentation{
+			Enabled:    true,
+			MinPackets: 2,
+			MaxPackets: 6,
 		}
 	}
 
@@ -178,12 +207,4 @@ func GenerateRealisticPreamble(host string) []string {
 	return out
 }
 
-// EnhanceTransportWithNaivePreamble adds early "browser-like" requests to the
-// transport config when possible (for advanced setups that support it).
-func EnhanceTransportWithNaivePreamble(transport map[string]any, host string) {
-	if host == "" {
-		return
-	}
-	preambles := GenerateRealisticPreamble(host)
-	transport["preamble_urls"] = preambles // consumed by advanced consumers
-}
+

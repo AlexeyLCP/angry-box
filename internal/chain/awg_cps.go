@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 // AWGObfsMaterial holds the stable obfuscation material for one AWG chain entry.
@@ -255,11 +257,7 @@ func BuildAWGClientMaterialFromPreset(p ConnectionPreset, serverHost string) AWG
 // BuildAmneziaSection is the exported version of the amnezia map builder used by
 // both the chain applier and the standalone sing-box config generator.
 // It is the single place that applies CPS/I1-I5 for the 2026 stealth presets.
-func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]any {
-	// Delegate to the internal implementation that already exists in applier.go
-	// (we keep one copy of the logic by re-exporting the behavior here for the
-	// singbox backend package).
-	// For v0.2.0 we inline the same logic to avoid import cycles.
+func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOptions {
 	level := 0
 	mimicry := "none"
 
@@ -273,38 +271,35 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) map[string]an
 		}
 	}
 
-	section := map[string]any{
-		"jc":   awg.JC,
-		"jmin": awg.JMIN,
-		"jmax": awg.JMAX,
+	section := &config.AmneziaOptions{
+		JC:   awg.JC,
+		JMIN: awg.JMIN,
+		JMAX: awg.JMAX,
 	}
 
-	// CPS headers (s1,s2,h1-h4,i1-i5) are only added when CPS is explicitly enabled.
-	// The basic AWG kernel module doesn't support them and will fail with
-	// "headers must not overlap" if CPS headers are present without I1-I5 packets.
 	if level > 0 && mimicry != "none" {
-		section["s1"] = awg.S1
-		section["s2"] = awg.S2
-		section["h1"] = awg.H1
-		section["h2"] = awg.H2
-		section["h3"] = awg.H3
-		section["h4"] = awg.H4
+		section.S1 = awg.S1
+		section.S2 = awg.S2
+		section.H1 = awg.H1
+		section.H2 = awg.H2
+		section.H3 = awg.H3
+		section.H4 = awg.H4
 
 		mat := GenerateAWGObfsMaterial(level, mimicry)
 		if len(mat.I1) > 0 {
-			section["i1"] = base64.StdEncoding.EncodeToString(mat.I1)
+			section.I1 = base64.StdEncoding.EncodeToString(mat.I1)
 		}
 		if len(mat.I2) > 0 {
-			section["i2"] = base64.StdEncoding.EncodeToString(mat.I2)
+			section.I2 = base64.StdEncoding.EncodeToString(mat.I2)
 		}
 		if len(mat.I3) > 0 {
-			section["i3"] = base64.StdEncoding.EncodeToString(mat.I3)
+			section.I3 = base64.StdEncoding.EncodeToString(mat.I3)
 		}
 		if len(mat.I4) > 0 {
-			section["i4"] = base64.StdEncoding.EncodeToString(mat.I4)
+			section.I4 = base64.StdEncoding.EncodeToString(mat.I4)
 		}
 		if len(mat.I5) > 0 {
-			section["i5"] = base64.StdEncoding.EncodeToString(mat.I5)
+			section.I5 = base64.StdEncoding.EncodeToString(mat.I5)
 		}
 	}
 	return section

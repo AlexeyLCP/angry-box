@@ -11,6 +11,7 @@ import (
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	"golang.org/x/crypto/curve25519"
 )
@@ -249,7 +250,15 @@ func (a *Applier) ApplyChain(ctx context.Context, chain *model.Chain, awgClientP
 		_, err = pushConfig(client, cfg, chain.UserProtocol)
 		client.Close()
 		if err != nil {
-			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "push config: " + err.Error()})
+			if strings.Contains(err.Error(), "rollback successful") {
+				errMsg := "ROLLBACK APPLIED: " + err.Error()
+				if i > 0 {
+					errMsg = "WARNING: Chain state is out of sync. Rollback occurred on node " + node.Addr + ". " + errMsg
+				}
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: errMsg})
+			} else {
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "push config: " + err.Error()})
+			}
 			continue
 		}
 
@@ -398,12 +407,11 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 			inb := buildTUICUserInbound(port, params[i].UUID, tag, preset, params[i])
 			inbounds = append(inbounds, inb)
 		case model.UserProtocolAWG:
-			ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
+			ep, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, "", "")
 			if err != nil {
 				return "", fmt.Errorf("build awg endpoint: %w", err)
 			}
 			endpoints = append(endpoints, ep)
-			inbounds = append(inbounds, tunInb)
 		default:
 			inb := buildUserInbound(port, params[i].UUID, tag)
 			inbounds = append(inbounds, inb)
@@ -411,12 +419,14 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 	}
 
 	// Build routing + strategy + DNS
-	var route interface{}
+	var route *config.RoutingSection
 	var strategyTag string
 	if len(outbounds) > 0 {
-		var firstOut map[string]any
+		var firstOut struct {
+			Tag string `json:"tag"`
+		}
 		json.Unmarshal(outbounds[0], &firstOut)
-		outTag, _ := firstOut["tag"].(string)
+		outTag := firstOut.Tag
 
 		// Apply chain strategy: wrap outbounds in urltest/selector/failover
 		stratOut := BuildStrategyOutbound(string(strategy), []string{outTag})
@@ -430,7 +440,7 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 
 		// Generate full routing section from preset
 		routingSection := BuildRoutingSection(preset, strategyTag)
-		route = routingSection
+		route = &routingSection
 
 		// Add block/direct outbounds as needed
 		if len(routingSection.Rules) > 0 {
@@ -452,9 +462,11 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 			if hasDirect {
 				found := false
 				for _, ob := range outbounds {
-					var m map[string]any
+					var m struct {
+						Tag string `json:"tag"`
+					}
 					json.Unmarshal(ob, &m)
-					if m["tag"] == "direct-out" {
+					if m.Tag == "direct-out" {
 						found = true
 						break
 					}
@@ -466,33 +478,31 @@ func buildNodeConfig(node *model.ChainNode, i, n int, params []*hopParams, nodes
 		}
 	}
 
-	cfg := map[string]any{
-		"log": map[string]any{
-			"level":  "info",
-			"output": "/var/log/sing-box/sing-box.log",
+	cfg := config.SingboxConfig{
+		Log: &config.LogOptions{
+			Level:  "info",
+			Output: "/var/log/sing-box/sing-box.log",
 		},
-		"inbounds":  inbounds,
-		"outbounds": outbounds,
+		Inbounds:  inbounds,
+		Outbounds: outbounds,
 	}
+
 	if len(endpoints) > 0 {
-		cfg["endpoints"] = endpoints
+		cfg.Endpoints = endpoints
 	}
 
 	if route != nil {
-		cfg["route"] = route
+		cfg.Route = route
 		// DNS with detour through strategy outbound
 		dnsTag := strategyTag
 		if dnsTag == "" {
 			dnsTag = "direct-out"
 		}
-		cfg["dns"] = BuildDNSWithDetour(dnsTag, preset.Routing.DirectDomains)
+		cfg.DNS = BuildDNSWithDetour(dnsTag, preset.Routing.DirectDomains)
 	}
 
-	// cache_file for rule_set
-	cfg["experimental"] = map[string]any{
-		"cache_file": map[string]any{
-			"enabled": true,
-		},
+	cfg.Experimental = &config.ExperimentalOptions{
+		CacheFile: &config.CacheFileOptions{Enabled: true},
 	}
 
 	content, err := json.MarshalIndent(cfg, "", "  ")
@@ -541,20 +551,21 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 	tag := "user-in"
 	tags = append(tags, tag)
 
-	ep, tunInb, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, awgClientPub, serverAWGPriv)
+	ep, _, err := buildAWGUserInbound(port, params[i].UUID, tag, preset, serverAWGPriv, awgClientPub)
 	if err != nil {
 		return "", fmt.Errorf("build awg endpoint: %w", err)
 	}
 	endpoints = append(endpoints, ep)
-	inbounds = append(inbounds, tunInb)
 
 	// Routing + strategy + DNS
-	var route interface{}
+	var route *config.RoutingSection
 	var strategyTag string
 	if len(outbounds) > 0 {
-		var firstOut map[string]any
+		var firstOut struct {
+			Tag string `json:"tag"`
+		}
 		json.Unmarshal(outbounds[0], &firstOut)
-		outTag, _ := firstOut["tag"].(string)
+		outTag := firstOut.Tag
 
 		// Apply chain strategy: wrap outbounds
 		stratOut := BuildStrategyOutbound(string(strategy), []string{outTag})
@@ -567,7 +578,7 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 		}
 
 		routingSection := BuildRoutingSection(preset, strategyTag)
-		route = routingSection
+		route = &routingSection
 
 		hasBlock, hasDirect := false, false
 		for _, r := range routingSection.Rules {
@@ -582,9 +593,11 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 		if hasDirect {
 			found := false
 			for _, ob := range outbounds {
-				var m map[string]any
+				var m struct {
+					Tag string `json:"tag"`
+				}
 				json.Unmarshal(ob, &m)
-				if m["tag"] == "direct-out" { found = true; break }
+				if m.Tag == "direct-out" { found = true; break }
 			}
 			if !found {
 				outbounds = append(outbounds, buildDirectOutbound("direct-out"))
@@ -592,30 +605,37 @@ func buildNodeConfigWithAWGClient(node *model.ChainNode, i, n int, params []*hop
 		}
 	}
 
-	cfg := map[string]any{
-		"log": map[string]any{
-			"level":  "info",
-			"output": "/var/log/sing-box/sing-box.log",
+	cfg := config.SingboxConfig{
+		Log: &config.LogOptions{
+			Level:  "info",
+			Output: "/var/log/sing-box/sing-box.log",
 		},
-		"inbounds":  inbounds,
-		"outbounds": outbounds,
-	}
-	if len(endpoints) > 0 {
-		cfg["endpoints"] = endpoints
-	}
-	if route != nil {
-		cfg["route"] = route
-		dnsTag := strategyTag
-		if dnsTag == "" { dnsTag = "direct-out" }
-		cfg["dns"] = BuildDNSWithDetour(dnsTag, preset.Routing.DirectDomains)
-	}
-	cfg["experimental"] = map[string]any{
-		"cache_file": map[string]any{"enabled": true},
+		Inbounds:  inbounds,
+		Outbounds: outbounds,
 	}
 
-	content, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil { return "", err }
-	return string(content), nil
+	if len(endpoints) > 0 {
+		cfg.Endpoints = endpoints
+	}
+
+	if route != nil {
+		cfg.Route = route
+		dnsTag := strategyTag
+		if dnsTag == "" {
+			dnsTag = "direct-out"
+		}
+		cfg.DNS = BuildDNSWithDetour(dnsTag, preset.Routing.DirectDomains)
+	}
+
+	cfg.Experimental = &config.ExperimentalOptions{
+		CacheFile: &config.CacheFileOptions{Enabled: true},
+	}
+
+	finalContent, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(finalContent), nil
 }
 
 type routeConfig struct {
@@ -630,29 +650,33 @@ type routeRule struct {
 }
 
 func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
-	inb := map[string]any{
-		"type": "vless",
-		"tag":  tag,
-		"listen":      "0.0.0.0",
-		"listen_port": p.Port,
-		"users": []map[string]any{
+	inb := config.VLESSInbound{
+		Type:       "vless",
+		Tag:        tag,
+		Listen:     "0.0.0.0",
+		ListenPort: p.Port,
+		Users: []config.VLESSUser{
 			{
-				"name": tag,
-				"uuid": p.UUID,
-				"flow": "xtls-rprx-vision",
+				Name: tag,
+				UUID: p.UUID,
+				Flow: "xtls-rprx-vision",
 			},
 		},
-		"tls": map[string]any{
-			"enabled": true,
-			"server_name": p.ServerName,
-			"reality": map[string]any{
-				"enabled":     true,
-				"private_key": p.PrivateKey,
-				"short_id":    []string{p.ShortID},
+		TLS: &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: p.ServerName,
+			Reality: &config.InboundRealityOptions{
+				Enabled: true,
+				Handshake: &config.RealityHandshake{
+					Server:     p.ServerName,
+					ServerPort: 443,
+				},
+				PrivateKey: p.PrivateKey,
+				ShortID:    []string{p.ShortID},
 			},
 		},
-		"multiplex": map[string]any{
-			"enabled": true,
+		Multiplex: &config.MultiplexOptions{
+			Enabled: true,
 		},
 	}
 
@@ -661,24 +685,24 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 }
 
 func buildUserInbound(port int, uuid, tag string) json.RawMessage {
-	inb := map[string]any{
-		"type": "vless",
-		"tag":  tag,
-		"listen":      "0.0.0.0",
-		"listen_port": port,
-		"users": []map[string]any{
+	inb := config.VLESSInbound{
+		Type:       "vless",
+		Tag:        tag,
+		Listen:     "0.0.0.0",
+		ListenPort: port,
+		Users: []config.VLESSUser{
 			{
-				"name": tag,
-				"uuid": uuid,
-				"flow": "xtls-rprx-vision",
+				Name: tag,
+				UUID: uuid,
+				Flow: "xtls-rprx-vision",
 			},
 		},
-		"tls": map[string]any{
-			"enabled": false,
+		TLS: &config.InboundTLSOptions{
+			Enabled: false,
 		},
-		"transport": map[string]any{
-			"type": "ws",
-			"path": "/ws",
+		Transport: &config.TransportOptions{
+			Type: "ws",
+			Path: "/ws",
 		},
 	}
 
@@ -692,28 +716,28 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 		return nil, fmt.Errorf("derive public key: %w", err)
 	}
 
-	out := map[string]any{
-		"type":        "vless",
-		"tag":         tag,
-		"server":      serverAddr,
-		"server_port": next.Port,
-		"uuid":        next.UUID,
-		"flow":        "xtls-rprx-vision",
-		"tls": map[string]any{
-			"enabled":     true,
-			"server_name": next.ServerName,
-			"utls": map[string]any{
-				"enabled":     true,
-				"fingerprint": "chrome",
+	out := config.VLESSOutbound{
+		Type:       "vless",
+		Tag:        tag,
+		Server:     serverAddr,
+		ServerPort: next.Port,
+		UUID:       next.UUID,
+		Flow:       "xtls-rprx-vision",
+		TLS: &config.OutboundTLSOptions{
+			Enabled:    true,
+			ServerName: next.ServerName,
+			UTLS: &config.UTLSOptions{
+				Enabled:     true,
+				Fingerprint: "chrome",
 			},
-			"reality": map[string]any{
-				"enabled":    true,
-				"public_key": pubKeyHex,
-				"short_id":   next.ShortID,
+			Reality: &config.OutboundRealityOptions{
+				Enabled:   true,
+				PublicKey: pubKeyHex,
+				ShortID:   next.ShortID,
 			},
 		},
-		"multiplex": map[string]any{
-			"enabled": true,
+		Multiplex: &config.MultiplexOptions{
+			Enabled: true,
 		},
 	}
 
@@ -722,9 +746,9 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 }
 
 func buildDirectOutbound(tag string) json.RawMessage {
-	out := map[string]any{
-		"type": "direct",
-		"tag":  tag,
+	out := config.DirectOutbound{
+		Type: "direct",
+		Tag:  tag,
 	}
 	data, _ := json.Marshal(out)
 	return data
@@ -740,38 +764,96 @@ func extractHost(addr string) string {
 	return addr
 }
 
+// createBackup makes a timestamped backup of the current config.
+func createBackup(client *sshclient.Client, file string) (string, error) {
+	out, err := client.Run(fmt.Sprintf(`if [ -f %s ]; then
+		ts=$(date +%%s)
+		bak="%s.bak.$ts"
+		cp -p %s "$bak"
+		echo "$bak"
+	fi`, file, file, file))
+	return strings.TrimSpace(out), err
+}
+
+// performRollback restores the backup and restarts the service.
+func performRollback(client *sshclient.Client, file, backupPath, serviceName string) error {
+	if backupPath == "" {
+		return fmt.Errorf("no backup path provided")
+	}
+	cmd := fmt.Sprintf(`mv %s %s && systemctl restart %s && sleep 1 && systemctl is-active --quiet %s`,
+		backupPath, file, serviceName, serviceName)
+	_, err := client.Run(cmd)
+	if err != nil {
+		return fmt.Errorf("CRITICAL rollback failed: %w", err)
+	}
+	return nil
+}
+
+// cleanupBackups keeps only the last 5 backups.
+func cleanupBackups(client *sshclient.Client, file string) {
+	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
+}
+
 // pushConfig writes the config to the remote host, validates, and applies it.
-// It tries to be smart about reload vs restart and gives better diagnostics.
+// It uses a strict rollback mechanism if any step fails.
 func pushConfig(client *sshclient.Client, cfgContent string, userProtocol model.UserProtocol) (string, error) {
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(cfgContent), &js); err != nil {
 		return "", fmt.Errorf("invalid JSON: %w", err)
 	}
 
-	// Backup existing config
-	_, _ = client.Run("if [ -f /etc/sing-box/config.json ]; then cp /etc/sing-box/config.json /etc/sing-box/config.json.bak.$(date +%s); fi")
+	configFile := "/etc/sing-box/config.json"
 
-	writeCmd := fmt.Sprintf("mkdir -p /etc/sing-box && cat > /etc/sing-box/config.json << 'CONFIG_EOF'\n%s\nCONFIG_EOF", cfgContent)
+	// 1. Backup existing config
+	backupPath, _ := createBackup(client, configFile)
+
+	// 2. Write new config
+	writeCmd := fmt.Sprintf("mkdir -p /etc/sing-box && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF", configFile, cfgContent)
 	if _, err := client.Run(writeCmd); err != nil {
 		return "", fmt.Errorf("write config: %w", err)
 	}
 
-	// Validate
-	if _, err := client.Run("sing-box check -c /etc/sing-box/config.json"); err != nil {
-		_, _ = client.Run(`latest=$(ls -t /etc/sing-box/config.json.bak.* 2>/dev/null | head -1); [ -n "$latest" ] && cp "$latest" /etc/sing-box/config.json`)
-		return "", fmt.Errorf("config validation failed (rollback attempted): %w", err)
+	// 3. Validate
+	if _, err := client.Run(fmt.Sprintf("sing-box check -c %s", configFile)); err != nil {
+		if backupPath != "" {
+			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			if rbErr != nil {
+				return "", fmt.Errorf("config validation failed: %v (AND %v)", err, rbErr)
+			}
+			return "", fmt.Errorf("rollback successful: config validation failed: %w", err)
+		}
+		return "", fmt.Errorf("config validation failed (no backup to rollback): %w", err)
 	}
 
-	// Apply config: restart sing-box.
+	// 4. Restart service
 	applyCmd := "ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
-	out, err := client.Run(applyCmd)
-	if err != nil {
-		// Get service status for diagnostics
-		diag, _ := client.Run("systemctl status sing-box --no-pager -n 5 2>&1 || true")
-		return "", fmt.Errorf("failed to restart sing-box (protocol=%s): %w\nStatus: %s", userProtocol, err, diag)
+	if _, err := client.Run(applyCmd); err != nil {
+		if backupPath != "" {
+			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			if rbErr != nil {
+				return "", fmt.Errorf("restart failed: %v (AND %v)", err, rbErr)
+			}
+			return "", fmt.Errorf("rollback successful: service restart failed: %w", err)
+		}
+		return "", fmt.Errorf("restart failed (no backup to rollback): %w", err)
 	}
 
-	return out, nil
+	// 5. Check real status (is active AND listening on ports)
+	if _, err := client.Run("sleep 3 && systemctl is-active --quiet sing-box && ss -tulpn | grep -q sing-box"); err != nil {
+		if backupPath != "" {
+			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			if rbErr != nil {
+				return "", fmt.Errorf("service inactive or not listening: %v (AND rollback failed: %v)", err, rbErr)
+			}
+			return "", fmt.Errorf("rollback successful: service failed to become active or bind ports after restart: %w", err)
+		}
+		return "", fmt.Errorf("service inactive or not listening after restart (no backup to rollback): %w", err)
+	}
+
+	// 6. Cleanup
+	cleanupBackups(client, configFile)
+
+	return "success", nil
 }
 
 // ==================== XHTTP Transport Support ====================
@@ -793,7 +875,6 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 		}
 	}
 
-	// Use first option from the preset lists for determinism within a chain.
 	path := xhttp.Paths[0]
 	method := xhttp.Methods[0]
 	headers := xhttp.Headers
@@ -806,44 +887,45 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 		}
 	}
 
-	transport := map[string]any{
-		"type":         "http",
-		"host":         []string{p.ServerName},
-		"path":         path,
-		"method":       method,
-		"headers":      headers,
-		"idle_timeout": "15s",
-		"ping_timeout": "15s",
+	transport := &config.TransportOptions{
+		Type:        "http", // Using "http" for sing-box's HTTP/2 multiplexing mapped from xhttp
+		Host:        []string{p.ServerName},
+		Path:        path,
+		Method:      method,
+		Headers:     headers,
+		IdleTimeout: "15s",
+		PingTimeout: "15s",
 	}
 
-	// Apply advanced 2026 XHTTP obfuscation (padding, XMUX, realistic headers, upstream/downstream)
+	// Apply advanced 2026 XHTTP obfuscation
 	ApplyXHTTPObfuscation(transport, xhttp)
 
-	inb := map[string]any{
-		"type": "vless",
-		"tag":  tag,
-		"listen":      "0.0.0.0",
-		"listen_port": p.Port,
-		"users": []map[string]any{
+	inb := config.VLESSInbound{
+		Type:       "vless",
+		Tag:        tag,
+		Listen:     "0.0.0.0",
+		ListenPort: p.Port,
+		Users: []config.VLESSUser{
 			{
-				"name": tag,
-				"uuid": p.UUID,
-				"flow": "xtls-rprx-vision",
+				Name: tag,
+				UUID: p.UUID,
+				Flow: "",
 			},
 		},
-		"tls": map[string]any{
-			"enabled": true,
-			"server_name": p.ServerName,
-			"reality": map[string]any{
-				"enabled":     true,
-				"private_key": p.PrivateKey,
-				"short_id":    []string{p.ShortID},
+		TLS: &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: p.ServerName,
+			Reality: &config.InboundRealityOptions{
+				Enabled: true,
+				Handshake: &config.RealityHandshake{
+					Server:     p.ServerName,
+					ServerPort: 443,
+				},
+				PrivateKey: p.PrivateKey,
+				ShortID:    []string{p.ShortID},
 			},
 		},
-		"transport": transport,
-		"multiplex": map[string]any{
-			"enabled": true,
-		},
+		Transport: transport,
 	}
 
 	data, _ := json.Marshal(inb)
@@ -871,7 +953,6 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 		}
 	}
 
-	// Use first option from the preset lists for determinism within a chain (can add per-hop randomization later if desired for extra stealth).
 	path := xhttp.Paths[0]
 	method := xhttp.Methods[0]
 	headers := xhttp.Headers
@@ -889,42 +970,41 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 		fingerprint = preset.Reality.Fingerprints[0]
 	}
 
-	out := map[string]any{
-		"type":        "vless",
-		"tag":         tag,
-		"server":      serverAddr,
-		"server_port": next.Port,
-		"uuid":        next.UUID,
-		"flow":        "xtls-rprx-vision",
-		"tls": map[string]any{
-			"enabled":     true,
-			"server_name": next.ServerName,
-			"utls": map[string]any{
-				"enabled":     true,
-				"fingerprint": fingerprint,
-			},
-			"reality": map[string]any{
-				"enabled":    true,
-				"public_key": pubKeyHex,
-				"short_id":   next.ShortID,
-			},
-		},
-		"transport": map[string]any{
-			"type":         "http",
-			"host":         []string{next.ServerName},
-			"path":         path,
-			"method":       method,
-			"headers":      headers,
-			"idle_timeout": "15s",
-			"ping_timeout": "15s",
-		},
-		"multiplex": map[string]any{
-			"enabled": true,
-		},
+	transport := &config.TransportOptions{
+		Type:        "http", // Mapping xhttp to http type in JSON config payload
+		Host:        []string{next.ServerName},
+		Path:        path,
+		Method:      method,
+		Headers:     headers,
+		IdleTimeout: "15s",
+		PingTimeout: "15s",
 	}
 
-	// Apply advanced 2026 XHTTP obfuscation on the outbound transport as well
-	ApplyXHTTPObfuscation(out["transport"].(map[string]any), xhttp)
+	// Apply advanced 2026 XHTTP obfuscation
+	ApplyXHTTPObfuscation(transport, xhttp)
+
+	out := config.VLESSOutbound{
+		Type:       "vless",
+		Tag:        tag,
+		Server:     serverAddr,
+		ServerPort: next.Port,
+		UUID:       next.UUID,
+		Flow:       "", // Vision incompatible with xhttp
+		TLS: &config.OutboundTLSOptions{
+			Enabled:    true,
+			ServerName: next.ServerName,
+			UTLS: &config.UTLSOptions{
+				Enabled:     true,
+				Fingerprint: fingerprint,
+			},
+			Reality: &config.OutboundRealityOptions{
+				Enabled:   true,
+				PublicKey: pubKeyHex,
+				ShortID:   next.ShortID,
+			},
+		},
+		Transport: transport,
+	}
 
 	data, _ := json.Marshal(out)
 	return data, nil
@@ -951,37 +1031,38 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset, 
 		authTimeout = "3s"
 	}
 
-	// Базовый TUIC + опционально Reality из пресета
-	inb := map[string]any{
-		"type": "tuic",
-		"tag":  tag,
-		"listen":      "0.0.0.0",
-		"listen_port": port,
-		"users": []map[string]any{
-			{
-				"uuid":     uuid,
-				"password": uuid,
-			},
-		},
-		"congestion_control": congestion,
-		"auth_timeout":       authTimeout,
-		"zero_rtt_handshake": true,
-		"heartbeat":          "10s",
-	}
-
-	// Pull best server_name from the preset (Reality section if present — good for consistency with transport)
 	serverName := "www.microsoft.com"
 	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
 		serverName = preset.Reality.ServerNames[0]
 	}
 
-	inb["tls"] = map[string]any{
-		"enabled":     true,
-		"server_name": serverName,
-		"reality": map[string]any{
-			"enabled":     true,
-			"private_key": p.PrivateKey,
-			"short_id":    []string{p.ShortID},
+	inb := config.TUICInbound{
+		Type:              "tuic",
+		Tag:               tag,
+		Listen:            "0.0.0.0",
+		ListenPort:        port,
+		Users: []config.TUICUser{
+			{
+				UUID:     uuid,
+				Password: uuid,
+			},
+		},
+		CongestionControl: congestion,
+		AuthTimeout:       authTimeout,
+		ZeroRTTHandshake:  true,
+		Heartbeat:         "10s",
+		TLS: &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
+			Reality: &config.InboundRealityOptions{
+				Enabled: true,
+				Handshake: &config.RealityHandshake{
+					Server:     serverName,
+					ServerPort: 443,
+				},
+				PrivateKey: p.PrivateKey,
+				ShortID:    []string{p.ShortID},
+			},
 		},
 	}
 
@@ -989,14 +1070,10 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset, 
 	return data
 }
 
-func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, clientPubKey string, serverPrivKeyB64 string) (json.RawMessage, json.RawMessage, string, error) {
+func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPreset, serverPrivKeyB64, clientPubKey string) ([]byte, string, error) {
 	awg := preset.AWG
 	if awg == nil {
-		awg = &AWGPreset{
-			JC: 4, JMIN: 40, JMAX: 70,
-			S1: 0, S2: 0,
-			H1: 1, H2: 2, H3: 3, H4: 4,
-		}
+		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
 	}
 
 	var privKeyB64, pubKeyB64 string
@@ -1006,12 +1083,12 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 		privKeyB64 = serverPrivKeyB64
 		pubKeyB64, err = deriveWireGuardPublicFromPrivate(privKeyB64)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("derive awg pub from provided priv: %w", err)
+			return nil, "", fmt.Errorf("derive awg pub from provided priv: %w", err)
 		}
 	} else {
 		privKeyB64, pubKeyB64, err = generateWireGuardKeypair()
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("generate awg server keypair: %w", err)
+			return nil, "", fmt.Errorf("generate awg server keypair: %w", err)
 		}
 	}
 
@@ -1020,42 +1097,26 @@ func buildAWGUserInbound(port int, uuid, tag string, preset *ConnectionPreset, c
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	// sing-box-extended: WireGuard SERVER endpoint (listen_port, no detour).
-	// Endpoint and TUN use different subnets to avoid IP conflicts:
-	// - Endpoint (AmneziaWG): 10.8.0.1/32, client peer: 10.8.0.2/32
-	// - TUN inbound (internal routing): 10.8.1.1/30
-	ep := map[string]any{
-		"type":        "wireguard",
-		"tag":         "wg-ep",
-		"system":      false,
-		"mtu":         1420,
-		"address":     []string{"10.8.0.1/32"},
-		"private_key": privKeyB64,
-		"listen_port": port,
-		"peers": []map[string]any{
+	ep := config.WireGuardEndpoint{
+		Type:       "wireguard",
+		Tag:        tag, // Use the user-in tag for routing natively
+		System:     false,
+		MTU:        1420,
+		Address:    []string{"10.8.0.1/32"},
+		PrivateKey: privKeyB64,
+		ListenPort: port,
+		Peers: []config.WireGuardPeer{
 			{
-				"public_key":  peerPub,
-				"allowed_ips": []string{"10.8.0.2/32"},
+				PublicKey:  peerPub,
+				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		"amnezia": BuildAmneziaSection(awg, preset),
+		Amnezia: BuildAmneziaSection(awg, preset),
 	}
 
 	epJSON, _ := json.Marshal(ep)
 
-	// TUN inbound on separate subnet to capture routed traffic
-	tunInb := map[string]any{
-		"type":           "tun",
-		"tag":            tag,
-		"interface_name": "angry-tun",
-		"address":        []string{"10.8.1.1/30"},
-		"mtu":            1420,
-		"stack":          "system",
-		"auto_route":     true,
-	}
-	tunJSON, _ := json.Marshal(tunInb)
-
-	return epJSON, tunJSON, pubKeyB64, nil
+	return epJSON, pubKeyB64, nil
 }
 
 // deriveWireGuardPublicFromPrivate takes a base64 WireGuard private key and returns the corresponding public key.
@@ -1113,35 +1174,38 @@ func BuildXHTTPTransportInboundForStandalone(port int, uuid, privKeyB64, shortID
 		}
 	}
 
-	inb := map[string]any{
-		"type": "vless",
-		"tag":  "transport-in",
-		"listen":      "0.0.0.0",
-		"listen_port": port,
-		"users": []map[string]any{{
-			"name": "transport",
-			"uuid": uuid,
-			"flow": "xtls-rprx-vision",
+	inb := config.VLESSInbound{
+		Type:       "vless",
+		Tag:        "transport-in",
+		Listen:     "0.0.0.0",
+		ListenPort: port,
+		Users: []config.VLESSUser{{
+			Name: "transport",
+			UUID: uuid,
+			Flow: "", // Vision incompatible with xhttp
 		}},
-		"tls": map[string]any{
-			"enabled":     true,
-			"server_name": serverName,
-			"reality": map[string]any{
-				"enabled":     true,
-	"private_key": privKeyB64,
-				"short_id":    []string{shortID},
+		TLS: &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
+			Reality: &config.InboundRealityOptions{
+				Enabled: true,
+				Handshake: &config.RealityHandshake{
+					Server:     serverName,
+					ServerPort: 443,
+				},
+				PrivateKey: privKeyB64,
+				ShortID:    []string{shortID},
 			},
 		},
-		"transport": map[string]any{
-			"type":         "http",
-			"host":         []string{serverName},
-			"path":         path,
-			"method":       method,
-			"headers":      headers,
-			"idle_timeout": "15s",
-			"ping_timeout": "15s",
+		Transport: &config.TransportOptions{
+			Type:        "http",
+			Host:        []string{serverName},
+			Path:        path,
+			Method:      method,
+			Headers:     headers,
+			IdleTimeout: "15s",
+			PingTimeout: "15s",
 		},
-		"multiplex": map[string]any{"enabled": true},
 	}
 	data, _ := json.Marshal(inb)
 	return data

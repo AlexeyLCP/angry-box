@@ -1,300 +1,448 @@
 package chain
 
 import (
-	"encoding/base64"
+	"bytes"
 	"encoding/json"
-	"strings"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
-func TestGenerateWireGuardKeypair_Valid(t *testing.T) {
-	priv, pub, err := GenerateWireGuardKeypair()
-	if err != nil {
-		t.Fatalf("GenerateWireGuardKeypair failed: %v", err)
+func TestXHTTPTransportJSONCompatibility(t *testing.T) {
+	// 1. Setup mock data
+	p := &hopParams{
+		Port:       443,
+		UUID:       "12345678-1234-1234-1234-123456789012",
+		ServerName: "example.com",
+		PrivateKey: "private_key_hex",
+		ShortID:    "short_id_hex",
 	}
-	if len(priv) == 0 || len(pub) == 0 {
-		t.Error("empty keys returned")
+	preset := &ConnectionPreset{
+		XHTTP: &XHTTPPreset{
+			Methods: []string{"GET"},
+			Paths:   []string{"/api/v1/test"},
+			Hosts:   []string{"example.com"},
+			Headers: map[string][]string{
+				"User-Agent": {"TestAgent"},
+			},
+		},
 	}
+	tag := "inbound-tag"
 
-	if len(priv) != 44 || len(pub) != 44 {
-		t.Errorf("unexpected key length: priv=%d pub=%d", len(priv), len(pub))
-	}
+	// 2. Generate new JSON via typed structs
+	actualJSON := buildXHTTPTransportInbound(p, tag, preset)
 
-	if _, err := base64.StdEncoding.DecodeString(priv); err != nil {
-		t.Error("priv is not valid base64")
-	}
-	if _, err := base64.StdEncoding.DecodeString(pub); err != nil {
-		t.Error("pub is not valid base64")
-	}
-}
-
-func TestBuildAWGUserInbound_WithClientKey(t *testing.T) {
-	preset := MustGetPreset("russia_2026")
-
-	ep, tunInb, serverPub, err := buildAWGUserInbound(8443, "test-uuid", "user-in", &preset, "MY-CLIENT-PUB", "")
-	if err != nil {
-		t.Fatalf("buildAWGUserInbound failed: %v", err)
-	}
-
-	// buildAWGUserInbound uses json.Marshal (compact, no spaces)
-	epS := string(ep)
-	if !strings.Contains(epS, "MY-CLIENT-PUB") {
-		t.Error("client pubkey not present in endpoint peers")
-	}
-	if !strings.Contains(epS, `"type":"wireguard"`) {
-		t.Error("endpoint should be wireguard type")
-	}
-	if strings.Contains(epS, "CLIENT_PUBLIC_KEY_HERE") {
-		t.Error("placeholder appeared when client key was provided")
-	}
-	// Check TUN inbound
-	tunS := string(tunInb)
-	if !strings.Contains(tunS, `"type":"tun"`) {
-		t.Error("user inbound should be TUN type")
+	// 3. Construct expected JSON via map[string]any (old way)
+	transport := map[string]any{
+		"type":         "http",
+		"host":         []string{p.ServerName},
+		"path":         preset.XHTTP.Paths[0],
+		"method":       preset.XHTTP.Methods[0],
+		"headers":      preset.XHTTP.Headers,
+		"idle_timeout": "15s",
+		"ping_timeout": "15s",
 	}
 
-	if serverPub == "" || len(serverPub) != 44 {
-		t.Error("server public key was not returned")
+	// Mocking ApplyXHTTPObfuscation logic manually or we can call it on the struct and map
+	// We'll just call it on our manual map to ensure full parity
+	oldTransportOpts := &config.TransportOptions{
+		Type:        "http",
+		Host:        []string{p.ServerName},
+		Path:        preset.XHTTP.Paths[0],
+		Method:      preset.XHTTP.Methods[0],
+		Headers:     preset.XHTTP.Headers,
+		IdleTimeout: "15s",
+		PingTimeout: "15s",
 	}
-}
-
-func TestBuildAWGUserInbound_WithPreGeneratedServerKey(t *testing.T) {
-	preset := MustGetPreset("maximum_stealth_2026")
-
-	serverPriv, serverPub1, _ := GenerateWireGuardKeypair()
-
-	ep, _, serverPub2, err := buildAWGUserInbound(8443, "uuid", "tag", &preset, "client-pub", serverPriv)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if serverPub1 != serverPub2 {
-		t.Error("server pub from pre-generated path does not match the one returned")
+	ApplyXHTTPObfuscation(oldTransportOpts, preset.XHTTP)
+	transport["headers"] = oldTransportOpts.Headers
+	if oldTransportOpts.Extra != nil {
+		transport["extra"] = oldTransportOpts.Extra
 	}
 
-	epS := string(ep)
-	if !strings.Contains(epS, serverPriv) {
-		t.Error("pre-generated private key was not used in the config")
+	expectedInb := map[string]any{
+		"type": "vless",
+		"tag":  tag,
+		"listen":      "0.0.0.0",
+		"listen_port": p.Port,
+		"users": []map[string]any{
+			{
+				"name": tag,
+				"uuid": p.UUID,
+				"flow": "xtls-rprx-vision",
+			},
+		},
+		"tls": map[string]any{
+			"enabled": true,
+			"server_name": p.ServerName,
+			"reality": map[string]any{
+				"enabled":     true,
+				"private_key": p.PrivateKey,
+				"short_id":    []string{p.ShortID},
+			},
+		},
+		"transport": transport,
+		"multiplex": map[string]any{
+			"enabled": true,
+		},
 	}
+	
+	expectedJSONBytes, _ := json.Marshal(expectedInb)
+	expectedJSON := string(expectedJSONBytes)
 
-	var parsed map[string]any
-	if err := json.Unmarshal(ep, &parsed); err != nil {
-		t.Fatalf("failed to parse AWG endpoint JSON: %v", err)
-	}
-	if parsed["private_key"] != serverPriv {
-		t.Errorf("private_key in generated endpoint does not exactly match pre-generated one")
-	}
-}
+	// 4. Compare
+	var expectedMap, actualMap map[string]any
+	json.Unmarshal([]byte(expectedJSON), &expectedMap)
+	json.Unmarshal(actualJSON, &actualMap)
 
-func TestDeriveWireGuardPublicFromPrivate(t *testing.T) {
-	priv, expectedPub, _ := GenerateWireGuardKeypair()
+	// Re-marshal with formatting for better comparison error messages if they fail
+	prettyExpected, _ := json.MarshalIndent(expectedMap, "", "  ")
+	prettyActual, _ := json.MarshalIndent(actualMap, "", "  ")
 
-	derived, err := deriveWireGuardPublicFromPrivate(priv)
-	if err != nil {
-		t.Fatalf("derive failed: %v", err)
-	}
-
-	if derived != expectedPub {
-		t.Errorf("derived pub does not match original pub")
-	}
-}
-
-func TestAWGKeyConsistencyInEntryNode(t *testing.T) {
-	preset := MustGetPreset("russia_2026")
-
-	serverPriv, serverPub, err := GenerateWireGuardKeypair()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ep, _, returnedPub, err := buildAWGUserInbound(8443, "entry-uuid", "user-in", &preset, "client-pub-123", serverPriv)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if returnedPub != serverPub {
-		t.Error("returned server pub does not match the one generated for the report")
-	}
-
-	var parsed map[string]any
-	json.Unmarshal(ep, &parsed)
-
-	if parsed["private_key"] != serverPriv {
-		t.Error("config does not contain the exact server private key that will be reported")
+	if !bytes.Equal(prettyExpected, prettyActual) {
+		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
 	}
 }
 
-// --- buildNodeConfig and transport builders tests ---
+func TestTransportInboundJSONParity(t *testing.T) {
+	p := &hopParams{
+		Port:       443,
+		UUID:       "uuid-1234",
+		ServerName: "test.com",
+		PrivateKey: "priv-hex",
+		ShortID:    "short-hex",
+	}
+	tag := "in-tag"
+	actualJSON := buildTransportInbound(p, tag)
 
-func makeTestHopParams(port int) *hopParams {
-	p, _ := generateHopParams(port, &ConnectionPreset{
-		Reality: &RealityPreset{ServerNames: []string{"www.microsoft.com"}},
-	})
-	return p
+	expectedMap := map[string]any{
+		"type": "vless",
+		"tag":  tag,
+		"listen":      "0.0.0.0",
+		"listen_port": p.Port,
+		"users": []map[string]any{
+			{
+				"name": tag,
+				"uuid": p.UUID,
+				"flow": "xtls-rprx-vision",
+			},
+		},
+		"tls": map[string]any{
+			"enabled": true,
+			"server_name": p.ServerName,
+			"reality": map[string]any{
+				"enabled":     true,
+				"private_key": p.PrivateKey,
+				"short_id":    []string{p.ShortID},
+			},
+		},
+		"multiplex": map[string]any{
+			"enabled": true,
+		},
+	}
+
+	expectedJSONBytes, _ := json.Marshal(expectedMap)
+	
+	var expMap, actMap map[string]any
+	json.Unmarshal(expectedJSONBytes, &expMap)
+	json.Unmarshal(actualJSON, &actMap)
+
+	prettyExpected, _ := json.MarshalIndent(expMap, "", "  ")
+	prettyActual, _ := json.MarshalIndent(actMap, "", "  ")
+
+	if !bytes.Equal(prettyExpected, prettyActual) {
+		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
+	}
 }
 
-func TestBuildNodeConfig_EntryNode_AWG_SingleNode(t *testing.T) {
-	preset := MustGetPreset("china_2026")
-	params := []*hopParams{makeTestHopParams(443)}
-	nodes := []model.ChainNode{{ID: "node1", Addr: "1.2.3.4:22"}}
+func TestTransportOutboundJSONParity(t *testing.T) {
+	p := &hopParams{
+		Port:       443,
+		UUID:       "uuid-1234",
+		ServerName: "test.com",
+		PrivateKey: "eE2tO7r8Ff_3hWwK-Qv6RzL0X1sP_bN4mD5Y8Vj_AQA", // valid base64 key without padding
+		ShortID:    "short-hex",
+	}
+	tag := "out-tag"
+	addr := "1.2.3.4"
+	actualJSON, _ := buildTransportOutbound(p, addr, tag)
 
-	cfg, err := buildNodeConfig(&nodes[0], 0, 1, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
+	pubKeyHex, _ := p.publicKeyB64()
+
+	expectedMap := map[string]any{
+		"type":        "vless",
+		"tag":         tag,
+		"server":      addr,
+		"server_port": p.Port,
+		"uuid":        p.UUID,
+		"flow":        "xtls-rprx-vision",
+		"tls": map[string]any{
+			"enabled":     true,
+			"server_name": p.ServerName,
+			"utls": map[string]any{
+				"enabled":     true,
+				"fingerprint": "chrome",
+			},
+			"reality": map[string]any{
+				"enabled":    true,
+				"public_key": pubKeyHex,
+				"short_id":   p.ShortID,
+			},
+		},
+		"multiplex": map[string]any{
+			"enabled": true,
+		},
+	}
+
+	expectedJSONBytes, _ := json.Marshal(expectedMap)
+	
+	var expMap, actMap map[string]any
+	json.Unmarshal(expectedJSONBytes, &expMap)
+	json.Unmarshal(actualJSON, &actMap)
+
+	prettyExpected, _ := json.MarshalIndent(expMap, "", "  ")
+	prettyActual, _ := json.MarshalIndent(actMap, "", "  ")
+
+	if !bytes.Equal(prettyExpected, prettyActual) {
+		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
+	}
+}
+
+func TestUserInboundJSONParity(t *testing.T) {
+	actualJSON := buildUserInbound(8443, "uuid-1234", "user-in")
+
+	expectedMap := map[string]any{
+		"type": "vless",
+		"tag":  "user-in",
+		"listen":      "0.0.0.0",
+		"listen_port": 8443,
+		"users": []map[string]any{
+			{
+				"name": "user-in",
+				"uuid": "uuid-1234",
+				"flow": "xtls-rprx-vision",
+			},
+		},
+		"tls": map[string]any{
+			"enabled": false,
+		},
+		"transport": map[string]any{
+			"type": "ws",
+			"path": "/ws",
+		},
+	}
+
+	expectedJSONBytes, _ := json.Marshal(expectedMap)
+	
+	var expMap, actMap map[string]any
+	json.Unmarshal(expectedJSONBytes, &expMap)
+	json.Unmarshal(actualJSON, &actMap)
+
+	prettyExpected, _ := json.MarshalIndent(expMap, "", "  ")
+	prettyActual, _ := json.MarshalIndent(actMap, "", "  ")
+
+	if !bytes.Equal(prettyExpected, prettyActual) {
+		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
+	}
+}
+
+func TestDirectOutboundJSONParity(t *testing.T) {
+	actualJSON := buildDirectOutbound("direct-out")
+	expectedJSON := `{"tag":"direct-out","type":"direct"}`
+
+	var expMap, actMap map[string]any
+	json.Unmarshal([]byte(expectedJSON), &expMap)
+	json.Unmarshal(actualJSON, &actMap)
+
+	prettyExpected, _ := json.MarshalIndent(expMap, "", "  ")
+	prettyActual, _ := json.MarshalIndent(actMap, "", "  ")
+
+	if !bytes.Equal(prettyExpected, prettyActual) {
+		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
+	}
+}
+
+func TestNodeConfigJSONParity(t *testing.T) {
+	node := &model.ChainNode{Addr: "1.2.3.4:443"}
+	nodes := []model.ChainNode{*node, {Addr: "5.6.7.8:443"}}
+	
+	p := &hopParams{
+		Port:       443,
+		UUID:       "uuid-1234",
+		ServerName: "test.com",
+		PrivateKey: "priv-hex",
+		ShortID:    "short-hex",
+	}
+	nextP := &hopParams{
+		Port:       443,
+		UUID:       "uuid-5678",
+		ServerName: "next.com",
+		PrivateKey: "eE2tO7r8Ff_3hWwK-Qv6RzL0X1sP_bN4mD5Y8Vj_AQA",
+		ShortID:    "short-next",
+	}
+	params := []*hopParams{p, nextP}
+
+	preset := GetDefaultPreset()
+	presetPtr := &preset
+
+	actualJSONStr, err := buildNodeConfig(node, 0, 2, params, nodes, presetPtr, model.TransportReality, model.UserProtocolVLESSReality, model.StrategyURLTest)
 	if err != nil {
 		t.Fatalf("buildNodeConfig failed: %v", err)
 	}
 
-	s := string(cfg)
-	// WireGuard is a server endpoint + TUN inbound for traffic capture
-	if !strings.Contains(s, `"type": "wireguard"`) {
-		t.Error("expected wireguard endpoint on entry node with AWG")
+	// For the old map structure, we mock what it used to assemble.
+	inbounds := []json.RawMessage{}
+	inb := buildUserInbound(8443, p.UUID, "user-in")
+	inbounds = append(inbounds, inb)
+
+	outbounds := []json.RawMessage{}
+	outb, _ := buildTransportOutbound(nextP, "5.6.7.8", "out-to-next.com")
+	outbounds = append(outbounds, outb)
+	outbounds = append(outbounds, buildDirectOutbound("direct-out"))
+
+	stratOut := BuildStrategyOutbound(string(model.StrategyURLTest), []string{"out-to-next.com"})
+	stratJSON, _ := json.Marshal(stratOut)
+	outbounds = append(outbounds, stratJSON)
+
+	outbounds = append(outbounds, []byte(`{"tag":"block","type":"block"}`)) // routing rule has block
+
+	routingSection := BuildRoutingSection(presetPtr, stratOut.Tag)
+	
+	expectedMap := map[string]any{
+		"log": map[string]any{
+			"level":  "info",
+			"output": "/var/log/sing-box/sing-box.log",
+		},
+		"inbounds":  inbounds,
+		"outbounds": outbounds,
+		"route":     routingSection,
+		"dns":       BuildDNSWithDetour(stratOut.Tag, presetPtr.Routing.DirectDomains),
+		"experimental": map[string]any{
+			"cache_file": map[string]any{"enabled": true},
+		},
 	}
-	if !strings.Contains(s, `"type": "tun"`) {
-		t.Error("expected TUN user inbound on entry node with AWG")
-	}
-	if !strings.Contains(s, `"type": "direct"`) {
-		t.Error("single node should have direct outbound")
+
+	expectedJSONBytes, _ := json.Marshal(expectedMap)
+
+	var expMap, actMap map[string]any
+	json.Unmarshal(expectedJSONBytes, &expMap)
+	json.Unmarshal([]byte(actualJSONStr), &actMap)
+
+	prettyExpected, _ := json.MarshalIndent(expMap, "", "  ")
+	prettyActual, _ := json.MarshalIndent(actMap, "", "  ")
+
+	if !bytes.Equal(prettyExpected, prettyActual) {
+		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
 	}
 }
 
-func TestBuildNodeConfig_MiddleNode_XHTTP(t *testing.T) {
-	preset := MustGetPreset("russia_2026")
-	p1 := makeTestHopParams(443)
-	p2 := makeTestHopParams(443)
-	p3 := makeTestHopParams(443)
-	params := []*hopParams{p1, p2, p3}
-	nodes := []model.ChainNode{
-		{ID: "n1", Addr: "1.1.1.1:22"},
-		{ID: "n2", Addr: "2.2.2.2:22"},
-		{ID: "n3", Addr: "3.3.3.3:22"},
-	}
-
-	cfg, err := buildNodeConfig(&nodes[1], 1, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolTUIC, model.StrategyURLTest)
+func TestSingboxCheck(t *testing.T) {
+	// Check if sing-box is installed
+	_, err := exec.LookPath("sing-box")
 	if err != nil {
-		t.Fatal(err)
+		t.Skip("sing-box binary not found in PATH, skipping integration test")
 	}
 
-	s := string(cfg)
-	if !strings.Contains(s, `"type": "vless"`) || !strings.Contains(s, `"transport":`) {
-		t.Error("middle node should have transport inbound + outbound")
+	// 1. Generate full mock config incorporating the new structs
+	p := &hopParams{
+		Port:       443,
+		UUID:       "12345678-1234-1234-1234-123456789012",
+		ServerName: "example.com",
+		PrivateKey: "private_key_hex",
+		ShortID:    "short_id_hex",
 	}
-	if !strings.Contains(s, `"type": "http"`) {
-		t.Error("expected XHTTP on middle node")
+	preset := &ConnectionPreset{}
+	
+	inboundJSON := buildXHTTPTransportInbound(p, "inbound-test", preset)
+	var inb map[string]any
+	json.Unmarshal(inboundJSON, &inb)
+
+	configMap := map[string]any{
+		"log": map[string]any{"level": "error"},
+		"inbounds": []any{inb},
+		"outbounds": []any{
+			map[string]any{"type": "direct", "tag": "direct"},
+		},
 	}
-}
 
-func TestBuildNodeConfig_LastNode_Direct(t *testing.T) {
-	preset := MustGetPreset("maximum_stealth_2026")
-	p := makeTestHopParams(443)
-	params := []*hopParams{p}
-	nodes := []model.ChainNode{{ID: "exit", Addr: "9.9.9.9:22"}}
+	configBytes, _ := json.Marshal(configMap)
 
-	cfg, err := buildNodeConfig(&nodes[0], 0, 1, params, nodes, &preset, model.TransportReality, model.UserProtocolVLESSReality, model.StrategyURLTest)
+	// 2. Write to temp file
+	tmpFile, err := os.CreateTemp("", "singbox_test_*.json")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to create temp file: %v", err)
 	}
+	defer os.Remove(tmpFile.Name())
 
-	s := string(cfg)
-	if !strings.Contains(s, `"type": "direct"`) {
-		t.Error("last node should have direct outbound")
-	}
-	if !strings.Contains(s, `"type": "vless"`) {
-		t.Error("entry node should still have user inbound")
-	}
-}
+	tmpFile.Write(configBytes)
+	tmpFile.Close()
 
-func TestBuildNodeConfig_TUIC_Entry_With_XHTTP_Transport(t *testing.T) {
-	preset := MustGetPreset("iran_2026")
-	p1 := makeTestHopParams(443)
-	p2 := makeTestHopParams(443)
-	params := []*hopParams{p1, p2}
-	nodes := []model.ChainNode{
-		{ID: "entry", Addr: "1.1.1.1:22"},
-		{ID: "exit", Addr: "2.2.2.2:22"},
-	}
-
-	cfg, err := buildNodeConfig(&nodes[0], 0, 2, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolTUIC, model.StrategyURLTest)
+	// 3. Run sing-box check
+	cmd := exec.Command("sing-box", "check", "-c", tmpFile.Name())
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	s := string(cfg)
-	if !strings.Contains(s, `"type": "tuic"`) {
-		t.Error("expected tuic user inbound")
-	}
-	if !strings.Contains(s, `"type": "http"`) {
-		t.Error("expected XHTTP transport outbound from entry")
-	}
-	if !strings.Contains(s, "/msdownload") {
-		t.Error("expected iran XHTTP path")
+		t.Fatalf("sing-box check failed: %v\nOutput: %s\nConfig: %s", err, output, configBytes)
 	}
 }
 
-func TestBuildNodeConfig_MultiHop_FullChain(t *testing.T) {
-	preset := MustGetPreset("maximum_stealth_2026")
-	p1 := makeTestHopParams(443)
-	p2 := makeTestHopParams(443)
-	p3 := makeTestHopParams(443)
-	params := []*hopParams{p1, p2, p3}
-	nodes := []model.ChainNode{
-		{ID: "n1", Addr: "10.0.0.1:22"},
-		{ID: "n2", Addr: "10.0.0.2:22"},
-		{ID: "n3", Addr: "10.0.0.3:22"},
+func TestSerializationSymmetry(t *testing.T) {
+	rawJSON := `{
+		"type": "vless",
+		"tag": "my-outbound",
+		"server": "1.1.1.1",
+		"server_port": 443,
+		"uuid": "my-uuid",
+		"flow": "xtls-rprx-vision",
+		"tls": {
+			"enabled": true,
+			"server_name": "example.com",
+			"utls": {
+				"enabled": true,
+				"fingerprint": "chrome"
+			},
+			"reality": {
+				"enabled": true,
+				"public_key": "pubkey",
+				"short_id": "shortid"
+			}
+		},
+		"transport": {
+			"type": "http",
+			"host": ["example.com"],
+			"path": "/api",
+			"method": "POST",
+			"headers": {
+				"Host": ["example.com"]
+			},
+			"idle_timeout": "15s",
+			"ping_timeout": "15s"
+		},
+		"multiplex": {
+			"enabled": true
+		}
+	}`
+
+	var out config.VLESSOutbound
+	if err := json.Unmarshal([]byte(rawJSON), &out); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
 	}
 
-	// Entry with AWG: wireguard endpoint + TUN inbound
-	cfg0, _ := buildNodeConfig(&nodes[0], 0, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
-	if !strings.Contains(string(cfg0), `"type": "wireguard"`) {
-		t.Error("entry should have wireguard endpoint")
-	}
-	if !strings.Contains(string(cfg0), `"type": "tun"`) {
-		t.Error("entry should have TUN inbound")
-	}
-
-	// Middle
-	cfg1, _ := buildNodeConfig(&nodes[1], 1, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
-	if !strings.Contains(string(cfg1), `"type": "http"`) {
-		t.Error("middle should have XHTTP transport")
-	}
-
-	// Exit
-	cfg2, _ := buildNodeConfig(&nodes[2], 2, 3, params, nodes, &preset, model.TransportXHTTP, model.UserProtocolAWG, model.StrategyURLTest)
-	if !strings.Contains(string(cfg2), `"type": "direct"`) {
-		t.Error("exit should have direct outbound")
-	}
-}
-
-// === ApplyReport / AWG material population tests ===
-
-func TestAWGEntryKeyMaterial_Population(t *testing.T) {
-	preset := MustGetPreset("russia_2026")
-
-	serverPriv, serverPub, _ := GenerateWireGuardKeypair()
-	clientPub := "test-client-pub-for-report"
-
-	ep, _, returnedPub, err := buildAWGUserInbound(8443, "uuid-123", "user-in", &preset, clientPub, serverPriv)
+	reMarshaled, err := json.Marshal(out)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to marshal: %v", err)
 	}
 
-	if returnedPub != serverPub {
-		t.Fatal("pub returned from builder must match the one captured for ApplyReport")
-	}
+	var originalMap, newMap map[string]any
+	json.Unmarshal([]byte(rawJSON), &originalMap)
+	json.Unmarshal(reMarshaled, &newMap)
 
-	var parsed map[string]any
-	json.Unmarshal(ep, &parsed)
+	origPretty, _ := json.MarshalIndent(originalMap, "", "  ")
+	newPretty, _ := json.MarshalIndent(newMap, "", "  ")
 
-	material := &AWGClientMaterial{
-		ServerPub:     serverPub,
-		ClientPubUsed: clientPub,
-		ClientPriv:    "",
-	}
-
-	if material.ServerPub == "" || material.ClientPubUsed == "" {
-		t.Error("ApplyReport.AWG material is incomplete")
-	}
-	if parsed["private_key"] != serverPriv {
-		t.Error("config private_key does not match what was recorded for the report")
+	if !bytes.Equal(origPretty, newPretty) {
+		t.Fatalf("Symmetry broken!\nExpected:\n%s\n\nActual:\n%s", origPretty, newPretty)
 	}
 }

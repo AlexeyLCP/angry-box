@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 //go:embed default_presets.json
@@ -187,43 +188,14 @@ func GetEffectivePreset(c *model.Chain) ConnectionPreset {
 	return GetDefaultPreset()
 }
 
-// RoutingSection описывает сгенерированную секцию route для sing-box конфига.
-type RoutingSection struct {
-	Rules                  []RouteRuleEntry `json:"rules"`
-	RuleSet                []RuleSetEntry   `json:"rule_set,omitempty"`
-	Final                  string           `json:"final,omitempty"`
-	AutoDetectInterface    bool             `json:"auto_detect_interface,omitempty"`
-	DefaultDomainResolver  string           `json:"default_domain_resolver,omitempty"`
-}
-
-// RouteRuleEntry — одно правило маршрутизации.
-type RouteRuleEntry struct {
-	Inbound      []string `json:"inbound,omitempty"`
-	Outbound     string   `json:"outbound"`
-	GeoIP        []string `json:"geoip,omitempty"`
-	GeoSite      []string `json:"geosite,omitempty"`
-	DomainSuffix []string `json:"domain_suffix,omitempty"`
-	RuleSet      []string `json:"rule_set,omitempty"`
-}
-
-// RuleSetEntry — удалённый набор правил (SRS).
-type RuleSetEntry struct {
-	Tag            string `json:"tag"`
-	Type           string `json:"type"`
-	Format         string `json:"format"`
-	URL            string `json:"url"`
-	DownloadDetour string `json:"download_detour,omitempty"`
-	UpdateInterval string `json:"update_interval,omitempty"`
-}
-
 // ruleSetBaseURL — базовый URL для SRS-файлов sing-box.
 const ruleSetBaseURL = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set"
 const ruleSetGeoSiteURL = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"
 
 // BuildRoutingSection создаёт полноценную routing-секцию на основе пресета и имени цепочки.
-func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) RoutingSection {
-	section := RoutingSection{
-		Rules:                 []RouteRuleEntry{},
+func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) config.RoutingSection {
+	section := config.RoutingSection{
+		Rules:                 []config.RouteRuleEntry{},
 		Final:                 chainOutboundTag,
 		AutoDetectInterface:   true,
 		DefaultDomainResolver: "dns-direct",
@@ -235,7 +207,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 	for _, geo := range preset.Routing.DirectGeoIP {
 		tag := "geoip-" + geo
 		ruleTags[tag] = true
-		section.Rules = append(section.Rules, RouteRuleEntry{
+		section.Rules = append(section.Rules, config.RouteRuleEntry{
 			RuleSet:  []string{tag},
 			Outbound: "direct-out",
 		})
@@ -245,7 +217,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 	for _, gs := range preset.Routing.DirectGeoSite {
 		tag := gs
 		ruleTags[tag] = true
-		section.Rules = append(section.Rules, RouteRuleEntry{
+		section.Rules = append(section.Rules, config.RouteRuleEntry{
 			RuleSet:  []string{tag},
 			Outbound: "direct-out",
 		})
@@ -253,7 +225,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 
 	// Direct domain suffixes (always direct, no rule_set needed)
 	if len(preset.Routing.DirectDomains) > 0 {
-		section.Rules = append(section.Rules, RouteRuleEntry{
+		section.Rules = append(section.Rules, config.RouteRuleEntry{
 			DomainSuffix: preset.Routing.DirectDomains,
 			Outbound:     "direct-out",
 		})
@@ -263,7 +235,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 	for _, gs := range preset.Routing.BlockGeoSite {
 		tag := gs
 		ruleTags[tag] = true
-		section.Rules = append(section.Rules, RouteRuleEntry{
+		section.Rules = append(section.Rules, config.RouteRuleEntry{
 			RuleSet:  []string{tag},
 			Outbound: "block",
 		})
@@ -271,7 +243,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 
 	// Build rule_set entries with direct download detour
 	for tag := range ruleTags {
-		entry := RuleSetEntry{
+		entry := config.RuleSetEntry{
 			Tag:            tag,
 			Type:           "remote",
 			Format:         "binary",
@@ -299,50 +271,28 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) Rout
 	return section
 }
 
-// StrategyOutbound описывает сгенерированный стратегический outbound.
-type StrategyOutbound struct {
-	Type      string   `json:"type"`
-	Tag       string   `json:"tag"`
-	Outbounds []string `json:"outbounds"`
-	Default   string   `json:"default,omitempty"`
-	URL       string   `json:"url,omitempty"`
-	Interval  string   `json:"interval,omitempty"`
-	Tolerance int      `json:"tolerance,omitempty"`
-}
-
 // BuildStrategyOutbound создаёт стратегический outbound (urltest/selector/failover).
-func BuildStrategyOutbound(strategy string, outboundTags []string) *StrategyOutbound {
+func BuildStrategyOutbound(strategy string, outboundTags []string) *config.StrategyOutbound {
 	if len(outboundTags) == 0 {
 		return nil
 	}
 	switch strategy {
-	case "urltest":
-		return &StrategyOutbound{
+	case string(model.StrategyURLTest):
+		return &config.StrategyOutbound{
 			Type:      "urltest",
-			Tag:       "auto",
+			Tag:       "auto-test",
 			Outbounds: outboundTags,
 			URL:       "https://www.gstatic.com/generate_204",
 			Interval:  "3m",
 			Tolerance: 50,
 		}
-	case "selector":
+	case string(model.StrategySelector):
 		def := outboundTags[0]
-		return &StrategyOutbound{
+		return &config.StrategyOutbound{
 			Type:      "selector",
 			Tag:       "select",
 			Outbounds: outboundTags,
 			Default:   def,
-		}
-	case "failover":
-		// sing-box-extended doesn't support "failover" type with string[] outbounds.
-		// urltest provides equivalent behavior: health-check, skip unhealthy, pick best.
-		return &StrategyOutbound{
-			Type:      "urltest",
-			Tag:       "auto",
-			Outbounds: outboundTags,
-			URL:       "https://www.gstatic.com/generate_204",
-			Interval:  "3m",
-			Tolerance: 100,
 		}
 	default:
 		return nil
@@ -350,48 +300,48 @@ func BuildStrategyOutbound(strategy string, outboundTags []string) *StrategyOutb
 }
 
 // BuildDNSWithDetour создаёт DNS-секцию с detour через outbound цепочки.
-func BuildDNSWithDetour(chainOutboundTag string, directDomains []string) map[string]any {
-	dnsServers := []map[string]any{
-		{"tag": "dns-chain", "type": "tls", "server": "1.1.1.1", "detour": chainOutboundTag},
-		{"tag": "dns-direct", "type": "udp", "server": "8.8.8.8", "detour": "direct-out"},
+func BuildDNSWithDetour(chainOutboundTag string, directDomains []string) *config.DNSConfig {
+	dnsServers := []config.DNSServer{
+		{Tag: "dns-chain", Type: "tls", Server: "1.1.1.1", Detour: chainOutboundTag},
+		{Tag: "dns-direct", Type: "udp", Server: "8.8.8.8", Detour: "direct-out"},
 	}
-	dnsRules := []map[string]any{}
+	var dnsRules []config.DNSRule
 	if len(directDomains) > 0 {
-		dnsRules = append(dnsRules, map[string]any{
-			"domain_suffix": directDomains,
-			"server":        "dns-direct",
+		dnsRules = append(dnsRules, config.DNSRule{
+			DomainSuffix: directDomains,
+			Server:       "dns-direct",
 		})
 	}
-	return map[string]any{
-		"servers": dnsServers,
-		"rules":   dnsRules,
-		"final":   "dns-chain",
+	return &config.DNSConfig{
+		Servers: dnsServers,
+		Rules:   dnsRules,
+		Final:   "dns-chain",
 	}
 }
 
 // BuildDNSSection создаёт DNS-секцию (sing-box 1.12+ non-legacy формат).
-func BuildDNSSection(chainOutboundTag string) map[string]any {
-	return map[string]any{
-		"servers": []map[string]any{
+func BuildDNSSection(chainOutboundTag string) *config.DNSConfig {
+	return &config.DNSConfig{
+		Servers: []config.DNSServer{
 			{
-				"tag":    "dns-remote",
-				"type":   "tls",
-				"server": "1.1.1.1",
-				"detour": chainOutboundTag,
+				Tag:    "dns-remote",
+				Type:   "tls",
+				Server: "1.1.1.1",
+				Detour: chainOutboundTag,
 			},
 			{
-				"tag":    "dns-local",
-				"type":   "udp",
-				"server": "8.8.8.8",
-				"detour": "direct-out",
-			},
-		},
-		"rules": []map[string]any{
-			{
-				"domain_suffix": []string{".ru", ".su", ".рф", ".ir", ".cn"},
-				"server":        "dns-local",
+				Tag:    "dns-local",
+				Type:   "udp",
+				Server: "8.8.8.8",
+				Detour: "direct-out",
 			},
 		},
-		"final": "dns-remote",
+		Rules: []config.DNSRule{
+			{
+				DomainSuffix: []string{".ru", ".su", ".рф", ".ir", ".cn"},
+				Server:       "dns-local",
+			},
+		},
+		Final: "dns-remote",
 	}
 }

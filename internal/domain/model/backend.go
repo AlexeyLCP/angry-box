@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // BackendKind identifies a proxy backend implementation.
 type BackendKind string
@@ -24,6 +27,14 @@ type Host struct {
 	Addr    string // IP:port for SSH connection
 	User    string // SSH user
 	KeyPath string // path to private key for SSH auth
+}
+
+// KnownHost stores a verified SSH host key fingerprint.
+type KnownHost struct {
+	Addr        string    `json:"addr"`        // IP:port
+	Fingerprint string    `json:"fingerprint"` // SHA256 base64 fingerprint
+	FirstSeen   time.Time `json:"first_seen"`
+	Trusted     bool      `json:"trusted"`
 }
 
 // Config is the result of config generation, ready to be applied.

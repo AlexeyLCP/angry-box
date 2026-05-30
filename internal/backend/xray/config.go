@@ -29,6 +29,55 @@ type xrayLog struct {
 	LogLevel string `json:"loglevel"`
 }
 
+type xrayInbound struct {
+	Port           int                 `json:"port"`
+	Protocol       string              `json:"protocol"`
+	Tag            string              `json:"tag"`
+	Settings       xrayInboundSettings `json:"settings"`
+	StreamSettings *xrayStreamSettings `json:"streamSettings,omitempty"`
+}
+
+type xrayInboundSettings struct {
+	Clients    []xrayClient `json:"clients"`
+	Decryption string       `json:"decryption,omitempty"`
+}
+
+type xrayClient struct {
+	ID   string `json:"id"`
+	Flow string `json:"flow,omitempty"`
+}
+
+type xrayOutbound struct {
+	Protocol string `json:"protocol"`
+	Tag      string `json:"tag"`
+}
+
+type xrayStreamSettings struct {
+	Network         string               `json:"network"`
+	Security        string               `json:"security,omitempty"`
+	RealitySettings *xrayRealitySettings `json:"realitySettings,omitempty"`
+	HTTPSettings    *xrayHTTPSettings    `json:"httpSettings,omitempty"`
+	WSSettings      *xrayWSSettings      `json:"wsSettings,omitempty"`
+}
+
+type xrayRealitySettings struct {
+	Dest        string   `json:"dest"`
+	ServerNames []string `json:"serverNames"`
+	PrivateKey  string   `json:"privateKey"`
+	ShortIds    []string `json:"shortIds"`
+}
+
+type xrayWSSettings struct {
+	Path string `json:"path"`
+}
+
+type xrayHTTPSettings struct {
+	Path    string               `json:"path,omitempty"`
+	Method  string               `json:"method,omitempty"`
+	Headers map[string][]string  `json:"headers,omitempty"`
+	Extra   *chain.XrayXHTTPExtra `json:"extra,omitempty"`
+}
+
 // GenerateConfig produces an xray configuration for the given type and parameters.
 func (b *Backend) GenerateConfig(cfgType model.ConfigType, params model.ConfigParams) (*model.Config, error) {
 	switch cfgType {
@@ -88,59 +137,69 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 		useXHTTP = true
 	}
 
-	var streamSettings map[string]any
+	var streamSettings *xrayStreamSettings
 	if useXHTTP {
 		// Advanced XHTTP + Reality using our new generators (padding, XMUX, realistic headers, etc.)
 		path := "/api/v1/" + shortIDHex[:4]
+		host := ""
 		if preset.XHTTP != nil && len(preset.XHTTP.Paths) > 0 {
 			path = preset.XHTTP.Paths[0]
 		}
-
-		httpSettings := map[string]any{
-			"path":   path,
-			"method": "POST",
+		if preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
+			host = preset.XHTTP.Hosts[0]
 		}
-		chain.ApplyXHTTPObfuscation(httpSettings, preset.XHTTP)
+		headers := chain.GenerateRealisticHeaders(host)
+		if preset.XHTTP != nil && len(preset.XHTTP.Headers) > 0 {
+			headers = preset.XHTTP.Headers
+		}
 
-		streamSettings = map[string]any{
-			"network":  "http",
-			"security": "reality",
-			"realitySettings": map[string]any{
-				"dest":        dest,
-				"serverNames": []string{serverName},
-				"privateKey":  string(privKeyPEM),
-				"shortIds":    []string{shortIDHex},
+		httpSettings := &xrayHTTPSettings{
+			Path:    path,
+			Method:  "POST",
+			Headers: headers,
+			// Usually Xray expects extra in streamSettings, but for compatibility some patched versions might read it here.
+			// Let's use the XHTTPExtra we built.
+		}
+
+		streamSettings = &xrayStreamSettings{
+			Network:  "http",
+			Security: "reality",
+			RealitySettings: &xrayRealitySettings{
+				Dest:        dest,
+				ServerNames: []string{serverName},
+				PrivateKey:  string(privKeyPEM),
+				ShortIds:    []string{shortIDHex},
 			},
-			"httpSettings": httpSettings,
+			HTTPSettings: httpSettings,
 		}
 	} else {
 		// Classic Reality + TCP
-		streamSettings = map[string]any{
-			"network":  "tcp",
-			"security": "reality",
-			"realitySettings": map[string]any{
-				"dest":        dest,
-				"serverNames": []string{serverName},
-				"privateKey":  string(privKeyPEM),
-				"shortIds":    []string{shortIDHex},
+		streamSettings = &xrayStreamSettings{
+			Network:  "tcp",
+			Security: "reality",
+			RealitySettings: &xrayRealitySettings{
+				Dest:        dest,
+				ServerNames: []string{serverName},
+				PrivateKey:  string(privKeyPEM),
+				ShortIds:    []string{shortIDHex},
 			},
 		}
 	}
 
-	inbound := map[string]any{
-		"port":     port,
-		"protocol": "vless",
-		"tag":      "transport-in",
-		"settings": map[string]any{
-			"clients": []map[string]any{
+	inbound := xrayInbound{
+		Port:     port,
+		Protocol: "vless",
+		Tag:      "transport-in",
+		Settings: xrayInboundSettings{
+			Clients: []xrayClient{
 				{
-					"id":   uuid,
-					"flow": "xtls-rprx-vision",
+					ID:   uuid,
+					Flow: "xtls-rprx-vision",
 				},
 			},
-			"decryption": "none",
+			Decryption: "none",
 		},
-		"streamSettings": streamSettings,
+		StreamSettings: streamSettings,
 	}
 
 	inboundJSON, err := json.Marshal(inbound)
@@ -148,9 +207,9 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 		return nil, fmt.Errorf("xray: marshal inbound: %w", err)
 	}
 
-	outbound := map[string]any{
-		"protocol": "freedom",
-		"tag":      "direct-out",
+	outbound := xrayOutbound{
+		Protocol: "freedom",
+		Tag:      "direct-out",
 	}
 
 	outboundJSON, err := json.Marshal(outbound)
@@ -184,23 +243,23 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 
 	uuid := generateUUID()
 
-	inbound := map[string]any{
-		"port":     port,
-		"protocol": "vless",
-		"tag":      "user-in",
-		"settings": map[string]any{
-			"clients": []map[string]any{
+	inbound := xrayInbound{
+		Port:     port,
+		Protocol: "vless",
+		Tag:      "user-in",
+		Settings: xrayInboundSettings{
+			Clients: []xrayClient{
 				{
-					"id": uuid,
+					ID: uuid,
 				},
 			},
-			"decryption": "none",
+			Decryption: "none",
 		},
-		"streamSettings": map[string]any{
-			"network":  "ws",
-			"security": "none",
-			"wsSettings": map[string]any{
-				"path": "/ws",
+		StreamSettings: &xrayStreamSettings{
+			Network:  "ws",
+			Security: "none",
+			WSSettings: &xrayWSSettings{
+				Path: "/ws",
 			},
 		},
 	}
@@ -210,9 +269,9 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 		return nil, fmt.Errorf("xray: marshal inbound: %w", err)
 	}
 
-	outbound := map[string]any{
-		"protocol": "freedom",
-		"tag":      "direct-out",
+	outbound := xrayOutbound{
+		Protocol: "freedom",
+		Tag:      "direct-out",
 	}
 
 	outboundJSON, err := json.Marshal(outbound)

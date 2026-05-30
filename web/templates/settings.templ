@@ -7,7 +7,7 @@ import (
 )
 
 // Settings renders the panel settings page.
-templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain, systemKeys ...[]model.SSHKeyEntry) {
+templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain, authEnabled bool, authUsername string, systemKeys ...[]model.SSHKeyEntry) {
 	<div class="space-y-6">
 		<h2 class="text-2xl font-semibold">Panel Settings</h2>
 
@@ -20,11 +20,25 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					hx-swap="innerHTML"
 					class="space-y-4">
 
-					<div class="form-control">
-						<label class="label"><span class="label-text">Admin Password</span></label>
-						<input type="password" name="admin_password" class="input input-bordered max-w-sm"
-							placeholder="Leave empty to keep current" autocomplete="new-password" />
-						<div class="label"><span class="label-text-alt text-base-content/50">Has set: <span class="font-mono">{ fmt.Sprintf("%v", settings.AdminPasswordHash != "") }</span></span></div>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-base-300 pb-4 mb-4">
+						<div class="form-control">
+							<label class="label"><span class="label-text">Web UI Username</span></label>
+							<input type="text" name="auth_username" class="input input-bordered"
+								value={ authUsername } required />
+							<div class="label"><span class="label-text-alt text-base-content/50">For Basic Authentication</span></div>
+						</div>
+						
+						<div class="form-control">
+							<label class="label"><span class="label-text">Old Password (required to change)</span></label>
+							<input type="password" name="auth_old_password" class="input input-bordered"
+								placeholder="Enter current password" autocomplete="current-password" />
+						</div>
+
+						<div class="form-control">
+							<label class="label"><span class="label-text">New Password</span></label>
+							<input type="password" name="auth_new_password" class="input input-bordered"
+								placeholder="Leave empty to keep current" autocomplete="new-password" />
+						</div>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">

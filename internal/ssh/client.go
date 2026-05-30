@@ -11,6 +11,31 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// HostKeyManager is used to verify remote host keys.
+type HostKeyManager interface {
+	CheckHostKey(addr string, remoteKey ssh.PublicKey) error
+}
+
+var globalManager HostKeyManager
+
+// SetHostKeyManager sets the global host key manager.
+func SetHostKeyManager(m HostKeyManager) {
+	globalManager = m
+}
+
+// HostKeyError indicates a problem with the remote host key (mismatch or untrusted).
+type HostKeyError struct {
+	RemoteFingerprint string
+	Changed           bool
+}
+
+func (e *HostKeyError) Error() string {
+	if e.Changed {
+		return fmt.Sprintf("host key changed! new fingerprint: %s", e.RemoteFingerprint)
+	}
+	return fmt.Sprintf("host key untrusted: %s", e.RemoteFingerprint)
+}
+
 // Client wraps an SSH connection and provides convenience methods.
 type Client struct {
 	client *ssh.Client
@@ -41,7 +66,13 @@ func Connect(addr, user, keyPath string) (*Client, error) {
 		Auth: []ssh.AuthMethod{
 			authMethod,
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			if globalManager != nil {
+				return globalManager.CheckHostKey(addr, key)
+			}
+			// Fallback: if no manager configured, refuse connection
+			return fmt.Errorf("ssh host key verification failed: no HostKeyManager configured")
+		},
 		Timeout:         15 * time.Second,
 	}
 

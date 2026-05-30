@@ -14,6 +14,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	"github.com/alexeylcp/angry-box/internal/web"
 )
 
@@ -118,6 +119,10 @@ func main() {
 	}
 
 	cmd := os.Args[1]
+	if cmd == "-h" || cmd == "--help" || cmd == "help" {
+		fmt.Print(usage)
+		os.Exit(0)
+	}
 
 	// Quick pre-parse for global --config flag (before subcommand flag sets)
 	for i, arg := range os.Args {
@@ -132,6 +137,13 @@ func main() {
 			_ = c
 		}
 	}
+
+	// For commands that use SSH and a store path flag, the actual `storePath` might be parsed later.
+	// But `storePath` string flag default is "chains.json". It's safe to initialize the HostKeyManager
+	// here. If a command overrides the `-file` flag, it should ideally re-initialize, but for most
+	// cases (like serve), we can initialize it inside the command after parsing. To be safe, we'll initialize 
+	// a default here, and re-initialize in node commands and serve.
+	sshclient.SetHostKeyManager(chain.NewStore("chains.json"))
 
 	switch cmd {
 	case "host":
@@ -448,6 +460,7 @@ func applyChainCmd() {
 
 	f := factory.New()
 	applier := chain.NewApplier(f)
+	sshclient.SetHostKeyManager(s)
 
 	ctx := context.Background()
 	report, err := applier.ApplyChain(ctx, c, clientPubKey)
@@ -549,6 +562,10 @@ func nodeCmd(cmd string) {
 	fs.StringVar(&clientPubKey, "client-pubkey", "", "client public key for AWG user configs")
 	fs.StringVar(&transport, "transport", "xhttp", "transport for -type=transport (xhttp or reality)")
 	_ = fs.Parse(os.Args[2:])
+
+	// For single node commands, we don't have a storePath flag directly defined in nodeCmd,
+	// but we can assume default or from orchCfg.
+	sshclient.SetHostKeyManager(chain.NewStore("chains.json"))
 
 	f := factory.New()
 	b := f.Create()
@@ -705,10 +722,12 @@ func serveCmd() {
 		*devMode = devEnv == "1" || devEnv == "true" || devEnv == "on"
 	}
 
+	sshclient.SetHostKeyManager(chain.NewStore(storePath))
+
 	mux := http.NewServeMux()
 
 	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI)
-	ui := web.NewServer(storePath, *devMode)
+	ui := web.NewServer(storePath, *devMode, cfg)
 	ui.Register(mux)
 
 	// Start background metrics collection based on panel settings

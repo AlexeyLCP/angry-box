@@ -2,8 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,13 +12,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"errors"
 
 	"github.com/a-h/templ"
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
 	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Server provides the HTMX web UI.
@@ -28,17 +30,18 @@ type Server struct {
 	storePath string
 	stopCh    chan struct{}
 	devMode   bool
+	cfg       *config.Config
 }
 
 // NewServer creates a web UI server.
 // If devMode is true, static files are served from web/static/ instead of the embedded filesystem.
-func NewServer(storePath string, devMode bool) *Server {
+func NewServer(storePath string, devMode bool, cfg *config.Config) *Server {
 	if devMode {
 		log.Println("[dev] Loading UI from filesystem (web/static/)")
 	} else {
 		log.Println("[prod] Loading embedded UI")
 	}
-	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode}
+	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg}
 }
 
 // isDev returns true if the server is in development mode.
@@ -121,6 +124,10 @@ func (s *Server) collectAllMetrics() {
 	}
 }
 
+func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
+	return BasicAuthMiddleware(h, s.cfg)
+}
+
 func (s *Server) Register(mux *http.ServeMux) {
 	// Static files (CSS, JS, images) — from disk in dev, from embed in prod
 	staticFS, err := s.staticFS()
@@ -130,69 +137,70 @@ func (s *Server) Register(mux *http.ServeMux) {
 		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	}
 
-	mux.HandleFunc("GET /ui", s.handleDashboard)
+	mux.HandleFunc("GET /ui", s.auth(s.handleDashboard))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui", http.StatusSeeOther)
 	})
 
 	// API endpoints for dashboard
-	mux.HandleFunc("GET /ui/api/stats", s.handleStats)
-	mux.HandleFunc("GET /ui/api/metrics", s.handleMetricsJSON)
-	mux.HandleFunc("GET /ui/dashboard/stats", s.handleDashboardStatsHTML)
+	mux.HandleFunc("GET /ui/api/stats", s.auth(s.handleStats))
+	mux.HandleFunc("GET /ui/api/metrics", s.auth(s.handleMetricsJSON))
+	mux.HandleFunc("GET /ui/dashboard/stats", s.auth(s.handleDashboardStatsHTML))
 
 	// Hosts (kept for backward compat, redirect to nodes)
-	mux.HandleFunc("GET /ui/hosts", s.handleNodes)
-	mux.HandleFunc("POST /ui/hosts", s.handleCreateHost)
-	mux.HandleFunc("DELETE /ui/hosts/{id}", s.handleDeleteHost)
-	mux.HandleFunc("GET /ui/hosts/new", s.handleNewHostForm)
-	mux.HandleFunc("GET /ui/hosts/{id}/status", s.handleHostStatus)
+	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
+	mux.HandleFunc("POST /ui/hosts", s.auth(s.handleCreateHost))
+	mux.HandleFunc("DELETE /ui/hosts/{id}", s.auth(s.handleDeleteHost))
+	mux.HandleFunc("GET /ui/hosts/new", s.auth(s.handleNewHostForm))
+	mux.HandleFunc("GET /ui/hosts/{id}/status", s.auth(s.handleHostStatus))
 
 	// Nodes (new CRUD)
-	mux.HandleFunc("GET /ui/nodes", s.handleNodes)
-	mux.HandleFunc("POST /ui/nodes", s.handleCreateNode)
-	mux.HandleFunc("GET /ui/nodes/new", s.handleNewNodeForm)
-	mux.HandleFunc("GET /ui/nodes/{id}/edit", s.handleEditNodeForm)
-	mux.HandleFunc("POST /ui/nodes/{id}/edit", s.handleUpdateNode)
-	mux.HandleFunc("DELETE /ui/nodes/{id}", s.handleDeleteNode)
-	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.handleCaptureNode)
-	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.handleNodeCaptureForm)
-	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.handleNodeInboundsForm)
-	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.handleSaveNodeInbounds)
+	mux.HandleFunc("GET /ui/nodes", s.auth(s.handleNodes))
+	mux.HandleFunc("POST /ui/nodes", s.auth(s.handleCreateNode))
+	mux.HandleFunc("GET /ui/nodes/new", s.auth(s.handleNewNodeForm))
+	mux.HandleFunc("GET /ui/nodes/{id}/edit", s.auth(s.handleEditNodeForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/edit", s.auth(s.handleUpdateNode))
+	mux.HandleFunc("DELETE /ui/nodes/{id}", s.auth(s.handleDeleteNode))
+	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.auth(s.handleCaptureNode))
+	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.auth(s.handleNodeCaptureForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/trust", s.auth(s.handleTrustHostKey))
+	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
 
 	// Chains (existing)
-	mux.HandleFunc("GET /ui/chains", s.handleChains)
-	mux.HandleFunc("POST /ui/chains", s.handleCreateChain)
-	mux.HandleFunc("DELETE /ui/chains/{name}", s.handleDeleteChain)
-	mux.HandleFunc("POST /ui/chains/{name}/apply", s.handleApplyChain)
-	mux.HandleFunc("GET /ui/chains/new", s.handleNewChainForm)
-	mux.HandleFunc("GET /ui/chains/{name}/edit", s.handleEditChainForm)
-	mux.HandleFunc("POST /ui/chains/{name}/edit", s.handleUpdateChain)
+	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
+	mux.HandleFunc("POST /ui/chains", s.auth(s.handleCreateChain))
+	mux.HandleFunc("DELETE /ui/chains/{name}", s.auth(s.handleDeleteChain))
+	mux.HandleFunc("POST /ui/chains/{name}/apply", s.auth(s.handleApplyChain))
+	mux.HandleFunc("GET /ui/chains/new", s.auth(s.handleNewChainForm))
+	mux.HandleFunc("GET /ui/chains/{name}/edit", s.auth(s.handleEditChainForm))
+	mux.HandleFunc("POST /ui/chains/{name}/edit", s.auth(s.handleUpdateChain))
 
 	// Spider Web (visual chain editor)
-	mux.HandleFunc("GET /ui/spider", s.handleSpiderWeb)
-	mux.HandleFunc("POST /ui/spider/links", s.handleCreateSpiderLink)
-	mux.HandleFunc("DELETE /ui/spider/links/{id}", s.handleDeleteSpiderLink)
-	mux.HandleFunc("POST /ui/spider/apply/{name}", s.handleApplyChain)
+	mux.HandleFunc("GET /ui/spider", s.auth(s.handleSpiderWeb))
+	mux.HandleFunc("POST /ui/spider/links", s.auth(s.handleCreateSpiderLink))
+	mux.HandleFunc("DELETE /ui/spider/links/{id}", s.auth(s.handleDeleteSpiderLink))
+	mux.HandleFunc("POST /ui/spider/apply/{name}", s.auth(s.handleApplyChain))
 
 	// Users
-	mux.HandleFunc("GET /ui/users", s.handleUsers)
-	mux.HandleFunc("POST /ui/users", s.handleCreateUser)
-	mux.HandleFunc("GET /ui/users/new", s.handleNewUserForm)
-	mux.HandleFunc("GET /ui/users/{id}/edit", s.handleEditUserForm)
-	mux.HandleFunc("POST /ui/users/{id}/edit", s.handleUpdateUser)
-	mux.HandleFunc("DELETE /ui/users/{id}", s.handleDeleteUser)
-	mux.HandleFunc("GET /ui/users/{id}/config", s.handleUserConfig)
-	mux.HandleFunc("GET /ui/users/{id}/qr", s.handleUserQR)
+	mux.HandleFunc("GET /ui/users", s.auth(s.handleUsers))
+	mux.HandleFunc("POST /ui/users", s.auth(s.handleCreateUser))
+	mux.HandleFunc("GET /ui/users/new", s.auth(s.handleNewUserForm))
+	mux.HandleFunc("GET /ui/users/{id}/edit", s.auth(s.handleEditUserForm))
+	mux.HandleFunc("POST /ui/users/{id}/edit", s.auth(s.handleUpdateUser))
+	mux.HandleFunc("DELETE /ui/users/{id}", s.auth(s.handleDeleteUser))
+	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
+	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
 
 	// Settings
-	mux.HandleFunc("GET /ui/settings", s.handleSettings)
-	mux.HandleFunc("POST /ui/settings", s.handleSaveSettings)
+	mux.HandleFunc("GET /ui/settings", s.auth(s.handleSettings))
+	mux.HandleFunc("POST /ui/settings", s.auth(s.handleSaveSettings))
 	// SSH Keys management
-	mux.HandleFunc("POST /ui/settings/ssh-keys", s.handleAddSSHKey)
-	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.handleDeleteSSHKey)
+	mux.HandleFunc("POST /ui/settings/ssh-keys", s.auth(s.handleAddSSHKey))
+	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.auth(s.handleDeleteSSHKey))
 
 	// Status
-	mux.HandleFunc("GET /ui/status", s.handleStatus)
+	mux.HandleFunc("GET /ui/status", s.auth(s.handleStatus))
 }
 
 func (s *Server) store() *chain.Store { return chain.NewStore(s.storePath) }
@@ -245,6 +253,27 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderContent(w, r, "Dashboard", templates.Dashboard(stats, hosts, metrics, infos, chains))
+}
+
+func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	addr := r.FormValue("addr")
+	fingerprint := r.FormValue("fingerprint")
+
+	if addr != "" && fingerprint != "" {
+		st := s.store()
+		kh := &model.KnownHost{
+			Addr:        addr,
+			Fingerprint: fingerprint,
+			FirstSeen:   time.Now(),
+			Trusted:     true,
+		}
+		_ = st.SaveKnownHost(kh)
+	}
+
+	// Redirect back to capture form to try again. (HTMX expects HTML or redirect)
+	w.Header().Set("HX-Redirect", "/ui/nodes/"+id+"/capture")
+	http.Redirect(w, r, "/ui/nodes/"+id+"/capture", http.StatusSeeOther)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -454,6 +483,11 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if sshErr != nil {
+		var hkErr *sshclient.HostKeyError
+		if errors.As(sshErr, &hkErr) {
+			s.render(w, templates.HostKeyWarning(*host, hkErr.RemoteFingerprint, hkErr.Changed))
+			return
+		}
 		s.render(w, &simpleHTML{html: fmt.Sprintf(
 			`<div class="alert alert-error"><span>Capture failed: %v</span></div>`, sshErr,
 		)})
@@ -902,7 +936,16 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	hosts, _ := st.ListHosts()
 	chains, _ := st.ListChains()
 	sysKeys := detectSystemKeys()
-	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, sysKeys))
+	
+	// Ensure we pass the config properties (safe fallbacks if cfg is nil in some tests)
+	authEnabled := false
+	authUsername := ""
+	if s.cfg != nil {
+		authEnabled = s.cfg.AuthEnabled
+		authUsername = s.cfg.AuthUsername
+	}
+
+	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, authEnabled, authUsername, sysKeys))
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
@@ -913,11 +956,49 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	settings, _ := st.GetSettings()
 
-	newPassword := strings.TrimSpace(r.FormValue("admin_password"))
-	if newPassword != "" {
-		h := sha256.Sum256([]byte(newPassword))
-		settings.AdminPasswordHash = hex.EncodeToString(h[:])
+	// 1. Config updates (Auth)
+	configNeedsSave := false
+	if s.cfg != nil {
+		newUsername := strings.TrimSpace(r.FormValue("auth_username"))
+		if newUsername != "" && newUsername != s.cfg.AuthUsername {
+			s.cfg.AuthUsername = newUsername
+			configNeedsSave = true
+		}
+
+		newPassword := strings.TrimSpace(r.FormValue("auth_new_password"))
+		oldPassword := strings.TrimSpace(r.FormValue("auth_old_password"))
+
+		if newPassword != "" {
+			if s.cfg.AuthPasswordHash != "" {
+				// Require valid old password
+				err := bcrypt.CompareHashAndPassword([]byte(s.cfg.AuthPasswordHash), []byte(oldPassword))
+				if err != nil {
+					s.render(w, &simpleHTML{html: `<div class="alert alert-error"><span>Failed to change password: old password is incorrect.</span></div>`})
+					return
+				}
+			}
+
+			// Hash new password
+			hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+			if err != nil {
+				http.Error(w, "failed to hash password", http.StatusInternalServerError)
+				return
+			}
+			s.cfg.AuthPasswordHash = string(hash)
+			configNeedsSave = true
+		}
+
+		if configNeedsSave {
+			// Save config to default location
+			if err := s.cfg.Save(config.DefaultConfigPath()); err != nil {
+				log.Printf("failed to save config: %v", err)
+				s.render(w, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>Settings saved, but config write failed: %v</span></div>`, err)})
+				return
+			}
+		}
 	}
+
+	// 2. PanelSettings updates (store.json)
 	settings.PanelCountry = strings.TrimSpace(r.FormValue("panel_country"))
 	if intervalStr := strings.TrimSpace(r.FormValue("metrics_interval")); intervalStr != "" {
 		settings.MetricsInterval, _ = strconv.Atoi(intervalStr)

@@ -7,7 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
 // Store provides JSON-file persistence for hosts and chains.
@@ -28,6 +30,7 @@ type storeFile struct {
 	Settings *model.PanelSettings   `json:"settings,omitempty"`
 	NodeInfos []*model.NodeInfo     `json:"node_infos,omitempty"`
 	Metrics  []*model.NodeMetrics   `json:"metrics,omitempty"`
+	KnownHosts []*model.KnownHost   `json:"known_hosts,omitempty"`
 }
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────
@@ -470,6 +473,79 @@ func (s *Store) ListMetrics() ([]*model.NodeMetrics, error) {
 }
 
 func timeNow() time.Time { return time.Now() }
+
+// ─── KnownHosts / HostKeyManager ───────────────────────────────────────────────
+
+func (s *Store) GetKnownHost(addr string) (*model.KnownHost, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("not found")
+		}
+		return nil, err
+	}
+	for _, kh := range sf.KnownHosts {
+		if kh.Addr == addr {
+			return kh, nil
+		}
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+func (s *Store) SaveKnownHost(kh *model.KnownHost) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return err
+	}
+	for i, existing := range sf.KnownHosts {
+		if existing.Addr == kh.Addr {
+			sf.KnownHosts[i] = kh
+			return s.writeStore(sf)
+		}
+	}
+	sf.KnownHosts = append(sf.KnownHosts, kh)
+	return s.writeStore(sf)
+}
+
+// CheckHostKey implements sshclient.HostKeyManager.
+func (s *Store) CheckHostKey(addr string, remoteKey ssh.PublicKey) error {
+	fingerprint := ssh.FingerprintSHA256(remoteKey)
+
+	kh, err := s.GetKnownHost(addr)
+	if err != nil {
+		// TOFU: save automatically as trusted.
+		newKH := &model.KnownHost{
+			Addr:        addr,
+			Fingerprint: fingerprint,
+			FirstSeen:   timeNow(),
+			Trusted:     true,
+		}
+		_ = s.SaveKnownHost(newKH)
+		return nil // trust on first use
+	}
+
+	if kh.Fingerprint != fingerprint {
+		return &sshclient.HostKeyError{
+			RemoteFingerprint: fingerprint,
+			Changed:           true,
+		}
+	}
+
+	if !kh.Trusted {
+		return &sshclient.HostKeyError{
+			RemoteFingerprint: fingerprint,
+			Changed:           false,
+		}
+	}
+
+	return nil
+}
 
 // ─── internals ─────────────────────────────────────────────────────────────────
 

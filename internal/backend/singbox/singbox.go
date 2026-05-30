@@ -227,8 +227,38 @@ lsmod | grep amneziawg
 	return nil
 }
 
+// createBackup makes a timestamped backup of the current config.
+func createBackup(client *sshclient.Client, file string) (string, error) {
+	out, err := client.Run(fmt.Sprintf(`if [ -f %s ]; then
+		ts=$(date +%%s)
+		bak="%s.bak.$ts"
+		cp -p %s "$bak"
+		echo "$bak"
+	fi`, file, file, file))
+	return strings.TrimSpace(out), err
+}
+
+// performRollback restores the backup and restarts the service.
+func performRollback(client *sshclient.Client, file, backupPath, serviceName string) error {
+	if backupPath == "" {
+		return fmt.Errorf("no backup path provided")
+	}
+	cmd := fmt.Sprintf(`mv %s %s && systemctl restart %s && sleep 1 && systemctl is-active --quiet %s`,
+		backupPath, file, serviceName, serviceName)
+	_, err := client.Run(cmd)
+	if err != nil {
+		return fmt.Errorf("CRITICAL rollback failed: %w", err)
+	}
+	return nil
+}
+
+// cleanupBackups keeps only the last 5 backups.
+func cleanupBackups(client *sshclient.Client, file string) {
+	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
+}
+
 // ApplyConfig generates a config and pushes it to the remote host.
-// It creates a backup of the previous config and attempts rollback on failure.
+// It creates a backup of the previous config and attempts a strict rollback on failure.
 func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType model.ConfigType, params model.ConfigParams) error {
 	cfg, err := b.GenerateConfig(cfgType, params)
 	if err != nil {
@@ -247,38 +277,55 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		return fmt.Errorf("singbox: applyConfig: invalid JSON: %w", err)
 	}
 
-	// Backup existing config if present.
-	backupCmd := fmt.Sprintf(
-		"if [ -f %s ]; then cp %s %s.bak.$(date +%%s); fi",
-		configFile, configFile, configFile,
-	)
-	_, _ = client.Run(backupCmd) // best effort
+	// 1. Backup existing config if present.
+	backupPath, _ := createBackup(client, configFile)
 
-	// Write new config.
+	// 2. Write new config.
 	writeCmd := fmt.Sprintf("mkdir -p %s && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF",
 		configDir, configFile, cfg.Content)
-
 	if _, err := client.Run(writeCmd); err != nil {
 		return fmt.Errorf("singbox: applyConfig: write config: %w", err)
 	}
 
-	// Validate with sing-box check.
+	// 3. Validate with sing-box check.
 	checkCmd := fmt.Sprintf("%s check -c %s", installPath, configFile)
 	if _, err := client.Run(checkCmd); err != nil {
-		// Attempt rollback
-		rollbackCmd := fmt.Sprintf(
-			"if [ -f %s.bak.* ]; then latest=$(ls -t %s.bak.* | head -1); cp \"$latest\" %s; fi",
-			configFile, configFile, configFile,
-		)
-		_, _ = client.Run(rollbackCmd)
-		return fmt.Errorf("singbox: applyConfig: config validation failed (rollback attempted): %w", err)
+		if backupPath != "" {
+			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			if rbErr != nil {
+				return fmt.Errorf("singbox: applyConfig: config validation failed: %v (AND %v)", err, rbErr)
+			}
+			return fmt.Errorf("singbox: applyConfig: rollback successful: config validation failed: %w", err)
+		}
+		return fmt.Errorf("singbox: applyConfig: config validation failed (no backup to rollback): %w", err)
 	}
 
-	// Prefer reload for minimal disruption, fall back to restart.
-	reloadCmd := fmt.Sprintf("%s reload -c %s 2>/dev/null || systemctl reload sing-box 2>/dev/null || systemctl restart sing-box", installPath, configFile)
-	if _, err := client.Run(reloadCmd); err != nil {
-		return fmt.Errorf("singbox: applyConfig: reload/restart failed: %w", err)
+	// 4. Restart service
+	if _, err := client.Run("systemctl restart sing-box"); err != nil {
+		if backupPath != "" {
+			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			if rbErr != nil {
+				return fmt.Errorf("singbox: applyConfig: restart failed: %v (AND %v)", err, rbErr)
+			}
+			return fmt.Errorf("singbox: applyConfig: rollback successful: service restart failed: %w", err)
+		}
+		return fmt.Errorf("singbox: applyConfig: restart failed (no backup to rollback): %w", err)
 	}
+
+	// 5. Check real status after delay
+	if _, err := client.Run("sleep 3 && systemctl is-active --quiet sing-box"); err != nil {
+		if backupPath != "" {
+			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			if rbErr != nil {
+				return fmt.Errorf("singbox: applyConfig: service inactive: %v (AND %v)", err, rbErr)
+			}
+			return fmt.Errorf("singbox: applyConfig: rollback successful: service failed to become active after restart: %w", err)
+		}
+		return fmt.Errorf("singbox: applyConfig: service inactive after restart (no backup to rollback): %w", err)
+	}
+
+	// 6. Cleanup old backups
+	cleanupBackups(client, configFile)
 
 	return nil
 }

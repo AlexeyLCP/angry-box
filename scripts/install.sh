@@ -526,24 +526,21 @@ if [ "$IS_KEENETIC" != true ]; then
     if [ "$HAS_PUBLIC_IFACE" = true ]; then
         echo ""
         echo "===================================================================="
-        echo "  WARNING: This machine has a public IP address on a local interface."
-        echo "  The Web UI is directly reachable from the internet."
+        echo "  INFO: This machine has a public IP address."
+        echo "  The Web UI will be reachable from the internet."
         echo ""
-        echo "  In the current version, the Web UI is NOT password-protected."
-        echo "  This is UNSAFE for public servers without additional security:"
-        echo "    - Firewall (iptables/nftables)"
-        echo "    - Reverse proxy with authentication"
-        echo "    - VPN / WireGuard tunnel"
+        echo "  The Web UI is now password-protected by default."
+        echo "  On first run, a random password is generated for 'admin'."
+        echo "  You can find this password in the system logs:"
         echo ""
-        echo "  Admin password will be added in a future version."
+        if [ "$USER_MODE" = true ]; then
+            echo "    systemctl --user status angry-box -n 50"
+        else
+            echo "    systemctl status angry-box -n 50"
+            echo "    journalctl -u angry-box -n 50 --no-pager"
+        fi
         echo "===================================================================="
         echo ""
-        printf "Continue anyway? [y/N] "
-        read -r answer < /dev/tty 2>/dev/null || true
-        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
-            echo "Installation cancelled."
-            exit 1
-        fi
     fi
 fi
 

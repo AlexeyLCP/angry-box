@@ -10,6 +10,7 @@ import (
 
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -84,34 +85,34 @@ func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, e
 		inboundJSON = chain.BuildXHTTPTransportInboundForStandalone(port, uuid, privKeyB64, shortIDHex, serverName, &preset)
 	} else {
 		// Classic Reality+TCP fallback
-		inb := map[string]any{
-			"type": "vless",
-			"tag":  "transport-in",
-			"listen":      "0.0.0.0",
-			"listen_port": port,
-			"users": []map[string]any{{
-				"name": "transport",
-				"uuid": uuid,
-				"flow": "xtls-rprx-vision",
+		inb := config.VLESSInbound{
+			Type:       "vless",
+			Tag:        "transport-in",
+			Listen:     "0.0.0.0",
+			ListenPort: port,
+			Users: []config.VLESSUser{{
+				Name: "transport",
+				UUID: uuid,
+				Flow: "xtls-rprx-vision",
 			}},
-			"tls": map[string]any{
-				"enabled":     true,
-				"server_name": serverName,
-				"reality": map[string]any{
-					"enabled":     true,
-					"private_key": privKeyB64,
-					"short_id":    []string{shortIDHex},
+			TLS: &config.InboundTLSOptions{
+				Enabled:    true,
+				ServerName: serverName,
+				Reality: &config.InboundRealityOptions{
+					Enabled:    true,
+					PrivateKey: privKeyB64,
+					ShortID:    []string{shortIDHex},
 				},
 			},
-			"multiplex": map[string]any{"enabled": true},
-			"transport": map[string]any{"type": "tcp"},
+			Multiplex: &config.MultiplexOptions{Enabled: true},
+			Transport: &config.TransportOptions{Type: "tcp"},
 		}
 		inboundJSON, _ = json.Marshal(inb)
 	}
 
-	outbound := map[string]any{
-		"type": "direct",
-		"tag":  "direct-out",
+	outbound := config.DirectOutbound{
+		Type: "direct",
+		Tag:  "direct-out",
 	}
 
 	outboundJSON, err := json.Marshal(outbound)
@@ -183,25 +184,25 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 		serverName = preset.Reality.ServerNames[0]
 	}
 
-	inbound := map[string]any{
-		"type": "vless",
-		"tag":  "user-in",
-		"listen":      "0.0.0.0",
-		"listen_port": port,
-		"users": []map[string]any{
+	inbound := config.VLESSInbound{
+		Type:       "vless",
+		Tag:        "user-in",
+		Listen:     "0.0.0.0",
+		ListenPort: port,
+		Users: []config.VLESSUser{
 			{
-				"name": "user",
-				"uuid": uuid,
-				"flow": "xtls-rprx-vision",
+				Name: "user",
+				UUID: uuid,
+				Flow: "xtls-rprx-vision",
 			},
 		},
-		"tls": map[string]any{
-			"enabled":     true,
-			"server_name": serverName,
-			"reality": map[string]any{
-				"enabled":     true,
-				"private_key": privKeyB64,
-				"short_id":    []string{shortIDHex},
+		TLS: &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
+			Reality: &config.InboundRealityOptions{
+				Enabled:    true,
+				PrivateKey: privKeyB64,
+				ShortID:    []string{shortIDHex},
 			},
 		},
 	}
@@ -211,9 +212,9 @@ func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error)
 		return nil, fmt.Errorf("singbox: marshal inbound: %w", err)
 	}
 
-	outbound := map[string]any{
-		"type": "direct",
-		"tag":  "direct-out",
+	outbound := config.DirectOutbound{
+		Type: "direct",
+		Tag:  "direct-out",
 	}
 
 	outboundJSON, err := json.Marshal(outbound)
@@ -290,29 +291,29 @@ func (b *Backend) generateTUICUser(params model.ConfigParams, preset *chain.Conn
 		serverName = preset.Reality.ServerNames[0]
 	}
 
-	inbound := map[string]any{
-		"type": "tuic",
-		"tag":  "user-in",
-		"listen":      "0.0.0.0",
-		"listen_port": port,
-		"users": []map[string]any{
+	inbound := config.TUICInbound{
+		Type:       "tuic",
+		Tag:        "user-in",
+		Listen:     "0.0.0.0",
+		ListenPort: port,
+		Users: []config.TUICUser{
 			{
-				"uuid":     uuid,
-				"password": uuid,
+				UUID:     uuid,
+				Password: uuid,
 			},
 		},
-		"congestion_control": congestion,
-		"auth_timeout":       authTimeout,
-		"zero_rtt_handshake": true,
-		"heartbeat":          "10s",
-		"tls": map[string]any{
-			"enabled":     true,
-			"server_name": serverName,
+		CongestionControl: congestion,
+		AuthTimeout:       authTimeout,
+		ZeroRTTHandshake:  true,
+		Heartbeat:         "10s",
+		TLS: &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
 		},
 	}
 
 	inboundJSON, _ := json.Marshal(inbound)
-	outboundJSON, _ := json.Marshal(map[string]any{"type": "direct", "tag": "direct-out"})
+	outboundJSON, _ := json.Marshal(config.DirectOutbound{Type: "direct", Tag: "direct-out"})
 
 	cfg := singBoxConfig{
 		Log:       &logConfig{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
@@ -345,41 +346,29 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 
 	// sing-box-extended: WireGuard SERVER endpoint (listen_port, no detour).
 	// TUN inbound captures decrypted traffic for routing.
-	endpoint := map[string]any{
-		"type":        "wireguard",
-		"tag":         "wg-ep",
-		"system":      false,
-		"mtu":         1420,
-		"address":     []string{"10.8.0.1/32"},
-		"private_key": privB64,
-		"listen_port": port,
-		"peers": []map[string]any{
+	endpoint := config.WireGuardEndpoint{
+		Type:       "wireguard",
+		Tag:        "wg-ep",
+		System:     false,
+		MTU:        1420,
+		Address:    []string{"10.8.0.1/32"},
+		PrivateKey: privB64,
+		ListenPort: port,
+		Peers: []config.WireGuardPeer{
 			{
-				"public_key":  peerPub,
-				"allowed_ips": []string{"10.8.0.2/32"},
+				PublicKey:  peerPub,
+				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		"amnezia": chain.BuildAmneziaSection(awg, preset),
-	}
-
-	tunInbound := map[string]any{
-		"type":           "tun",
-		"tag":            "user-in",
-		"interface_name": "angry-tun",
-		"address":        []string{"10.8.1.1/30"},
-		"mtu":            1420,
-		"stack":          "system",
-		"auto_route":     true,
+		Amnezia: chain.BuildAmneziaSection(awg, preset),
 	}
 
 	epJSON, _ := json.Marshal(endpoint)
-	tunJSON, _ := json.Marshal(tunInbound)
-	outboundJSON, _ := json.Marshal(map[string]any{"type": "direct", "tag": "direct-out"})
+	outboundJSON, _ := json.Marshal(config.DirectOutbound{Type: "direct", Tag: "direct-out"})
 
 	cfg := singBoxConfig{
 		Log:       &logConfig{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
 		Endpoints: []json.RawMessage{epJSON},
-		Inbounds:  []json.RawMessage{tunJSON},
 		Outbounds: []json.RawMessage{outboundJSON},
 	}
 
