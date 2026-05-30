@@ -323,7 +323,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</a></div><div class=\"w-full\"><table class=\"table w-full\"><thead class=\"text-base-content/60 text-sm\"><tr class=\"border-b border-base-content/10\"><th class=\"font-medium\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</a></div><div class=\"overflow-x-auto w-full\"><table class=\"table w-full\"><thead class=\"text-base-content/60 text-sm\"><tr class=\"border-b border-base-content/10\"><th class=\"font-medium\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
