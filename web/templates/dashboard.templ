@@ -210,65 +210,72 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 	</div>
 }
 
-// Helper: find NodeInfo for a host ID and extract a field
-templ dashCountry(hostID string, infos []*model.NodeInfo) {
+// Helper: find NodeInfo for a host ID
+func getDashCountry(hostID string, infos []*model.NodeInfo) string {
 	for _, ni := range infos {
 		if ni.ID == hostID {
 			if ni.Country != "" {
-				<span>{ ni.Country }</span>
-			} else {
-				<span class="text-base-content/30">—</span>
+				return ni.Country
 			}
-			return
+			return ""
 		}
 	}
-	<span class="text-base-content/30">—</span>
+	return ""
+}
+
+templ dashCountry(hostID string, infos []*model.NodeInfo) {
+	if c := getDashCountry(hostID, infos); c != "" {
+		<span>{ c }</span>
+	} else {
+		<span class="text-base-content/30">—</span>
+	}
+}
+
+func getMetric(hostID string, metrics []*model.NodeMetrics) *model.NodeMetrics {
+	for _, m := range metrics {
+		if m.HostID == hostID {
+			return m
+		}
+	}
+	return nil
 }
 
 // Helper: show online/offline badge based on metrics
 templ metricBadge(hostID string, metrics []*model.NodeMetrics) {
-	for _, m := range metrics {
-		if m.HostID == hostID {
-			if m.Online {
-				<span class="badge badge-success badge-xs">Online</span>
-			} else {
-				<span class="badge badge-error badge-xs">Offline</span>
-			}
-			return
+	if m := getMetric(hostID, metrics); m != nil {
+		if m.Online {
+			<span class="badge badge-success badge-xs">Online</span>
+		} else {
+			<span class="badge badge-error badge-xs">Offline</span>
 		}
+	} else {
+		<span class="badge badge-ghost badge-xs">Unknown</span>
 	}
-	<span class="badge badge-ghost badge-xs">Unknown</span>
 }
 
 // Helper: show last checked time from metrics
 templ metricLatency(hostID string, metrics []*model.NodeMetrics) {
-	for _, m := range metrics {
-		if m.HostID == hostID {
-			if m.LatencyMs > 0 {
-				if m.LatencyMs < 100 {
-					<span class="text-success text-xs">{ m.LatencyMs }ms</span>
-				} else if m.LatencyMs < 300 {
-					<span class="text-warning text-xs">{ m.LatencyMs }ms</span>
-				} else {
-					<span class="text-error text-xs">{ m.LatencyMs }ms</span>
-				}
-				return
-			}
+	if m := getMetric(hostID, metrics); m != nil && m.LatencyMs > 0 {
+		if m.LatencyMs < 100 {
+			<span class="text-success text-xs">{ fmt.Sprintf("%d", m.LatencyMs) }ms</span>
+		} else if m.LatencyMs < 300 {
+			<span class="text-warning text-xs">{ fmt.Sprintf("%d", m.LatencyMs) }ms</span>
+		} else {
+			<span class="text-error text-xs">{ fmt.Sprintf("%d", m.LatencyMs) }ms</span>
 		}
+	} else {
+		<span class="text-base-content/30 text-xs">—</span>
 	}
-	<span class="text-base-content/30 text-xs">—</span>
 }
 
 templ metricTime(hostID string, metrics []*model.NodeMetrics) {
-	for _, m := range metrics {
-		if m.HostID == hostID {
-			if m.LastChecked.IsZero() {
-				<span class="text-xs text-base-content/30">Never</span>
-				return
-			}
+	if m := getMetric(hostID, metrics); m != nil {
+		if m.LastChecked.IsZero() {
+			<span class="text-xs text-base-content/30">Never</span>
+		} else {
 			<span class="text-xs text-base-content/50">{ time.Since(m.LastChecked).Round(time.Second).String() } ago</span>
-			return
 		}
+	} else {
+		<span class="text-xs text-base-content/30">Never</span>
 	}
-	<span class="text-xs text-base-content/30">Never</span>
 }
