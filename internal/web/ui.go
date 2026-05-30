@@ -986,6 +986,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			s.cfg.AuthPasswordHash = string(hash)
 			configNeedsSave = true
+			w.Header().Set("HX-Refresh", "true")
 		}
 
 		if configNeedsSave {

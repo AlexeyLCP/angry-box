@@ -189,7 +189,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div></div><script>\n\t\t\t(function() {\n\t\t\t\tvar svg = document.getElementById('spider-svg');\n\t\t\t\tif (!svg) return;\n\t\t\t\tvar dragged = null;\n\t\t\t\tvar offsetX = 0, offsetY = 0;\n\n\t\t\t\tsvg.addEventListener('mousedown', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\t// Don't drag if clicking + button\n\t\t\t\t\tif (e.target.classList.contains('node-add-btn') || e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tdragged = node;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar inner = node.querySelector('.node-inner');\n\t\t\t\t\toffsetX = parseFloat(inner.getAttribute('cx')) - pt.x;\n\t\t\t\t\toffsetY = parseFloat(inner.getAttribute('cy')) - pt.y;\n\t\t\t\t\tnode.style.cursor = 'grabbing';\n\t\t\t\t\te.preventDefault();\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mousemove', function(e) {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar nx = pt.x + offsetX;\n\t\t\t\t\tvar ny = pt.y + offsetY;\n\t\t\t\t\tvar circles = dragged.querySelectorAll('circle');\n\t\t\t\t\tcircles[0].setAttribute('cx', nx);\n\t\t\t\t\tcircles[0].setAttribute('cy', ny);\n\t\t\t\t\tcircles[1].setAttribute('cx', nx);\n\t\t\t\t\tcircles[1].setAttribute('cy', ny);\n\t\t\t\t\tcircles[2].setAttribute('cx', nx + 18);\n\t\t\t\t\tcircles[2].setAttribute('cy', ny - 18);\n\t\t\t\t\tif (circles[3]) { circles[3].setAttribute('cx', nx + 24); circles[3].setAttribute('cy', ny + 22); }\n\t\t\t\t\tvar texts = dragged.querySelectorAll('text');\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('x', nx);\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('y', ny - 8);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('x', nx);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('y', ny + 10);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('x', nx);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('y', ny + 24);\n\t\t\t\t\tif (texts[3]) { texts[3].setAttribute('x', nx + 24); texts[3].setAttribute('y', ny + 26); }\n\t\t\t\t\t// Update connected lines\n\t\t\t\t\tvar nodeId = dragged.getAttribute('data-node-id');\n\t\t\t\t\tvar lines = svg.querySelectorAll('line[data-from], line[data-to]');\n\t\t\t\t\tlines.forEach(function(line) {\n\t\t\t\t\t\tif (line.getAttribute('data-from') === nodeId) {\n\t\t\t\t\t\t\tline.setAttribute('x1', nx);\n\t\t\t\t\t\t\tline.setAttribute('y1', ny);\n\t\t\t\t\t\t\tvar tx = line.nextElementSibling;\n\t\t\t\t\t\t\tif (tx && tx.tagName === 'text') {\n\t\t\t\t\t\t\t\ttx.setAttribute('x', (nx + parseFloat(line.getAttribute('x2')))/2);\n\t\t\t\t\t\t\t\ttx.setAttribute('y', (ny + parseFloat(line.getAttribute('y2')))/2 - 8);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line.getAttribute('data-to') === nodeId) {\n\t\t\t\t\t\t\tline.setAttribute('x2', nx);\n\t\t\t\t\t\t\tline.setAttribute('y2', ny);\n\t\t\t\t\t\t\tvar tx = line.nextElementSibling;\n\t\t\t\t\t\t\tif (tx && tx.tagName === 'text') {\n\t\t\t\t\t\t\t\ttx.setAttribute('x', (parseFloat(line.getAttribute('x1')) + nx)/2);\n\t\t\t\t\t\t\t\ttx.setAttribute('y', (parseFloat(line.getAttribute('y1')) + ny)/2 - 8);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseup', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseleave', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\t// Show + button on hover\n\t\t\t\tsvg.addEventListener('mouseover', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '1');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '1');\n\t\t\t\t});\n\t\t\t\tsvg.addEventListener('mouseout', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '0');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '0');\n\t\t\t\t});\n\n\t\t\t\t// + button click: pre-fill connection form\n\t\t\t\tsvg.addEventListener('click', function(e) {\n\t\t\t\t\tif (!e.target.classList.contains('node-add-btn') && !e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar nodeId = node.getAttribute('data-node-id');\n\t\t\t\t\tvar sel = document.querySelector('select[name=\"from_node\"]');\n\t\t\t\t\tif (sel) sel.value = nodeId;\n\t\t\t\t});\n\t\t\t})();\n\t\t</script><!-- Add connection form --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">Create New Connection</h3><form hx-post=\"/ui/spider/links\" hx-target=\"#main-content\" hx-swap=\"outerHTML\" class=\"space-y-2\"><div class=\"grid grid-cols-1 md:grid-cols-5 gap-3\"><div class=\"form-control\"><label class=\"label py-1\"><span class=\"label-text text-xs\">From Node</span></label> <select name=\"from_node\" class=\"select select-bordered select-sm\" required><option value=\"\">Select...</option> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div></div><script>\n\t\t\t(function() {\n\t\t\t\tvar svg = document.getElementById('spider-svg');\n\t\t\t\tif (!svg) return;\n\t\t\t\tvar dragged = null;\n\t\t\t\tvar offsetX = 0, offsetY = 0;\n\n\t\t\t\tsvg.addEventListener('mousedown', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\t// Don't drag if clicking + button\n\t\t\t\t\tif (e.target.classList.contains('node-add-btn') || e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tdragged = node;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar inner = node.querySelector('.node-inner');\n\t\t\t\t\toffsetX = parseFloat(inner.getAttribute('cx')) - pt.x;\n\t\t\t\t\toffsetY = parseFloat(inner.getAttribute('cy')) - pt.y;\n\t\t\t\t\tnode.style.cursor = 'grabbing';\n\t\t\t\t\te.preventDefault();\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mousemove', function(e) {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tvar ct = svg.createSVGPoint();\n\t\t\t\t\tct.x = e.clientX;\n\t\t\t\t\tct.y = e.clientY;\n\t\t\t\t\tvar pt = ct.matrixTransform(svg.getScreenCTM().inverse());\n\t\t\t\t\tvar nx = pt.x + offsetX;\n\t\t\t\t\tvar ny = pt.y + offsetY;\n\t\t\t\t\tvar circles = dragged.querySelectorAll('circle');\n\t\t\t\t\tcircles[0].setAttribute('cx', nx);\n\t\t\t\t\tcircles[0].setAttribute('cy', ny);\n\t\t\t\t\tcircles[1].setAttribute('cx', nx);\n\t\t\t\t\tcircles[1].setAttribute('cy', ny);\n\t\t\t\t\tcircles[2].setAttribute('cx', nx + 10);\n\t\t\t\t\tcircles[2].setAttribute('cy', ny - 10);\n\t\t\t\t\tif (circles[3]) { circles[3].setAttribute('cx', nx + 14); circles[3].setAttribute('cy', ny + 12); }\n\t\t\t\t\tvar texts = dragged.querySelectorAll('text');\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('x', nx);\n\t\t\t\t\ttexts[0] && texts[0].setAttribute('y', ny - 18);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('x', nx);\n\t\t\t\t\ttexts[1] && texts[1].setAttribute('y', ny + 4);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('x', nx);\n\t\t\t\t\ttexts[2] && texts[2].setAttribute('y', ny + 14);\n\t\t\t\t\tif (texts[3]) { texts[3].setAttribute('x', nx + 14); texts[3].setAttribute('y', ny + 16); }\n\t\t\t\t\t// Update connected lines\n\t\t\t\t\tvar nodeId = dragged.getAttribute('data-node-id');\n\t\t\t\t\tvar lines = svg.querySelectorAll('line[data-from], line[data-to]');\n\t\t\t\t\tlines.forEach(function(line) {\n\t\t\t\t\t\tif (line.getAttribute('data-from') === nodeId) {\n\t\t\t\t\t\t\tline.setAttribute('x1', nx);\n\t\t\t\t\t\t\tline.setAttribute('y1', ny);\n\t\t\t\t\t\t\tvar tx = line.nextElementSibling;\n\t\t\t\t\t\t\tif (tx && tx.tagName === 'text') {\n\t\t\t\t\t\t\t\ttx.setAttribute('x', (nx + parseFloat(line.getAttribute('x2')))/2);\n\t\t\t\t\t\t\t\ttx.setAttribute('y', (ny + parseFloat(line.getAttribute('y2')))/2 - 8);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line.getAttribute('data-to') === nodeId) {\n\t\t\t\t\t\t\tline.setAttribute('x2', nx);\n\t\t\t\t\t\t\tline.setAttribute('y2', ny);\n\t\t\t\t\t\t\tvar tx = line.nextElementSibling;\n\t\t\t\t\t\t\tif (tx && tx.tagName === 'text') {\n\t\t\t\t\t\t\t\ttx.setAttribute('x', (parseFloat(line.getAttribute('x1')) + nx)/2);\n\t\t\t\t\t\t\t\ttx.setAttribute('y', (parseFloat(line.getAttribute('y1')) + ny)/2 - 8);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseup', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\tsvg.addEventListener('mouseleave', function() {\n\t\t\t\t\tif (!dragged) return;\n\t\t\t\t\tdragged.style.cursor = 'move';\n\t\t\t\t\tdragged = null;\n\t\t\t\t});\n\n\t\t\t\t// Show + button on hover\n\t\t\t\tsvg.addEventListener('mouseover', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '1');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '1');\n\t\t\t\t});\n\t\t\t\tsvg.addEventListener('mouseout', function(e) {\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar addBtn = node.querySelector('.node-add-btn');\n\t\t\t\t\tvar addTxt = node.querySelector('.node-add-text');\n\t\t\t\t\tif (addBtn) addBtn.setAttribute('opacity', '0');\n\t\t\t\t\tif (addTxt) addTxt.setAttribute('opacity', '0');\n\t\t\t\t});\n\n\t\t\t\t// + button click: pre-fill connection form\n\t\t\t\tsvg.addEventListener('click', function(e) {\n\t\t\t\t\tif (!e.target.classList.contains('node-add-btn') && !e.target.classList.contains('node-add-text')) return;\n\t\t\t\t\tvar node = e.target.closest('.spider-node');\n\t\t\t\t\tif (!node) return;\n\t\t\t\t\tvar nodeId = node.getAttribute('data-node-id');\n\t\t\t\t\tvar sel = document.querySelector('select[name=\"from_node\"]');\n\t\t\t\t\tif (sel) sel.value = nodeId;\n\t\t\t\t});\n\t\t\t})();\n\t\t</script><!-- Add connection form --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">Create New Connection</h3><form hx-post=\"/ui/spider/links\" hx-target=\"#main-content\" hx-swap=\"outerHTML\" class=\"space-y-2\"><div class=\"grid grid-cols-1 md:grid-cols-5 gap-3\"><div class=\"form-control\"><label class=\"label py-1\"><span class=\"label-text text-xs\">From Node</span></label> <select name=\"from_node\" class=\"select select-bordered select-sm\" required><option value=\"\">Select...</option> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -479,7 +479,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" r=\"30\" fill=\"oklch(var(--b1))\" stroke=\"oklch(var(--p) / 0.2)\" stroke-width=\"2\"></circle> <circle cx=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" r=\"16\" fill=\"oklch(var(--b1))\" stroke=\"oklch(var(--p) / 0.2)\" stroke-width=\"2\"></circle> <circle cx=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -505,12 +505,12 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" r=\"24\" fill=\"oklch(var(--p) / 0.15)\"></circle> <circle cx=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" r=\"12\" fill=\"oklch(var(--p) / 0.15)\"></circle> <circle cx=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var30 string
-		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x+18))
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x+10))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 315, Col: 35}
 		}
@@ -523,7 +523,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var31 string
-		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-18))
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-10))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 316, Col: 35}
 		}
@@ -531,7 +531,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\" r=\"5\" fill=\"oklch(var(--su))\"></circle> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\" r=\"3\" fill=\"oklch(var(--su))\"></circle> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -554,9 +554,9 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var33 string
-			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-8))
+			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-18))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 323, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 323, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
@@ -598,9 +598,9 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var36 string
-		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+10))
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+4))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 330, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 330, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 		if templ_7745c5c3_Err != nil {
@@ -642,7 +642,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var39 string
-			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+24))
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+14))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 337, Col: 35}
 			}

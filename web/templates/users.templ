@@ -298,8 +298,7 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 								<textarea
 									rows="2"
 									readonly
-									class="textarea textarea-bordered w-full text-xs font-mono bg-base-200 resize-none"
-									onclick="this.select()">{ cfg.ConfigLink }</textarea>
+									class="textarea textarea-bordered w-full text-xs font-mono bg-base-200 resize-none">{ cfg.ConfigLink }</textarea>
 								<button
 									class="btn btn-xs btn-ghost absolute top-1 right-1"
 									onclick="var ta=this.parentElement.querySelector('textarea'); ta.select(); navigator.clipboard.writeText(ta.value);">

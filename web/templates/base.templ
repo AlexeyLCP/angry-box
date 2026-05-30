@@ -34,7 +34,7 @@ templ Base(title string, content templ.Component) {
 		<div id="htmx-loading-bar"></div>
 		<div class="flex h-screen overflow-hidden">
 			<div class="w-64 bg-base-200/50 backdrop-blur-md border-r border-base-content/10 flex flex-col shadow-xl z-20">
-				<div class="p-6 border-b border-base-content/10">
+				<a href="/ui" class="block p-6 border-b border-base-content/10 hover:bg-base-content/5 transition-colors cursor-pointer">
 					<div class="flex items-center gap-2">
 						<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
 							<span class="text-primary-content font-bold text-lg">A</span>
@@ -44,7 +44,7 @@ templ Base(title string, content templ.Component) {
 							<div class="text-xs text-base-content/60 -mt-1">Orchestrator</div>
 						</div>
 					</div>
-				</div>
+				</a>
 
 				<div class="flex-1 p-2">
 					<ul class="menu w-full">

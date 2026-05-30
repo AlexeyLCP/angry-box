@@ -748,7 +748,13 @@ func serveCmd() {
 	})
 
 	fmt.Printf("angry-box daemon listening on %s\n", *listen)
-	fmt.Println("Web UI available at http://" + *listen + "/ui")
+	listenHost := *listen
+	if strings.HasPrefix(listenHost, ":") {
+		listenHost = "localhost" + listenHost
+	} else if strings.HasPrefix(listenHost, "0.0.0.0:") {
+		listenHost = "localhost" + strings.TrimPrefix(listenHost, "0.0.0.0")
+	}
+	fmt.Println("Web UI available at http://" + listenHost + "/ui")
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		os.Exit(1)
