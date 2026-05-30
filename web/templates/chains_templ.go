@@ -49,7 +49,7 @@ func Chains(chains []*model.Chain, availableHosts []*model.Host) templ.Component
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"card bg-base-100 shadow\"><div class=\"w-full overflow-x-auto\"><table class=\"table table-sm w-full\"><thead><tr><th>Name</th><th>Nodes</th><th>Strategy</th><th class=\"w-px\"></th></tr></thead> <tbody id=\"chains-tbody\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"card bg-base-100 shadow\"><div class=\"w-full overflow-x-hidden\"><table class=\"table table-sm\"><thead><tr><th>Name</th><th>Nodes</th><th>Strategy</th><th class=\"w-px\"></th></tr></thead> <tbody id=\"chains-tbody\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
