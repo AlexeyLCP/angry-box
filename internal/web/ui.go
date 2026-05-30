@@ -111,7 +111,19 @@ func (s *Server) collectAllMetrics() {
 
 	for _, h := range hosts {
 		start := time.Now()
-		status, err := b.GetStatus(ctx, *h)
+		
+		settings, _ := st.GetSettings()
+		resolvedPath, isTemp := resolveSSHKeyPath(h.KeyPath, settings, "")
+		
+		hostCopy := *h
+		hostCopy.KeyPath = resolvedPath
+		
+		status, err := b.GetStatus(ctx, hostCopy)
+		
+		if isTemp && resolvedPath != "" {
+			os.Remove(resolvedPath)
+		}
+		
 		latency := time.Since(start).Milliseconds()
 		if err != nil {
 			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false, LatencyMs: latency})
@@ -1308,7 +1320,19 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	f := factory.New()
 	b := f.Create()
 	ctx := context.Background()
-	status, err := b.GetStatus(ctx, *host)
+	
+	settings, _ := st.GetSettings()
+	resolvedPath, isTemp := resolveSSHKeyPath(host.KeyPath, settings, "")
+	
+	hostCopy := *host
+	hostCopy.KeyPath = resolvedPath
+	
+	status, err := b.GetStatus(ctx, hostCopy)
+	
+	if isTemp && resolvedPath != "" {
+		os.Remove(resolvedPath)
+	}
+	
 	if err != nil {
 		// Record offline metric
 		st.SaveMetrics(&model.NodeMetrics{HostID: id, Online: false})

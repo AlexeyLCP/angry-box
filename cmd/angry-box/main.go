@@ -22,6 +22,8 @@ var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
+
+	defaultStorePath = "chains.json"
 )
 
 const usage = `angry-box — lightweight proxy orchestrator for sing-box-extended.
@@ -116,6 +118,10 @@ func main() {
 
 	orchCfg, _ := config.Load(configPath) // ignore error, fall back to defaults
 
+	if orchCfg != nil && orchCfg.StoreFile != "" {
+		defaultStorePath = orchCfg.StoreFile
+	}
+
 	// Apply global profile + load any external presets for *all* commands (not just serve)
 	// This fixes the previous --config flag limitation for profile/presets.
 	if orchCfg.DefaultObfuscationProfile != "" {
@@ -181,7 +187,7 @@ func hostCmd(action string) {
 	switch action {
 	case "add":
 		fs := flag.NewFlagSet("host add", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 		fs.StringVar(&addr, "addr", "", "SSH address (IP:port)")
 		fs.StringVar(&user, "user", "root", "SSH user")
 		fs.StringVar(&keyPath, "key", "", "path to SSH private key")
@@ -211,7 +217,7 @@ func hostCmd(action string) {
 
 	case "list":
 		fs := flag.NewFlagSet("host list", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 		_ = fs.Parse(os.Args[3:])
 
 		s := chain.NewStore(storePath)
@@ -230,7 +236,7 @@ func hostCmd(action string) {
 
 	case "delete":
 		fs := flag.NewFlagSet("host delete", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 
 		id, flagArgs := popFirstArg(os.Args[3:])
 		_ = fs.Parse(flagArgs)
@@ -259,7 +265,7 @@ func chainCmd(action string) {
 	switch action {
 	case "create":
 		fs := flag.NewFlagSet("chain create", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 		fs.StringVar(&nodesStr, "nodes", "", "comma-separated host IDs (required)")
 		fs.StringVar(&strategy, "strategy", "urltest", "routing strategy (urltest, failover, selector, bond)")
 		fs.StringVar(&transport, "transport", "xhttp", "transport between nodes (xhttp or reality)")
@@ -338,7 +344,7 @@ func chainCmd(action string) {
 
 	case "list":
 		fs := flag.NewFlagSet("chain list", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 		_ = fs.Parse(os.Args[3:])
 
 		s := chain.NewStore(storePath)
@@ -361,7 +367,7 @@ func chainCmd(action string) {
 
 	case "show":
 		fs := flag.NewFlagSet("chain show", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 
 		name, flagArgs := popFirstArg(os.Args[3:])
 		_ = fs.Parse(flagArgs)
@@ -391,7 +397,7 @@ func chainCmd(action string) {
 
 	case "delete":
 		fs := flag.NewFlagSet("chain delete", flag.ExitOnError)
-		fs.StringVar(&storePath, "file", "chains.json", "store file path")
+		fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 
 		name, flagArgs := popFirstArg(os.Args[3:])
 		_ = fs.Parse(flagArgs)
@@ -418,7 +424,7 @@ func chainCmd(action string) {
 
 func applyChainCmd() {
 	fs := flag.NewFlagSet("apply-chain", flag.ExitOnError)
-	fs.StringVar(&storePath, "file", "chains.json", "store file path")
+	fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 	fs.StringVar(&clientPubKey, "client-pubkey", "", "client public key to use for AWG user entry (if omitted and chain uses awg, a convenient sample is auto-generated)")
 
 	name, flagArgs := popFirstArg(os.Args[2:])
