@@ -68,6 +68,9 @@ jobs:
           - target: keenetic-mipsel
             goos: linux
             goarch: mipsle
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +93,9 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -ldflags="-s -w" -o dist/angry-box-${{ matrix.target }} ./cmd/angry-box
+          BIN="dist/angry-box-${{ matrix.target }}"
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then BIN="${BIN}.exe"; fi
+          go build -ldflags="-s -w" -o "$BIN" ./cmd/angry-box
 
       - name: Build Keenetic .ipk (for testing)
         if: matrix.target == 'keenetic-mipsel'
@@ -117,5 +122,6 @@ jobs:
           name: angry-box-${{ matrix.target }}
           path: |
             dist/angry-box-${{ matrix.target }}
+            dist/angry-box-${{ matrix.target }}.exe
             dist/*.ipk
           retention-days: 7

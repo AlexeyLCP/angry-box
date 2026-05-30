@@ -49,6 +49,12 @@ jobs:
             upx: true
             extraflags: ''
 
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            upx: false
+            extraflags: ''
+
     env:
       APP: angry-box
 
@@ -108,6 +114,7 @@ jobs:
           LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           BIN="build/${APP}-${{ matrix.target }}"
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then BIN="${BIN}.exe"; fi
 
           echo "Building ${BIN}"
           go build -trimpath -ldflags="${LDFLAGS}" ${{ matrix.extraflags }} -o "${BIN}" ./cmd/angry-box/
@@ -130,22 +137,32 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ steps.ver.outputs.value }}
+          GOOS: ${{ matrix.goos }}
         run: |
           set -euo pipefail
           BIN="build/${APP}-${TARGET}"
+          if [[ "$GOOS" == "windows" ]]; then BIN="${BIN}.exe"; fi
           chmod +x "${BIN}"
 
           TAR_NAME="${APP}-${VERSION}-${TARGET}"
           TAR_DIR="build/${TAR_NAME}"
           mkdir -p "${TAR_DIR}"
 
-          cp "${BIN}" "${TAR_DIR}/${APP}"
-          cp README.md "${TAR_DIR}/"
-          cp scripts/install.sh "${TAR_DIR}/" 2>/dev/null || true
-
-          tar czf "build/${TAR_NAME}.tar.gz" -C build "${TAR_NAME}"
-          echo "Created build/${TAR_NAME}.tar.gz"
-          ls -lh "build/${TAR_NAME}.tar.gz"
+          if [[ "$GOOS" == "windows" ]]; then
+            cp "${BIN}" "${TAR_DIR}/${APP}.exe"
+            cp README.md "${TAR_DIR}/"
+            cd build
+            zip -r "${TAR_NAME}.zip" "${TAR_NAME}"
+            echo "Created build/${TAR_NAME}.zip"
+            cd ..
+          else
+            cp "${BIN}" "${TAR_DIR}/${APP}"
+            cp README.md "${TAR_DIR}/"
+            cp scripts/install.sh "${TAR_DIR}/" 2>/dev/null || true
+            tar czf "build/${TAR_NAME}.tar.gz" -C build "${TAR_NAME}"
+            echo "Created build/${TAR_NAME}.tar.gz"
+          fi
+          ls -lh "build/"
 
       - name: Build .ipk for router targets (Keenetic + OpenWRT aarch64)
         if: matrix.target == 'keenetic-mipsel' || matrix.target == 'linux-arm64'
@@ -170,7 +187,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: build/*.tar.gz
+          path: |
+            build/*.tar.gz
+            build/*.zip
           retention-days: 7
 
       # Explicitly upload .ipk packages so the release job can collect them
@@ -200,6 +219,7 @@ jobs:
         run: |
           mkdir -p release-assets
           find artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
+          find artifacts -type f -name '*.zip' -exec cp {} release-assets/ \;
           # Collect .ipk packages from the dedicated ipk-* artifacts (uploaded by the build job)
           find artifacts -type f -name '*.ipk' -exec cp {} release-assets/ \; 2>/dev/null || true
           echo "=== Release assets ==="
@@ -211,7 +231,7 @@ jobs:
         run: |
           cd release-assets
           shopt -s nullglob
-          FILES=( *.tar.gz )
+          FILES=( *.* )
           if [ ${#FILES[@]} -gt 0 ]; then
             sha256sum "${FILES[@]}" > "angry-box-${REF#v}-checksums.txt"
             cat "angry-box-${REF#v}-checksums.txt"
