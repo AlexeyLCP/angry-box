@@ -45,7 +45,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Spider Web"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 15, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 15, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -58,7 +58,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Refresh"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 22, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 22, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -71,7 +71,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Visual map of all nodes and connections. Drag nodes to rearrange. Green = online."))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 30, Col: 144}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 30, Col: 144}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -89,7 +89,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "No nodes registered."))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 35, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 35, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -102,7 +102,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Add nodes first"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 35, Col: 176}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 35, Col: 176}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -125,7 +125,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", link.X1))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 48, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 48, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 				if templ_7745c5c3_Err != nil {
@@ -138,7 +138,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", link.Y1))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 49, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 49, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 				if templ_7745c5c3_Err != nil {
@@ -151,7 +151,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", link.X2))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 50, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 50, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 				if templ_7745c5c3_Err != nil {
@@ -164,7 +164,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", link.Y2))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 51, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 51, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 				if templ_7745c5c3_Err != nil {
@@ -177,7 +177,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(link.FromID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 52, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 52, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 				if templ_7745c5c3_Err != nil {
@@ -190,7 +190,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(link.ToID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 53, Col: 27}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 53, Col: 27}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 				if templ_7745c5c3_Err != nil {
@@ -203,7 +203,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", (link.X1+link.X2)/2))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 60, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 60, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 				if templ_7745c5c3_Err != nil {
@@ -216,7 +216,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", (link.Y1+link.Y2)/2-8))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 61, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 61, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 				if templ_7745c5c3_Err != nil {
@@ -229,7 +229,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(link.Transport)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 65, Col: 24}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 65, Col: 24}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -262,7 +262,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Create New Connection"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 197, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 197, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -275,7 +275,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "From Node"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 206, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 206, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -288,7 +288,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Select..."))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 208, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 208, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -306,7 +306,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 210, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 210, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
@@ -319,7 +319,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 210, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 210, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -332,7 +332,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 210, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 210, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -350,7 +350,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "To Node"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 215, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 215, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -363,7 +363,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Select..."))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 217, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 217, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -381,7 +381,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 219, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 219, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 			if templ_7745c5c3_Err != nil {
@@ -394,7 +394,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 219, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 219, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -407,7 +407,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 219, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 219, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -425,7 +425,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Transport"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 224, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 224, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -438,7 +438,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "max obfuscation"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 224, Col: 195}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 224, Col: 195}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -451,7 +451,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "XHTTP (max obfuscation, recommended)"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 226, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 226, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -464,7 +464,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Reality + XHTTP (max obfuscation)"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 227, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 227, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -477,7 +477,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "AWG / AmneziaWG (encrypted tunnel)"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 228, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 228, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -490,7 +490,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Hysteria2 (max obfuscation, QUIC)"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 229, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 229, Col: 84}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -503,7 +503,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Chain Name"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 233, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 233, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -516,7 +516,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Create Link"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 237, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 237, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -534,7 +534,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Chains"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 248, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 248, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -552,7 +552,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 253, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 253, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -565,7 +565,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(chainNodeList(c.Nodes))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 255, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 255, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 				if templ_7745c5c3_Err != nil {
@@ -578,7 +578,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(c.Transport)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 256, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 256, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -591,7 +591,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(c.Strategy)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 256, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 256, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -604,7 +604,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/chains/" + c.Name + "/apply")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 262, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 262, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 				if templ_7745c5c3_Err != nil {
@@ -617,7 +617,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Apply"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 265, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 265, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 				if templ_7745c5c3_Err != nil {
@@ -630,7 +630,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var42 string
 				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/chains/" + c.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 269, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 269, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 				if templ_7745c5c3_Err != nil {
@@ -643,7 +643,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var43 string
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "Delete chain ") + c.Name + "?")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 270, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 270, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 				if templ_7745c5c3_Err != nil {
@@ -656,7 +656,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Delete"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 273, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 273, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
@@ -721,7 +721,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 300, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 300, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -734,7 +734,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 302, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 302, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 		if templ_7745c5c3_Err != nil {
@@ -747,7 +747,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 303, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 303, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
 		if templ_7745c5c3_Err != nil {
@@ -760,7 +760,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 310, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 310, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 		if templ_7745c5c3_Err != nil {
@@ -773,7 +773,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 311, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 311, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 		if templ_7745c5c3_Err != nil {
@@ -786,7 +786,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x+10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 316, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 316, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 		if templ_7745c5c3_Err != nil {
@@ -799,7 +799,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 317, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 317, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 		if templ_7745c5c3_Err != nil {
@@ -817,7 +817,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 323, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 323, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 			if templ_7745c5c3_Err != nil {
@@ -830,7 +830,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y-18))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 324, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 324, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 			if templ_7745c5c3_Err != nil {
@@ -843,7 +843,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(country)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 327, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 327, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -861,7 +861,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 330, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 330, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 		if templ_7745c5c3_Err != nil {
@@ -874,7 +874,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+4))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 331, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 331, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 		if templ_7745c5c3_Err != nil {
@@ -887,7 +887,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 334, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 334, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -905,7 +905,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", x))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 337, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 337, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 			if templ_7745c5c3_Err != nil {
@@ -918,7 +918,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%.0f", y+14))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 338, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 338, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 			if templ_7745c5c3_Err != nil {
@@ -931,7 +931,7 @@ func spiderNode(id string, country string, chains []*model.Chain, x, y float64) 
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d chain(s)", spiderChainCount(id, chains)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/spider.templ`, Line: 341, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `spider.templ`, Line: 341, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {

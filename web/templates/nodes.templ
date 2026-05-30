@@ -267,7 +267,8 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 
 				<div id="inbounds-list" class="space-y-3">
 					if len(info.Inbounds) == 0 {
-						<div class="border border-base-300 rounded-lg p-3">
+						<div class="border border-base-300 rounded-lg p-3 relative inbound-row">
+							<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
 							<div class="grid grid-cols-5 gap-2">
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Protocol</span></label>
@@ -286,15 +287,6 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									<label class="label"><span class="label-text text-xs">Port</span></label>
 									<input type="number" name="port" class="input input-bordered input-sm" value="8443" />
 								</div>
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
-									<select name="obfuscation" class="select select-bordered select-sm">
-										<option value="">None</option>
-										for _, p := range presets {
-											<option value={ p }>{ p }</option>
-										}
-									</select>
-								</div>
 								<div class="form-control col-span-2">
 									<label class="label"><span class="label-text text-xs">For Users</span></label>
 									<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
@@ -310,11 +302,21 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 										}
 									</div>
 								</div>
+								<div class="form-control">
+									<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+									<select name="obfuscation" class="select select-bordered select-sm">
+										<option value="">None</option>
+										for _, p := range presets {
+											<option value={ p }>{ p }</option>
+										}
+									</select>
+								</div>
 							</div>
 						</div>
 					}
 					for _, ib := range info.Inbounds {
-						<div class="border border-base-300 rounded-lg p-3">
+						<div class="border border-base-300 rounded-lg p-3 relative inbound-row">
+							<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
 							<div class="grid grid-cols-5 gap-2">
 								<div class="form-control">
 									<label class="label"><span class="label-text text-xs">Protocol</span></label>
@@ -382,36 +384,50 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 	</dialog>
 
 	<template id="inbound-tmpl" class="hidden">
-		<div class="grid grid-cols-5 gap-2">
-			<div class="form-control">
-				<label class="label"><span class="label-text text-xs">Protocol</span></label>
-				<select name="proto" class="select select-bordered select-sm">
-					<option value="telemt">Telemt (MTProto)</option>
-					<option value="awg" selected>AWG (AmneziaWG)</option>
-					<option value="tuic">TUIC v5</option>
-					<option value="vless-reality">VLESS Reality</option>
-					<option value="shadowsocks">Shadowsocks</option>
-					<option value="trojan">Trojan</option>
-					<option value="vmess">VMess</option>
-					<option value="hysteria2">Hysteria2</option>
-				</select>
-			</div>
-			<div class="form-control">
-				<label class="label"><span class="label-text text-xs">Port</span></label>
-				<input type="number" name="port" class="input input-bordered input-sm" value="0" />
-			</div>
-			<div class="form-control col-span-2">
-				<label class="label"><span class="label-text text-xs">For Users</span></label>
-				<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-					<span class="text-xs text-base-content/50">Users will appear here. </span>
-					<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">Create user</a>
+		<div class="border border-base-300 rounded-lg p-3 relative inbound-row">
+			<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
+			<div class="grid grid-cols-5 gap-2">
+				<div class="form-control">
+					<label class="label"><span class="label-text text-xs">Protocol</span></label>
+					<select name="proto" class="select select-bordered select-sm">
+						<option value="telemt">Telemt (MTProto)</option>
+						<option value="awg" selected>AWG (AmneziaWG)</option>
+						<option value="tuic">TUIC v5</option>
+						<option value="vless-reality">VLESS Reality</option>
+						<option value="shadowsocks">Shadowsocks</option>
+						<option value="trojan">Trojan</option>
+						<option value="vmess">VMess</option>
+						<option value="hysteria2">Hysteria2</option>
+					</select>
 				</div>
-			</div>
-			<div class="form-control">
-				<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
-				<select name="obfuscation" class="select select-bordered select-sm">
-					<option value="">None</option>
-				</select>
+				<div class="form-control">
+					<label class="label"><span class="label-text text-xs">Port</span></label>
+					<input type="number" name="port" class="input input-bordered input-sm" value="0" />
+				</div>
+				<div class="form-control col-span-2">
+					<label class="label"><span class="label-text text-xs">For Users</span></label>
+					<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
+						if len(users) == 0 {
+							<span class="text-xs text-base-content/50">No users yet. </span>
+							<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">Create first user</a>
+						}
+						for _, u := range users {
+							<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
+								<input type="checkbox" name="for_users" value={ u.ID } class="checkbox checkbox-xs" />
+								<span>{ u.Name }</span>
+							</label>
+						}
+					</div>
+				</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+					<select name="obfuscation" class="select select-bordered select-sm">
+						<option value="">None</option>
+						for _, p := range presets {
+							<option value={ p }>{ p }</option>
+						}
+					</select>
+				</div>
 			</div>
 		</div>
 	</template>

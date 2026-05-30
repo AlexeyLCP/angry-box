@@ -44,7 +44,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Nodes"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 15, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 15, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -57,7 +57,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Add Node"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 22, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 22, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -70,7 +70,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Address"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 32, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 32, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -83,7 +83,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Country"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 33, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 33, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -96,7 +96,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Bandwidth"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 34, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 34, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -109,7 +109,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Status"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 35, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 35, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -133,7 +133,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "No nodes yet. Add your first remote node."))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 48, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 48, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -181,7 +181,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue("node-" + h.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 65, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 65, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {
@@ -194,7 +194,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 66, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 66, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -207,7 +207,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 67, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 67, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -225,7 +225,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(info.Country)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 70, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 70, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -253,7 +253,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(info.Bandwidth)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 77, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 77, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -276,7 +276,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/hosts/" + h.ID + "/status")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 84, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 84, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 		if templ_7745c5c3_Err != nil {
@@ -294,7 +294,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Online"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 88, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 88, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -312,7 +312,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Check"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 90, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 90, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -330,7 +330,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + h.ID + "/capture")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 98, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 98, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 		if templ_7745c5c3_Err != nil {
@@ -343,7 +343,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Capture"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 101, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 101, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -356,7 +356,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + h.ID + "/edit")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 105, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 105, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {
@@ -369,7 +369,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 108, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 108, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -382,7 +382,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + h.ID + "/inbounds")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 112, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 112, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
@@ -395,7 +395,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Inbounds"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 115, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 115, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -408,7 +408,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + h.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 119, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 119, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 		if templ_7745c5c3_Err != nil {
@@ -421,7 +421,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "Delete node ") + h.ID + "?")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 120, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 120, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
@@ -434,7 +434,7 @@ func NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics) templ.Co
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Delete"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 123, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 123, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -482,7 +482,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 137, Col: 22}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 137, Col: 22}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -506,7 +506,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + h.ID + "/edit")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 145, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 145, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {
@@ -519,7 +519,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue("#node-" + h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 146, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 146, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
@@ -532,7 +532,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 152, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 152, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
@@ -545,7 +545,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.Addr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 156, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 156, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 			if templ_7745c5c3_Err != nil {
@@ -558,7 +558,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.User)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 160, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 160, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
@@ -576,7 +576,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 				var templ_7745c5c3_Var34 string
 				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(k.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 168, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 168, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 				if templ_7745c5c3_Err != nil {
@@ -589,7 +589,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(k.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 168, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 168, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
@@ -607,7 +607,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(h.KeyPath)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 176, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 176, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -638,7 +638,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(k.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 209, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 209, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 				if templ_7745c5c3_Err != nil {
@@ -651,7 +651,7 @@ func NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHK
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(k.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 209, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 209, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -712,7 +712,7 @@ func nodeFormFields(nodeInfo ...*model.NodeInfo) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(niCountry(nodeInfo))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 238, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 238, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 		if templ_7745c5c3_Err != nil {
@@ -725,7 +725,7 @@ func nodeFormFields(nodeInfo ...*model.NodeInfo) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(niBandwidth(nodeInfo))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 242, Col: 97}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 242, Col: 97}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 		if templ_7745c5c3_Err != nil {
@@ -798,7 +798,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(info.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 260, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 260, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -811,7 +811,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + info.ID + "/inbounds")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 263, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 263, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 		if templ_7745c5c3_Err != nil {
@@ -822,91 +822,91 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 			return templ_7745c5c3_Err
 		}
 		if len(info.Inbounds) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<div class=\"border border-base-300 rounded-lg p-3\"><div class=\"grid grid-cols-5 gap-2\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Protocol</span></label> <select name=\"proto\" class=\"select select-bordered select-sm\"><option value=\"telemt\">Telemt (MTProto)</option> <option value=\"awg\" selected>AWG (AmneziaWG)</option> <option value=\"tuic\">TUIC v5</option> <option value=\"vless-reality\">VLESS Reality</option> <option value=\"shadowsocks\">Shadowsocks</option> <option value=\"trojan\">Trojan</option> <option value=\"vmess\">VMess</option> <option value=\"hysteria2\">Hysteria2</option></select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Port</span></label> <input type=\"number\" name=\"port\" class=\"input input-bordered input-sm\" value=\"8443\"></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Obfuscation Preset</span></label> <select name=\"obfuscation\" class=\"select select-bordered select-sm\"><option value=\"\">None</option> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			for _, p := range presets {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<option value=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var45 string
-				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(p)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 294, Col: 28}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var46 string
-				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(p)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 294, Col: 34}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "</option>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</select></div><div class=\"form-control col-span-2\"><label class=\"label\"><span class=\"label-text text-xs\">For Users</span></label><div class=\"max-h-32 overflow-y-auto border border-base-300 rounded p-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<div class=\"border border-base-300 rounded-lg p-3 relative inbound-row\"><button type=\"button\" class=\"btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error\" onclick=\"this.closest('.inbound-row').remove()\">✕</button><div class=\"grid grid-cols-5 gap-2\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Protocol</span></label> <select name=\"proto\" class=\"select select-bordered select-sm\"><option value=\"telemt\">Telemt (MTProto)</option> <option value=\"awg\" selected>AWG (AmneziaWG)</option> <option value=\"tuic\">TUIC v5</option> <option value=\"vless-reality\">VLESS Reality</option> <option value=\"shadowsocks\">Shadowsocks</option> <option value=\"trojan\">Trojan</option> <option value=\"vmess\">VMess</option> <option value=\"hysteria2\">Hysteria2</option></select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Port</span></label> <input type=\"number\" name=\"port\" class=\"input input-bordered input-sm\" value=\"8443\"></div><div class=\"form-control col-span-2\"><label class=\"label\"><span class=\"label-text text-xs\">For Users</span></label><div class=\"max-h-32 overflow-y-auto border border-base-300 rounded p-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(users) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<span class=\"text-xs text-base-content/50\">No users yet. </span> <a hx-get=\"/ui/users/new\" hx-target=\"#modal-container\" hx-swap=\"innerHTML\" class=\"link link-primary text-xs\">Create first user</a> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<span class=\"text-xs text-base-content/50\">No users yet. </span> <a hx-get=\"/ui/users/new\" hx-target=\"#modal-container\" hx-swap=\"innerHTML\" class=\"link link-primary text-xs\">Create first user</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			for _, u := range users {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<label class=\"flex items-center gap-1 cursor-pointer text-xs py-0.5\"><input type=\"checkbox\" name=\"for_users\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<label class=\"flex items-center gap-1 cursor-pointer text-xs py-0.5\"><input type=\"checkbox\" name=\"for_users\" value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var45 string
+				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 299, Col: 64}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "\" class=\"checkbox checkbox-xs\"> <span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var46 string
+				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(u.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 300, Col: 26}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</span></label>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "</div></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Obfuscation Preset</span></label> <select name=\"obfuscation\" class=\"select select-bordered select-sm\"><option value=\"\">None</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, p := range presets {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var47 string
-				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
+				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue(p)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 307, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 310, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" class=\"checkbox checkbox-xs\"> <span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var48 string
-				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(u.Name)
+				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(p)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 308, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 310, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</span></label>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</option>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</div></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</select></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		for _, ib := range info.Inbounds {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<div class=\"border border-base-300 rounded-lg p-3\"><div class=\"grid grid-cols-5 gap-2\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Protocol</span></label> <select name=\"proto\" class=\"select select-bordered select-sm\"><option value=\"telemt\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<div class=\"border border-base-300 rounded-lg p-3 relative inbound-row\"><button type=\"button\" class=\"btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error\" onclick=\"this.closest('.inbound-row').remove()\">✕</button><div class=\"grid grid-cols-5 gap-2\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Protocol</span></label> <select name=\"proto\" class=\"select select-bordered select-sm\"><option value=\"telemt\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -993,7 +993,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%d", ib.Port))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 334, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 336, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 			if templ_7745c5c3_Err != nil {
@@ -1017,7 +1017,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 				var templ_7745c5c3_Var50 string
 				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 345, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 347, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 				if templ_7745c5c3_Err != nil {
@@ -1040,7 +1040,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 				var templ_7745c5c3_Var51 string
 				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(u.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 347, Col: 25}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 349, Col: 25}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -1063,7 +1063,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 				var templ_7745c5c3_Var52 string
 				templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(p)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 357, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 359, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 				if templ_7745c5c3_Err != nil {
@@ -1086,7 +1086,7 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 				var templ_7745c5c3_Var53 string
 				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(p)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 357, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 359, Col: 70}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 				if templ_7745c5c3_Err != nil {
@@ -1102,7 +1102,85 @@ func NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []strin
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</div><button type=\"button\" class=\"btn btn-ghost btn-sm\" onclick=\"addInboundRow()\">+ Add Inbound</button><div class=\"modal-action\"><button type=\"button\" class=\"btn\" onclick=\"this.closest('dialog').close()\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Save Inbounds</button></div></form><div id=\"inbounds-result\" class=\"mt-2\"></div></div><form method=\"dialog\" class=\"modal-backdrop\"><button>close</button></form></dialog><template id=\"inbound-tmpl\" class=\"hidden\"><div class=\"grid grid-cols-5 gap-2\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Protocol</span></label> <select name=\"proto\" class=\"select select-bordered select-sm\"><option value=\"telemt\">Telemt (MTProto)</option> <option value=\"awg\" selected>AWG (AmneziaWG)</option> <option value=\"tuic\">TUIC v5</option> <option value=\"vless-reality\">VLESS Reality</option> <option value=\"shadowsocks\">Shadowsocks</option> <option value=\"trojan\">Trojan</option> <option value=\"vmess\">VMess</option> <option value=\"hysteria2\">Hysteria2</option></select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Port</span></label> <input type=\"number\" name=\"port\" class=\"input input-bordered input-sm\" value=\"0\"></div><div class=\"form-control col-span-2\"><label class=\"label\"><span class=\"label-text text-xs\">For Users</span></label><div class=\"max-h-32 overflow-y-auto border border-base-300 rounded p-2\"><span class=\"text-xs text-base-content/50\">Users will appear here. </span> <a hx-get=\"/ui/users/new\" hx-target=\"#modal-container\" hx-swap=\"innerHTML\" class=\"link link-primary text-xs\">Create user</a></div></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Obfuscation Preset</span></label> <select name=\"obfuscation\" class=\"select select-bordered select-sm\"><option value=\"\">None</option></select></div></div></template>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</div><button type=\"button\" class=\"btn btn-ghost btn-sm\" onclick=\"addInboundRow()\">+ Add Inbound</button><div class=\"modal-action\"><button type=\"button\" class=\"btn\" onclick=\"this.closest('dialog').close()\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Save Inbounds</button></div></form><div id=\"inbounds-result\" class=\"mt-2\"></div></div><form method=\"dialog\" class=\"modal-backdrop\"><button>close</button></form></dialog><template id=\"inbound-tmpl\" class=\"hidden\"><div class=\"border border-base-300 rounded-lg p-3 relative inbound-row\"><button type=\"button\" class=\"btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error\" onclick=\"this.closest('.inbound-row').remove()\">✕</button><div class=\"grid grid-cols-5 gap-2\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Protocol</span></label> <select name=\"proto\" class=\"select select-bordered select-sm\"><option value=\"telemt\">Telemt (MTProto)</option> <option value=\"awg\" selected>AWG (AmneziaWG)</option> <option value=\"tuic\">TUIC v5</option> <option value=\"vless-reality\">VLESS Reality</option> <option value=\"shadowsocks\">Shadowsocks</option> <option value=\"trojan\">Trojan</option> <option value=\"vmess\">VMess</option> <option value=\"hysteria2\">Hysteria2</option></select></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Port</span></label> <input type=\"number\" name=\"port\" class=\"input input-bordered input-sm\" value=\"0\"></div><div class=\"form-control col-span-2\"><label class=\"label\"><span class=\"label-text text-xs\">For Users</span></label><div class=\"max-h-32 overflow-y-auto border border-base-300 rounded p-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(users) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<span class=\"text-xs text-base-content/50\">No users yet. </span> <a hx-get=\"/ui/users/new\" hx-target=\"#modal-container\" hx-swap=\"innerHTML\" class=\"link link-primary text-xs\">Create first user</a> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		for _, u := range users {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "<label class=\"flex items-center gap-1 cursor-pointer text-xs py-0.5\"><input type=\"checkbox\" name=\"for_users\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var54 string
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 416, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\" class=\"checkbox checkbox-xs\"> <span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var55 string
+			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(u.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 417, Col: 22}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</span></label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "</div></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text text-xs\">Obfuscation Preset</span></label> <select name=\"obfuscation\" class=\"select select-bordered select-sm\"><option value=\"\">None</option> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, p := range presets {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "<option value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var56 string
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(p)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 427, Col: 24}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var57 string
+			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(p)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 427, Col: 30}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "</option>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "</select></div></div></div></template>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1127,87 +1205,87 @@ func NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var54 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var54 == nil {
-			templ_7745c5c3_Var54 = templ.NopComponent
+		templ_7745c5c3_Var58 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var58 == nil {
+			templ_7745c5c3_Var58 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<dialog id=\"capture-modal\" class=\"modal\" open><div class=\"modal-box\"><h3 class=\"font-bold text-lg mb-4\">Capture Node: ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var55 string
-		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(host.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 425, Col: 61}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</h3><div class=\"text-xs text-base-content/50 mb-4\">Connect via SSH and bring node under management.</div><form hx-post=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var56 string
-		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + host.ID + "/capture")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 429, Col: 48}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\" hx-target=\"#capture-result\" hx-swap=\"innerHTML\" class=\"space-y-4\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH Key</span></label> <select name=\"ssh_key\" class=\"select select-bordered\"><option value=\"\">Select key...</option> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		for _, k := range allKeys {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "<option value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var57 string
-			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(k.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 439, Col: 27}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var58 string
-			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(k.Name)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 439, Col: 38}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "</option> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "<option value=\"manual\">== Enter manually ==</option></select> <textarea name=\"ssh_key_manual\" class=\"manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2\" rows=\"3\" style=\"display:none\" placeholder=\"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----\"></textarea></div><div class=\"text-sm text-base-content/50 text-center\">— or use login + password —</div><div class=\"grid grid-cols-2 gap-4\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Login User</span></label> <input type=\"text\" name=\"login_user\" class=\"input input-bordered\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<dialog id=\"capture-modal\" class=\"modal\" open><div class=\"modal-box\"><h3 class=\"font-bold text-lg mb-4\">Capture Node: ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var59 string
-		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(host.User)
+		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(host.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 455, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 441, Col: 61}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\" placeholder=\"root\"></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Password</span></label> <input type=\"password\" name=\"login_pass\" class=\"input input-bordered\" placeholder=\"Enter SSH password\"></div></div><div class=\"form-control\"><label class=\"label cursor-pointer\"><span class=\"label-text\">Auto-install SSH key on server after successful login</span> <input type=\"checkbox\" name=\"auto_install_key\" class=\"checkbox checkbox-sm\" checked></label></div><div class=\"label\"><span class=\"label-text-alt text-base-content/50\">If checked, the SSH key selected above will be installed on the target server for future passwordless access.</span></div><div class=\"modal-action\"><button type=\"button\" class=\"btn\" onclick=\"this.closest('dialog').close()\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Capture</button></div></form><div id=\"capture-result\" class=\"mt-2\"></div></div><form method=\"dialog\" class=\"modal-backdrop\"><button>close</button></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</h3><div class=\"text-xs text-base-content/50 mb-4\">Connect via SSH and bring node under management.</div><form hx-post=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var60 string
+		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + host.ID + "/capture")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 445, Col: 48}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "\" hx-target=\"#capture-result\" hx-swap=\"innerHTML\" class=\"space-y-4\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">SSH Key</span></label> <select name=\"ssh_key\" class=\"select select-bordered\"><option value=\"\">Select key...</option> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, k := range allKeys {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "<option value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var61 string
+			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(k.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 455, Col: 27}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var62 string
+			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(k.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 455, Col: 38}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "<option value=\"manual\">== Enter manually ==</option></select> <textarea name=\"ssh_key_manual\" class=\"manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2\" rows=\"3\" style=\"display:none\" placeholder=\"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----\"></textarea></div><div class=\"text-sm text-base-content/50 text-center\">— or use login + password —</div><div class=\"grid grid-cols-2 gap-4\"><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Login User</span></label> <input type=\"text\" name=\"login_user\" class=\"input input-bordered\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var63 string
+		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(host.User)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 471, Col: 89}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\" placeholder=\"root\"></div><div class=\"form-control\"><label class=\"label\"><span class=\"label-text\">Password</span></label> <input type=\"password\" name=\"login_pass\" class=\"input input-bordered\" placeholder=\"Enter SSH password\"></div></div><div class=\"form-control\"><label class=\"label cursor-pointer\"><span class=\"label-text\">Auto-install SSH key on server after successful login</span> <input type=\"checkbox\" name=\"auto_install_key\" class=\"checkbox checkbox-sm\" checked></label></div><div class=\"label\"><span class=\"label-text-alt text-base-content/50\">If checked, the SSH key selected above will be installed on the target server for future passwordless access.</span></div><div class=\"modal-action\"><button type=\"button\" class=\"btn\" onclick=\"this.closest('dialog').close()\">Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Capture</button></div></form><div id=\"capture-result\" class=\"mt-2\"></div></div><form method=\"dialog\" class=\"modal-backdrop\"><button>close</button></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1282,105 +1360,105 @@ func HostKeyWarning(host model.Host, newFingerprint string, changed bool) templ.
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var60 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var60 == nil {
-			templ_7745c5c3_Var60 = templ.NopComponent
+		templ_7745c5c3_Var64 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var64 == nil {
+			templ_7745c5c3_Var64 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "<div class=\"card bg-warning text-warning-content shadow-xl max-w-lg mx-auto mt-8 border border-warning/50\"><div class=\"card-body\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<div class=\"card bg-warning text-warning-content shadow-xl max-w-lg mx-auto mt-8 border border-warning/50\"><div class=\"card-body\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if changed {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<h2 class=\"card-title text-2xl\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"stroke-current shrink-0 w-8 h-8\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg> WARNING: Host Key Changed!</h2><p>The SSH key for <strong>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "<h2 class=\"card-title text-2xl\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"stroke-current shrink-0 w-8 h-8\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg> WARNING: Host Key Changed!</h2><p>The SSH key for <strong>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var61 string
-			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(host.Addr)
+			var templ_7745c5c3_Var65 string
+			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(host.Addr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 543, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 559, Col: 42}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</strong> has changed since the last connection.</p><p class=\"text-sm opacity-80\">This could be due to a server reinstall, or it could be a Man-in-the-Middle attack. Do not proceed unless you know the key was changed intentionally.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</strong> has changed since the last connection.</p><p class=\"text-sm opacity-80\">This could be due to a server reinstall, or it could be a Man-in-the-Middle attack. Do not proceed unless you know the key was changed intentionally.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "<h2 class=\"card-title text-2xl\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"stroke-current shrink-0 w-8 h-8\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\"></path></svg> Untrusted Host Key</h2><p>The SSH key for <strong>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "<h2 class=\"card-title text-2xl\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" class=\"stroke-current shrink-0 w-8 h-8\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\"></path></svg> Untrusted Host Key</h2><p>The SSH key for <strong>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var62 string
-			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(host.Addr)
+			var templ_7745c5c3_Var66 string
+			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(host.Addr)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 547, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 563, Col: 42}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</strong> is currently marked as untrusted.</p>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "</strong> is currently marked as untrusted.</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "<div class=\"bg-black/20 p-3 rounded-lg font-mono text-sm break-all my-2\"><div>New Fingerprint:</div><div class=\"font-bold text-white\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "<div class=\"bg-black/20 p-3 rounded-lg font-mono text-sm break-all my-2\"><div>New Fingerprint:</div><div class=\"font-bold text-white\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var63 string
-		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(newFingerprint)
+		var templ_7745c5c3_Var67 string
+		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(newFingerprint)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 552, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 568, Col: 54}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</div></div><div class=\"card-actions justify-end mt-4\"><a href=\"/ui/nodes\" class=\"btn btn-ghost\">Cancel</a><form hx-post=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var64 string
-		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + host.ID + "/trust")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 557, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "</div></div><div class=\"card-actions justify-end mt-4\"><a href=\"/ui/nodes\" class=\"btn btn-ghost\">Cancel</a><form hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\" hx-target=\"#page-content\"><input type=\"hidden\" name=\"addr\" value=\"")
+		var templ_7745c5c3_Var68 string
+		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/nodes/" + host.ID + "/trust")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 573, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var65 string
-		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(host.Addr)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 558, Col: 55}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" hx-target=\"#page-content\"><input type=\"hidden\" name=\"addr\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\"> <input type=\"hidden\" name=\"fingerprint\" value=\"")
+		var templ_7745c5c3_Var69 string
+		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(host.Addr)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 574, Col: 55}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var66 string
-		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(newFingerprint)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/nodes.templ`, Line: 559, Col: 67}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "\"> <input type=\"hidden\" name=\"fingerprint\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "\"> <button type=\"submit\" class=\"btn btn-error text-error-content hover:bg-red-700\">Trust and Continue</button></form></div></div></div>")
+		var templ_7745c5c3_Var70 string
+		templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(newFingerprint)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `nodes.templ`, Line: 575, Col: 67}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\"> <button type=\"submit\" class=\"btn btn-error text-error-content hover:bg-red-700\">Trust and Continue</button></form></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
