@@ -31,7 +31,7 @@ func Hosts(hosts []*model.Host) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"flex items-center justify-between\"><h2 class=\"text-2xl font-semibold\">Hosts</h2><button class=\"btn btn-primary btn-sm\" hx-get=\"/ui/hosts/new\" hx-target=\"#modal-container\" hx-swap=\"innerHTML\">+ Add Host</button></div><div class=\"card bg-base-100 shadow\"><div class=\"overflow-x-auto\"><table class=\"table\"><thead><tr><th>ID</th><th>Address</th><th>User</th><th>Key</th><th>Status</th><th class=\"w-px\"></th></tr></thead> <tbody id=\"hosts-tbody\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"flex items-center justify-between\"><h2 class=\"text-2xl font-semibold\">Hosts</h2><button class=\"btn btn-primary btn-sm\" hx-get=\"/ui/hosts/new\" hx-target=\"#modal-container\" hx-swap=\"innerHTML\">+ Add Host</button></div><div class=\"card bg-base-100 shadow\"><div class=\"w-full\"><table class=\"table\"><thead><tr><th>ID</th><th>Address</th><th>User</th><th>Key</th><th>Status</th><th class=\"w-px\"></th></tr></thead> <tbody id=\"hosts-tbody\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

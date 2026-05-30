@@ -136,7 +136,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 					<h3 class="text-xl font-semibold">Nodes</h3>
 					<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">Manage Nodes</a>
 				</div>
-				<div class="overflow-x-auto">
+				<div class="w-full">
 					<table class="table w-full">
 						<thead class="text-base-content/60 text-sm">
 							<tr class="border-b border-base-content/10">

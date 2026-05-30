@@ -49,7 +49,7 @@ func Chains(chains []*model.Chain, availableHosts []*model.Host) templ.Component
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"card bg-base-100 shadow\"><div class=\"overflow-x-auto\"><table class=\"table table-sm\"><thead><tr><th>Name</th><th>Nodes</th><th>Strategy</th><th class=\"w-px\"></th></tr></thead> <tbody id=\"chains-tbody\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"card bg-base-100 shadow\"><div class=\"w-full\"><table class=\"table table-sm\"><thead><tr><th>Name</th><th>Nodes</th><th>Strategy</th><th class=\"w-px\"></th></tr></thead> <tbody id=\"chains-tbody\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1034,7 +1034,7 @@ func StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) templ.Compone
 			templ_7745c5c3_Var45 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<div class=\"space-y-6\"><h2 class=\"text-2xl font-semibold\">System Status</h2><div class=\"card bg-base-100 shadow\"><div class=\"overflow-x-auto\"><table class=\"table table-sm\"><thead><tr><th>Host</th><th>Address</th><th>Status</th><th>Version</th><th>Last Checked</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<div class=\"space-y-6\"><h2 class=\"text-2xl font-semibold\">System Status</h2><div class=\"card bg-base-100 shadow\"><div class=\"w-full\"><table class=\"table table-sm\"><thead><tr><th>Host</th><th>Address</th><th>Status</th><th>Version</th><th>Last Checked</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
