@@ -2,9 +2,11 @@ package singbox
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
@@ -231,13 +233,19 @@ lsmod | grep amneziawg
 
 // createBackup makes a timestamped backup of the current config.
 func createBackup(client *sshclient.Client, file string) (string, error) {
+	uniqueID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), randInt())
 	out, err := client.Run(fmt.Sprintf(`if [ -f %s ]; then
-		ts=$(date +%%s)
-		bak="%s.bak.$ts"
+		bak="%s.bak.%s"
 		cp -p %s "$bak"
 		echo "$bak"
-	fi`, file, file, file))
+	fi`, file, file, uniqueID, file))
 	return strings.TrimSpace(out), err
+}
+
+func randInt() int {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return int(b[0])<<24 | int(b[1])<<16 | int(b[2])<<8 | int(b[3])
 }
 
 // performRollback restores the backup and restarts the service.

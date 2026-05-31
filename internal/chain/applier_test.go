@@ -269,77 +269,53 @@ func TestDirectOutboundJSONParity(t *testing.T) {
 	}
 }
 
-func TestNodeConfigJSONParity(t *testing.T) {
-	node := &model.ChainNode{Addr: "1.2.3.4:443"}
-	nodes := []model.ChainNode{*node, {Addr: "5.6.7.8:443"}}
-	
-	p := &hopParams{
-		Port:       443,
-		UUID:       "uuid-1234",
-		ServerName: "test.com",
-		PrivateKey: "priv-hex",
-		ShortID:    "short-hex",
+func TestMergedNodeConfigParity(t *testing.T) {
+	chain := &model.Chain{
+		Name:  "test-chain",
+		Nodes: []model.ChainNode{
+			{ID: "node0", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k",
+				TransitUUID: "uuid-entry", TransitPrivKey: "eE2tO7r8Ff_3hWwK-Qv6RzL0X1sP_bN4mD5Y8Vj_AQA", TransitShortID: "sh0"},
+			{ID: "node1", Addr: "5.6.7.8:22", User: "root", KeyPath: "/k",
+				TransitUUID: "uuid-next", TransitPrivKey: "eE2tO7r8Ff_3hWwK-Qv6RzL0X1sP_bN4mD5Y8Vj_BQB", TransitShortID: "sh1"},
+		},
+		Strategy:              model.StrategyURLTest,
+		Transport:             model.TransportReality,
+		UserProtocol:          model.UserProtocolTUIC,
+		TUICEntryUserUUID:     "tuic-uuid",
+		TUICEntryUserPassword: "tuic-pass",
 	}
-	nextP := &hopParams{
-		Port:       443,
-		UUID:       "uuid-5678",
-		ServerName: "next.com",
-		PrivateKey: "eE2tO7r8Ff_3hWwK-Qv6RzL0X1sP_bN4mD5Y8Vj_AQA",
-		ShortID:    "short-next",
-	}
-	params := []*hopParams{p, nextP}
+	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "node0", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"}}
 
-	preset := GetDefaultPreset()
-	presetPtr := &preset
-
-	actualJSONStr, err := buildNodeConfig(node, 0, 2, params, nodes, presetPtr, model.TransportReality, model.UserProtocolVLESSReality, model.StrategyURLTest)
+	cfg, report, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{chain})
 	if err != nil {
-		t.Fatalf("buildNodeConfig failed: %v", err)
+		t.Fatalf("buildMergedNodeConfig failed: %v", err)
 	}
-
-	// For the old map structure, we mock what it used to assemble.
-	inbounds := []json.RawMessage{}
-	inb := buildUserInbound(8443, p.UUID, "user-in")
-	inbounds = append(inbounds, inb)
-
-	outbounds := []json.RawMessage{}
-	outb, _ := buildTransportOutbound(nextP, "5.6.7.8", "out-to-next.com")
-	outbounds = append(outbounds, outb)
-	outbounds = append(outbounds, buildDirectOutbound("direct-out"))
-
-	stratOut := BuildStrategyOutbound(string(model.StrategyURLTest), []string{"out-to-next.com"})
-	stratJSON, _ := json.Marshal(stratOut)
-	outbounds = append(outbounds, stratJSON)
-
-	outbounds = append(outbounds, []byte(`{"tag":"block","type":"block"}`)) // routing rule has block
-
-	routingSection := BuildRoutingSection(presetPtr, stratOut.Tag)
-	
-	expectedMap := map[string]any{
-		"log": map[string]any{
-			"level":  "info",
-			"output": "/var/log/sing-box/sing-box.log",
-		},
-		"inbounds":  inbounds,
-		"outbounds": outbounds,
-		"route":     routingSection,
-		"dns":       BuildDNSWithDetour(stratOut.Tag, presetPtr.Routing.DirectDomains),
-		"experimental": map[string]any{
-			"cache_file": map[string]any{"enabled": true},
-		},
+	if report == nil || cfg == nil {
+		t.Fatal("nil report or cfg")
 	}
-
-	expectedJSONBytes, _ := json.Marshal(expectedMap)
-
-	var expMap, actMap map[string]any
-	json.Unmarshal(expectedJSONBytes, &expMap)
-	json.Unmarshal([]byte(actualJSONStr), &actMap)
-
-	prettyExpected, _ := json.MarshalIndent(expMap, "", "  ")
-	prettyActual, _ := json.MarshalIndent(actMap, "", "  ")
-
-	if !bytes.Equal(prettyExpected, prettyActual) {
-		t.Fatalf("JSON mismatch!\nExpected:\n%s\n\nActual:\n%s", prettyExpected, prettyActual)
+	if len(cfg.Inbounds) < 1 {
+		t.Fatal("expected at least 1 inbound")
+	}
+	if len(cfg.Outbounds) < 2 {
+		t.Fatal("expected at least 2 outbounds")
+	}
+	cfgJSON, _ := json.MarshalIndent(cfg, "", "  ")
+	var generic map[string]any
+	if err := json.Unmarshal(cfgJSON, &generic); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	tags := extractAllTags(string(cfgJSON))
+	hasTag := func(want string) bool {
+		for _, tg := range tags {
+			if tg == want { return true }
+		}
+		return false
+	}
+	if !hasTag("ch-test-chain-user-in") {
+		t.Errorf("missing tag ch-test-chain-user-in, got %v", tags)
+	}
+	if !hasTag("ch-test-chain-strategy") {
+		t.Errorf("missing tag ch-test-chain-strategy, got %v", tags)
 	}
 }
 

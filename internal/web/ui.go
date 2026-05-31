@@ -656,28 +656,30 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	indexes := r.Form["inbound_index"]
 	obfuscations := r.Form["obfuscation"]
 
-	// Port conflict check against chains
-	chains, _ := st.ListChains()
-	chainPorts := make(map[int]string) // port -> chainName
-	for _, c := range chains {
+	// Port conflict check against all chains containing this node
+	chainsForNode, _ := st.GetChainsForNode(id)
+	chainPorts := make(map[int]string)
+	for _, c := range chainsForNode {
 		for i, n := range c.Nodes {
-			if n.ID == id {
-				// Node 0 has user inbound on 8443 (defaultUserPort)
+			if n.ID != id {
+				continue
+			}
+			port := n.Port
+			if port == 0 {
 				if i == 0 {
-					chainPorts[8443] = c.Name
-				}
-				// Nodes > 0 have transit inbound on 443 (defaultTransportPort)
-				if i > 0 {
-					chainPorts[443] = c.Name
+					port = 8443
+				} else {
+					port = 443
 				}
 			}
+			chainPorts[port] = c.Name
 		}
 	}
 
 	for _, pStr := range ports {
 		port, _ := strconv.Atoi(pStr)
 		if cName, ok := chainPorts[port]; ok {
-			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Port %d is reserved for chain "%s" on this node and cannot be used for standalone inbounds.</div>`, port, cName)})
+			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.</div>`, port, cName)})
 			return
 		}
 	}
@@ -1672,7 +1674,7 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 	f := factory.New()
 	applier := chain.NewApplier(f)
 	ctx := context.Background()
-	report, err := applier.ApplyChain(ctx, c, "")
+	report, err := applier.ApplyChain(ctx, st, c, "")
 	if err != nil {
 		msg := err.Error()
 		if report != nil && len(report.Nodes) > 0 {
@@ -1701,15 +1703,12 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	f := factory.New()
 	applier := chain.NewApplier(f)
 	ctx := context.Background()
-	
-	report, err := applier.ApplyStandaloneNode(ctx, info)
-	
-	st.SaveNodeInfo(info) // Save generated credentials for inbounds
+
+	report, mergeReport, err := applier.ApplyMergedNode(ctx, st, info)
+	st.SaveNodeInfo(info)
 
 	if err != nil {
 		msg := err.Error()
@@ -1723,7 +1722,20 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, templates.ApplyResult(id, false, report, msg))
 		return
 	}
-	s.render(w, r, templates.ApplyResult(id, true, report, ""))
+
+	resultMsg := ""
+	if mergeReport != nil {
+		parts := []string{fmt.Sprintf("%d standalone inbounds + chains: %v",
+			mergeReport.StandaloneCount, mergeReport.ChainsIncluded)}
+		if len(mergeReport.AddedInbounds) > 0 {
+			parts = append(parts, fmt.Sprintf("+%s", strings.Join(mergeReport.AddedInbounds, ", +")))
+		}
+		if len(mergeReport.RemovedInbounds) > 0 {
+			parts = append(parts, fmt.Sprintf("-%s", strings.Join(mergeReport.RemovedInbounds, ", -")))
+		}
+		resultMsg = strings.Join(parts, " | ")
+	}
+	s.render(w, r, templates.ApplyResult(id, true, report, resultMsg))
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
