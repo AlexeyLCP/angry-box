@@ -1,145 +1,150 @@
-**Languages:** [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md) | [فارسی](README.fa.md)
+**Languages:** [English](README.md) | [Russian](README.ru.md) | [Chinese](README.zh.md) | [Farsi](README.fa.md)
 
 # Angry-BOX
 
-**ارکستر سبک SSH-only** برای **sing-box** (اصلی) و **xray** (ثانویه).
+**Lightweight SSH-only orchestrator** for **sing-box** (primary) and **xray** (secondary).
 
-بدون نیاز به ایجنت روی نودها. همه مدیریت از طریق SSH انجام می‌شود. روی سرورهای راه‌دور و روترها (از جمله Keenetic) فقط پروکسی سبک نصب می‌شود.
+No agents on nodes. All management via SSH. Deploy minimal proxy configs on remote servers and routers (including Keenetic).
 
-## ویژگی‌های اصلی
+## Features
 
-- مدیریت کامل از طریق SSH بدون ایجنت پایدار
-- پریست‌های قدرتمند ۲۰۲۶ (روسیه، ایران، چین، حداکثر پنهان‌کاری)
-- AWG پیشرفته با تولیدکننده‌های CPS + QUIC/SIP/DNS واقعی
-- XHTTP با کیفیت بالا (padding، XMUX، هدرهای واقعی) روی هر دو بک‌اند
-- اعتبارنامه‌های پایدار کاربر (کلیدهای AWG و CPS فقط یک بار ساخته می‌شوند)
-- پشتیبانی عالی از روترها (Keenetic .ipk + OpenWRT)
-- نسخه بومی ویندوز
-- رابط وب + CLI کامل
+- Pure SSH management without persistent agents
+- Powerful 2026 stealth presets (Russia / Iran / China / Maximum Stealth)
+- Advanced AWG with CPS generators + realistic QUIC/SIP/DNS
+- High-quality XHTTP (padding, XMUX, realistic headers) on both backends
+- Stable user credentials (AWG keys + CPS generated once)
+- Excellent router support (Keenetic .ipk + OpenWRT)
+- Native Windows build
+- Web UI + full CLI
 
-## شروع سریع
+## ویژگی‌های جدید در نسخه v0.7.1
+
+- **پیکربندی یکپارچه نود (Merged Config)** -- اکنون نودها می‌توانند به طور همزمان به عنوان ورودی‌های مستقل (standalone) عمل کرده و در چندین زنجیره پروکسی شرکت کنند. موتور جدید `apply-merged` یک فایل یکپارچه `config.json` می‌سازد که همه نقش‌ها را ترکیب می‌کند. دیگر مشکل بازنویسی و حذف تنظیمات یکدیگر وجود ندارد.
+- **بررسی پیش‌نیاز SSH** -- پیش از تغییر تنظیمات سرورها، اتصال SSH به همه نودها بررسی می‌شود تا از خرابی در استقرار ناقص جلوگیری شود.
+- **تشخیص تداخل پورت‌ها** -- سیستم یکپارچه‌ساز پیش از اعمال تغییرات، تداخل پورت‌ها بین زنجیره‌ها و ورودی‌های مستقل را تشخیص می‌دهد.
+- **مشاهده تغییرات (Tag Diff)** -- پس از هر اعمال تغییرات، رابط کاربری تگ‌های اضافه شده (`+tag`) و حذف شده (`-tag`) را نمایش می‌دهد.
+- **تولید خودکار کلیدهای SSH** -- رابط کاربری بخش نودها اکنون می‌تواند جفت‌کلید SSH را به صورت خودکار تولید و در سرور مقصد نصب کند.
+- **پشتیبانی از چند زبان (i18n)** -- رابط کاربری وب در زبان‌های انگلیسی، روسی، چینی و فارسی در دسترس است.
+- **تنظیمات مستقل نودها** -- امکان اعمال مستقل ورودی‌های یک نود، همراه با قابلیت بازگردانی امن (rollback) مانند زنجیره‌ها.
+
+## Quick Start
 
 ```bash
-# ۱. نصب
+# 1. Install
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
-# ۲. اضافه کردن هاست
+# 2. Add host
 angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
 
-# ۳. ساخت زنجیره با پریست قوی ۲۰۲۶
+# 3. Create chain with strong 2026 preset
 angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
 
-# ۴. اعمال
+# 4. Deploy (uses merged config!)
 angry-box apply-chain mychain
+
+# 5. Or apply merged config for a single node
+angry-box apply-merged node1
 ```
 
-رابط وب به صورت پیش‌فرض روی `http://localhost:8090` در دسترس است.
+Web UI at `http://localhost:8090`.
 
-## نصب
+## Installation
 
-### اسکریپت نصب یک‌خطی (توصیه‌شده)
+### One-liner script (recommended)
 
 ```bash
-# آخرین نسخه
+# Latest version
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
-# نسخه خاص
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.5.2
+# Specific version
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.1
 ```
 
-### باینری‌های از پیش ساخته‌شده
+### Pre-built binaries
 
-از صفحه [Releases](https://github.com/alexeylcp/angry-box/releases) دانلود کنید.
+Download from [Releases](https://github.com/alexeylcp/angry-box/releases).
 
-**لینوکس**
+**Linux**
 ```bash
-tar -xzf angry-box-0.5.2-linux-amd64.tar.gz
-cd angry-box-0.5.2-linux-amd64
+tar -xzf angry-box-0.7.1-linux-amd64.tar.gz
+cd angry-box-0.7.1-linux-amd64
 ./angry-box --help
 ```
 
-**ویندوز**
-- فایل `angry-box-0.5.2-windows-amd64.zip` یا `.exe` را دانلود کنید
-- اجرا کنید: `angry-box.exe`
-- رابط وب: `http://localhost:8090`
+**Windows**
+- Download `angry-box-0.7.1-windows-amd64.zip` or `.exe`
+- Run `angry-box.exe`
+- Web UI: `http://localhost:8090`
 
-### روترها (Keenetic و OpenWRT)
+### Routers (Keenetic / OpenWRT)
 
-جزئیات در بخش پایین.
+See details below.
 
-## معماری
+## Architecture
 
-Angry-BOX فقط **صفحه کنترل** است.
+Angry-BOX is only the **control plane**.
 
-- خود ارکستر ترافیک را فوروارد نمی‌کند.
-- تمام عملیات از طریق SSH انجام می‌شود.
-- روی نودهای راه‌دور فقط پروکسی سبک (sing-box یا xray) + کانفیگ کوچک نصب می‌شود.
+- The orchestrator does not forward traffic.
+- All operations via SSH.
+- Remote nodes run only a lightweight proxy (sing-box or xray) + minimal config.
 
-**دو نوع اتصال:**
-- **Transport**: هاب‌های داخلی زنجیره (XHTTP توصیه می‌شود)
-- **User**: نقاط ورود واقعی کاربران (TUIC v5 یا AmneziaWG)
+**Two connection types:**
+- **Transport** -- internal chain hops (XHTTP recommended)
+- **User** -- real client entry points (TUIC v5 or AmneziaWG)
 
-## پریست‌های پنهان‌کاری ۲۰۲۶
+## 2026 Stealth Presets
 
-پروژه با پریست‌های حرفه‌ای بهینه‌شده برای DPIهای فعلی عرضه می‌شود.
+Professional presets optimized for current DPI:
 
-| پریست                    | هدف                  | تکنیک‌های اصلی                    |
-|--------------------------|----------------------|------------------------------------|
-| `russia_2026`            | روسیه                | XHTTP متعادل + AWG                |
-| `iran_2026`              | ایران                | XHTTP تهاجمی + Reality             |
-| `china_2026`             | چین                  | پنهان‌کاری قوی + fragmentation     |
-| `maximum_stealth_2026`   | حداکثر پنهان‌کاری    | XHTTP کامل + AWG CPS               |
-| `pro_2026`               | استفاده حرفه‌ای      | CPS سطح ۳ اجباری + QUIC ۱۲۰۰ بایت |
-| `xhttp_max_stealth_2026` | XHTTP افراطی         | حداکثر padding + XMUX             |
+| Preset                    | Target             | Key techniques                      |
+|---------------------------|--------------------|-------------------------------------|
+| `russia_2026`             | Russia             | Balanced XHTTP + AWG                |
+| `iran_2026`               | Iran               | Aggressive XHTTP + Reality          |
+| `china_2026`              | China              | Strong obfuscation + fragmentation  |
+| `maximum_stealth_2026`    | Maximum stealth    | Full XHTTP + AWG CPS                |
+| `pro_2026`                | Professional use   | Forced CPS 3 + QUIC 1200B           |
+| `xhttp_max_stealth_2026`  | Extreme XHTTP      | Maximum padding + XMUX              |
 
-## پشتیبانی از روترها
+## Router Support
 
-Angry-BOX پکیج‌های بومی `.ipk` ارائه می‌دهد.
+Native `.ipk` packages.
 
-| پلتفرم            | معماری                | نام پکیج                                 |
-|-------------------|-----------------------|------------------------------------------|
-| Keenetic          | `mipsel_24kc`         | `angry-box_X.Y.Z_mipsel_24kc.ipk`        |
-| Keenetic/OpenWRT  | `aarch64_cortex-a53`  | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk` |
+| Platform          | Architecture           | Example package                           |
+|-------------------|------------------------|-------------------------------------------|
+| Keenetic          | `mipsel_24kc`          | `angry-box_X.Y.Z_mipsel_24kc.ipk`         |
+| Keenetic/OpenWRT  | `aarch64_cortex-a53`   | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk`  |
 
-## ساخت از منبع
+## Building from source
 
 ```bash
 git clone https://github.com/alexeylcp/angry-box.git
 cd angry-box
 
-# ساخت تولید (همه چیز در باینری جاسازی شده)
+# Production build
 make build
 
-# حالت توسعه (فایل‌های استاتیک از دیسک خوانده می‌شوند)
+# Dev mode
 make dev
 ```
 
-## قدردانی
+## Acknowledgements
 
-این پروژه بر پایه تحقیقات عمومی جامعه ضدسانسور ساخته شده است.
+Built on anti-censorship community research. Key sources: pumbaX / awg-multi-script, Xray team (RPRX), Hysteria2, NaiveProxy, Telemt.
 
-منابع اصلی:
-- pumbaX / awg-multi-script
-- تیم Xray (RPRX)
-- Hysteria2، NaiveProxy، Telemt و بسیاری از محققان روسی، ایرانی و چینی
-
-## لایسنس
+## License
 
 **PolyForm Noncommercial License 1.0.0**
 
-این پروژه تحت مجوز PolyForm Noncommercial License 1.0.0 توزیع می‌شود.  
-استفاده تنها برای **مقاصد شخصی، غیرتجاری، آموزشی و علمی** مجاز است.  
-**هرگونه استفاده تجاری ممنوع است.**
+Free for personal, non-commercial, educational, and scientific use.
+**Any commercial use is prohibited.**
 
-نرم‌افزار "همانطور که هست" ارائه می‌شود، بدون هیچ‌گونه ضمانتی. نویسنده هیچ مسئولیتی در قبال خسارات ناشی از استفاده از این نرم‌افزار ندارد.
+See [LICENSE](LICENSE).
 
-مشاهده [LICENSE](LICENSE).
+## Support
 
-## پشتیبانی
-
-- گزارش باگ و درخواست ویژگی → [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
-- بحث عمومی → GitHub Discussions
+- Issues -> [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
+- Discussion -> GitHub Discussions
 
 ---
 
-**نسخه فعلی:** 0.5.2 — رابط وب، حالت توسعه/تولید ترکیبی، اعلان‌های حقوقی.
+**Current version:** 0.7.1 -- unified merged config, pre-flight checks, i18n, standalone config.
