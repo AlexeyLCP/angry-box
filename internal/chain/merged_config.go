@@ -548,7 +548,7 @@ func diffInboundTags(oldJSON, newJSON string) (added, removed []string) {
 }
 
 // extractAllTags parses a sing-box config JSON and returns all tags
-// from inbounds[] and endpoints[] arrays.
+// from inbounds[], endpoints[] and outbounds[] arrays.
 func extractAllTags(cfgJSON string) []string {
 	if cfgJSON == "" {
 		return nil
@@ -556,6 +556,7 @@ func extractAllTags(cfgJSON string) []string {
 	var raw struct {
 		Inbounds  []json.RawMessage `json:"inbounds"`
 		Endpoints []json.RawMessage `json:"endpoints"`
+		Outbounds []json.RawMessage `json:"outbounds"`
 	}
 	if err := json.Unmarshal([]byte(cfgJSON), &raw); err != nil {
 		return nil
@@ -568,6 +569,11 @@ func extractAllTags(cfgJSON string) []string {
 	}
 	for _, ep := range raw.Endpoints {
 		if t := extractTag(ep); t != "" {
+			tags = append(tags, t)
+		}
+	}
+	for _, ob := range raw.Outbounds {
+		if t := extractTag(ob); t != "" {
 			tags = append(tags, t)
 		}
 	}
