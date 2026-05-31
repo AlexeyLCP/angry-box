@@ -466,7 +466,7 @@ func applyChainCmd() {
 	sshclient.SetKeyResolver(s)
 
 	ctx := context.Background()
-	report, err := applier.ApplyChain(ctx, c, clientPubKey)
+	report, err := applier.ApplyChain(ctx, s, c, clientPubKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "apply-chain failed: %v\n", err)
 		// Still print partial report if we have one
