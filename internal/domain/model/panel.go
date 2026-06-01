@@ -85,6 +85,10 @@ type NodeInbound struct {
 	ServerPrivKey string `json:"server_priv_key,omitempty"`
 	ServerPubKey  string `json:"server_pub_key,omitempty"`
 	ShortID       string `json:"short_id,omitempty"`
+
+	// For TLS-based standalone inbounds (TUIC, Hysteria2, etc.)
+	TLSCertificate string `json:"tls_certificate,omitempty"`
+	TLSPrivateKey  string `json:"tls_private_key,omitempty"`
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).
