@@ -293,7 +293,7 @@ func ensureHopParams(role *chainRole) *hopParams {
 	return p
 }
 
-func resolveServerName(preset *ConnectionPreset) string {
+func ResolveServerName(preset *ConnectionPreset) string {
 	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
 		return preset.Reality.ServerNames[0]
 	}
@@ -305,7 +305,7 @@ func resolveServerName(preset *ConnectionPreset) string {
 
 func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoints []json.RawMessage) {
 	preset := GetDefaultPreset()
-	serverName := resolveServerName(&preset)
+	serverName := ResolveServerName(&preset)
 
 	switch ib.Protocol {
 	case "vless-reality":
@@ -330,11 +330,41 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoint
 		}
 
 	case "tuic":
+		tls := &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
+		}
+
+		cert := ib.TLSCertificate
+		key := ib.TLSPrivateKey
+		if cert == "" || key == "" {
+			// Auto-generate self-signed cert so the inbound is valid.
+			// Ideally this should be done at save time and persisted.
+			var cerr error
+			cert, key, cerr = GenerateSelfSignedCert(serverName)
+			if cerr == nil {
+				// Note: in production these should be persisted back to the store
+				ib.TLSCertificate = cert
+				ib.TLSPrivateKey = key
+			}
+		}
+
+		if cert != "" && key != "" {
+			tls.Certificate = cert
+			tls.Key = key
+		}
+
 		inb := config.TUICInbound{
-			Type: "tuic", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
-			Users: []config.TUICUser{{UUID: ib.UUID, Password: ib.ServerPrivKey}},
-			CongestionControl: "bbr", AuthTimeout: "3s", ZeroRTTHandshake: true, Heartbeat: "10s",
-			TLS: &config.InboundTLSOptions{Enabled: true, ServerName: serverName},
+			Type:              "tuic",
+			Tag:               tag,
+			Listen:            "0.0.0.0",
+			ListenPort:        ib.Port,
+			Users:             []config.TUICUser{{UUID: ib.UUID, Password: ib.ServerPrivKey}},
+			CongestionControl: "bbr",
+			AuthTimeout:       "3s",
+			ZeroRTTHandshake:  true,
+			Heartbeat:         "10s",
+			TLS:               tls,
 		}
 		data, _ := json.Marshal(inb)
 		inbounds = append(inbounds, data)

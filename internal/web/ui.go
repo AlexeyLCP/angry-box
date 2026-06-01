@@ -713,7 +713,23 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 				newIb.ServerPrivKey = oldIb.ServerPrivKey
 				newIb.ServerPubKey = oldIb.ServerPubKey
 				newIb.ShortID = oldIb.ShortID
+				newIb.TLSCertificate = oldIb.TLSCertificate
+				newIb.TLSPrivateKey = oldIb.TLSPrivateKey
 				break
+			}
+		}
+
+		// Generate self-signed TLS certificate for protocols that need it (TUIC, Hysteria2, etc.)
+		// if not already present. This ensures the inbound can be applied without "missing certificate" errors.
+		if (newIb.Protocol == "tuic" || newIb.Protocol == "hysteria2") &&
+			(newIb.TLSCertificate == "" || newIb.TLSPrivateKey == "") {
+
+			preset := chain.GetDefaultPreset()
+			serverName := chain.ResolveServerName(&preset)
+
+			if cert, key, cerr := chain.GenerateSelfSignedCert(serverName); cerr == nil {
+				newIb.TLSCertificate = cert
+				newIb.TLSPrivateKey = key
 			}
 		}
 		
