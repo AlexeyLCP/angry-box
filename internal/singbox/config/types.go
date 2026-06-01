@@ -53,8 +53,9 @@ type DNSRule struct {
 
 // DirectOutbound represents a simple direct outbound connection.
 type DirectOutbound struct {
-	Type string `json:"type"` // always "direct"
-	Tag  string `json:"tag"`
+	Type string       `json:"type"` // always "direct"
+	Tag  string       `json:"tag"`
+	Dial *DialOptions `json:"dial,omitempty"`
 }
 
 // BlockOutbound represents a simple block outbound connection.
@@ -72,6 +73,12 @@ type StrategyOutbound struct {
 	URL       string   `json:"url,omitempty"`
 	Interval  string   `json:"interval,omitempty"`
 	Tolerance int      `json:"tolerance,omitempty"`
+	Dial      *DialOptions `json:"dial,omitempty"`
+}
+
+// DialOptions contains dial-specific settings (sing-box 1.12+).
+type DialOptions struct {
+	DomainResolver string `json:"domain_resolver,omitempty"`
 }
 
 // RoutingSection represents the route section of the configuration.
@@ -114,6 +121,7 @@ type VLESSOutbound struct {
 	TLS        *OutboundTLSOptions `json:"tls,omitempty"`
 	Multiplex  *MultiplexOptions   `json:"multiplex,omitempty"`
 	Transport  *TransportOptions   `json:"transport,omitempty"`
+	Dial       *DialOptions        `json:"dial,omitempty"`
 }
 
 // VLESSInbound represents a sing-box VLESS inbound.
