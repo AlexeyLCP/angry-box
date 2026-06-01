@@ -447,6 +447,7 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 		Multiplex: &config.MultiplexOptions{
 			Enabled: true,
 		},
+		Dial: &config.DialOptions{DomainResolver: "dns-direct"},
 	}
 
 	data, _ := json.Marshal(out)
@@ -457,6 +458,7 @@ func buildDirectOutbound(tag string) json.RawMessage {
 	out := config.DirectOutbound{
 		Type: "direct",
 		Tag:  tag,
+		Dial: &config.DialOptions{DomainResolver: "dns-direct"},
 	}
 	data, _ := json.Marshal(out)
 	return data
@@ -712,6 +714,7 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 			},
 		},
 		Transport: transport,
+		Dial:      &config.DialOptions{DomainResolver: "dns-direct"},
 	}
 
 	data, _ := json.Marshal(out)

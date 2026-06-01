@@ -431,9 +431,10 @@ func buildMergedRouting(roles []chainRole, nodeInfo *model.NodeInfo) *config.Rou
 	}
 
 	return &config.RoutingSection{
-		Rules:               rules,
-		Final:               "direct-out",
-		AutoDetectInterface: true,
+		Rules:                 rules,
+		Final:                 "direct-out",
+		AutoDetectInterface:   true,
+		DefaultDomainResolver: "dns-direct",
 	}
 }
 
