@@ -428,14 +428,35 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 				finalInbounds = append(finalInbounds, scfg.Inbounds...)
 			}
 		case "tuic":
-			paramsTUIC := model.ConfigParams{Extra: map[string]any{"tuicPassword": ib.ServerPrivKey}}
-			cfg, err := b.generateTUICUser(paramsTUIC, &preset, uuid, ib.Port)
-			if err == nil {
-				var scfg singBoxConfig
-				if err := json.Unmarshal([]byte(cfg.Content), &scfg); err == nil {
-					finalInbounds = append(finalInbounds, scfg.Inbounds...)
-				}
+			serverName := "www.microsoft.com"
+			if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+				serverName = preset.Reality.ServerNames[0]
 			}
+
+			tls := &config.InboundTLSOptions{
+				Enabled:    true,
+				ServerName: serverName,
+			}
+
+			if ib.TLSCertificate != "" && ib.TLSPrivateKey != "" {
+				tls.Certificate = ib.TLSCertificate
+				tls.Key = ib.TLSPrivateKey
+			}
+
+			inb := config.TUICInbound{
+				Type:              "tuic",
+				Tag:               tag,
+				Listen:            "0.0.0.0",
+				ListenPort:        ib.Port,
+				Users:             []config.TUICUser{{UUID: uuid, Password: ib.ServerPrivKey}},
+				CongestionControl: "bbr",
+				AuthTimeout:       "3s",
+				ZeroRTTHandshake:  true,
+				Heartbeat:         "10s",
+				TLS:               tls,
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
 		case "vless-reality":
 			privKeyB64 := ib.ServerPrivKey
 			shortIDHex := ib.ShortID
@@ -474,16 +495,32 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 			data, _ := json.Marshal(inb)
 			finalInbounds = append(finalInbounds, data)
 		case "hysteria2":
-			// Basic Hysteria2 standalone
-			inb := config.Hysteria2Inbound{
-				Type: "hysteria2", Tag: tag, Listen: "::", ListenPort: ib.Port,
-				Users: []config.Hysteria2User{{Password: uuid}},
-				UpMbps: 1000, DownMbps: 1000,
-				Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: "salamander_pass"},
-				// Note: Hysteria2 requires TLS, this is a placeholder that might fail sing-box check without certs.
-				// For real use, ACME or Keypair must be generated.
+			serverName := "www.microsoft.com"
+			if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+				serverName = preset.Reality.ServerNames[0]
 			}
-			data, _ := json.Marshal(inb)
+
+			hysteria := config.Hysteria2Inbound{
+				Type:      "hysteria2",
+				Tag:       tag,
+				Listen:    "::",
+				ListenPort: ib.Port,
+				Users:     []config.Hysteria2User{{Password: ib.ServerPrivKey}},
+				UpMbps:    1000,
+				DownMbps:  1000,
+				Obfs:      &config.Hysteria2Obfs{Type: "salamander", Password: "salamander_pass"},
+			}
+
+			if ib.TLSCertificate != "" && ib.TLSPrivateKey != "" {
+				hysteria.TLS = &config.InboundTLSOptions{
+					Enabled:     true,
+					ServerName:  serverName,
+					Certificate: ib.TLSCertificate,
+					Key:         ib.TLSPrivateKey,
+				}
+			}
+
+			data, _ := json.Marshal(hysteria)
 			finalInbounds = append(finalInbounds, data)
 		default:
 			// Fallback user inbound (ws)
