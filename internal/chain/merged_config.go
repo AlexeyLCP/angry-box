@@ -227,7 +227,7 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 			PrivateKey: next.TransitPrivKey,
 			ShortID:    next.TransitShortID,
 			Port:       next.Port,
-			ServerName: resolveServerName(&role.Preset),
+			ServerName: ResolveServerName(&role.Preset),
 		}
 		if np.Port == 0 {
 			np.Port = defaultTransportPort
@@ -265,7 +265,7 @@ func ensureHopParams(role *chainRole) *hopParams {
 		PrivateKey: n.TransitPrivKey,
 		ShortID:    n.TransitShortID,
 		Port:       n.Port,
-		ServerName: resolveServerName(&role.Preset),
+		ServerName: ResolveServerName(&role.Preset),
 	}
 	if p.Port == 0 {
 		if role.IsEntry {
