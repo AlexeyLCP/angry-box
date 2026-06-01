@@ -1,27 +1,25 @@
-<div align="center">
-  <img src="docs/assets/logo.png" alt="Angry-BOX Logo" width="250"/>
-  <h1>Angry-BOX</h1>
-  <p><strong>The Ultimate Automated Proxy Orchestrator for sing-box-extended</strong></p>
+**Languages:** [English](README.md) | [Russian](README.ru.md) | [Chinese](README.zh.md) | [Farsi](README.fa.md)
 
-  <p>
-    <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
-    <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
-  </p>
-  <p>
-    <i>Build impenetrable multi-hop, heavily obfuscated VPN chains with zero manual configuration.</i>
-  </p>
-</div>
+# Angry-BOX
 
----
+**Fully self-written SSH-only orchestrator / control plane.**
 
-**[English](README.md) | [Russian](README.ru.md) | [Chinese](README.zh.md) | [Farsi](README.fa.md)**
+Angry-BOX is an original product written from scratch. It is **not** a fork of 3x-ui, LucX-UI, x-ui, or any other panel.
+
+Management is done exclusively over SSH. Target nodes run **only** sing-box-extended (optionally xray) with a minimal config — no agents.
+
+<p>
+  <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
+</p>
+
 
 ## Overview
 
-**Angry-BOX** is an advanced, lightweight orchestrator designed to fully automate the deployment, configuration, and management of anti-DPI proxy nodes across multiple servers. 
+**Angry-BOX** is a fully original, self-written orchestrator (control plane) for building and managing complex anti-DPI proxy infrastructure.
 
-Built exclusively around **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)**, Angry-BOX seamlessly configures complex proxy topologies (such as multi-hop chains with `VLESS-Reality`, `XHTTP`, and `AmneziaWG`) directly over SSH, removing all the friction from setting up robust, censorship-resistant infrastructure.
+It drives **sing-box-extended** cores over SSH with zero agents on the nodes. The entire logic — chain composition, merged configs, rollback, UI, and deployment — was written from scratch.
 
 ## Features
 
@@ -33,9 +31,18 @@ Built exclusively around **[sing-box-extended](https://github.com/shtorm-7/sing-
 - **100% Independent:** Angry-BOX stores all critical dependencies (like `sing-box-extended` binaries and `amneziawg` kernel modules) locally.
 - **Zero-Footprint:** Node servers only run the bare `sing-box` core. The orchestrator lives entirely on your control machine.
 
+## What's New in v0.7.2
+
+**Bug fixes & hardening (post v0.7.1):**
+- Fixed Host data loss on Standalone Inbound save.
+- Resolved conflict between Standalone Inbounds and Chain Transport Inbounds via ApplyStandaloneNode interception.
+- Fixed `flow: "xtls-rprx-vision"` bugs in two places.
+- Verified Graceful Rollback on real traffic (invalid config triggers automatic restore of previous working config).
+- Improved tag extraction for outbounds in merged config builder (prevents missing tags).
+
 ## What's New in v0.7.1
 
-- **Unified Merged Node Config** -- nodes can simultaneously serve standalone inbounds AND participate in multiple proxy chains. The new `apply-merged` engine builds a single `config.json` combining all roles: standalone inbounds + chain transport inbounds + chain user entries + unified routing/DNS. No more config overwrites.
+- **Unified Merged Node Config** -- nodes can simultaneously serve standalone inbounds AND participate in multiple proxy chains. The `apply-merged` engine builds a single `config.json`. Rollback is per-node (best-effort for full chains; no automatic chain-wide atomic rollback yet).
 - **Pre-Flight SSH Check** -- verifies SSH connectivity to all nodes BEFORE touching any remote config, preventing partial deployments.
 - **Port Conflict Detection** -- the merged config builder detects and reports port conflicts between chains and standalone inbounds before deploy.
 - **Tag Diff Observability** -- after each apply, the UI displays which inbound/endpoint tags were added and removed compared to the previous config.
@@ -48,8 +55,10 @@ Built exclusively around **[sing-box-extended](https://github.com/shtorm-7/sing-
 <div align="center">
   <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
   <br>
-  <em>The Angry-BOX Web UI Dashboard</em>
+  <em>The Angry-BOX Web UI Dashboard (v0.7.2)</em>
 </div>
+
+> Screenshots refreshed for v0.7.2 UI (dark theme, merged config support, i18n). See also Russian version for additional views.
 
 ## Architecture
 

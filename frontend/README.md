@@ -1,3 +1,3 @@
-# LucX Frontend
+# Angry-BOX Frontend
 
-Cross-platform Flutter client for LucX Core.
+Cross-platform Flutter client for Angry-BOX.

@@ -38,7 +38,7 @@ Do NOT write React, Vue, or heavy vanilla JavaScript.
 - *Always run `templ generate` after modifying UI files.*
 
 ### 2. Strict State Management (Store)
-The `Store` (`internal/chain/store.go`) uses a `sync.Mutex` and writes to a JSON file (`x-ui.db` / `store.json`).
+The `Store` (`internal/chain/store.go`) uses a `sync.Mutex` and writes to a JSON file (`store.json`).
 - NEVER call a locked method from inside another locked method (Deadlock!).
 - `ResolveNodes` does not hold a lock, but it calls `GetNodeInfo` which does. Be careful with lock scopes.
 
