@@ -20,7 +20,7 @@
 - Documentation:
   - English primary `README.md` + `README.ru.md` / `README.zh.md` / `README.fa.md`
   - Language switcher at the absolute top of every file
-  - Full credits section naming pumbaX, RPRX/Xray#4113, Hysteria Gecko, NaiveProxy, Hiddify, 3x-ui etc.
+  - Full credits section naming pumbaX, RPRX/Xray#4113, Hysteria Gecko, NaiveProxy, Hiddify and other anti-censorship researchers.
   - `.ipk` / `opkg install` instructions for Keenetic and OpenWRT
 
 ### Breaking / Migration

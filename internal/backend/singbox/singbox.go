@@ -78,7 +78,7 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	goArch := archToGoArch(arch)
 
 	// Download and install sing-box-extended from our own repository to ensure independence.
-	// This fork includes AmneziaWG (wireguard inbound) and advanced obfuscation support.
+	// sing-box-extended includes AmneziaWG (wireguard inbound) and advanced obfuscation support.
 	downloadURL := fmt.Sprintf(
 		"https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/sing-box-%s-linux-%s.tar.gz",
 		singBoxVersion, goArch,

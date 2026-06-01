@@ -2,9 +2,11 @@
 
 # Angry-BOX
 
-**Lightweight SSH-only orchestrator** for **sing-box** (primary) and **xray** (secondary).
+**完全自研的 SSH-only orchestrator / control plane。**
 
-No persistent agents on nodes. All management via SSH. Deploy minimal proxy configs on remote servers and routers (including Keenetic).
+Angry-BOX 是从零开始编写的原创产品，不是 3x-ui、LucX-UI、x-ui 或任何其他面板的 fork。
+
+所有管理均通过 SSH 完成，目标节点上只运行 **sing-box-extended**（可选 xray）内核 + 最小配置，无任何 agent。
 
 ## Features
 
@@ -16,6 +18,15 @@ No persistent agents on nodes. All management via SSH. Deploy minimal proxy conf
 - Excellent router support (Keenetic .ipk + OpenWRT)
 - Native Windows build
 - Web UI + full CLI
+
+## v0.7.2 新修复
+
+**v0.7.1 之后的修复和加固：**
+- 修复 Standalone Inbounds 保存时 Host 数据丢失的问题。
+- 通过 ApplyStandaloneNode 拦截解决 Standalone Inbounds 与 Chain Transport Inbounds 的冲突。
+- 修复两处 `flow: "xtls-rprx-vision"` 相关 bug。
+- 在真实流量下验证了 Graceful Rollback（无效配置自动回滚到上一个工作版本）。
+- 改进 merged config builder 中的 outbounds 标签提取。
 
 ## v0.7.1 新特性
 
@@ -57,7 +68,7 @@ Web UI at `http://localhost:8090`.
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.1
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.2
 ```
 
 ### Pre-built binaries
@@ -66,13 +77,13 @@ Download from [Releases](https://github.com/alexeylcp/angry-box/releases).
 
 **Linux**
 ```bash
-tar -xzf angry-box-0.7.1-linux-amd64.tar.gz
-cd angry-box-0.7.1-linux-amd64
+tar -xzf angry-box-0.7.2-linux-amd64.tar.gz
+cd angry-box-0.7.2-linux-amd64
 ./angry-box --help
 ```
 
 **Windows**
-- Download `angry-box-0.7.1-windows-amd64.zip` or `.exe`
+- Download `angry-box-0.7.2-windows-amd64.zip` or `.exe`
 - Run `angry-box.exe`
 - Web UI: `http://localhost:8090`
 
@@ -147,4 +158,4 @@ See [LICENSE](LICENSE).
 
 ---
 
-**Current version:** 0.7.1 -- unified merged config, pre-flight checks, i18n, standalone config.
+**Current version:** 0.7.2 -- unified merged config, pre-flight checks, i18n, standalone config.

@@ -2,9 +2,11 @@
 
 # Angry-BOX
 
-**Lightweight SSH-only orchestrator** for **sing-box** (primary) and **xray** (secondary).
+**Полностью самописный SSH-only orchestrator / control plane.**
 
-No agents on nodes. Everything over SSH. Deploy minimal proxy configs on remote machines and routers (including Keenetic).
+Angry-BOX — оригинальный продукт, написанный с нуля. Не является форком 3x-ui, LucX-UI, x-ui или любой другой панели.
+
+Управление исключительно по SSH. На целевых нодах нет агентов — только ядро **sing-box-extended** (и опционально xray) + минимальный конфиг.
 
 ## Features
 
@@ -16,6 +18,15 @@ No agents on nodes. Everything over SSH. Deploy minimal proxy configs on remote 
 - Excellent router support (Keenetic .ipk + OpenWRT)
 - Native Windows build
 - Web UI + full CLI
+
+## Что нового в v0.7.2
+
+**Исправления и стабилизация (после v0.7.1):**
+- Исправлена потеря данных Host при сохранении Standalone Inbounds.
+- Устранён конфликт Standalone Inbounds и Chain Transport Inbounds (через перехват ApplyStandaloneNode).
+- Исправлены два бага с `flow: "xtls-rprx-vision"`.
+- Проверен и работает Graceful Rollback на реальном трафике (невалидный конфиг → автоматический откат на предыдущую рабочую версию).
+- Улучшен сбор тегов outbounds в merged config builder (исправлены пропущенные теги).
 
 ## Что нового в v0.7.1
 
@@ -48,6 +59,22 @@ angry-box apply-merged node1
 
 Web UI available at `http://localhost:8090`.
 
+## Скриншоты
+
+<div align="center">
+  <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>Dashboard Angry-BOX (тёмная тема, поддержка merged config)</em>
+</div>
+
+<div align="center">
+  <img src="docs/assets/chains-ru.png" alt="Chains" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>Страница цепочек (русский интерфейс, v0.7.2)</em>
+</div>
+
+> Скриншоты обновлены для актуальной версии UI.
+
 ## Installation
 
 ### Install script (recommended)
@@ -57,7 +84,7 @@ Web UI available at `http://localhost:8090`.
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.1
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.2
 ```
 
 ### Pre-built binaries
@@ -66,13 +93,13 @@ Download from [Releases](https://github.com/alexeylcp/angry-box/releases).
 
 **Linux**
 ```bash
-tar -xzf angry-box-0.7.1-linux-amd64.tar.gz
-cd angry-box-0.7.1-linux-amd64
+tar -xzf angry-box-0.7.2-linux-amd64.tar.gz
+cd angry-box-0.7.2-linux-amd64
 ./angry-box --help
 ```
 
 **Windows**
-- Download `angry-box-0.7.1-windows-amd64.zip` or `.exe`
+- Download `angry-box-0.7.2-windows-amd64.zip` or `.exe`
 - Unpack and run `angry-box.exe`
 - Web UI: `http://localhost:8090`
 
@@ -155,4 +182,4 @@ See [LICENSE](LICENSE) for full text.
 
 ---
 
-**Current version:** 0.7.1 -- unified merged config, pre-flight checks, i18n, standalone config.
+**Current version:** 0.7.2 -- unified merged config, pre-flight checks, i18n, standalone config.

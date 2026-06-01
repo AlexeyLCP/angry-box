@@ -2,9 +2,11 @@
 
 # Angry-BOX
 
-**Lightweight SSH-only orchestrator** for **sing-box** (primary) and **xray** (secondary).
+**کاملاً خودنوشته — SSH-only orchestrator / control plane**
 
-No agents on nodes. All management via SSH. Deploy minimal proxy configs on remote servers and routers (including Keenetic).
+Angry-BOX یک محصول کاملاً اورجینال است که از صفر نوشته شده. این پروژه fork از 3x-ui، LucX-UI، x-ui یا هیچ پنل دیگری نیست.
+
+مدیریت فقط از طریق SSH انجام می‌شود. روی نودها فقط هستهٔ **sing-box-extended** (و در صورت نیاز xray) به همراه کانفیگ حداقلی اجرا می‌شود — بدون هیچ agent.
 
 ## Features
 
@@ -16,6 +18,15 @@ No agents on nodes. All management via SSH. Deploy minimal proxy configs on remo
 - Excellent router support (Keenetic .ipk + OpenWRT)
 - Native Windows build
 - Web UI + full CLI
+
+## رفع اشکالات v0.7.2
+
+**رفع اشکالات و پایدارسازی (پس از v0.7.1):**
+- رفع از دست رفتن داده‌های Host هنگام ذخیره Standalone Inbounds.
+- حل تعارض Standalone Inbounds و Chain Transport Inbounds از طریق رهگیری ApplyStandaloneNode.
+- رفع دو باگ مربوط به `flow: "xtls-rprx-vision"`.
+- تأیید Graceful Rollback روی ترافیک واقعی (کانفیگ نامعتبر → بازگشت خودکار به نسخه کاری قبلی).
+- بهبود استخراج تگ‌های outbounds در سازنده merged config.
 
 ## ویژگی‌های جدید در نسخه v0.7.1
 
@@ -57,7 +68,7 @@ Web UI at `http://localhost:8090`.
 curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.1
+curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.2
 ```
 
 ### Pre-built binaries
@@ -66,13 +77,13 @@ Download from [Releases](https://github.com/alexeylcp/angry-box/releases).
 
 **Linux**
 ```bash
-tar -xzf angry-box-0.7.1-linux-amd64.tar.gz
-cd angry-box-0.7.1-linux-amd64
+tar -xzf angry-box-0.7.2-linux-amd64.tar.gz
+cd angry-box-0.7.2-linux-amd64
 ./angry-box --help
 ```
 
 **Windows**
-- Download `angry-box-0.7.1-windows-amd64.zip` or `.exe`
+- Download `angry-box-0.7.2-windows-amd64.zip` or `.exe`
 - Run `angry-box.exe`
 - Web UI: `http://localhost:8090`
 
@@ -147,4 +158,4 @@ See [LICENSE](LICENSE).
 
 ---
 
-**Current version:** 0.7.1 -- unified merged config, pre-flight checks, i18n, standalone config.
+**Current version:** 0.7.2 -- unified merged config, pre-flight checks, i18n, standalone config.
