@@ -19,6 +19,21 @@ Angry-BOX — оригинальный продукт, написанный с �
 - Native Windows build
 - Web UI + full CLI
 
+## Что нового в v0.8.0
+
+**Стабильный деплой + sing-box-extended + E2E-тесты:**
+
+- **Полный цикл CLI**: `host add → deploy → chain create → apply-chain` — работает без ручного вмешательства.
+- **Полный цикл Web UI**: создание пользователя → конфиг → QR-код — всё генерируется корректно.
+- **sing-box-extended** устанавливается автоматически через `angry-box deploy` из локальных deps (не зависит от внешних репозиториев).
+- **AWG + amnezia**: поддержка CPS/I1-I5 пакетов, авто-генерация клиентских ключей.
+- **TUIC**: автоматическая генерация self-signed сертификатов (Reality на TUIC не поддерживается).
+- **14 багов исправлено**: двойной порт в URI, DNS detour, права на лог-файл, пустая форма inbound, и др.
+- **Тёмная/светлая тема**: переключатель с сохранением в localStorage.
+- **QR-коды**: серверная генерация через go-qrcode (без Google Charts API).
+- **170+ тестов**: покрытие chain 67.6%, E2E-тесты на реальных серверах GCloud.
+- **3 тестовых сервера** в GCloud для CI/E2E.
+
 ## Что нового в v0.7.2
 
 **Исправления и стабилизация (после v0.7.1):**
@@ -182,4 +197,4 @@ See [LICENSE](LICENSE) for full text.
 
 ---
 
-**Current version:** 0.7.2 -- unified merged config, pre-flight checks, i18n, standalone config.
+****Current version:** 0.8.0 -- unified merged config, pre-flight checks, i18n, standalone config.
