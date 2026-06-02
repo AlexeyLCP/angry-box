@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"math/big"
 	"strings"
 	"time"
@@ -264,7 +265,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			continue
 		}
 
-		_, pushErr := pushConfig(client, string(cfgJSON), chain.UserProtocol)
+		_, pushErr := pushConfig(client, string(cfgJSON))
 		client.Close()
 		if pushErr != nil {
 			if strings.Contains(pushErr.Error(), "rollback successful") {
@@ -512,7 +513,7 @@ func cleanupBackups(client *sshclient.Client, file string) {
 
 // pushConfig writes the config to the remote host, validates, and applies it.
 // It uses a strict rollback mechanism if any step fails.
-func pushConfig(client *sshclient.Client, cfgContent string, userProtocol model.UserProtocol) (string, error) {
+func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(cfgContent), &js); err != nil {
 		return "", fmt.Errorf("invalid JSON: %w", err)
@@ -521,7 +522,11 @@ func pushConfig(client *sshclient.Client, cfgContent string, userProtocol model.
 	configFile := "/etc/sing-box/config.json"
 
 	// 1. Backup existing config
-	backupPath, _ := createBackup(client, configFile)
+	backupPath, backupErr := createBackup(client, configFile)
+	if backupErr != nil {
+		// Log but don't fail — missing backup is not fatal, just means rollback is unavailable
+		log.Printf("pushConfig: backup warning for %s: %v", configFile, backupErr)
+	}
 
 	// 2. Write new config
 	writeCmd := fmt.Sprintf("mkdir -p /etc/sing-box && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF", configFile, cfgContent)
@@ -988,11 +993,12 @@ func (a *Applier) ApplyStandaloneNode(ctx context.Context, info *model.NodeInfo)
 				privBytes := make([]byte, 32)
 				rand.Read(privBytes)
 				ib.ServerPrivKey = base64.RawURLEncoding.EncodeToString(privBytes)
-				
-				var pubBytes [32]byte
-				curve25519.ScalarBaseMult(&pubBytes, (*[32]byte)(privBytes))
+
+				var privArr, pubBytes [32]byte
+				copy(privArr[:], privBytes)
+				curve25519.ScalarBaseMult(&pubBytes, &privArr)
 				ib.ServerPubKey = base64.RawURLEncoding.EncodeToString(pubBytes[:])
-				
+
 				shortBytes := make([]byte, 8)
 				rand.Read(shortBytes)
 				ib.ShortID = hex.EncodeToString(shortBytes)
@@ -1033,7 +1039,7 @@ func (a *Applier) ApplyStandaloneNode(ctx context.Context, info *model.NodeInfo)
 	}
 	
 	// We pass empty UserProtocol because we don't have a single specific user protocol here
-	_, err = pushConfig(client, cfg.Content, "")
+	_, err = pushConfig(client, cfg.Content)
 	if err != nil {
 		if strings.Contains(err.Error(), "rollback successful") {
 			return nil, fmt.Errorf("ROLLBACK APPLIED: %w", err)
@@ -1086,8 +1092,9 @@ func (a *Applier) ApplyMergedNode(
 				b := make([]byte, 32)
 				rand.Read(b)
 				ib.ServerPrivKey = base64.RawURLEncoding.EncodeToString(b)
-				var pub [32]byte
-				curve25519.ScalarBaseMult(&pub, (*[32]byte)(b))
+				var privKeyArr, pub [32]byte
+				copy(privKeyArr[:], b)
+				curve25519.ScalarBaseMult(&pub, &privKeyArr)
 				ib.ServerPubKey = base64.RawURLEncoding.EncodeToString(pub[:])
 				sb := make([]byte, 8)
 				rand.Read(sb)
@@ -1126,7 +1133,7 @@ func (a *Applier) ApplyMergedNode(
 	oldCfgBytes, _ := client.Run("cat /etc/sing-box/config.json 2>/dev/null")
 	oldCfg := string(oldCfgBytes)
 
-	_, pushErr := pushConfig(client, string(cfgJSON), "")
+	_, pushErr := pushConfig(client, string(cfgJSON))
 	if pushErr != nil {
 		if strings.Contains(pushErr.Error(), "rollback successful") {
 			return nil, mergeReport, fmt.Errorf("ROLLBACK APPLIED: %w", pushErr)
