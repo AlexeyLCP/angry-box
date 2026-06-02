@@ -215,11 +215,11 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					<p><strong>PolyForm Noncommercial License 1.0.0</strong></p>
 					<p>This software is licensed for <strong>personal, non-commercial, educational, and scientific use only</strong>. Any commercial use is strictly prohibited.</p>
 					<p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. The author assumes no responsibility for any damage, data loss, or legal consequences resulting from the use of this software.</p>
-					<p>By using Angry-BOX, you acknowledge that:</p>
+					<p>{ i18n.T(ctx, "By using Angry-BOX, you acknowledge that:") }</p>
 					<ul class="list-disc list-inside space-y-1">
-						<li>Circumvention of network censorship may be illegal in your jurisdiction</li>
-						<li>You are solely responsible for complying with applicable laws</li>
-						<li>The software must not be used for any commercial purpose</li>
+						<li>{ i18n.T(ctx, "Circumvention of network censorship may be illegal in your jurisdiction") }</li>
+						<li>{ i18n.T(ctx, "You are solely responsible for complying with applicable laws") }</li>
+						<li>{ i18n.T(ctx, "The software must not be used for any commercial purpose") }</li>
 					</ul>
 				</div>
 			</div>

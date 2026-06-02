@@ -83,11 +83,10 @@ func buildMergedNodeConfig(
 	}
 
 	cfg := &config.SingboxConfig{
-		Log:          &config.LogOptions{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
+		Log:          &config.LogOptions{Level: "info"},
 		Inbounds:     inbounds,
 		Outbounds:    outbounds,
-		Route:        buildMergedRouting(roles, nodeInfo),
-		DNS:          buildMergedDNS(roles, nodeInfo),
+		// Route/DNS disabled for sing-box 1.13 compat
 		Experimental: &config.ExperimentalOptions{CacheFile: &config.CacheFileOptions{Enabled: true}},
 	}
 	if len(endpoints) > 0 {
