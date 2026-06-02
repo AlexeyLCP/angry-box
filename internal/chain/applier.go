@@ -479,6 +479,14 @@ func buildDirectOutbound(tag string) json.RawMessage {
 	return data
 }
 
+// safeShortID returns at most the first 4 chars of a short ID, avoiding slice bounds panic.
+func safeShortID(s string) string {
+	if len(s) > 4 {
+		return s[:4]
+	}
+	return s
+}
+
 // extractHost strips the port from an address like "1.2.3.4:22" or returns the string as-is.
 func extractHost(addr string) string {
 	for i := len(addr) - 1; i >= 0; i-- {
@@ -593,7 +601,7 @@ func buildXHTTPTransportInbound(p *hopParams, tag string, preset *ConnectionPres
 	if xhttp == nil || len(xhttp.Methods) == 0 || len(xhttp.Paths) == 0 {
 		xhttp = &XHTTPPreset{
 			Methods: []string{"POST"},
-			Paths:   []string{"/api/v1/" + p.ShortID[:4]},
+			Paths:   []string{"/api/v1/" + safeShortID(p.ShortID)},
 			Hosts:   []string{p.ServerName},
 			Headers: map[string][]string{
 				"User-Agent":      {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
@@ -671,7 +679,7 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 	if xhttp == nil || len(xhttp.Methods) == 0 || len(xhttp.Paths) == 0 {
 		xhttp = &XHTTPPreset{
 			Methods: []string{"POST"},
-			Paths:   []string{"/api/v1/" + next.ShortID[:4]},
+			Paths:   []string{"/api/v1/" + safeShortID(next.ShortID)},
 			Hosts:   []string{next.ServerName},
 			Headers: map[string][]string{
 				"User-Agent":      {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
@@ -881,7 +889,7 @@ func BuildXHTTPTransportInboundForStandalone(port int, uuid, privKeyB64, shortID
 		// Use the same rich fallback as the chain builders for consistency
 		xhttp = &XHTTPPreset{
 			Methods: []string{"POST"},
-			Paths:   []string{"/api/v1/" + shortID[:4]},
+			Paths:   []string{"/api/v1/" + safeShortID(shortID)},
 			Hosts:   []string{serverName},
 			Headers: map[string][]string{
 				"User-Agent":      {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
