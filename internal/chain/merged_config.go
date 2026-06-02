@@ -183,7 +183,7 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 		case model.UserProtocolAWG:
 			ep, _, err := buildAWGUserInbound(defaultUserPort, p.UUID,
 				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset,
-				c.AWGEntryServerPriv, "")
+				c.AWGEntryServerPriv, awgClientPub(c))
 			if err == nil {
 				endpoints = append(endpoints, ep)
 			}
@@ -541,6 +541,7 @@ func needsBlock(roles []chainRole) bool {
 
 // tuicUUID returns the chain's TUIC entry UUID, generating a stable one if empty.
 func tuicUUID(c *model.Chain) string {
+// awgClientPub returns a valid client public key for AWG config, generating one if needed.func awgClientPub(c *model.Chain) string {	if c.AWGEntryClientPub != "" {		return c.AWGEntryClientPub	}	_, pub, _ := generateWireGuardKeypair()	return pub}
 	if c.TUICEntryUserUUID != "" {
 		return c.TUICEntryUserUUID
 	}
@@ -555,6 +556,16 @@ func safeSNILabel(sni string) string {
 		return sni[:16]
 	}
 	return sni
+}
+
+// awgClientPub returns a valid client public key for the AWG endpoint.
+// Generates a random keypair if none is stored on the chain.
+func awgClientPub(c *model.Chain) string {
+	if c.AWGEntryClientPub != "" {
+		return c.AWGEntryClientPub
+	}
+	_, pub, _ := generateWireGuardKeypair()
+	return pub
 }
 
 // diffInboundTags compares old and new sing-box config JSON and returns
