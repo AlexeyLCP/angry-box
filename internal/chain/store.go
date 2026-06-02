@@ -3,6 +3,7 @@ package chain
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -19,6 +20,10 @@ type Store struct {
 	path string
 }
 
+// acquireFSLock and releaseFSLock provide cross-process synchronization via a
+// directory-based mutex (store.json.lock). They are NOT currently wired into the
+// Store methods — only sync.RWMutex is used. To enable multi-process safety,
+// replace direct mu.Lock()/mu.RUnlock() calls with withLock()/withRLock().
 func (s *Store) acquireFSLock() {
 	lockPath := s.path + ".lock"
 	for {
@@ -301,18 +306,21 @@ func (s *Store) ResolveNodes(chain *model.Chain) ([]model.ChainNode, error) {
 		}
 		
 		info, _ := s.GetNodeInfo(n.ID)
-		
-		resolved = append(resolved, model.ChainNode{
+
+		rn := model.ChainNode{
 			ID:      host.ID,
 			Addr:    host.Addr,
 			User:    host.User,
 			KeyPath: host.KeyPath,
 			Port:           n.Port,
-			Inbounds:       info.Inbounds,
 			TransitPrivKey: n.TransitPrivKey,
 			TransitShortID: n.TransitShortID,
 			TransitUUID:    n.TransitUUID,
-		})
+		}
+		if info != nil {
+			rn.Inbounds = info.Inbounds
+		}
+		resolved = append(resolved, rn)
 	}
 	return resolved, nil
 }
@@ -552,9 +560,21 @@ func (s *Store) GetKnownHost(addr string) (*model.KnownHost, error) {
 		}
 		return nil, err
 	}
-	for _, kh := range sf.KnownHosts {
-		if kh.Addr == addr {
-			return kh, nil
+
+	// Try exact match first, then try without port (SSH callback passes hostname
+	// without port, but store entries are saved with port from user config).
+	candidates := []string{addr}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		candidates = append(candidates, host)
+	} else {
+		candidates = append(candidates, net.JoinHostPort(addr, "22"))
+	}
+
+	for _, c := range candidates {
+		for _, kh := range sf.KnownHosts {
+			if kh.Addr == c {
+				return kh, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("not found")
@@ -569,6 +589,12 @@ func (s *Store) SaveKnownHost(kh *model.KnownHost) error {
 	} else if err != nil {
 		return err
 	}
+
+	// Normalize: always include port 22 if missing, for consistent matching.
+	if _, _, err := net.SplitHostPort(kh.Addr); err != nil {
+		kh.Addr = net.JoinHostPort(kh.Addr, "22")
+	}
+
 	for i, existing := range sf.KnownHosts {
 		if existing.Addr == kh.Addr {
 			sf.KnownHosts[i] = kh

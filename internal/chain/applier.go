@@ -494,6 +494,35 @@ func BuildAWGAmnezia(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOp
 	return BuildAmneziaSection(awg, preset)
 }
 
+// buildTUICTLSOptions returns TLS config for a TUIC inbound.
+// sing-box 1.13+ does NOT support Reality on TUIC — uses self-signed cert instead.
+// Certificates are referenced by path; the actual files are written by pushConfig.
+func buildTUICTLSOptions(serverName string) *config.InboundTLSOptions {
+	return &config.InboundTLSOptions{
+		Enabled:    true,
+		ServerName: serverName,
+		CertificatePath: "/etc/sing-box/certs/tuic-cert.pem",
+		KeyPath:         "/etc/sing-box/certs/tuic-key.pem",
+	}
+}
+
+// writeTUICCert generates and writes a self-signed TLS cert to the remote host.
+func writeTUICCert(client *sshclient.Client, serverName string) error {
+	cert, key, err := GenerateSelfSignedCert(serverName)
+	if err != nil {
+		return fmt.Errorf("generate tuic cert: %w", err)
+	}
+	// Use base64 to safely transfer PEM data through SSH (avoids heredoc escaping issues)
+	b64Cert := base64.StdEncoding.EncodeToString([]byte(cert))
+	b64Key := base64.StdEncoding.EncodeToString([]byte(key))
+	script := fmt.Sprintf(
+		"mkdir -p /etc/sing-box/certs && echo %s | base64 -d > /etc/sing-box/certs/tuic-cert.pem && echo %s | base64 -d > /etc/sing-box/certs/tuic-key.pem",
+		b64Cert, b64Key,
+	)
+	_, err = client.Run(script)
+	return err
+}
+
 // safeShortID returns at most the first 4 chars of a short ID, avoiding slice bounds panic.
 func safeShortID(s string) string {
 	if len(s) > 4 {
@@ -565,7 +594,14 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 		return "", fmt.Errorf("write config: %w", err)
 	}
 
-	// 3. Validate
+	// 3. Write TUIC TLS certificate BEFORE validation (required by sing-box 1.13+)
+	if strings.Contains(cfgContent, `"type":"tuic"`) || strings.Contains(cfgContent, `"type": "tuic"`) {
+		if certErr := writeTUICCert(client, "www.microsoft.com"); certErr != nil {
+			return "", fmt.Errorf("write tuic cert: %w", certErr)
+		}
+	}
+
+	// 4. Validate
 	if _, err := client.Run(fmt.Sprintf("sing-box check -c %s", configFile)); err != nil {
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box")
@@ -577,8 +613,8 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 		return "", fmt.Errorf("config validation failed (no backup to rollback): %w", err)
 	}
 
-	// 4. Ensure log directory and restart service
-	applyCmd := "mkdir -p /var/log/sing-box && ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
+	// 5. Ensure log/cert directories exist, then restart service
+	applyCmd := "mkdir -p /var/log/sing-box /etc/sing-box/certs && chown sing-box:sing-box /var/log/sing-box 2>/dev/null || true && ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
 	if _, err := client.Run(applyCmd); err != nil {
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box")
@@ -803,19 +839,7 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset, 
 		AuthTimeout:       authTimeout,
 		ZeroRTTHandshake:  true,
 		Heartbeat:         "10s",
-		TLS: &config.InboundTLSOptions{
-			Enabled:    true,
-			ServerName: serverName,
-			Reality: &config.InboundRealityOptions{
-				Enabled: true,
-				Handshake: &config.RealityHandshake{
-					Server:     serverName,
-					ServerPort: 443,
-				},
-				PrivateKey: p.PrivateKey,
-				ShortID:    []string{p.ShortID},
-			},
-		},
+		TLS: buildTUICTLSOptions(serverName),
 	}
 
 	data, _ := json.Marshal(inb)
