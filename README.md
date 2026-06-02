@@ -31,25 +31,6 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 - **100% Independent:** Angry-BOX stores all critical dependencies (like `sing-box-extended` binaries and `amneziawg` kernel modules) locally.
 - **Zero-Footprint:** Node servers only run the bare `sing-box` core. The orchestrator lives entirely on your control machine.
 
-## What's New in v0.7.2
-
-**Bug fixes & hardening (post v0.7.1):**
-- Fixed Host data loss on Standalone Inbound save.
-- Resolved conflict between Standalone Inbounds and Chain Transport Inbounds via ApplyStandaloneNode interception.
-- Fixed `flow: "xtls-rprx-vision"` bugs in two places.
-- Verified Graceful Rollback on real traffic (invalid config triggers automatic restore of previous working config).
-- Improved tag extraction for outbounds in merged config builder (prevents missing tags).
-
-## What's New in v0.7.1
-
-- **Unified Merged Node Config** -- nodes can simultaneously serve standalone inbounds AND participate in multiple proxy chains. The `apply-merged` engine builds a single `config.json`. Rollback is per-node (best-effort for full chains; no automatic chain-wide atomic rollback yet).
-- **Pre-Flight SSH Check** -- verifies SSH connectivity to all nodes BEFORE touching any remote config, preventing partial deployments.
-- **Port Conflict Detection** -- the merged config builder detects and reports port conflicts between chains and standalone inbounds before deploy.
-- **Tag Diff Observability** -- after each apply, the UI displays which inbound/endpoint tags were added and removed compared to the previous config.
-- **Automatic SSH Key Generation** -- Capture Node UI can auto-generate SSH keypairs and install them on remote hosts in one click.
-- **i18n Support** -- Web UI available in English, Russian, Chinese, and Farsi.
-- **Standalone Node Config** -- apply individual node inbounds independently, with the same rollback protection as chains.
-
 ## Screenshots
 
 <div align="center">
