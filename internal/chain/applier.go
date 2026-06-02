@@ -479,6 +479,21 @@ func buildDirectOutbound(tag string) json.RawMessage {
 	return data
 }
 
+// BuildAWGAmnezia returns amnezia options only when CPS level > 0, otherwise nil.
+// Official sing-box 1.13+ does not support the "amnezia" field — only sing-box-extended does.
+func BuildAWGAmnezia(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOptions {
+	level := 0
+	if preset != nil && preset.CPSLevel > 0 {
+		level = preset.CPSLevel
+	} else if awg != nil && awg.CPSLevel > 0 {
+		level = awg.CPSLevel
+	}
+	if level <= 0 {
+		return nil
+	}
+	return BuildAmneziaSection(awg, preset)
+}
+
 // safeShortID returns at most the first 4 chars of a short ID, avoiding slice bounds panic.
 func safeShortID(s string) string {
 	if len(s) > 4 {
@@ -848,7 +863,7 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		Amnezia: BuildAmneziaSection(awg, preset),
+		Amnezia: BuildAWGAmnezia(awg, preset),
 	}
 
 	epJSON, _ := json.Marshal(ep)
