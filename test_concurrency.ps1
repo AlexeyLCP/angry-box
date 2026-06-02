@@ -1,0 +1,1 @@
+.\angry-box.exe chain create stress_chain --nodes vps-test --strategy roundrobin; $jobs = @(); for ($i=1; $i -le 5; $i++) { $jobs += Start-Job -ScriptBlock { cd C:\Users\dante\projects\luc3x; .\angry-box.exe apply-chain stress_chain } }; $jobs | Wait-Job; $jobs | Receive-Job

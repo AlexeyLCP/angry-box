@@ -32,7 +32,7 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 		}
 
 		<div class="card bg-base-100 shadow">
-			<div class="overflow-x-auto w-full">
+			<div class="w-full overflow-x-clip">
 				<table class="table table-sm">
 					<thead>
 						<tr>
@@ -91,8 +91,8 @@ templ ChainRow(c *model.Chain) {
 				<span class="opacity-40 ml-1">({ c.UserProtocol })</span>
 			}
 		</td>
-		<td class="whitespace-nowrap">
-			<div class="flex gap-1">
+		<td>
+			<div class="flex flex-wrap gap-1">
 				<button
 					class="btn btn-primary btn-xs"
 					hx-post={"/ui/chains/" + c.Name + "/apply"}
@@ -306,9 +306,9 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 						<div>
 							<span class="font-mono">{ n.ID }</span>
 							if n.Success {
-								<span class="text-success font-semibold">OK</span>
+								<span class="text-success font-semibold">{ i18n.T(ctx, "OK") }</span>
 							} else {
-								<span class="text-error font-semibold">FAIL</span>
+								<span class="text-error font-semibold">{ i18n.T(ctx, "FAIL") }</span>
 								if n.Error != "" {
 									<span class="opacity-70 max-w-[300px] truncate inline-block align-bottom cursor-pointer"
 										onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none'"
@@ -321,11 +321,11 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 
 					if success && report.AWG != nil {
 						<div class="mt-2 p-2 bg-base-300 rounded font-mono text-[11px]">
-							<div class="font-semibold mb-0.5">AWG Client Keys</div>
-							<div>Server Public: <span class="select-all">{ report.AWG.ServerPub }</span></div>
-							<div>Client Public: <span class="select-all">{ report.AWG.ClientPubUsed }</span></div>
+							<div class="font-semibold mb-0.5">{ i18n.T(ctx, "AWG Client Keys") }</div>
+							<div>{ i18n.T(ctx, "Server Public:") } <span class="select-all">{ report.AWG.ServerPub }</span></div>
+							<div>{ i18n.T(ctx, "Client Public:") } <span class="select-all">{ report.AWG.ClientPubUsed }</span></div>
 							if report.AWG.ClientPriv != "" {
-								<div class="text-warning">Client Private: <span class="select-all">{ report.AWG.ClientPriv }</span></div>
+								<div class="text-warning">{ i18n.T(ctx, "Client Private:") } <span class="select-all">{ report.AWG.ClientPriv }</span></div>
 							}
 						</div>
 					}
@@ -425,10 +425,10 @@ templ metricLastCheckedCell(hostID string, metrics []*model.NodeMetrics) {
 	<td>
 		for _, m := range metrics {
 			if m.HostID == hostID && !m.LastChecked.IsZero() {
-				<span class="text-xs text-base-content/50">{ time.Since(m.LastChecked).Round(time.Second).String() } { i18n.T(ctx, "ago") }</span>
+				<span class="text-xs text-base-content/50">{ fmtDuration(time.Since(m.LastChecked)) } { i18n.T(ctx, "ago") }</span>
 				return
 			}
 		}
-		<span class="text-xs text-base-content/30">Never</span>
+		<span class="text-xs text-base-content/30">{ i18n.T(ctx, "Never") }</span>
 	</td>
 }

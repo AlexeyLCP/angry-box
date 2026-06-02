@@ -1,0 +1,45 @@
+{
+  "hosts": [
+    {
+      "ID": "fresh-node",
+      "Addr": "35.198.100.1:22",
+      "User": "root",
+      "KeyPath": "C:/Users/lucip/.ssh/id_ed25519"
+    }
+  ],
+  "chains": [
+    {
+      "name": "awg-chain",
+      "nodes": [
+        {
+          "id": "fresh-node",
+          "addr": "35.198.100.1:22",
+          "user": "root",
+          "keyPath": "C:/Users/lucip/.ssh/id_ed25519",
+          "port": 443,
+          "transit_priv_key": "jzCa_9MjkVx0BI9-ARB25os9g5LUoXD6mqitImraw2E",
+          "transit_short_id": "4acd9a3e8f167fa5",
+          "transit_uuid": "f6eb2e1d-53c5-4b75-a55d-ed336f6e046a"
+        }
+      ],
+      "strategy": "urltest",
+      "transport": "xhttp",
+      "user_protocol": "awg",
+      "awg_entry_server_priv": "KH2/4gvMLpyY8VgB9BzTl2plfNjsbqNjSJF4r3UXTWk=",
+      "awg_entry_server_pub": "TCHeP87y58e19Dwkn/1Ffdkaalge8EPrdW7TTB52W3k="
+    }
+  ],
+  "settings": {
+    "admin_password_hash": "",
+    "language": "ru",
+    "metrics_interval": 15
+  },
+  "known_hosts": [
+    {
+      "addr": "35.198.100.1:22",
+      "fingerprint": "SHA256:0u3M+dd+4IJJgrQPF+/m/E487RyNKf8qAgUsoq/+ax0",
+      "first_seen": "2026-06-02T16:45:16.7363308+03:00",
+      "trusted": true
+    }
+  ]
+}
