@@ -153,11 +153,13 @@ type OutboundTLSOptions struct {
 
 // InboundTLSOptions represents TLS options for inbound connections.
 type InboundTLSOptions struct {
-	Enabled     bool                   `json:"enabled"`
-	ServerName  string                 `json:"server_name,omitempty"`
-	Reality     *InboundRealityOptions `json:"reality,omitempty"`
-	Certificate string                 `json:"certificate,omitempty"`
-	Key         string                 `json:"key,omitempty"`
+	Enabled         bool                   `json:"enabled"`
+	ServerName      string                 `json:"server_name,omitempty"`
+	Reality         *InboundRealityOptions `json:"reality,omitempty"`
+	Certificate     string                 `json:"certificate,omitempty"`
+	Key             string                 `json:"key,omitempty"`
+	CertificatePath string                 `json:"certificate_path,omitempty"`
+	KeyPath         string                 `json:"key_path,omitempty"`
 }
 
 // UTLSOptions represents uTLS options.

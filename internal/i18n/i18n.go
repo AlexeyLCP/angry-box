@@ -64,6 +64,33 @@ var locales = map[string]map[string]string{
 		"Port changed!": "Port changed!",
 		"Please restart the angry-box service manually to apply the new port.": "Please restart the angry-box service manually to apply the new port.",
 		"Currently active on: ": "Currently active on: ",
+
+		// Apply results
+		"OK": "OK",
+		"FAIL": "FAIL",
+		"AWG Client Keys": "AWG Client Keys",
+		"Server Public:": "Server Public:",
+		"Client Public:": "Client Public:",
+		"Client Private:": "Client Private:",
+		"(44 chars, base64)": "(44 chars, base64)",
+
+		// Host key warning
+		"Error": "Error",
+		"Host not found": "Host not found",
+		"WARNING: Host Key Changed!": "WARNING: Host Key Changed!",
+		"The SSH key for": "The SSH key for",
+		"has changed since the last connection.": "has changed since the last connection.",
+		"This could be due to a server reinstall, or it could be a Man-in-the-Middle attack. Do not proceed unless you know the key was changed intentionally.": "This could be due to a server reinstall, or it could be a Man-in-the-Middle attack. Do not proceed unless you know the key was changed intentionally.",
+		"Untrusted Host Key": "Untrusted Host Key",
+		"is currently marked as untrusted.": "is currently marked as untrusted.",
+		"New Fingerprint:": "New Fingerprint:",
+		"Trust and Continue": "Trust and Continue",
+
+		// License
+		"By using Angry-BOX, you acknowledge that:": "By using Angry-BOX, you acknowledge that:",
+		"Circumvention of network censorship may be illegal in your jurisdiction": "Circumvention of network censorship may be illegal in your jurisdiction",
+		"You are solely responsible for complying with applicable laws": "You are solely responsible for complying with applicable laws",
+		"The software must not be used for any commercial purpose": "The software must not be used for any commercial purpose",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -266,6 +293,36 @@ var locales = map[string]map[string]string{
 		"Port changed!": "Порт изменен!",
 		"Please restart the angry-box service manually to apply the new port.": "Пожалуйста, перезапустите сервис angry-box вручную для применения нового порта.",
 		"Currently active on: ": "Текущий активный порт: ",
+
+		// Apply results
+		"OK": "ОК",
+		"FAIL": "ОШИБКА",
+		"AWG Client Keys": "Ключи клиента AWG",
+		"Server Public:": "Публ. ключ сервера:",
+		"Client Public:": "Публ. ключ клиента:",
+		"Client Private:": "Прив. ключ клиента:",
+		"(44 chars, base64)": "(44 симв, base64)",
+
+		// Host key warning
+		"Error": "Ошибка",
+		"Host not found": "Хост не найден",
+		"WARNING: Host Key Changed!": "ВНИМАНИЕ: Ключ хоста изменился!",
+		"The SSH key for": "SSH-ключ для",
+		"has changed since the last connection.": "изменился с момента последнего подключения.",
+		"This could be due to a server reinstall, or it could be a Man-in-the-Middle attack. Do not proceed unless you know the key was changed intentionally.": "Это может быть связано с переустановкой сервера или атакой Man-in-the-Middle. Не продолжайте, если вы не уверены, что ключ был изменён намеренно.",
+		"Untrusted Host Key": "Недоверенный ключ хоста",
+		"is currently marked as untrusted.": "помечен как недоверенный.",
+		"New Fingerprint:": "Новый отпечаток:",
+		"Trust and Continue": "Доверять и продолжить",
+
+		// License
+		"By using Angry-BOX, you acknowledge that:": "Используя Angry-BOX, вы подтверждаете, что:",
+		"Circumvention of network censorship may be illegal in your jurisdiction": "Обход сетевой цензуры может быть незаконным в вашей юрисдикции",
+		"You are solely responsible for complying with applicable laws": "Вы несёте полную ответственность за соблюдение применимых законов",
+		"The software must not be used for any commercial purpose": "Программное обеспечение не должно использоваться в коммерческих целях",
+
+		// Chains list
+		"Del": "Удл",
 	},
 }
 
