@@ -1,4 +1,0 @@
-listen_addr = ":8090"
-store_file = "test_store.json"
-default_backend = "sing-box"
-auth_enabled = false

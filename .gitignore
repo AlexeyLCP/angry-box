@@ -58,3 +58,12 @@ frontend/dist/
 # Logs
 *.log
 logs/
+
+# Test/E2E scratch files
+*_store.json
+*_config.toml
+*_full.json
+store-Huawei-Alexey.json
+client.json
+entry-config.json
+test_concurrency.ps1

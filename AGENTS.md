@@ -144,4 +144,42 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 
 ---
 
+## E2E Testing Infrastructure
+
+- **GCloud project:** `project-d4c6c72c-4f10-4288-902`
+- **Test servers:**
+  - `vps-de-test-1` — 34.40.120.7 (Debian 12, key: `google_compute_engine`)
+  - `vps-de-test-2` — 35.198.166.183 (Ubuntu 24.04, key: `id_ed25519`)
+  - `vps-de-test-3` — 35.198.100.1 (Ubuntu 24.04, key: `id_ed25519`, свежий)
+- Run E2E: `go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 300s`
+- Auth: `gcloud auth login lucipoher@gmail.com`
+
+## sing-box-extended (NOT plain sing-box)
+
+- Project uses **sing-box-extended** (`1.13.11-extended-2.1.0`) — NOT official sing-box
+- Binary in `deps/sing-box-1.13.11-extended-2.1.0-linux-amd64.tar.gz`
+- Installed by `angry-box deploy` which downloads from project's GitHub deps
+- Supports: amnezia field on wireguard endpoints, CPS/I1-I5 packets, MTProto
+- AWG kernel module built from `deps/amneziawg-src.tar.gz`
+- Module requires: `curve25519_x86_64`, `libcurve25519_generic`, `udp_tunnel`, `ip6_udp_tunnel`
+
+## Known Issues & Workarounds
+
+1. **TUIC requires TLS cert** — auto-generated via `buildTUICTLSOptions()`, written with base64 (heredoc fails)
+2. **DNS/Route disabled** in merged config (sing-box 1.13 detour bugs) — minimal config works
+3. **Multi-node chains** need Route/DNS re-enabled when detour is fixed
+4. **No Python on test servers** — use `python3` explicitly when available
+5. **AMG amnezia field** — only works with sing-box-extended, skipped for plain sing-box
+
+## Commit Convention
+
+- `fix:` — bug fixes
+- `feat:` — new features
+- `test:` — test additions
+- `docs:` — documentation
+- `refactor:` — code restructuring
+- Commits end with: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+
+---
+
 **Remember:** You are building a premium, centralized orchestrator. The code should be clean, the UI should be fast and responsive, and the remote nodes should be treated as disposable execution environments dictated by the orchestrator's state.
