@@ -285,7 +285,6 @@ func BuildStrategyOutbound(strategy string, outboundTags []string) *config.Strat
 			URL:       "https://www.gstatic.com/generate_204",
 			Interval:  "3m",
 			Tolerance: 50,
-			Dial:      &config.DialOptions{DomainResolver: "dns-direct"},
 		}
 	case string(model.StrategySelector):
 		def := outboundTags[0]
@@ -294,7 +293,6 @@ func BuildStrategyOutbound(strategy string, outboundTags []string) *config.Strat
 			Tag:       "select",
 			Outbounds: outboundTags,
 			Default:   def,
-			Dial:      &config.DialOptions{DomainResolver: "dns-direct"},
 		}
 	default:
 		return nil
