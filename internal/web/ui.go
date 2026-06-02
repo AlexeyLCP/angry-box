@@ -23,6 +23,7 @@ import (
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
+	qrcode "github.com/skip2/go-qrcode"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -204,6 +205,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /ui/users/{id}", s.auth(s.handleDeleteUser))
 	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
 	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
+	mux.HandleFunc("GET /ui/qr-image", s.handleQRImage)
 
 	// Settings
 	mux.HandleFunc("GET /ui/settings", s.auth(s.handleSettings))
@@ -656,6 +658,12 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	indexes := r.Form["inbound_index"]
 	obfuscations := r.Form["obfuscation"]
 
+	// Guard: refuse to save zero inbounds — use Delete Node instead.
+	if len(protocols) == 0 {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><span>Cannot save zero inbounds. Add at least one inbound or delete the node instead.</span></div>`})
+		return
+	}
+
 	// Port conflict check against all chains containing this node
 	chainsForNode, _ := st.GetChainsForNode(id)
 	chainPorts := make(map[int]string)
@@ -1067,7 +1075,8 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 		proto = "awg"
 	}
 
-	return buildClientURI(proto, entry.Addr, 8443, c.TUICEntryUserUUID, c.TUICEntryUserPassword, c.AWGEntryServerPub, "", c.Name, u)
+	ip := strings.Split(entry.Addr, ":")[0]
+	return buildClientURI(proto, ip, 8443, c.TUICEntryUserUUID, c.TUICEntryUserPassword, c.AWGEntryServerPub, "", c.Name, u)
 }
 
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
@@ -1142,7 +1151,38 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 		links = append(links, link)
 	}
 
+	// Also include standalone inbounds assigned to this user.
+	nodes, _ := st.ListNodeInfos()
+	for _, node := range nodes {
+		for _, ib := range node.Inbounds {
+			if contains(ib.ForUsers, u.ID) {
+				links = append(links, buildStandaloneLink(node.Addr, ib, u))
+			}
+		}
+	}
+
 	s.render(w, r, templates.UserQRView(u, links))
+}
+
+// ─── QR Image ───────────────────────────────────────────────────────────────────
+
+// handleQRImage generates a QR code PNG for the given data query parameter.
+func (s *Server) handleQRImage(w http.ResponseWriter, r *http.Request) {
+	data := r.URL.Query().Get("data")
+	if data == "" {
+		http.Error(w, "missing data parameter", http.StatusBadRequest)
+		return
+	}
+
+	png, err := qrcode.Encode(data, qrcode.Medium, 256)
+	if err != nil {
+		http.Error(w, "qr generation failed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(png)
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────────────

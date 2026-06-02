@@ -56,6 +56,26 @@ function addInboundRow() {
     updateUI();
 })();
 
+// Theme toggle
+function toggleTheme() {
+	var el = document.documentElement;
+	var cur = el.getAttribute('data-theme');
+	var next = cur === 'dark' ? 'light' : 'dark';
+	el.setAttribute('data-theme', next);
+	localStorage.setItem('angrybox-theme', next);
+	updateThemeIcons(next);
+}
+function updateThemeIcons(theme) {
+	var sun = document.getElementById('ico-sun');
+	var moon = document.getElementById('ico-moon');
+	if (sun) sun.classList.toggle('hidden', theme === 'dark');
+	if (moon) moon.classList.toggle('hidden', theme === 'light');
+}
+(function(){
+	var t = localStorage.getItem('angrybox-theme') || 'dark';
+	updateThemeIcons(t);
+})();
+
 // HTMX loading bar
 var loadingBar = document.getElementById('htmx-loading-bar');
 if (loadingBar) {

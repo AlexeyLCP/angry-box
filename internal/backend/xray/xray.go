@@ -35,6 +35,9 @@ func New() *Backend {
 }
 
 // Deploy installs xray on the remote host via SSH.
+// InstallAWGModule is a no-op for xray — AWG is only supported by sing-box-extended.
+func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error { return nil }
+
 func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployResult, error) {
 	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {

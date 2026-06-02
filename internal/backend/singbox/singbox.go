@@ -48,11 +48,6 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	}
 	defer client.Close()
 
-	// Install AmneziaWG kernel module (required for AWG wireguard inbound).
-	if err := b.installAWGModule(client); err != nil {
-		return nil, fmt.Errorf("singbox: deploy: amneziawg: %w", err)
-	}
-
 	// Check if already installed.
 	output, err := client.Run("sing-box version 2>/dev/null || echo NOT_INSTALLED")
 	if err != nil {
@@ -159,6 +154,17 @@ WantedBy=multi-user.target
 		Version: singBoxVersion,
 		Message: fmt.Sprintf("sing-box %s installed and started", singBoxVersion),
 	}, nil
+}
+
+// InstallAWGModule ensures the amneziawg kernel module is installed and loaded on the host.
+// This is only needed for AWG (AmneziaWG) wireguard inbound support.
+func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
+	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	if err != nil {
+		return fmt.Errorf("singbox: InstallAWGModule: %w", err)
+	}
+	defer client.Close()
+	return b.installAWGModule(client)
 }
 
 // installAWGModule ensures the amneziawg kernel module is installed and loaded.
