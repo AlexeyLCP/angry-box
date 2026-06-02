@@ -38,6 +38,7 @@ type Chain struct {
 	// Only rotated explicitly via "rotate entry creds" operation.
 	AWGEntryServerPriv string `json:"awg_entry_server_priv,omitempty"`
 	AWGEntryServerPub  string `json:"awg_entry_server_pub,omitempty"`
+	AWGEntryClientPub  string `json:"awg_entry_client_pub,omitempty"`
 
 	TUICEntryUserUUID     string `json:"tuic_entry_user_uuid,omitempty"`
 	TUICEntryUserPassword string `json:"tuic_entry_user_password,omitempty"`
