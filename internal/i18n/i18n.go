@@ -323,6 +323,109 @@ var locales = map[string]map[string]string{
 
 		// Chains list
 		"Del": "Удл",
+
+		// Dashboard (index)
+		"Welcome to Angry-BOX": "Angry-BOX",
+		"Lightweight SSH orchestrator for sing-box and xray nodes.": "Легковесный SSH-оркестратор для нод sing-box и xray.",
+		"Go to Hosts": "К нодам",
+		"Go to Chains": "К цепочкам",
+		"View Status": "Статус системы",
+
+		// Base layout
+		"Angry-BOX • Orchestrator": "Angry-BOX • Оркестратор",
+		"Profile:": "Профиль:",
+		"Connected": "Подключен",
+
+		// Missing keys
+		"Old Password": "Старый пароль",
+		"Metrics Interval": "Интервал метрик",
+		"Save": "Сохранить",
+		"Create": "Создать",
+		"Apply": "Применить",
+
+		// Node page
+		"In Chain": "В цепочке",
+		"Standalone": "Автономная",
+		"Apply (Chain)": "Применить (Цепочка)",
+		"Managed by chain: ": "Управляется цепочкой: ",
+		"Can be deployed as a standalone server": "Может быть развёрнута как автономный сервер",
+		"Apply via Chain": "Применить через цепочку",
+		"includes standalone inbounds": "включая автономные входящие",
+		"inbounds": "входящих",
+		"0 inbounds": "0 входящих",
+		"SSH Key": "SSH-ключ",
+		"IP:port": "IP:порт",
+		"usually root": "обычно root",
+		"Select key...": "Выберите ключ...",
+		"== Enter key manually ==": "== Ввести ключ вручную ==",
+		"Source": "Источник",
+		"Password": "Пароль",
+		"Captured": "Захвачен",
+		"Edit Host: ": "Изменить ноду: ",
+
+		// Inbounds form
+		"Inbounds for ": "Входящие для ",
+		"Protocol": "Протокол",
+		"Port": "Порт",
+		"For Users": "Для пользователей",
+		"Obfuscation Preset": "Прессет маскировки",
+		"No users yet. ": "Пока нет пользователей. ",
+		"Create first user": "Создать пользователя",
+		"+ Add Inbound": "+ Добавить входящее",
+		"Save Inbounds": "Сохранить входящие",
+
+		// Protocol names
+		"Shadowsocks": "Shadowsocks",
+		"Trojan": "Trojan",
+		"VMess": "VMess",
+		"Hysteria2": "Hysteria2",
+
+		// Capture form
+		"Capture Node: ": "Захват ноды: ",
+		"Connect via SSH and bring node under management.": "Подключиться по SSH и взять ноду под управление.",
+		"Login User": "Пользователь",
+		"Enter SSH password": "Введите пароль SSH",
+		"— or use login + password —": "— или используйте логин + пароль —",
+		"Auto-install SSH key on server after successful login": "Автоустановка SSH-ключа после входа",
+		"If checked, the SSH key selected above will be installed on the target server for future passwordless access.": "Если отмечено, выбранный SSH-ключ будет установлен на сервер для будущего беспарольного доступа.",
+
+		// Settings
+		"English": "English",
+		"Русский": "Русский",
+		"License & Disclaimer": "Лицензия и отказ от ответственности",
+
+		// Error / result messages
+		"Cannot save zero inbounds. Add at least one inbound or delete the node instead.": "Нельзя сохранить 0 входящих. Добавьте хотя бы одно входящее подключение или удалите ноду.",
+		"Inbounds saved.": "Входящие сохранены.",
+		"Failed to delete: %v": "Ошибка удаления: %v",
+		"Capture failed: %v": "Ошибка захвата: %v",
+		"Node %s captured!": "Нода %s захвачена!",
+		"Running: %v, Version: %s.": "Запущено: %v, Версия: %s.",
+		"Refresh Nodes": "Обновить ноды",
+		"Note: SSH key auto-generation failed: %v": "Примечание: авто-генерация SSH-ключа не удалась: %v",
+		"Note: SSH key installation failed: %v": "Примечание: установка SSH-ключа не удалась: %v",
+		"Failed to change password: old password is incorrect.": "Не удалось изменить пароль: старый пароль неверен.",
+		"Settings saved, but config write failed: %v": "Настройки сохранены, но запись конфига не удалась: %v",
+		"Settings saved.": "Настройки сохранены.",
+		"Name and key data are required.": "Имя и данные ключа обязательны.",
+		"Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).": "Неверный формат ключа. Ожидается приватный ключ (BEGIN ... PRIVATE KEY).",
+		"No hosts registered yet. Add nodes first.": "Нет зарегистрированных нод. Сначала добавьте ноды.",
+		"[Chain] ": "[Цепочка] ",
+
+		// User/chain description strings
+		"chain — ": "цепочка — ",
+		"hops, strategy: ": "узлов, стратегия: ",
+		"Standalone inbound on ": "Автономное входящее на ",
+		"# Assign chains or node inbounds to this user to generate configs.": "# Назначьте цепочки или входящие пользователю для генерации конфигов.",
+		"User has no chains assigned.": "У пользователя нет назначенных цепочек.",
+		"chain(s) available — edit user to assign.": "цепочек доступно — измените пользователя для назначения.",
+		"# Create a chain or node inbound first, then assign it to this user.": "# Сначала создайте цепочку или входящее, затем назначьте пользователю.",
+		"No chains or standalone inbounds exist yet.": "Цепочек или автономных входящих ещё нет.",
+
+		// License
+		"PolyForm Noncommercial License 1.0.0": "PolyForm Noncommercial License 1.0.0",
+		"This software is licensed for personal, non-commercial, educational, and scientific use only. Any commercial use is strictly prohibited.": "ПО лицензировано только для личного, некоммерческого, образовательного и научного использования. Коммерческое использование строго запрещено.",
+		"THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND. The author assumes no responsibility for any damage, data loss, or legal consequences resulting from the use of this software.": "ПО ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ», БЕЗ КАКИХ-ЛИБО ГАРАНТИЙ. Автор не несёт ответственности за любой ущерб, потерю данных или правовые последствия, возникшие в результате использования данного ПО.",
 	},
 }
 

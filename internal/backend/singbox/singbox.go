@@ -48,7 +48,7 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	}
 	defer client.Close()
 
-	// Check if already installed.
+	// Check if already installed and whether it's the required extended version.
 	output, err := client.Run("sing-box version 2>/dev/null || echo NOT_INSTALLED")
 	if err != nil {
 		return nil, fmt.Errorf("singbox: deploy: check version: %w", err)
@@ -56,11 +56,15 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 
 	if !strings.Contains(output, "NOT_INSTALLED") {
 		installedVersion := strings.TrimSpace(strings.TrimPrefix(output, "sing-box version "))
-		return &model.DeployResult{
-			Success: true,
-			Version: installedVersion,
-			Message: "sing-box already installed",
-		}, nil
+		// Reinstall if not sing-box-extended or version doesn't match the required one.
+		if strings.Contains(installedVersion, "extended") && strings.Contains(installedVersion, singBoxVersion) {
+			return &model.DeployResult{
+				Success: true,
+				Version: installedVersion,
+				Message: "sing-box already installed",
+			}, nil
+		}
+		// Otherwise proceed to download and install the correct version.
 	}
 
 	// Detect architecture.

@@ -82,12 +82,12 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 		</td>
 		<td>
 			if chainName != "" {
-				<div class="tooltip" data-tip={"Managed by chain: " + chainName}>
-					<span class="badge badge-secondary badge-sm cursor-help shadow-sm">In Chain</span>
+				<div class="tooltip" data-tip={i18n.T(ctx, "Managed by chain: ") + chainName}>
+					<span class="badge badge-secondary badge-sm cursor-help shadow-sm">{ i18n.T(ctx, "In Chain") }</span>
 				</div>
 			} else {
-				<div class="tooltip" data-tip="Can be deployed as a standalone server">
-					<span class="badge badge-neutral badge-sm cursor-help opacity-70">Standalone</span>
+				<div class="tooltip" data-tip={i18n.T(ctx, "Can be deployed as a standalone server")}>
+					<span class="badge badge-neutral badge-sm cursor-help opacity-70">{ i18n.T(ctx, "Standalone") }</span>
 				</div>
 			}
 		</td>
@@ -112,7 +112,7 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 							hx-target="#modal-container"
 							hx-swap="innerHTML"
 							if chainName != "" {
-								title={ fmt.Sprintf("Apply via Chain '%s' (includes standalone inbounds)", chainName) }
+								title={ i18n.T(ctx, "Apply via Chain") + " '" + chainName + "' (" + i18n.T(ctx, "includes standalone inbounds") + ")" }
 							} else {
 								title={i18n.T(ctx, "Deploy Standalone Config")}
 							}>
@@ -120,15 +120,15 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 								<path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
 							</svg>
 							if chainName != "" {
-								Apply (Chain)
+								{ i18n.T(ctx, "Apply (Chain)") }
 							} else {
 								{ i18n.T(ctx, "Apply") }
 							}
 						</button>
 						if info != nil && len(info.Inbounds) > 0 {
-							<span class="text-[9px] opacity-60 mt-0.5">{ fmt.Sprintf("%d inbounds", len(info.Inbounds)) }</span>
+							<span class="text-[9px] opacity-60 mt-0.5">{ fmt.Sprintf("%d %s", len(info.Inbounds), i18n.T(ctx, "inbounds")) }</span>
 						} else {
-							<span class="text-[9px] opacity-60 mt-0.5 text-warning">0 inbounds</span>
+							<span class="text-[9px] opacity-60 mt-0.5 text-warning">{ "0 " + i18n.T(ctx, "inbounds") }</span>
 						}
 					</div>
 				
@@ -175,9 +175,9 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 		<div class="modal-box">
 			<h3 class="font-bold text-lg mb-4">
 				if h != nil {
-					Edit Node: { h.ID }
+					{ i18n.T(ctx, "Edit Host: ") }{ h.ID }
 				} else {
-					Add New Node
+					{ i18n.T(ctx, "Add New Host") }
 				}
 			</h3>
 
@@ -193,22 +193,22 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 						<input type="text" name="id" class="input input-bordered" value={ h.ID } readonly />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH Address</span><span class="label-text-alt text-base-content/50">IP:port</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Address") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "IP:port") }</span></label>
 						<input type="text" name="addr" class="input input-bordered" value={ h.Addr } required placeholder="e.g. 203.0.113.10:22" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH User</span><span class="label-text-alt text-base-content/50">usually root</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH User") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "usually root") }</span></label>
 						<input type="text" name="user" class="input input-bordered" value={ h.User } />
 					</div>
 <div class="form-control">
-						<label class="label"><span class="label-text">SSH Key</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Key") }</span></label>
 						<select name="ssh_key_id" class="select select-bordered"
 							onchange="var ta=this.parentElement.querySelector('.manual-key-ta');var manual=this.value==='manual';ta.style.display=manual?'block':'none';if(!manual)ta.value=''">
-							<option value="">Select key...</option>
+							<option value="">{ i18n.T(ctx, "Select key...") }</option>
 							for _, k := range allKeys {
 								<option value={ k.ID }>{ k.Name }</option>
 							}
-							<option value="manual">== Enter key manually ==</option>
+							<option value="manual">{ i18n.T(ctx, "== Enter key manually ==") }</option>
 						</select>
 						<textarea name="keyPath" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
 							rows="3" style="display:none"
@@ -218,8 +218,8 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 					</div>
 					@nodeFormFields(nodeInfo...)
 					<div class="modal-action">
-						<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-						<button type="submit" class="btn btn-primary">Save</button>
+						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
 					</div>
 				</form>
 			} else {
@@ -230,26 +230,26 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 					hx-on::after-request="this.closest('dialog').close(); this.reset()"
 					class="space-y-4">
 					<div class="form-control">
-						<label class="label"><span class="label-text">ID (unique)</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "ID (unique)") }</span></label>
 						<input type="text" name="id" class="input input-bordered" required placeholder="node-helsinki" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH Address</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Address") }</span></label>
 						<input type="text" name="addr" class="input input-bordered" required placeholder="1.2.3.4:22" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">SSH User</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH User") }</span></label>
 						<input type="text" name="user" class="input input-bordered" value="root" />
 					</div>
 <div class="form-control">
-						<label class="label"><span class="label-text">SSH Key</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Key") }</span></label>
 						<select name="ssh_key_id" class="select select-bordered"
 							onchange="var ta=this.parentElement.querySelector('.manual-key-ta');var manual=this.value==='manual';ta.style.display=manual?'block':'none';if(!manual)ta.value=''">
-							<option value="">Select key...</option>
+							<option value="">{ i18n.T(ctx, "Select key...") }</option>
 							for _, k := range allKeys {
 								<option value={ k.ID }>{ k.Name }</option>
 							}
-							<option value="manual">== Enter key manually ==</option>
+							<option value="manual">{ i18n.T(ctx, "== Enter key manually ==") }</option>
 						</select>
 						<textarea name="keyPath" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
 							rows="3" style="display:none"
@@ -259,8 +259,8 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 					</div>
 					@nodeFormFields()
 					<div class="modal-action">
-						<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-						<button type="submit" class="btn btn-primary">Add Node</button>
+						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Add Node") }</button>
 					</div>
 				</form>
 			}
@@ -275,19 +275,19 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 	<div class="grid grid-cols-3 gap-3">
 		<div class="form-control">
-			<label class="label"><span class="label-text">Country</span></label>
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Country") }</span></label>
 			<input type="text" name="country" class="input input-bordered" value={ niCountry(nodeInfo) } placeholder="FI" />
 		</div>
 		<div class="form-control">
-			<label class="label"><span class="label-text">Bandwidth</span></label>
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Bandwidth") }</span></label>
 			<input type="text" name="bandwidth" class="input input-bordered" value={ niBandwidth(nodeInfo) } placeholder="1 Gbps" />
 		</div>
 		<div class="form-control">
-			<label class="label"><span class="label-text">Source</span></label>
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Source") }</span></label>
 			<select name="source" class="select select-bordered">
-				<option value="ssh_key" if niSource(nodeInfo) == "" || niSource(nodeInfo) == "ssh_key" { selected }>SSH Key</option>
-				<option value="password" if niSource(nodeInfo) == "password" { selected }>Password</option>
-				<option value="captured" if niSource(nodeInfo) == "captured" { selected }>Captured</option>
+				<option value="ssh_key" if niSource(nodeInfo) == "" || niSource(nodeInfo) == "ssh_key" { selected }>{ i18n.T(ctx, "SSH Key") }</option>
+				<option value="password" if niSource(nodeInfo) == "password" { selected }>{ i18n.T(ctx, "Password") }</option>
+				<option value="captured" if niSource(nodeInfo) == "captured" { selected }>{ i18n.T(ctx, "Captured") }</option>
 			</select>
 		</div>
 	</div>
@@ -295,10 +295,11 @@ templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 
 // ─── Node Inbounds Form ─────────────────────────────────────────────────────────
 
-templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []string) {
+templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []string, protocolPresetsJSON string) {
 	<dialog id="inbounds-modal" class="modal" open>
+		<span id="protocol-presets-data" style="display:none">{ protocolPresetsJSON }</span>
 		<div class="modal-box max-w-2xl">
-			<h3 class="font-bold text-lg mb-4">Inbounds for { info.ID }</h3>
+			<h3 class="font-bold text-lg mb-4">{ i18n.T(ctx, "Inbounds for ") }{ info.ID }</h3>
 
 			<form
 				hx-post={"/ui/nodes/" + info.ID + "/inbounds"}
@@ -313,28 +314,28 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 							<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
 							<div class="grid grid-cols-5 gap-2">
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Protocol</span></label>
-									<select name="proto" class="select select-bordered select-sm">
-										<option value="telemt">Telemt (MTProto)</option>
-										<option value="awg" selected>AWG (AmneziaWG)</option>
-										<option value="tuic">TUIC v5</option>
-										<option value="vless-reality">VLESS Reality</option>
-										<option value="shadowsocks">Shadowsocks</option>
-										<option value="trojan">Trojan</option>
-										<option value="vmess">VMess</option>
-										<option value="hysteria2">Hysteria2</option>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Protocol") }</span></label>
+									<select name="proto" class="select select-bordered select-sm" onchange="filterPresetsForRow(this)">
+										<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
+										<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
+										<option value="tuic">{ i18n.T(ctx, "TUIC v5") }</option>
+										<option value="vless-reality">{ i18n.T(ctx, "VLESS Reality") }</option>
+										<option value="shadowsocks">{ i18n.T(ctx, "Shadowsocks") }</option>
+										<option value="trojan">{ i18n.T(ctx, "Trojan") }</option>
+										<option value="vmess">{ i18n.T(ctx, "VMess") }</option>
+										<option value="hysteria2">{ i18n.T(ctx, "Hysteria2") }</option>
 									</select>
 								</div>
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Port</span></label>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Port") }</span></label>
 									<input type="number" name="port" class="input input-bordered input-sm" value="8443" />
 								</div>
 								<div class="form-control col-span-2">
-									<label class="label"><span class="label-text text-xs">For Users</span></label>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
 									<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
 										if len(users) == 0 {
-											<span class="text-xs text-base-content/50">No users yet. </span>
-											<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">Create first user</a>
+											<span class="text-xs text-base-content/50">{ i18n.T(ctx, "No users yet. ") }</span>
+											<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">{ i18n.T(ctx, "Create first user") }</a>
 										}
 										for _, u := range users {
 											<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
@@ -345,7 +346,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									</div>
 								</div>
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
 									<select name="obfuscation" class="select select-bordered select-sm">
 										<option value="">{ i18n.T(ctx, "None") }</option>
 										for _, p := range presets {
@@ -362,32 +363,32 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								<input type="hidden" name="inbound_index" value={ fmt.Sprintf("%d", i) } />
 								<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
 							} else {
-								<div class="absolute top-2 right-2 badge badge-secondary badge-sm">[Chain] { ib.Source[6:] }</div>
+								<div class="absolute top-2 right-2 badge badge-secondary badge-sm">{ i18n.T(ctx, "[Chain] ") }{ ib.Source[6:] }</div>
 							}
 							<div class="grid grid-cols-5 gap-2">
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Protocol</span></label>
-									<select name={ templ.KV("proto", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" }>
-										<option value="telemt" if ib.Protocol == "telemt" { selected }>Telemt (MTProto)</option>
-									<option value="awg" if ib.Protocol == "awg" { selected }>AWG (AmneziaWG)</option>
-										<option value="tuic" if ib.Protocol == "tuic" { selected }>TUIC v5</option>
-										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>VLESS Reality</option>
-										<option value="shadowsocks" if ib.Protocol == "shadowsocks" { selected }>Shadowsocks</option>
-										<option value="trojan" if ib.Protocol == "trojan" { selected }>Trojan</option>
-										<option value="vmess" if ib.Protocol == "vmess" { selected }>VMess</option>
-										<option value="hysteria2" if ib.Protocol == "hysteria2" { selected }>Hysteria2</option>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Protocol") }</span></label>
+									<select name={ templ.KV("proto", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" } onchange="filterPresetsForRow(this)">
+										<option value="telemt" if ib.Protocol == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto)") }</option>
+									<option value="awg" if ib.Protocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
+										<option value="tuic" if ib.Protocol == "tuic" { selected }>{ i18n.T(ctx, "TUIC v5") }</option>
+										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
+										<option value="shadowsocks" if ib.Protocol == "shadowsocks" { selected }>{ i18n.T(ctx, "Shadowsocks") }</option>
+										<option value="trojan" if ib.Protocol == "trojan" { selected }>{ i18n.T(ctx, "Trojan") }</option>
+										<option value="vmess" if ib.Protocol == "vmess" { selected }>{ i18n.T(ctx, "VMess") }</option>
+										<option value="hysteria2" if ib.Protocol == "hysteria2" { selected }>{ i18n.T(ctx, "Hysteria2") }</option>
 									</select>
 								</div>
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Port</span></label>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Port") }</span></label>
 									<input type="number" name={ templ.KV("port", ib.Source == "") } class="input input-bordered input-sm" value={ fmt.Sprintf("%d", ib.Port) } disabled?={ ib.Source != "" } />
 								</div>
 								<div class="form-control col-span-2">
-								<label class="label"><span class="label-text text-xs">For Users</span></label>
+								<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
 								<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
 									if len(users) == 0 {
-										<span class="text-xs text-base-content/50">No users yet. </span>
-										<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">Create first user</a>
+										<span class="text-xs text-base-content/50">{ i18n.T(ctx, "No users yet. ") }</span>
+										<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">{ i18n.T(ctx, "Create first user") }</a>
 									}
 									for _, u := range users {
 										<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
@@ -399,7 +400,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								</div>
 							</div>
 								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
 									<select name={ templ.KV("obfuscation", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" }>
 										<option value="">{ i18n.T(ctx, "None") }</option>
 										for _, p := range presets {
@@ -414,12 +415,12 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 
 				<button type="button" class="btn btn-ghost btn-sm"
 					onclick="addInboundRow()">
-					+ Add Inbound
+					{ i18n.T(ctx, "+ Add Inbound") }
 				</button>
 
 				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-					<button type="submit" class="btn btn-primary">Save Inbounds</button>
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Inbounds") }</button>
 				</div>
 			</form>
 
@@ -428,6 +429,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 		<form method="dialog" class="modal-backdrop">
 			<button>close</button>
 		</form>
+
 	</dialog>
 
 	<template id="inbound-tmpl" class="hidden">
@@ -435,28 +437,28 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 			<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
 			<div class="grid grid-cols-5 gap-2">
 				<div class="form-control">
-					<label class="label"><span class="label-text text-xs">Protocol</span></label>
-					<select name="proto" class="select select-bordered select-sm">
-						<option value="telemt">Telemt (MTProto)</option>
-						<option value="awg" selected>AWG (AmneziaWG)</option>
-						<option value="tuic">TUIC v5</option>
-						<option value="vless-reality">VLESS Reality</option>
-						<option value="shadowsocks">Shadowsocks</option>
-						<option value="trojan">Trojan</option>
-						<option value="vmess">VMess</option>
-						<option value="hysteria2">Hysteria2</option>
+					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Protocol") }</span></label>
+					<select name="proto" class="select select-bordered select-sm" onchange="filterPresetsForRow(this)">
+						<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
+						<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
+						<option value="tuic">{ i18n.T(ctx, "TUIC v5") }</option>
+						<option value="vless-reality">{ i18n.T(ctx, "VLESS Reality") }</option>
+						<option value="shadowsocks">{ i18n.T(ctx, "Shadowsocks") }</option>
+						<option value="trojan">{ i18n.T(ctx, "Trojan") }</option>
+						<option value="vmess">{ i18n.T(ctx, "VMess") }</option>
+						<option value="hysteria2">{ i18n.T(ctx, "Hysteria2") }</option>
 					</select>
 				</div>
 				<div class="form-control">
-					<label class="label"><span class="label-text text-xs">Port</span></label>
+					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Port") }</span></label>
 					<input type="number" name="port" class="input input-bordered input-sm" value="0" />
 				</div>
 				<div class="form-control col-span-2">
-					<label class="label"><span class="label-text text-xs">For Users</span></label>
+					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
 					<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
 						if len(users) == 0 {
-							<span class="text-xs text-base-content/50">No users yet. </span>
-							<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">Create first user</a>
+							<span class="text-xs text-base-content/50">{ i18n.T(ctx, "No users yet. ") }</span>
+							<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">{ i18n.T(ctx, "Create first user") }</a>
 						}
 						for _, u := range users {
 							<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
@@ -467,7 +469,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 					</div>
 				</div>
 				<div class="form-control">
-					<label class="label"><span class="label-text text-xs">Obfuscation Preset</span></label>
+					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
 					<select name="obfuscation" class="select select-bordered select-sm">
 						<option value="">{ i18n.T(ctx, "None") }</option>
 						for _, p := range presets {
@@ -485,8 +487,8 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {
 	<dialog id="capture-modal" class="modal" open>
 		<div class="modal-box">
-			<h3 class="font-bold text-lg mb-4">Capture Node: { host.ID }</h3>
-			<div class="text-xs text-base-content/50 mb-4">Connect via SSH and bring node under management.</div>
+			<h3 class="font-bold text-lg mb-4">{ i18n.T(ctx, "Capture Node: ") }{ host.ID }</h3>
+			<div class="text-xs text-base-content/50 mb-4">{ i18n.T(ctx, "Connect via SSH and bring node under management.") }</div>
 
 			<form
 				hx-post={"/ui/nodes/" + host.ID + "/capture"}
@@ -495,13 +497,13 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys [
 				class="space-y-4">
 
 				<div class="form-control">
-					<label class="label"><span class="label-text">SSH Key</span></label>
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Key") }</span></label>
 					<select name="ssh_key" class="select select-bordered">
-						<option value="">Select key...</option>
+						<option value="">{ i18n.T(ctx, "Select key...") }</option>
 						for _, k := range allKeys {
 							<option value={ k.ID }>{ k.Name }</option>
 						}
-						<option value="manual">== Enter manually ==</option>
+						<option value="manual">{ i18n.T(ctx, "== Enter key manually ==") }</option>
 					</select>
 					<textarea name="ssh_key_manual" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
 						rows="3" style="display:none"
@@ -510,31 +512,31 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys [
 -----END OPENSSH PRIVATE KEY-----"></textarea>
 				</div>
 
-				<div class="text-sm text-base-content/50 text-center">— or use login + password —</div>
+				<div class="text-sm text-base-content/50 text-center">{ i18n.T(ctx, "— or use login + password —") }</div>
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="form-control">
-						<label class="label"><span class="label-text">Login User</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Login User") }</span></label>
 						<input type="text" name="login_user" class="input input-bordered" value={ host.User } placeholder="root" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">Password</span></label>
-						<input type="password" name="login_pass" class="input input-bordered" placeholder="Enter SSH password" />
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Password") }</span></label>
+						<input type="password" name="login_pass" class="input input-bordered" placeholder={i18n.T(ctx, "Enter SSH password")} />
 					</div>
 				</div>
 
 				<div class="form-control">
 					<label class="label cursor-pointer">
-						<span class="label-text">Auto-install SSH key on server after successful login</span>
+						<span class="label-text">{ i18n.T(ctx, "Auto-install SSH key on server after successful login") }</span>
 						<input type="checkbox" name="auto_install_key" class="checkbox checkbox-sm" checked />
 					</label>
 				</div>
 
-				<div class="label"><span class="label-text-alt text-base-content/50">If checked, the SSH key selected above will be installed on the target server for future passwordless access.</span></div>
+				<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "If checked, the SSH key selected above will be installed on the target server for future passwordless access.") }</span></div>
 
 				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-					<button type="submit" class="btn btn-primary">Capture</button>
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Capture") }</button>
 				</div>
 			</form>
 

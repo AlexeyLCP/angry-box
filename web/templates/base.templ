@@ -75,7 +75,7 @@ templ Base(title string, content templ.Component) {
 				</div>
 
 				<div class="p-4 border-t border-base-content/10 text-xs text-base-content/40 text-center font-medium">
-					Angry-BOX • Orchestrator
+					{ i18n.T(ctx, "Angry-BOX • Orchestrator") }
 				</div>
 			</div>
 
@@ -87,8 +87,8 @@ templ Base(title string, content templ.Component) {
 					<div class="flex items-center gap-4">
 						<span class="text-[10px] text-base-content/20">PolyForm Noncommercial 1.0.0 &middot; Personal/Educational use only</span>
 						<div class="text-sm text-base-content/60 flex items-center gap-2">
-							<span>Profile: <span class="font-mono text-primary">{ chain.GetDefaultPresetName() }</span></span>
-							<span id="connection-status" class="opacity-50">| Connected</span>
+							<span>{ i18n.T(ctx, "Profile:") } <span class="font-mono text-primary">{ chain.GetDefaultPresetName() }</span></span>
+							<span id="connection-status" class="opacity-50">| { i18n.T(ctx, "Connected") }</span>
 							<button class="btn btn-ghost btn-circle btn-sm" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme">
 								<svg id="ico-sun" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
 								<svg id="ico-moon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>

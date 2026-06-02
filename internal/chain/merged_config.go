@@ -304,6 +304,11 @@ func ResolveServerName(preset *ConnectionPreset) string {
 
 func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoints []json.RawMessage) {
 	preset := GetDefaultPreset()
+	if ib.Obfuscation != "" {
+		if p, ok := GetPreset(ib.Obfuscation); ok {
+			preset = p
+		}
+	}
 	serverName := ResolveServerName(&preset)
 
 	switch ib.Protocol {

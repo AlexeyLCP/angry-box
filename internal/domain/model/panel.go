@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // User represents a proxy user with protocol preferences and optional expiry.
 type User struct {
@@ -36,7 +39,8 @@ type PanelSettings struct {
 	Language          string `json:"language,omitempty"`        // e.g. "en", "ru"
 	MetricsInterval   int    `json:"metrics_interval,omitempty"` // minutes, default 15 minutes
 	SSHKeys           []SSHKeyEntry `json:"ssh_keys,omitempty"`
-	DefaultProtocol   string `json:"default_protocol,omitempty"` // "awg", "tuic", "vless-reality"
+	DefaultProtocol   string          `json:"default_protocol,omitempty"` // "awg", "tuic", "vless-reality"
+	CustomPresets     json.RawMessage `json:"custom_presets,omitempty"` // user-created obfuscation presets (JSON array of ConnectionPreset)
 }
 
 // SSHKeyEntry is an SSH key stored in the panel.
@@ -89,6 +93,11 @@ type NodeInbound struct {
 	// For TLS-based standalone inbounds (TUIC, Hysteria2, etc.)
 	TLSCertificate string `json:"tls_certificate,omitempty"`
 	TLSPrivateKey  string `json:"tls_private_key,omitempty"`
+
+	// For AWG standalone: sample client pub for the peer (to make server accept connections)
+	// For full multi-user, client keys can be imported per user.
+	AWGClientPub  string `json:"awg_client_pub,omitempty"`
+	AWGClientPriv string `json:"awg_client_priv,omitempty"` // corresponding private for sample client config
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).
