@@ -417,8 +417,17 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 		
 		switch ib.Protocol {
 		case "awg":
+			clientPub := ib.AWGClientPub
+			if clientPub == "" {
+				// Generate a sample client keypair for this standalone AWG inbound so server has a valid peer.
+				if priv, pub, kerr := chain.GenerateWireGuardKeypair(); kerr == nil {
+					clientPub = pub
+					ib.AWGClientPub = pub
+					ib.AWGClientPriv = priv // store priv for use in client configs
+				}
+			}
 			paramsAWG := model.ConfigParams{Extra: map[string]any{"serverPrivKey": ib.ServerPrivKey}}
-			cfg, _, err := b.generateAWGUser(paramsAWG, &preset, uuid, ib.Port, "")
+			cfg, _, err := b.generateAWGUser(paramsAWG, &preset, uuid, ib.Port, clientPub)
 			if err != nil {
 				continue
 			}

@@ -142,6 +142,34 @@ func ListPresets() []string {
 	return names
 }
 
+// ListPresetsForProtocol returns preset names filtered by protocol support.
+func ListPresetsForProtocol(protocol string) []string {
+	presetsMu.RLock()
+	defer presetsMu.RUnlock()
+
+	names := make([]string, 0, len(presets))
+	for name, p := range presets {
+		if presetSupportsProtocol(p, protocol) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// presetSupportsProtocol checks whether a preset has a relevant section for the protocol.
+func presetSupportsProtocol(p ConnectionPreset, protocol string) bool {
+	switch protocol {
+	case "awg":
+		return p.AWG != nil
+	case "tuic":
+		return p.TUIC != nil
+	case "vless-reality":
+		return p.Reality != nil
+	default: // shadowsocks, trojan, vmess, hysteria2, telemt — transport obfuscation
+		return p.XHTTP != nil
+	}
+}
+
 // MustGetPreset — как GetPreset, но паникует если не найден (удобно для тестов и дефолтов)
 func MustGetPreset(name string) ConnectionPreset {
 	p, ok := GetPreset(name)

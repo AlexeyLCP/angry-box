@@ -11,26 +11,81 @@ function addInboundRow() {
     if (!tmpl) return;
     var clone = tmpl.content.firstElementChild.cloneNode(true);
     var idx = Date.now().toString(); // unique ID
-    
+
     // Add hidden index field
     var hidden = document.createElement('input');
     hidden.type = 'hidden';
     hidden.name = 'inbound_index';
     hidden.value = idx;
     clone.appendChild(hidden);
-    
+
     // Rename for_users checkboxes
     var checkboxes = clone.querySelectorAll('input[name="for_users"]');
     checkboxes.forEach(function(cb) {
         cb.name = 'for_users_' + idx;
     });
-    
+
     var list = document.getElementById('inbounds-list');
     if (list) {
         list.appendChild(clone);
+        // Apply initial preset filtering based on default protocol (awg)
+        var protoSelect = clone.querySelector('select[name="proto"]');
+        if (protoSelect) {
+            filterPresetsForRow(protoSelect);
+        }
         if (typeof htmx !== 'undefined') {
             htmx.process(clone);
         }
+    }
+}
+
+// Filter preset dropdown options based on selected protocol.
+function filterPresetsForRow(protoSelect) {
+    var row = protoSelect.closest('.inbound-row');
+    if (!row) return;
+    var presetSelect = row.querySelector('select[name="obfuscation"]');
+    if (!presetSelect) return;
+
+    var protocol = protoSelect.value;
+
+    // Read presets data from hidden span inside dialog
+    var allowed = [];
+    var dataEl = document.getElementById('protocol-presets-data');
+    if (dataEl && dataEl.textContent) {
+        try {
+            var presetsMap = JSON.parse(dataEl.textContent);
+            if (presetsMap && presetsMap[protocol]) {
+                allowed = presetsMap[protocol];
+            }
+        } catch (e) {
+            // If JSON parse fails, leave allowed empty (shows only "None")
+        }
+    }
+
+    var currentValue = presetSelect.value;
+    // Clear existing options safely
+    while (presetSelect.firstChild) {
+        presetSelect.removeChild(presetSelect.firstChild);
+    }
+
+    // Always add "None" option
+    var noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = 'None';
+    presetSelect.appendChild(noneOpt);
+
+    var found = false;
+    for (var i = 0; i < allowed.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = allowed[i];
+        opt.textContent = allowed[i];
+        if (allowed[i] === currentValue) found = true;
+        presetSelect.appendChild(opt);
+    }
+
+    // Restore previous selection if still valid
+    if (found) {
+        presetSelect.value = currentValue;
     }
 }
 
@@ -82,3 +137,13 @@ if (loadingBar) {
     document.body.addEventListener('htmx:beforeRequest', function() { loadingBar.classList.add('active'); });
     document.body.addEventListener('htmx:afterRequest', function() { loadingBar.classList.remove('active'); });
 }
+
+// Initialize preset filtering when inbounds modal is loaded via HTMX
+document.body.addEventListener('htmx:afterSettle', function() {
+    var modal = document.getElementById('inbounds-modal');
+    if (modal && modal.open) {
+        document.querySelectorAll('#inbounds-list select[name="proto"]').forEach(function(sel) {
+            filterPresetsForRow(sel);
+        });
+    }
+});

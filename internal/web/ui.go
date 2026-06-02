@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"errors"
 
 	"github.com/a-h/templ"
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
@@ -112,19 +112,19 @@ func (s *Server) collectAllMetrics() {
 
 	for _, h := range hosts {
 		start := time.Now()
-		
+
 		status, err := b.GetStatus(ctx, *h)
-		
+
 		latency := time.Since(start).Milliseconds()
 		if err != nil {
 			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false, LatencyMs: latency})
 			continue
 		}
 		st.SaveMetrics(&model.NodeMetrics{
-			HostID:     h.ID,
-			Online:     status.Running,
-			Version:    status.Version,
-			LatencyMs:  latency,
+			HostID:    h.ID,
+			Online:    status.Running,
+			Version:   status.Version,
+			LatencyMs: latency,
 		})
 	}
 }
@@ -305,10 +305,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.renderJSON(w, map[string]any{
-		"total_hosts":   len(hosts),
-		"online_hosts":  online,
-		"total_chains":  len(chains),
-		"total_users":   len(users),
+		"total_hosts":  len(hosts),
+		"online_hosts": online,
+		"total_chains": len(chains),
+		"total_users":  len(users),
 	})
 }
 
@@ -348,6 +348,13 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	infos, _ := st.ListNodeInfos()
 	metrics, _ := st.ListMetrics()
 	chains, _ := st.ListChains()
+	settings, _ := st.GetSettings()
+	if len(settings.CustomPresets) > 0 {
+		var customs []chain.ConnectionPreset
+		if json.Unmarshal(settings.CustomPresets, &customs) == nil && len(customs) > 0 {
+			_ = chain.LoadPresets(customs)
+		}
+	}
 	activeChains := make(map[string]string)
 	for _, c := range chains {
 		for _, n := range c.Nodes {
@@ -474,7 +481,7 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	st := s.store()
 	if err := st.DeleteHost(id); err != nil {
-		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">Failed to delete: %v. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
+		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">`+i18n.T(r.Context(), "Failed to delete: %v")+`. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(msg))
@@ -530,7 +537,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	if loginPass != "" {
 		authMethod = "password:" + loginPass
 	}
-	
+
 	hostCopy := *host
 	hostCopy.KeyPath = authMethod
 
@@ -547,7 +554,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.render(w, r, &simpleHTML{html: fmt.Sprintf(
-			`<div class="alert alert-error"><span>Capture failed: %v</span></div>`, sshErr,
+			`<div class="alert alert-error"><span>`+i18n.T(r.Context(), "Capture failed: %v")+`</span></div>`, sshErr,
 		)})
 		return
 	}
@@ -559,7 +566,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 			// Auto-generate a new keypair
 			privPEM, _, err := sshclient.GenerateSSHKeypair()
 			if err != nil {
-				installMsg = fmt.Sprintf(" <b>Note:</b> SSH key auto-generation failed: %v", err)
+				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key auto-generation failed: %v"), err)
 				host.KeyPath = "password:" + loginPass
 			} else {
 				// Save it to settings so we can use it
@@ -568,7 +575,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 					keyName = fmt.Sprintf("auto-%s", strings.Split(host.Addr, ":")[0])
 				}
 				keyID := fmt.Sprintf("key-auto-%d", time.Now().Unix())
-				
+
 				settings, _ := st.GetSettings()
 				settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
 					ID:      keyID,
@@ -576,7 +583,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 					KeyData: privPEM,
 				})
 				st.SaveSettings(settings)
-				
+
 				selectedKey = keyID
 				hostCopy.KeyPath = keyID // update for install
 			}
@@ -584,7 +591,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 
 		if selectedKey != "" {
 			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, selectedKey); err != nil {
-				installMsg = fmt.Sprintf(" <b>Note:</b> SSH key installation failed: %v", err)
+				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key installation failed: %v"), err)
 				host.KeyPath = "password:" + loginPass
 			} else {
 				// Key installed successfully! Use the key instead of password.
@@ -611,8 +618,8 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
-		`<div class="alert alert-success"><span>Node %s captured! Running: %v, Version: %s.%s</span>
-		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">Refresh Nodes</button></div>`,
+		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Node %s captured! Running: %v, Version: %s.")+`%s</span>
+		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Refresh Nodes")+`</button></div>`,
 		id, status.Running, status.Version, installMsg,
 	)})
 }
@@ -636,9 +643,30 @@ func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		info = &model.NodeInfo{Host: model.Host{ID: id}}
 	}
+	settings, _ := s.store().GetSettings()
+	if len(settings.CustomPresets) > 0 {
+		var customs []chain.ConnectionPreset
+		if json.Unmarshal(settings.CustomPresets, &customs) == nil && len(customs) > 0 {
+			_ = chain.LoadPresets(customs)
+		}
+	}
 	users, _ := s.store().ListUsers()
 	presets := chain.ListPresets()
-	s.render(w, r, templates.NodeInboundsForm(info, users, presets))
+
+	// Build protocol→presets JSON for client-side filtering (embedded in dialog data attribute)
+	protocolPresets := map[string][]string{
+		"awg":           chain.ListPresetsForProtocol("awg"),
+		"tuic":          chain.ListPresetsForProtocol("tuic"),
+		"vless-reality": chain.ListPresetsForProtocol("vless-reality"),
+		"shadowsocks":   chain.ListPresetsForProtocol("shadowsocks"),
+		"trojan":        chain.ListPresetsForProtocol("trojan"),
+		"vmess":         chain.ListPresetsForProtocol("vmess"),
+		"hysteria2":     chain.ListPresetsForProtocol("hysteria2"),
+		"telemt":        chain.ListPresetsForProtocol("telemt"),
+	}
+	presetsJSON, _ := json.Marshal(protocolPresets)
+
+	s.render(w, r, templates.NodeInboundsForm(info, users, presets, string(presetsJSON)))
 }
 
 func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) {
@@ -658,9 +686,15 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	indexes := r.Form["inbound_index"]
 	obfuscations := r.Form["obfuscation"]
 
-	// Guard: refuse to save zero inbounds — use Delete Node instead.
-	if len(protocols) == 0 {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><span>Cannot save zero inbounds. Add at least one inbound or delete the node instead.</span></div>`})
+	// Guard: refuse to save zero inbounds if no chain-managed ones exist either.
+	chainInbounds := 0
+	for _, ib := range info.Inbounds {
+		if ib.Source != "" {
+			chainInbounds++
+		}
+	}
+	if len(protocols) == 0 && chainInbounds == 0 {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><span>` + i18n.T(r.Context(), "Cannot save zero inbounds. Add at least one inbound or delete the node instead.") + `</span></div>`})
 		return
 	}
 
@@ -687,33 +721,39 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	for _, pStr := range ports {
 		port, _ := strconv.Atoi(pStr)
 		if cName, ok := chainPorts[port]; ok {
-			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.</div>`, port, cName)})
+			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.")+`</div>`, port, cName)})
 			return
 		}
 	}
 
-	inbounds := make([]model.NodeInbound, 0, len(protocols))
+	// Start with existing chain-managed inbounds (preserved, not editable in this form)
+	inbounds := make([]model.NodeInbound, 0, len(protocols)+chainInbounds)
+	for _, oldIb := range info.Inbounds {
+		if oldIb.Source != "" {
+			inbounds = append(inbounds, oldIb)
+		}
+	}
 	for i := range protocols {
 		if i >= len(indexes) {
 			continue
 		}
 		port, _ := strconv.Atoi(ports[i])
 		idx := indexes[i]
-		
+
 		forUsers := r.Form["for_users_"+idx]
-		
+
 		obf := ""
 		if i < len(obfuscations) {
 			obf = obfuscations[i]
 		}
-		
+
 		newIb := model.NodeInbound{
 			Protocol:    protocols[i],
 			Port:        port,
 			ForUsers:    forUsers,
 			Obfuscation: obf,
 		}
-		
+
 		// Preserve existing generated credentials if port and protocol match
 		for _, oldIb := range info.Inbounds {
 			if oldIb.Protocol == newIb.Protocol && oldIb.Port == newIb.Port {
@@ -723,6 +763,8 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 				newIb.ShortID = oldIb.ShortID
 				newIb.TLSCertificate = oldIb.TLSCertificate
 				newIb.TLSPrivateKey = oldIb.TLSPrivateKey
+				newIb.AWGClientPub = oldIb.AWGClientPub
+				newIb.AWGClientPriv = oldIb.AWGClientPriv
 				break
 			}
 		}
@@ -740,12 +782,19 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 				newIb.TLSPrivateKey = key
 			}
 		}
-		
+
+		if newIb.Protocol == "awg" && newIb.AWGClientPub == "" {
+			if priv, pub, cerr := chain.GenerateWireGuardKeypair(); cerr == nil {
+				newIb.AWGClientPub = pub
+				newIb.AWGClientPriv = priv
+			}
+		}
+
 		inbounds = append(inbounds, newIb)
 	}
 	info.Inbounds = inbounds
 	st.SaveNodeInfo(info)
-	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">Inbounds saved.</div>`})
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">` + i18n.T(r.Context(), "Inbounds saved.") + `</div>`})
 }
 
 // ─── Spider Web ────────────────────────────────────────────────────────────────
@@ -1022,7 +1071,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 			ChainName:   chainName,
 			Protocol:    string(c.UserProtocol),
 			ConfigLink:  link,
-			Description: fmt.Sprintf("%s chain — %d hops, strategy: %s", chainName, len(c.Nodes), c.Strategy),
+			Description: fmt.Sprintf(i18n.T(r.Context(), "%s chain — %d hops, strategy: %s"), chainName, len(c.Nodes), c.Strategy),
 		})
 	}
 
@@ -1036,7 +1085,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 					ChainName:   "node: " + node.ID,
 					Protocol:    ib.Protocol,
 					ConfigLink:  link,
-					Description: fmt.Sprintf("Standalone inbound on %s (port %d)", node.ID, ib.Port),
+					Description: fmt.Sprintf(i18n.T(r.Context(), "Standalone inbound on %s (port %d)"), node.ID, ib.Port),
 				})
 			}
 		}
@@ -1050,14 +1099,14 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 				ChainName:   "unassigned",
 				Protocol:    "any",
 				ConfigLink:  "# Assign chains or node inbounds to this user to generate configs.",
-				Description: fmt.Sprintf("User has no chains assigned. %d chain(s) available — edit user to assign.", len(allChains)),
+				Description: fmt.Sprintf(i18n.T(r.Context(), "User has no chains assigned. %d chain(s) available — edit user to assign."), len(allChains)),
 			})
 		} else {
 			configs = append(configs, templates.UserChainConfig{
 				ChainName:   "no-chains",
 				Protocol:    "any",
 				ConfigLink:  "# Create a chain or node inbound first, then assign it to this user.",
-				Description: "No chains or standalone inbounds exist yet.",
+				Description: i18n.T(r.Context(), "No chains or standalone inbounds exist yet."),
 			})
 		}
 	}
@@ -1081,6 +1130,11 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
 	ip := strings.Split(addr, ":")[0]
+	if ib.Protocol == "awg" && u.ImportedSecret == "" && ib.AWGClientPriv != "" {
+		// Provide full usable WG config with the sample client private that matches the peer pub on server.
+		return fmt.Sprintf("# AWG Standalone (auto-generated sample key)\n[Interface]\nPrivateKey = %s\nAddress = 10.8.0.2/32\nMTU = 1420\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s:%d\nPersistentKeepalive = 25",
+			ib.AWGClientPriv, ib.ServerPubKey, ip, ib.Port)
+	}
 	return buildClientURI(ib.Protocol, ip, ib.Port, ib.UUID, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u)
 }
 
@@ -1193,7 +1247,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	hosts, _ := st.ListHosts()
 	chains, _ := st.ListChains()
 	sysKeys := detectSystemKeys()
-	
+
 	// Ensure we pass the config properties (safe fallbacks if cfg is nil in some tests)
 	authEnabled := false
 	authUsername := ""
@@ -1250,7 +1304,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 				// Require valid old password if auth is currently enabled
 				err := bcrypt.CompareHashAndPassword([]byte(s.cfg.AuthPasswordHash), []byte(oldPassword))
 				if err != nil {
-					s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>Failed to change password: old password is incorrect.</span></div>`})
+					s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Failed to change password: old password is incorrect.") + `</span></div>`})
 					return
 				}
 			}
@@ -1270,7 +1324,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			// Save config to default location
 			if err := s.cfg.Save(config.DefaultConfigPath()); err != nil {
 				log.Printf("failed to save config: %v", err)
-				s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>Settings saved, but config write failed: %v</span></div>`, err)})
+				s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>`+i18n.T(r.Context(), "Settings saved, but config write failed: %v")+`</span></div>`, err)})
 				return
 			}
 		}
@@ -1283,7 +1337,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if oldLang != settings.Language {
 		w.Header().Set("HX-Refresh", "true")
 	}
-	
+
 	if intervalStr := strings.TrimSpace(r.FormValue("metrics_interval")); intervalStr != "" {
 		settings.MetricsInterval, _ = strconv.Atoi(intervalStr)
 	}
@@ -1301,7 +1355,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	settings.SSHKeys = keys
 
 	st.SaveSettings(settings)
-	
+
 	if portChanged {
 		msg := fmt.Sprintf(`
 		<div class="alert alert-warning shadow-lg mt-2">
@@ -1315,8 +1369,8 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, &simpleHTML{html: msg})
 		return
 	}
-	
-	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>Settings saved.</span></div>`})
+
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Settings saved.") + `</span></div>`})
 }
 
 // ─── SSH Keys ──────────────────────────────────────────────────────────────────
@@ -1329,12 +1383,12 @@ func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	keyData := strings.TrimSpace(r.FormValue("key_data"))
 	if name == "" || keyData == "" {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>Name and key data are required.</span></div>`})
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Name and key data are required.") + `</span></div>`})
 		return
 	}
 	// Validate key format
 	if !looksLikePrivateKey(keyData) {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).</span></div>`})
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).") + `</span></div>`})
 		return
 	}
 	st := s.store()
@@ -1413,8 +1467,6 @@ func detectSystemKeys() []model.SSHKeyEntry {
 	return keys
 }
 
-
-
 // looksLikePrivateKey checks that the data looks like a valid PEM-encoded private key.
 func looksLikePrivateKey(data string) bool {
 	data = strings.TrimSpace(data)
@@ -1473,7 +1525,7 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store().DeleteHost(id); err != nil {
-		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">Failed to delete: %v. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
+		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">`+i18n.T(r.Context(), "Failed to delete: %v")+`. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(msg))
@@ -1497,7 +1549,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	var content templ.Component
 	if len(hosts) == 0 {
-		content = &simpleHTML{html: `<div class="text-base-content/70 py-8 text-center">No hosts registered yet. <a href="/ui/nodes" class="link link-primary">Add nodes first</a>.</div>`}
+		content = &simpleHTML{html: `<div class="text-base-content/70 py-8 text-center">` + i18n.T(r.Context(), "No hosts registered yet.") + ` <a href="/ui/nodes" class="link link-primary">` + i18n.T(r.Context(), "Add nodes first") + `</a>.</div>`}
 	} else {
 		content = templates.StatusPage(hosts, metrics)
 	}
@@ -1513,21 +1565,21 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	host, err := st.GetHost(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: `<span class="text-error text-xs">Host not found</span>`})
+		s.render(w, r, &simpleHTML{html: `<span class="text-error text-xs">` + i18n.T(r.Context(), "Host not found") + `</span>`})
 		return
 	}
 	f := factory.New()
 	b := f.Create()
 	ctx := context.Background()
-	
+
 	hostCopy := *host
-	
+
 	status, err := b.GetStatus(ctx, hostCopy)
-	
+
 	if err != nil {
 		// Record offline metric
 		st.SaveMetrics(&model.NodeMetrics{HostID: id, Online: false})
-		s.render(w, r, &simpleHTML{html: `<span class="badge badge-error badge-sm">Error</span>`})
+		s.render(w, r, &simpleHTML{html: `<span class="badge badge-error badge-sm">` + i18n.T(r.Context(), "Error") + `</span>`})
 		return
 	}
 	st.SaveMetrics(&model.NodeMetrics{
@@ -1735,9 +1787,7 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, templates.ApplyResult(name, false, nil, err.Error()))
 		return
 	}
-	
 
-	
 	c.Nodes = resolved
 
 	f := factory.New()
@@ -1825,4 +1875,3 @@ func jsonMarshal(v any) string {
 	}
 	return string(data)
 }
-

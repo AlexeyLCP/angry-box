@@ -1,39 +1,43 @@
 package templates
 
+import (
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
+
 templ Index() {
 	<div class="max-w-4xl">
-		<h2 class="text-2xl font-bold mb-2">Welcome to Angry-BOX</h2>
+		<h2 class="text-2xl font-bold mb-2">{ i18n.T(ctx, "Welcome to Angry-BOX") }</h2>
 		<p class="text-base-content/70 mb-6">
-			Lightweight SSH orchestrator for sing-box and xray nodes.
+			{ i18n.T(ctx, "Lightweight SSH orchestrator for sing-box and xray nodes.") }
 		</p>
 
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 			<div class="card bg-base-100 shadow">
 				<div class="card-body">
-					<h3 class="card-title text-lg">Hosts</h3>
-					<p class="text-sm">Manage remote nodes (servers and routers).</p>
+					<h3 class="card-title text-lg">{ i18n.T(ctx, "Hosts") }</h3>
+					<p class="text-sm">{ i18n.T(ctx, "Manage remote nodes (servers and routers).") }</p>
 					<div class="card-actions justify-end">
-						<button class="btn btn-primary btn-sm" hx-get="/ui/hosts" hx-target="#main-content" hx-push-url="true">Go to Hosts</button>
+						<button class="btn btn-primary btn-sm" hx-get="/ui/hosts" hx-target="#main-content" hx-push-url="true">{ i18n.T(ctx, "Go to Hosts") }</button>
 					</div>
 				</div>
 			</div>
 
 			<div class="card bg-base-100 shadow">
 				<div class="card-body">
-					<h3 class="card-title text-lg">Chains</h3>
-					<p class="text-sm">Build and manage multi-hop proxy chains.</p>
+					<h3 class="card-title text-lg">{ i18n.T(ctx, "Chains") }</h3>
+					<p class="text-sm">{ i18n.T(ctx, "Build and manage multi-hop proxy chains.") }</p>
 					<div class="card-actions justify-end">
-						<button class="btn btn-primary btn-sm" hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true">Go to Chains</button>
+						<button class="btn btn-primary btn-sm" hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true">{ i18n.T(ctx, "Go to Chains") }</button>
 					</div>
 				</div>
 			</div>
 
 			<div class="card bg-base-100 shadow">
 				<div class="card-body">
-					<h3 class="card-title text-lg">Status</h3>
-					<p class="text-sm">View overall system and node health.</p>
+					<h3 class="card-title text-lg">{ i18n.T(ctx, "Status") }</h3>
+					<p class="text-sm">{ i18n.T(ctx, "View overall system and node health.") }</p>
 					<div class="card-actions justify-end">
-						<button class="btn btn-primary btn-sm" hx-get="/ui/status" hx-target="#main-content" hx-push-url="true">View Status</button>
+						<button class="btn btn-primary btn-sm" hx-get="/ui/status" hx-target="#main-content" hx-push-url="true">{ i18n.T(ctx, "View Status") }</button>
 					</div>
 				</div>
 			</div>
