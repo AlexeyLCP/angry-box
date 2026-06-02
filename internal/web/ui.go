@@ -828,12 +828,13 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	parts := strings.SplitN(id, "-", 2)
-	if len(parts) != 2 {
+	// Split at the LAST "-" because both chain names and node IDs may contain hyphens.
+	lastDash := strings.LastIndex(id, "-")
+	if lastDash < 0 {
 		http.Error(w, "invalid link id format", http.StatusBadRequest)
 		return
 	}
-	chainName, nodeID := parts[0], parts[1]
+	chainName, nodeID := id[:lastDash], id[lastDash+1:]
 	st := s.store()
 	c, err := st.GetChain(chainName)
 	if err != nil {
@@ -1374,9 +1375,21 @@ func detectSystemKeys() []model.SSHKeyEntry {
 
 
 
-// looksLikePrivateKey does a quick check for PEM private key header.
+// looksLikePrivateKey checks that the data looks like a valid PEM-encoded private key.
 func looksLikePrivateKey(data string) bool {
-	return strings.Contains(data, "BEGIN") && strings.Contains(data, "PRIVATE KEY")
+	data = strings.TrimSpace(data)
+	// Must have a proper PEM header and matching footer
+	if !strings.HasPrefix(data, "-----BEGIN ") || !strings.Contains(data, " PRIVATE KEY-----") {
+		return false
+	}
+	// Extract the type from header (e.g., "OPENSSH PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY")
+	headerEnd := strings.Index(data, "-----")
+	if headerEnd < 0 {
+		return false
+	}
+	header := data[:headerEnd+5] // include trailing "-----"
+	footer := strings.Replace(header, "BEGIN", "END", 1)
+	return strings.Contains(data, footer)
 }
 
 // mergeSSHKeys combines stored and system keys into one list.
