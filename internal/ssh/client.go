@@ -93,10 +93,7 @@ func Connect(addr, user, keyPath string) (*Client, error) {
 		},
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			if globalManager != nil {
-				// Use hostname from SSH (the actual host/IP we connected to), not the
-				// full addr which may include port. For known_hosts matching, we also
-				// try the original addr (without port) as fallback.
-				return globalManager.CheckHostKey(hostname, key)
+				return globalManager.CheckHostKey(addr, key)
 			}
 			// Fallback: if no manager configured, refuse connection
 			return fmt.Errorf("ssh host key verification failed: no HostKeyManager configured")

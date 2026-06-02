@@ -34,27 +34,27 @@ func Base(title string, content templ.Component) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" data-theme=\"dark\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\" data-theme=\"dark\"><head><script>\n\t\t\t(function(){\n\t\t\t\tvar t = localStorage.getItem('angrybox-theme') || 'dark';\n\t\t\t\tdocument.documentElement.setAttribute('data-theme', t);\n\t\t\t})();\n\t\t</script><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 14, Col: 16}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 20, Col: 16}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " | Angry-BOX</title><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><link href=\"https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css\" rel=\"stylesheet\" type=\"text/css\"><script src=\"https://cdn.tailwindcss.com\"></script><script src=\"https://unpkg.com/htmx.org@1.9.12\"></script><style>\n\t\t\tbody { font-family: 'Inter', sans-serif; }\n\t\t\t.sidebar-active { @apply bg-primary/20 text-primary border-r-2 border-primary; }\n\t\t\t.status-online { @apply bg-success; }\n\t\t\t.status-offline { @apply bg-error; }\n\t\t\t.status-degraded { @apply bg-warning; }\n\t\t\t\n\t\t\t/* Custom Scrollbar */\n\t\t\t::-webkit-scrollbar { width: 8px; height: 8px; }\n\t\t\t::-webkit-scrollbar-track { background: transparent; }\n\t\t\t::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }\n\t\t\t::-webkit-scrollbar-thumb:hover { background: #4B5563; }\n\t\t</style><link href=\"/static/css/app.css\" rel=\"stylesheet\"></head><body class=\"min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased\"><div id=\"htmx-loading-bar\"></div><div class=\"flex h-screen overflow-hidden\"><div class=\"w-64 bg-base-200/50 backdrop-blur-md border-r border-base-content/10 flex flex-col shadow-xl z-20\"><a href=\"/ui\" class=\"block p-6 border-b border-base-content/10 hover:bg-base-content/5 transition-colors cursor-pointer\"><div class=\"flex items-center gap-2\"><div class=\"w-8 h-8 bg-primary rounded-lg flex items-center justify-center\"><span class=\"text-primary-content font-bold text-lg\">A</span></div><div><div class=\"font-semibold text-lg\">Angry-BOX</div><div class=\"text-xs text-base-content/60 -mt-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " | Angry-BOX</title><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><link href=\"https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css\" rel=\"stylesheet\" type=\"text/css\"><script src=\"https://cdn.tailwindcss.com\"></script><script src=\"https://unpkg.com/htmx.org@1.9.12\"></script><style>\n\t\t\thtml, body { overflow-x: hidden; max-width: 100vw; }\n\t\t\tbody { font-family: 'Inter', sans-serif; }\n\t\t\t* { box-sizing: border-box; }\n\t\t\t.sidebar-active { @apply bg-primary/20 text-primary border-r-2 border-primary; }\n\t\t\t.status-online { @apply bg-success; }\n\t\t\t.status-offline { @apply bg-error; }\n\t\t\t.status-degraded { @apply bg-warning; }\n\t\t\t\n\t\t\t/* Custom Scrollbar */\n\t\t\t::-webkit-scrollbar { width: 8px; height: 8px; }\n\t\t\t::-webkit-scrollbar-track { background: transparent; }\n\t\t\t::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }\n\t\t\t::-webkit-scrollbar-thumb:hover { background: #4B5563; }\n\t\t</style><link href=\"/static/css/app.css\" rel=\"stylesheet\"></head><body class=\"min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased\"><div id=\"htmx-loading-bar\"></div><div class=\"flex h-screen overflow-hidden\"><div class=\"w-64 bg-base-200/50 backdrop-blur-md border-r border-base-content/10 flex flex-col shadow-xl z-20\"><a href=\"/ui\" class=\"block p-6 border-b border-base-content/10 hover:bg-base-content/5 transition-colors cursor-pointer\"><div class=\"flex items-center gap-2\"><div class=\"w-8 h-8 bg-primary rounded-lg flex items-center justify-center\"><span class=\"text-primary-content font-bold text-lg\">A</span></div><div><div class=\"font-semibold text-lg\">Angry-BOX</div><div class=\"text-xs text-base-content/60 -mt-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Orchestrator"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 47, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 55, Col: 84}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -67,7 +67,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Dashboard"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 54, Col: 471}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 62, Col: 471}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -80,7 +80,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Nodes"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 55, Col: 482}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 63, Col: 482}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -93,7 +93,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Spider Web"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 56, Col: 362}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 64, Col: 362}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -106,7 +106,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Chains"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 57, Col: 462}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 65, Col: 462}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -119,7 +119,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Users"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 58, Col: 439}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 66, Col: 439}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -132,7 +132,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Status"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 59, Col: 528}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 67, Col: 528}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -145,7 +145,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Settings"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 65, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 73, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -158,7 +158,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 77, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 85, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -171,13 +171,13 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(chain.GetDefaultPresetName())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 82, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 90, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span></span> <span id=\"connection-status\" class=\"opacity-50\">| Connected</span></div></div></div><div id=\"main-content\" class=\"flex-1 overflow-auto p-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span></span> <span id=\"connection-status\" class=\"opacity-50\">| Connected</span> <button class=\"btn btn-ghost btn-circle btn-sm\" onclick=\"toggleTheme()\" aria-label=\"Toggle theme\" title=\"Toggle theme\"><svg id=\"ico-sun\" class=\"w-4 h-4 hidden\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z\"></path></svg> <svg id=\"ico-moon\" class=\"w-4 h-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg></button></div></div></div><div id=\"main-content\" class=\"flex-1 overflow-auto p-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

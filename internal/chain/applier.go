@@ -259,6 +259,16 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		}
 
 		backend := a.factory.Create()
+
+		// Install AWG kernel module only when chain uses AWG as user protocol.
+		if chain.UserProtocol == model.UserProtocolAWG {
+			if awgErr := backend.InstallAWGModule(ctx, node.Host()); awgErr != nil {
+				client.Close()
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
+				continue
+			}
+		}
+
 		if _, deployErr := backend.Deploy(ctx, node.Host()); deployErr != nil {
 			client.Close()
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "deploy sing-box: " + deployErr.Error()})

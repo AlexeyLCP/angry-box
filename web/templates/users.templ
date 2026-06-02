@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ templ Users(users []*model.User, chains []*model.Chain) {
 		</div>
 
 		<div class="card bg-base-100 shadow">
-			<div class="overflow-x-auto w-full">
+			<div class="w-full overflow-x-clip">
 				<table class="table">
 					<thead>
 						<tr>
@@ -96,7 +97,7 @@ templ UserRow(u *model.User) {
 			} else if u.IsExpired() {
 				<span class="text-error text-xs">{ u.ExpiresAt.Format("2006-01-02") }</span>
 			} else {
-				<span class="text-xs">{ time.Until(u.ExpiresAt).Round(24*time.Hour).String() }</span>
+				<span class="text-xs">{ fmtDuration(time.Until(u.ExpiresAt)) }</span>
 			}
 		</td>
 		<td>
@@ -109,7 +110,7 @@ templ UserRow(u *model.User) {
 			}
 		</td>
 		<td>
-			<div class="flex gap-1">
+			<div class="flex flex-wrap gap-1">
 				<button
 					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/users/" + u.ID + "/config"}
@@ -241,7 +242,7 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 				if u != nil { value={ u.ImportedSecret } } placeholder={ i18n.T(ctx, "Paste your existing key here...") } />
 			<label class="label"><span class="label-text-alt text-base-content/50">
 				<strong>{ i18n.T(ctx, "Telemt (MTProto):") }</strong> { i18n.T(ctx, "paste the secret/hex key") }<br/><code class="text-[10px] bg-base-200 px-1 rounded">a1b2c3d4e5f6...</code><br/>
-				<strong>{ i18n.T(ctx, "AWG:") }</strong> { i18n.T(ctx, "paste the WireGuard private key") }<br/><code class="text-[10px] bg-base-200 px-1 rounded">gOPlk...abc=</code> (44 chars, base64)<br/>
+				<strong>{ i18n.T(ctx, "AWG:") }</strong> { i18n.T(ctx, "paste the WireGuard private key") }<br/><code class="text-[10px] bg-base-200 px-1 rounded">gOPlk...abc=</code> { i18n.T(ctx, "(44 chars, base64)") }<br/>
 				<strong>{ i18n.T(ctx, "TUIC:") }</strong> { i18n.T(ctx, "paste the UUID") }<br/><code class="text-[10px] bg-base-200 px-1 rounded">550e8400-e29b-41d4-a716-446655440000</code>
 			</span></label>
 		</div>
@@ -345,7 +346,7 @@ templ UserQRView(u *model.User, links []string) {
 								<!-- QR code placeholder: use external API or JS for real QR -->
 								<div class="bg-white p-2 inline-block rounded">
 									<img
-										src={ "https://chart.googleapis.com/chart?chs=150x150&cht=qr&chl=" + link + "&choe=UTF-8" }
+										src={ templ.URL("/ui/qr-image?data=" + url.QueryEscape(link)) }
 										alt="QR Code"
 										width="150"
 										height="150"
@@ -392,4 +393,19 @@ func ellipsis(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func fmtDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	if days > 0 {
+		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+	return fmt.Sprintf("%dh", hours)
 }
