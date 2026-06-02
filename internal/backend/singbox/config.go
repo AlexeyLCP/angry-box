@@ -375,7 +375,7 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		Amnezia: chain.BuildAmneziaSection(awg, preset),
+		Amnezia: chain.BuildAWGAmnezia(awg, preset),
 	}
 
 	epJSON, _ := json.Marshal(endpoint)

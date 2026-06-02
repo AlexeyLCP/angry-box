@@ -198,7 +198,7 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 			inbounds = append(inbounds, tunJSON)
 
 		case model.UserProtocolTUIC:
-			inb := buildTUICUserInbound(defaultUserPort, c.TUICEntryUserUUID,
+			inb := buildTUICUserInbound(defaultUserPort, tuicUUID(c),
 				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset, p)
 			inbounds = append(inbounds, inb)
 
@@ -538,6 +538,14 @@ func needsBlock(roles []chainRole) bool {
 		}
 	}
 	return false
+}
+
+// tuicUUID returns the chain's TUIC entry UUID, generating a stable one if empty.
+func tuicUUID(c *model.Chain) string {
+	if c.TUICEntryUserUUID != "" {
+		return c.TUICEntryUserUUID
+	}
+	return generateStableUUID()
 }
 
 func safeSNILabel(sni string) string {
