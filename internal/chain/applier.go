@@ -454,7 +454,6 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 		Multiplex: &config.MultiplexOptions{
 			Enabled: true,
 		},
-		Dial: &config.DialOptions{DomainResolver: "dns-direct"},
 	}
 
 	data, _ := json.Marshal(out)
@@ -465,7 +464,6 @@ func buildDirectOutbound(tag string) json.RawMessage {
 	out := config.DirectOutbound{
 		Type: "direct",
 		Tag:  tag,
-		Dial: &config.DialOptions{DomainResolver: "dns-direct"},
 	}
 	data, _ := json.Marshal(out)
 	return data
@@ -546,8 +544,8 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 		return "", fmt.Errorf("config validation failed (no backup to rollback): %w", err)
 	}
 
-	// 4. Restart service
-	applyCmd := "ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
+	// 4. Ensure log directory and restart service
+	applyCmd := "mkdir -p /var/log/sing-box && ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
 	if _, err := client.Run(applyCmd); err != nil {
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box")
@@ -725,7 +723,6 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 			},
 		},
 		Transport: transport,
-		Dial:      &config.DialOptions{DomainResolver: "dns-direct"},
 	}
 
 	data, _ := json.Marshal(out)

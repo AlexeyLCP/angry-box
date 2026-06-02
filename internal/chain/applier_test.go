@@ -183,9 +183,6 @@ func TestTransportOutboundJSONParity(t *testing.T) {
 		"server_port": p.Port,
 		"uuid":        p.UUID,
 		"flow":        "xtls-rprx-vision",
-		"dial": map[string]any{
-			"domain_resolver": "dns-direct",
-		},
 		"tls": map[string]any{
 			"enabled":     true,
 			"server_name": p.ServerName,
@@ -258,7 +255,7 @@ func TestUserInboundJSONParity(t *testing.T) {
 
 func TestDirectOutboundJSONParity(t *testing.T) {
 	actualJSON := buildDirectOutbound("direct-out")
-	expectedJSON := `{"dial":{"domain_resolver":"dns-direct"},"tag":"direct-out","type":"direct"}`
+	expectedJSON := `{"tag":"direct-out","type":"direct"}`
 
 	var expMap, actMap map[string]any
 	json.Unmarshal([]byte(expectedJSON), &expMap)
