@@ -1,0 +1,1 @@
+9409deb0727b0657004bede842f97550bd6b6d4ce21a3ffaa5419c6fcc722010 *sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz

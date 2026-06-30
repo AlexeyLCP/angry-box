@@ -3,7 +3,6 @@ package singbox
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -30,12 +29,16 @@ type logConfig struct {
 
 // GenerateConfig produces a sing-box configuration file for the given type and parameters.
 // It uses the global default obfuscation profile (set via config or UI) for best results.
+//
+// The CLI-facing types (ConfigTransport / ConfigUser) now route through the
+// unified role renderer RenderProxyNode (VLESS REALITY+XHTTP max obfuscation)
+// instead of the old two divergent branches that produced "fake" configs
+// (e.g. a TUIC request returning a wireguard/AWG endpoint). ConfigStandaloneNode
+// keeps its multi-inbound path (used by the UI/chain applier).
 func (b *Backend) GenerateConfig(cfgType model.ConfigType, params model.ConfigParams) (*model.Config, error) {
 	switch cfgType {
-	case model.ConfigTransport:
-		return b.generateTransport(params)
-	case model.ConfigUser:
-		return b.generateUser(params)
+	case model.ConfigTransport, model.ConfigUser:
+		return b.renderStandaloneFromParams(params)
 	case model.ConfigStandaloneNode:
 		return b.generateStandaloneNode(params)
 	default:
@@ -43,206 +46,107 @@ func (b *Backend) GenerateConfig(cfgType model.ConfigType, params model.ConfigPa
 	}
 }
 
-func (b *Backend) generateTransport(params model.ConfigParams) (*model.Config, error) {
+// renderStandaloneFromParams is the single CLI config path. It honours the
+// -protocol/-transport flags and the global default preset to pick a role:
+//   - awg        -> userspace AWG wireguard endpoint with amnezia (RenderAWGHop)
+//   - tuic       -> TUIC inbound on self-signed TLS (real TUIC, not WG)
+//   - else       -> VLESS REALITY+XHTTP max obfuscation (RenderProxyNode)
+//
+// Credentials are generated fresh here for the CLI's `config` command (which
+// prints to stdout); the UI/chain paths persist credentials in the store and
+// pass them through NodeInbound instead.
+func (b *Backend) renderStandaloneFromParams(params model.ConfigParams) (*model.Config, error) {
 	port := params.Port
 	if port == 0 {
 		port = 443
 	}
 
-	// Use global default profile for good obfuscation settings.
-	// The --transport flag (when passed to `config`) is forwarded via params.Extra["transport"].
-	preset := chain.GetDefaultPreset()
-
-	transportKind := "xhttp"
-	if v, ok := params.Extra["transport"].(string); ok && v != "" {
-		transportKind = strings.ToLower(v)
-	} else if preset.XHTTP == nil || len(preset.XHTTP.Paths) == 0 {
-		transportKind = "reality"
+	protocol := strings.ToLower(params.Protocol)
+	if v, ok := params.Extra["transport"].(string); ok && v != "" && protocol == "" {
+		// Old CLI sometimes put xhttp/reality in -transport with default VLESS.
+		protocol = "vless-reality"
+	}
+	if protocol == "" || protocol == "vless" {
+		protocol = "vless-reality"
 	}
 
-	// sing-box 1.12.0+ uses 32-byte X25519 keys for Reality
-	privKeyBytes := make([]byte, 32)
-	if _, err := rand.Read(privKeyBytes); err != nil {
-		return nil, fmt.Errorf("singbox: generate reality key: %w", err)
-	}
-	privKeyB64 := base64.RawURLEncoding.EncodeToString(privKeyBytes)
-
-	shortID := make([]byte, 8)
-	if _, err := rand.Read(shortID); err != nil {
-		return nil, fmt.Errorf("singbox: generate shortId: %w", err)
-	}
-	shortIDHex := hex.EncodeToString(shortID)
-
-	serverName := "www.microsoft.com"
-	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
-		serverName = preset.Reality.ServerNames[0]
-	} else if preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
-		serverName = preset.XHTTP.Hosts[0]
-	}
-
-	uuid := generateUUID()
-
-	var inboundJSON json.RawMessage
-	if transportKind == "xhttp" {
-		inboundJSON = chain.BuildXHTTPTransportInboundForStandalone(port, uuid, privKeyB64, shortIDHex, serverName, &preset)
-	} else {
-		// Classic Reality+TCP fallback
-		inb := config.VLESSInbound{
-			Type:       "vless",
-			Tag:        "transport-in",
-			Listen:     "0.0.0.0",
-			ListenPort: port,
-			Users: []config.VLESSUser{{
-				Name: "transport",
-				UUID: uuid,
-				Flow: "xtls-rprx-vision",
-			}},
-			TLS: &config.InboundTLSOptions{
-				Enabled:    true,
-				ServerName: serverName,
-				Reality: &config.InboundRealityOptions{
-					Enabled:    true,
-					PrivateKey: privKeyB64,
-					ShortID:    []string{shortIDHex},
-				},
-			},
-			Multiplex: &config.MultiplexOptions{Enabled: true},
-			Transport: &config.TransportOptions{Type: "tcp"},
+	switch protocol {
+	case "awg":
+		priv, pub, err := generateWGKeypair()
+		if err != nil {
+			return nil, fmt.Errorf("singbox: generate AWG keys: %w", err)
 		}
-		inboundJSON, _ = json.Marshal(inb)
-	}
-
-	outbound := config.DirectOutbound{
-		Type: "direct",
-		Tag:  "direct-out",
-	}
-
-	outboundJSON, err := json.Marshal(outbound)
-	if err != nil {
-		return nil, fmt.Errorf("singbox: marshal outbound: %w", err)
-	}
-
-	cfg := singBoxConfig{
-		Log: &logConfig{
-			Level:  "info",
-			Output: "/var/log/sing-box/sing-box.log",
-		},
-		Inbounds:  []json.RawMessage{inboundJSON},
-		Outbounds: []json.RawMessage{outboundJSON},
-	}
-
-	content, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("singbox: marshal config: %w", err)
-	}
-
-	return &model.Config{
-		Content: string(content),
-		Format:  "json",
-		Version: b.Version(),
-	}, nil
-}
-
-func (b *Backend) generateUser(params model.ConfigParams) (*model.Config, error) {
-	port := params.Port
-	if port == 0 {
-		port = 8443
-	}
-
-	preset := chain.GetDefaultPreset()
-	uuid := generateUUID()
-
-	// Respect the global default profile: prefer AWG or TUIC if the profile defines them
-	if preset.AWG != nil {
-		// For standalone generation, client public key can be passed via params.Extra["clientPubKey"]
-		clientPub := ""
-		if v, ok := params.Extra["clientPubKey"].(string); ok {
-			clientPub = v
-		}
-		cfg, _, err := b.generateAWGUser(params, &preset, uuid, port, clientPub)
+		// CLI standalone AWG: single peer allowed_ips 0.0.0.0/0, no endpoint
+		// (it's a server-side endpoint). clientPub is unused server-side.
+		dp := chain.GetDefaultPreset()
+		amnezia := chain.BuildAWGAmnezia(dp.AWG, &dp)
+		content, err := RenderAWGHop(AWGHopParams{
+			Tag:         "awg-in",
+			ListenPort:  port,
+			Address:     []string{"10.8.0.1/24"},
+			PrivateKey:  priv,
+			PeerPubKey:  pub,
+			Amnezia:     amnezia,
+		})
 		if err != nil {
 			return nil, err
 		}
-		return cfg, nil
-	}
-	if preset.TUIC != nil {
-		return b.generateTUICUser(params, &preset, uuid, port)
-	}
+		return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, nil
 
-	// Fallback to VLESS+Reality
-	// sing-box 1.12.0+ uses 32-byte X25519 keys for Reality
-	privKeyBytes := make([]byte, 32)
-	if _, err := rand.Read(privKeyBytes); err != nil {
-		return nil, fmt.Errorf("singbox: generate user reality key: %w", err)
-	}
-	privKeyB64 := base64.RawURLEncoding.EncodeToString(privKeyBytes)
-
-	shortID := make([]byte, 8)
-	rand.Read(shortID)
-	shortIDHex := hex.EncodeToString(shortID)
-
-	serverName := "www.microsoft.com"
-	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
-		serverName = preset.Reality.ServerNames[0]
-	}
-
-	inbound := config.VLESSInbound{
-		Type:       "vless",
-		Tag:        "user-in",
-		Listen:     "0.0.0.0",
-		ListenPort: port,
-		Users: []config.VLESSUser{
-			{
-				Name: "user",
-				UUID: uuid,
-				Flow: "xtls-rprx-vision",
+	case "tuic":
+		uuid := generateUUID()
+		password := generateUUID()
+		inb := config.TUICInbound{
+			Type:              "tuic",
+			Tag:               "tuic-in",
+			Listen:            "0.0.0.0",
+			ListenPort:        port,
+			Users:             []config.TUICUser{{UUID: uuid, Password: password}},
+			CongestionControl: "bbr",
+			AuthTimeout:       "3s",
+			ZeroRTTHandshake:  true,
+			Heartbeat:         "10s",
+			TLS: &config.InboundTLSOptions{
+				Enabled:         true,
+				ServerName:      defaultRealitySNI,
+				CertificatePath: "/etc/sing-box/cert.pem",
+				KeyPath:         "/etc/sing-box/key.pem",
 			},
-		},
-		TLS: &config.InboundTLSOptions{
-			Enabled:    true,
-			ServerName: serverName,
-			Reality: &config.InboundRealityOptions{
-				Enabled:    true,
-				PrivateKey: privKeyB64,
-				ShortID:    []string{shortIDHex},
+		}
+		inbJSON, _ := json.Marshal(inb)
+		cfg := config.SingboxConfig{
+			Log:      &config.LogOptions{Level: "info", Timestamp: true},
+			Inbounds: []json.RawMessage{inbJSON},
+			Outbounds: []json.RawMessage{
+				mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),
+				mustMarshal(config.BlockOutbound{Type: "block", Tag: "block"}),
 			},
-		},
-	}
+			Route: &config.RoutingSection{
+				Rules:               []config.RouteRuleEntry{{Action: "sniff"}, {Protocol: []string{"dns"}, Action: "hijack-dns"}},
+				Final:               "direct",
+				AutoDetectInterface: true,
+			},
+		}
+		content, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, nil
 
-	inboundJSON, err := json.Marshal(inbound)
-	if err != nil {
-		return nil, fmt.Errorf("singbox: marshal inbound: %w", err)
+	default: // vless-reality
+		sni := defaultRealitySNI
+		if p := chain.GetDefaultPreset(); p.Reality != nil && len(p.Reality.ServerNames) > 0 {
+			sni = p.Reality.ServerNames[0]
+		}
+		content, err := RenderProxyNode(ProxyNodeParams{
+			ListenPort: port,
+			SNIDomain:  sni,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, nil
 	}
-
-	outbound := config.DirectOutbound{
-		Type: "direct",
-		Tag:  "direct-out",
-	}
-
-	outboundJSON, err := json.Marshal(outbound)
-	if err != nil {
-		return nil, fmt.Errorf("singbox: marshal outbound: %w", err)
-	}
-
-	cfg := singBoxConfig{
-		Log: &logConfig{
-			Level:  "info",
-			Output: "/var/log/sing-box/sing-box.log",
-		},
-		Inbounds:  []json.RawMessage{inboundJSON},
-		Outbounds: []json.RawMessage{outboundJSON},
-	}
-
-	content, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("singbox: marshal config: %w", err)
-	}
-
-	return &model.Config{
-		Content: string(content),
-		Format:  "json",
-		Version: b.Version(),
-	}, nil
 }
 
 func generateUUID() string {

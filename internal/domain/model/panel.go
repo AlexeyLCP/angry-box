@@ -71,6 +71,28 @@ type NodeInfo struct {
 	Bandwidth  string `json:"bandwidth,omitempty"` // human-readable: "100 Mbps", "1 Gbps"
 	Source     string `json:"source,omitempty"`    // "ssh_key", "password", "captured"
 
+	// AutoApply enables background SSH deploy when a client/inbound on this
+	// node is created/updated/deleted (hybrid mode — structural changes still
+	// need an explicit Apply). Mirrors the Python project's per-resource
+	// auto_apply_on behaviour.
+	AutoApply bool `json:"auto_apply,omitempty"`
+
+	// UseSudo wraps privileged remote commands in sudo (for non-root SSH users
+	// with passwordless sudo configured on the VPS).
+	UseSudo bool `json:"use_sudo,omitempty"`
+
+	// Deploy-status tracking: sha256 hex of the last successfully-applied
+	// rendered config + when. hasPendingChanges = never deployed OR current
+	// render hash differs from LastDeployedHash.
+	LastDeployedHash string    `json:"last_deployed_hash,omitempty"`
+	LastDeployedAt   time.Time `json:"last_deployed_at,omitempty"`
+
+	// Spider Web persistent layout: x/y coordinates saved on node drag so the
+	// graph layout survives reloads. (0,0) means "no saved position → use the
+	// default circular layout".
+	PosX float64 `json:"pos_x,omitempty"`
+	PosY float64 `json:"pos_y,omitempty"`
+
 	// User-facing inbounds on this node (for per-user config generation).
 	Inbounds []NodeInbound `json:"inbounds,omitempty"`
 }
@@ -101,9 +123,93 @@ type NodeInbound struct {
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).
+// It is the source of truth for the graph TOPOLOGY, while Chain.Nodes (an ordered
+// list) remains the materialized deploy path. The two are kept in sync by the
+// spider handlers when edges are created/deleted.
 type ConnectionLink struct {
+	ID        string        `json:"id"`
 	FromNodeID string        `json:"from_node_id"`
 	ToNodeID   string        `json:"to_node_id"`
 	Transport  TransportType `json:"transport"`
 	ChainName  string        `json:"chain_name,omitempty"`
+	Label      string        `json:"label,omitempty"` // optional edge label
+}
+
+// ─── Audit log ───────────────────────────────────────────────────────────────
+
+// AuditLog records a single operator/system action (CRUD, deploy, install,
+// assign). target_id is always stored as a string (ints coerced); payload_json
+// is the JSON-encoded payload or empty when no payload was supplied.
+type AuditLog struct {
+	ID           string    `json:"id"`
+	Actor        string    `json:"actor"`                    // "operator" by default
+	Action       string    `json:"action"`                   // create|update|delete|deploy|install|assign|unassign
+	TargetType   string    `json:"target_type"`              // node|chain|user|profile|route_rule|client_assignment|...
+	TargetID     string    `json:"target_id,omitempty"`
+	PayloadJSON  string    `json:"payload_json,omitempty"`
+	TS           time.Time `json:"ts"`
+}
+
+// ─── Profiles / Services (client↔server mediation) ──────────────────────────
+
+// Profile (a.k.a. Service) bundles a client type with a server role and an
+// optional list of node IDs, decoupling clients from specific nodes (modelled
+// after Marzneshin/Xboard). ClientType values: "user", "awg-peer",
+// "exit-node", "mtproxy". ServerRole: "proxy_node", "awg_balancer",
+// "mtproxy_server", "any".
+type Profile struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`        // unique
+	Description string    `json:"description,omitempty"`
+	ClientType  string    `json:"client_type"`
+	ServerRole  string    `json:"server_role,omitempty"` // default "any"
+	AutoApply   bool      `json:"auto_apply,omitempty"`  // intent flag (per-resource set is the real gate)
+	ServerIDs   []string  `json:"server_ids,omitempty"`  // empty = all matching role
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ClientAssignment is the polymorphic many-to-many link between a Profile and a
+// client entity (User / MtproxyUser / AWG peer / exit node). ClientID refers to
+// the client entity's ID by ClientType; there is no DB-level FK.
+type ClientAssignment struct {
+	ID         string    `json:"id"`
+	ProfileID  string    `json:"profile_id"`
+	ClientType string    `json:"client_type"` // user|mtproxy|awg-peer|exit-node
+	ClientID   string    `json:"client_id"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ─── Per-node route rules ────────────────────────────────────────────────────
+
+// RouteRule is an operator-editable routing rule scoped to a node. MatchType
+// selects which field the match values populate; Action selects the route
+// action. sing-box 1.13+ uses action rules (sniff/hijack-dns/route/reject).
+type RouteRule struct {
+	ID          string    `json:"id"`
+	NodeID      string    `json:"node_id"`
+	Priority    int       `json:"priority"` // lower = earlier
+	MatchType   string    `json:"match_type"`   // domain|domain_suffix|domain_keyword|ip_cidr|protocol
+	MatchValues string    `json:"match_values"` // newline- or comma-separated
+	Action      string    `json:"action"`       // route|block|sniff|hijack-dns
+	OutboundTag string    `json:"outbound_tag,omitempty"` // for action=route
+	Comment     string    `json:"comment,omitempty"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ─── MTProxy FakeTLS users ───────────────────────────────────────────────────
+
+// MtproxyUser is a Telegram MTProxy client with a FakeTLS secret. The full
+// sing-box secret is "ee" + SecretHex + hex(FakeTLSDomain); SecretHex is 16
+// random bytes hex-encoded (32 chars).
+type MtproxyUser struct {
+	ID            string    `json:"id"`
+	NodeID        string    `json:"node_id"`
+	Name          string    `json:"name"`
+	SecretHex     string    `json:"secret_hex"`      // 32 hex chars
+	FakeTLSDomain string    `json:"fake_tls_domain"` // default "disk.yandex.ru"
+	OrderIndex    int       `json:"order_index,omitempty"`
+	Enabled       bool      `json:"enabled"`
+	CreatedAt     time.Time `json:"created_at"`
 }

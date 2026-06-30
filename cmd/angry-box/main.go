@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	version = "dev"
+	version = "v0.1.0"
 	commit  = "none"
 	date    = "unknown"
 
@@ -748,6 +748,10 @@ func serveCmd() {
 	ui := web.NewServer(storePath, *devMode, cfg, *listen)
 	ui.Register(mux)
 
+	// Wire background auto-apply (hybrid deploy mode) with the same factory the
+	// CLI uses, so per-user mutations can trigger SSH deploys in the background.
+	chain.InitAutoApply(factory.New(), storePath)
+
 	// Start background metrics collection based on panel settings
 	settings, _ := chain.NewStore(storePath).GetSettings()
 	ui.StartBackgroundMetrics(settings.MetricsInterval)
@@ -770,7 +774,7 @@ func serveCmd() {
 		})
 	})
 
-	fmt.Printf("angry-box daemon listening on %s\n", *listen)
+	fmt.Printf("angry-box %s daemon listening on %s\n", version, *listen)
 	listenHost := *listen
 	if strings.HasPrefix(listenHost, ":") {
 		listenHost = "localhost" + listenHost

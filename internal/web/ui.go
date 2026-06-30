@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -194,6 +196,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/spider", s.auth(s.handleSpiderWeb))
 	mux.HandleFunc("POST /ui/spider/links", s.auth(s.handleCreateSpiderLink))
 	mux.HandleFunc("DELETE /ui/spider/links/{id}", s.auth(s.handleDeleteSpiderLink))
+	mux.HandleFunc("POST /ui/spider/nodes/{id}/position", s.auth(s.handleSaveNodePosition))
 	mux.HandleFunc("POST /ui/spider/apply/{name}", s.auth(s.handleApplyChain))
 
 	// Users
@@ -216,6 +219,49 @@ func (s *Server) Register(mux *http.ServeMux) {
 
 	// Status
 	mux.HandleFunc("GET /ui/status", s.auth(s.handleStatus))
+
+	// Audit log
+	mux.HandleFunc("GET /ui/audit", s.auth(s.handleAudit))
+
+	// Deploy status (pending-changes)
+	mux.HandleFunc("GET /ui/deploy-status", s.auth(s.handleDeployStatus))
+	mux.HandleFunc("GET /ui/api/deploy-status", s.auth(s.handleDeployStatusJSON))
+
+	// Protocol presets catalog + credential generators (for UI "Generate" buttons)
+	mux.HandleFunc("GET /ui/api/protocol-presets", s.auth(s.handleProtocolPresetsJSON))
+	mux.HandleFunc("GET /ui/api/crypto/wg-keypair", s.auth(s.handleCryptoWGKeypair))
+	mux.HandleFunc("GET /ui/api/crypto/mtproxy-secret", s.auth(s.handleCryptoMTProxySecret))
+	mux.HandleFunc("GET /ui/api/crypto/proxy-credentials", s.auth(s.handleCryptoProxyCreds))
+	mux.HandleFunc("GET /ui/api/protocols/generate", s.auth(s.handleProtocolsGenerate))
+	mux.HandleFunc("GET /ui/api/awg/preset", s.auth(s.handleAWGPresetJSON))
+	mux.HandleFunc("GET /ui/api/awg/cps", s.auth(s.handleAWGCPSJSON))
+	mux.HandleFunc("GET /ui/api/awg/capture", s.auth(s.handleAWGCaptureJSON))
+
+	// Config preview (render without pushing)
+	mux.HandleFunc("GET /ui/nodes/{id}/config/preview", s.auth(s.handleNodeConfigPreview))
+
+	// AWG config SSH import (take over an existing AWG balancer)
+	mux.HandleFunc("POST /ui/nodes/{id}/import-awg", s.auth(s.handleImportAWG))
+
+	// Profiles + ClientAssignments
+	mux.HandleFunc("GET /ui/profiles", s.auth(s.handleProfiles))
+	mux.HandleFunc("POST /ui/profiles", s.auth(s.handleCreateProfile))
+	mux.HandleFunc("GET /ui/profiles/new", s.auth(s.handleNewProfileForm))
+	mux.HandleFunc("GET /ui/profiles/{id}/edit", s.auth(s.handleEditProfileForm))
+	mux.HandleFunc("POST /ui/profiles/{id}/edit", s.auth(s.handleUpdateProfile))
+	mux.HandleFunc("DELETE /ui/profiles/{id}", s.auth(s.handleDeleteProfile))
+	mux.HandleFunc("POST /ui/profiles/{id}/assignments", s.auth(s.handleCreateAssignment))
+	mux.HandleFunc("DELETE /ui/profiles/{id}/assignments/{aid}", s.auth(s.handleDeleteAssignment))
+	mux.HandleFunc("GET /ui/api/profiles", s.auth(s.handleProfilesJSON))
+
+	// Per-node route rules
+	mux.HandleFunc("GET /ui/nodes/{id}/route-rules", s.auth(s.handleRouteRules))
+	mux.HandleFunc("POST /ui/nodes/{id}/route-rules", s.auth(s.handleCreateRouteRule))
+	mux.HandleFunc("DELETE /ui/nodes/{id}/route-rules/{rid}", s.auth(s.handleDeleteRouteRule))
+	mux.HandleFunc("GET /ui/api/routing-presets", s.auth(s.handleRoutingPresetsJSON))
+
+	// Unified clients page
+	mux.HandleFunc("GET /ui/clients", s.auth(s.handleClients))
 }
 
 func (s *Server) store() *chain.Store { return chain.NewStore(s.storePath) }
@@ -794,6 +840,8 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	}
 	info.Inbounds = inbounds
 	st.SaveNodeInfo(info)
+	chain.WriteAudit(st, "update", "node", info.ID, chain.AuditPayload{"inbounds": len(inbounds)}, "operator")
+	chain.ScheduleAutoApply(info.ID, "inbounds update")
 	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">` + i18n.T(r.Context(), "Inbounds saved.") + `</div>`})
 }
 
@@ -804,7 +852,8 @@ func (s *Server) handleSpiderWeb(w http.ResponseWriter, r *http.Request) {
 	hosts, _ := st.ListHosts()
 	chains, _ := st.ListChains()
 	infos, _ := st.ListNodeInfos()
-	s.renderContent(w, r, "Spider Web", templates.SpiderWeb(hosts, chains, infos))
+	links, _ := st.ListLinks()
+	s.renderContent(w, r, "Spider Web", templates.SpiderWeb(hosts, chains, infos, links))
 }
 
 func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) {
@@ -821,35 +870,17 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "from_node, to_node, and chain_name are required", http.StatusBadRequest)
 		return
 	}
+	if fromNode == toNode {
+		http.Error(w, "from_node and to_node must differ", http.StatusBadRequest)
+		return
+	}
 	if transport == "" {
 		transport = "xhttp"
 	}
 
 	st := s.store()
 
-	// Check if chain exists, if not create it
-	existing, err := st.GetChain(chainName)
-	var nodes []model.ChainNode
-	if err == nil {
-		// Chain exists, add new edge
-		nodes = existing.Nodes
-	} else {
-		// New chain
-		nodes = []model.ChainNode{}
-	}
-
-	// Build ordered nodes (add fromNode if not present, then toNode after it)
-	fromIdx, toIdx := -1, -1
-	for i, n := range nodes {
-		if n.ID == fromNode {
-			fromIdx = i
-		}
-		if n.ID == toNode {
-			toIdx = i
-		}
-	}
-
-	// Resolve hosts
+	// Resolve hosts (validates both ends exist).
 	fromHost, err := st.GetHost(fromNode)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("host %q not found", fromNode), http.StatusBadRequest)
@@ -861,57 +892,142 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if fromIdx < 0 {
-		nodes = append(nodes, model.ChainNode{ID: fromHost.ID, Addr: fromHost.Addr, User: fromHost.User, KeyPath: fromHost.KeyPath})
+	// 1. Persist the graph edge (source of truth for topology).
+	link := &model.ConnectionLink{
+		FromNodeID: fromNode,
+		ToNodeID:   toNode,
+		Transport:  model.TransportType(transport),
+		ChainName:  chainName,
 	}
-	if toIdx < 0 {
-		nodes = append(nodes, model.ChainNode{ID: toHost.ID, Addr: toHost.Addr, User: toHost.User, KeyPath: toHost.KeyPath})
+	if err := st.SaveLink(link); err != nil {
+		// Duplicate edge — not fatal, just continue to sync the chain list.
+		_ = err
 	}
 
-	chain := &model.Chain{
+	// 2. Sync Chain.Nodes (materialized deploy path): insert toNode right after
+	// fromNode if not already present in the chain's ordered list.
+	existing, err := st.GetChain(chainName)
+	var nodes []model.ChainNode
+	if err == nil {
+		nodes = existing.Nodes
+	} else {
+		nodes = []model.ChainNode{}
+	}
+
+	fromCN := model.ChainNode{ID: fromHost.ID, Addr: fromHost.Addr, User: fromHost.User, KeyPath: fromHost.KeyPath}
+	toCN := model.ChainNode{ID: toHost.ID, Addr: toHost.Addr, User: toHost.User, KeyPath: toHost.KeyPath}
+
+	// Ensure fromNode is in the list.
+	fromIdx := indexOfChainNode(nodes, fromNode)
+	if fromIdx < 0 {
+		nodes = append(nodes, fromCN)
+		fromIdx = len(nodes) - 1
+	}
+	// Ensure toNode is present; if missing, insert right after fromNode so the
+	// deploy order reflects the edge direction.
+	if indexOfChainNode(nodes, toNode) < 0 {
+		insertAt := fromIdx + 1
+		if insertAt > len(nodes) {
+			insertAt = len(nodes)
+		}
+		nodes = append(nodes, model.ChainNode{})
+		copy(nodes[insertAt+1:], nodes[insertAt:])
+		nodes[insertAt] = toCN
+	}
+
+	ch := &model.Chain{
 		Name:      chainName,
 		Nodes:     nodes,
 		Strategy:  model.StrategyURLTest,
 		Transport: model.TransportType(transport),
 	}
-	st.SaveChain(chain)
+	st.SaveChain(ch)
+	chain.WriteAudit(st, "create", "link", link.ID, chain.AuditPayload{"from": fromNode, "to": toNode, "chain": chainName, "transport": transport}, "operator")
 
-	// Re-render with full data from store
-	allHosts, _ := st.ListHosts()
-	allChains, _ := st.ListChains()
-	allInfos, _ := st.ListNodeInfos()
-	s.render(w, r, templates.SpiderWeb(allHosts, allChains, allInfos))
+	// Re-render with full data from store (including links now).
+	s.renderSpider(w, r, st)
 }
 
 func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// Split at the LAST "-" because both chain names and node IDs may contain hyphens.
-	lastDash := strings.LastIndex(id, "-")
-	if lastDash < 0 {
-		http.Error(w, "invalid link id format", http.StatusBadRequest)
-		return
-	}
-	chainName, nodeID := id[:lastDash], id[lastDash+1:]
 	st := s.store()
-	c, err := st.GetChain(chainName)
+	link, err := st.GetLink(id)
 	if err != nil {
-		http.Error(w, "chain not found", http.StatusNotFound)
+		http.Error(w, "link not found", http.StatusNotFound)
 		return
 	}
-	filtered := c.Nodes[:0]
-	for _, n := range c.Nodes {
-		if n.ID != nodeID {
-			filtered = append(filtered, n)
-		}
+	chainName := link.ChainName
+	fromNode := link.FromNodeID
+	toNode := link.ToNodeID
+
+	if err := st.DeleteLink(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
 	}
-	if len(filtered) == 0 {
-		st.DeleteChain(chainName)
-	} else {
-		c.Nodes = filtered
-		st.SaveChain(c)
+	chain.WriteAudit(st, "delete", "link", id, chain.AuditPayload{"chain": chainName, "from": fromNode, "to": toNode}, "operator")
+
+	// Sync Chain.Nodes: remove nodes that no longer have ANY edge in this chain.
+	remainingLinks, _ := st.ListLinksForChain(chainName)
+	used := map[string]bool{}
+	for _, l := range remainingLinks {
+		used[l.FromNodeID] = true
+		used[l.ToNodeID] = true
+	}
+	c, err := st.GetChain(chainName)
+	if err == nil {
+		filtered := c.Nodes[:0]
+		for _, n := range c.Nodes {
+			if used[n.ID] {
+				filtered = append(filtered, n)
+			}
+		}
+		if len(filtered) == 0 {
+			st.DeleteChain(chainName)
+		} else {
+			c.Nodes = filtered
+			st.SaveChain(c)
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(""))
+}
+
+// handleSaveNodePosition persists a node's spider-web drag coordinates. Called
+// on mouseup after dragging a node. Body params: x, y (float).
+func (s *Server) handleSaveNodePosition(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	x, _ := strconv.ParseFloat(r.FormValue("x"), 64)
+	y, _ := strconv.ParseFloat(r.FormValue("y"), 64)
+	if err := s.store().SaveNodePosition(id, x, y); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
+}
+
+// renderSpider loads all spider data (hosts/chains/infos/links) and renders the
+// SpiderWeb template. Shared by handleSpiderWeb and the link create/delete flows.
+func (s *Server) renderSpider(w http.ResponseWriter, r *http.Request, st *chain.Store) {
+	allHosts, _ := st.ListHosts()
+	allChains, _ := st.ListChains()
+	allInfos, _ := st.ListNodeInfos()
+	allLinks, _ := st.ListLinks()
+	s.render(w, r, templates.SpiderWeb(allHosts, allChains, allInfos, allLinks))
+}
+
+// indexOfChainNode returns the index of nodeID in nodes, or -1.
+func indexOfChainNode(nodes []model.ChainNode, nodeID string) int {
+	for i, n := range nodes {
+		if n.ID == nodeID {
+			return i
+		}
+	}
+	return -1
 }
 
 // ─── Users ─────────────────────────────────────────────────────────────────────
@@ -986,6 +1102,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
 		return
 	}
+	chain.WriteAudit(st, "create", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
+	s.scheduleAutoApplyForUser(st, u, "user create")
 	s.render(w, r, templates.UserRow(u))
 }
 
@@ -1032,6 +1150,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st.SaveUser(u)
+	chain.WriteAudit(st, "update", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
+	s.scheduleAutoApplyForUser(st, u, "user update")
 	if isHTMXRequest(r) {
 		s.render(w, r, templates.UserRow(u))
 	} else {
@@ -1041,12 +1161,36 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := s.store().DeleteUser(id); err != nil {
+	st := s.store()
+	// Load the user first so we can audit + schedule auto-apply on the chains it
+	// belonged to before deletion.
+	if u, err := st.GetUser(id); err == nil {
+		chain.WriteAudit(st, "delete", "user", id, chain.AuditPayload{"name": u.Name}, "operator")
+		s.scheduleAutoApplyForUser(st, u, "user delete")
+	}
+	if err := st.DeleteUser(id); err != nil {
 		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(""))
+}
+
+// scheduleAutoApplyForUser triggers background deploys on every node of every
+// chain the user belongs to. Best-effort: missing chains/nodes are skipped.
+func (s *Server) scheduleAutoApplyForUser(st *chain.Store, u *model.User, reason string) {
+	if u == nil {
+		return
+	}
+	for _, chainName := range u.ChainNames {
+		c, err := st.GetChain(chainName)
+		if err != nil {
+			continue
+		}
+		for _, n := range c.Nodes {
+			chain.ScheduleAutoApply(n.ID, reason+":"+chainName)
+		}
+	}
 }
 
 func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
@@ -1131,11 +1275,78 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
 	ip := strings.Split(addr, ":")[0]
 	if ib.Protocol == "awg" && u.ImportedSecret == "" && ib.AWGClientPriv != "" {
-		// Provide full usable WG config with the sample client private that matches the peer pub on server.
-		return fmt.Sprintf("# AWG Standalone (auto-generated sample key)\n[Interface]\nPrivateKey = %s\nAddress = 10.8.0.2/32\nMTU = 1420\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s:%d\nPersistentKeepalive = 25",
-			ib.AWGClientPriv, ib.ServerPubKey, ip, ib.Port)
+		// Full AWG client .conf with Amnezia obfuscation params from the active
+		// preset (Jc/Jmin/Jmax/S1-S4/H1-H4 + I1-I5 when CPS is enabled). This
+		// matches the server-side amnezia block so the client connects.
+		return buildAWGClientConf(ip, ib.Port, ib.AWGClientPriv, ib.ServerPubKey, ib.AWGClientPub, "")
+	}
+	if ib.Protocol == "awg" && u.ImportedSecret != "" && u.SecretType == "awg" {
+		// Imported AWG private key — build a .conf using it.
+		return buildAWGClientConf(ip, ib.Port, u.ImportedSecret, ib.ServerPubKey, "", "")
+	}
+	if ib.Protocol == "mtproxy" {
+		full, err := chain.MTProxyFullSecret(ib.UUID, defaultFakeTLSDomain(ib))
+		if err != nil {
+			full = "ee" + ib.UUID
+		}
+		return fmt.Sprintf("tg://proxy?server=%s&port=%d&secret=%s", ip, ib.Port, full)
 	}
 	return buildClientURI(ib.Protocol, ip, ib.Port, ib.UUID, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u)
+}
+
+// defaultFakeTLSDomain returns the MTProxy FakeTLS domain for an inbound (the
+// Obfuscation field if set, else the canonical "disk.yandex.ru").
+func defaultFakeTLSDomain(ib model.NodeInbound) string {
+	if ib.Obfuscation != "" {
+		return ib.Obfuscation
+	}
+	return "disk.yandex.ru"
+}
+
+// buildAWGClientConf renders a full awg-quick client .conf with Amnezia params.
+// hostOverride lets callers swap the domain/IP for the Endpoint line.
+func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride string) string {
+	host := hostOverride
+	if host == "" {
+		host = ip
+	}
+	var b strings.Builder
+	b.WriteString("[Interface]\n")
+	b.WriteString("Address = 10.8.0.2/24\n")
+	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", clientPriv))
+	b.WriteString("MTU = 1420\n\n")
+	b.WriteString("[Peer]\n")
+	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
+	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
+	b.WriteString("PersistentKeepalive = 25\n")
+	// Amnezia params from the active preset's AWG section.
+	if preset := chain.GetDefaultPreset(); preset.AWG != nil {
+		amn := chain.BuildAWGAmnezia(preset.AWG, &preset)
+		if amn != nil {
+			b.WriteString("\n")
+			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))
+			b.WriteString(fmt.Sprintf("Jmin = %d\n", amn.JMIN))
+			b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
+			b.WriteString(fmt.Sprintf("S1 = %d\n", amn.S1))
+			b.WriteString(fmt.Sprintf("S2 = %d\n", amn.S2))
+			b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
+			b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+			b.WriteString(fmt.Sprintf("H1 = %s\n", amn.H1))
+			b.WriteString(fmt.Sprintf("H2 = %s\n", amn.H2))
+			b.WriteString(fmt.Sprintf("H3 = %s\n", amn.H3))
+			b.WriteString(fmt.Sprintf("H4 = %s\n", amn.H4))
+			if amn.I1 != "" {
+				b.WriteString(fmt.Sprintf("I1 = %s\n", amn.I1))
+				b.WriteString(fmt.Sprintf("I2 = %s\n", amn.I2))
+				b.WriteString(fmt.Sprintf("I3 = %s\n", amn.I3))
+				b.WriteString(fmt.Sprintf("I4 = %s\n", amn.I4))
+				b.WriteString(fmt.Sprintf("I5 = %s\n", amn.I5))
+			}
+		}
+	}
+	_ = clientPub
+	return b.String()
 }
 
 func contains(slice []string, val string) bool {
@@ -1151,13 +1362,12 @@ func contains(slice []string, val string) bool {
 func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, name string, u *model.User) string {
 	switch proto {
 	case "awg":
-		if u.ImportedSecret != "" && u.SecretType == "awg" {
-			return fmt.Sprintf("# Imported AWG key used.\n[Interface]\nPrivateKey = %s\nAddress = 10.8.0.2/32\nMTU = 1420\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s:%d\nPersistentKeepalive = 25",
-				u.ImportedSecret, pubKey, ip, port)
+		if u != nil && u.ImportedSecret != "" && u.SecretType == "awg" {
+			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "")
 		}
 		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420", ip, port, pubKey)
 	case "tuic":
-		if u.ImportedSecret != "" && u.SecretType == "tuic" {
+		if u != nil && u.ImportedSecret != "" && u.SecretType == "tuic" {
 			return fmt.Sprintf("tuic://%s:%s@%s:%d?congestion_control=bbr&alpn=h3",
 				u.ImportedSecret, u.ImportedSecret, ip, port)
 		}
@@ -1171,6 +1381,28 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 		}
 		return fmt.Sprintf("vless://%s@%s:%d?type=tcp&security=reality&pbk=%s&sni=%s&sid=%s&fp=chrome&flow=xtls-rprx-vision",
 			uuid, ip, port, pubKey, serverName, shortID)
+	case "vless-reality-xhttp":
+		// Combined REALITY + XHTTP max obfuscation share-link. Values are
+		// percent-encoded (per protocol_presets.generate_vless_reality_xhttp_share_link),
+		// unlike the plain vless-reality link above.
+		sni := "www.microsoft.com"
+		path := "/api"
+		if preset := chain.GetDefaultPreset(); preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+			sni = preset.Reality.ServerNames[0]
+		}
+		q := url.Values{}
+		q.Set("type", "xhttp")
+		q.Set("security", "reality")
+		q.Set("sni", sni)
+		q.Set("fp", "chrome")
+		q.Set("pbk", pubKey)
+		q.Set("sid", shortID)
+		q.Set("spx", "/")
+		q.Set("flow", "xtls-rprx-vision")
+		q.Set("mode", "packet-up")
+		q.Set("path", path)
+		q.Set("host", sni)
+		return fmt.Sprintf("vless://%s@%s:%d?%s#vless-reality-xhttp", uuid, ip, port, q.Encode())
 	case "xhttp":
 		serverName := "www.microsoft.com"
 		if preset := chain.GetDefaultPreset(); preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
@@ -1178,9 +1410,39 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 		}
 		return fmt.Sprintf("vless://%s@%s:%d?type=xhttp&security=none&host=%s&path=%%2Fapi",
 			uuid, ip, port, serverName)
+	case "vmess":
+		// vmess:// + base64(JSON{v,ps,add,port,id,aid,net,type,tls})
+		obj := map[string]string{
+			"v": "2", "ps": name, "add": ip, "port": fmt.Sprintf("%d", port),
+			"id": uuid, "aid": "0", "net": "tcp", "type": "none", "tls": "",
+		}
+		b, _ := json.Marshal(obj)
+		return "vmess://" + base64.StdEncoding.EncodeToString(b)
+	case "trojan":
+		sni := "www.microsoft.com"
+		if preset := chain.GetDefaultPreset(); preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+			sni = preset.Reality.ServerNames[0]
+		}
+		return fmt.Sprintf("trojan://%s@%s:%d?type=tcp&security=tls&sni=%s#%s",
+			privKey, ip, port, sni, name)
+	case "shadowsocks", "ss":
+		cipher := chain.SS_DEFAULT_CIPHER
+		password := privKey
+		if password == "" {
+			password = chain.GenerateSSPassword(cipher)
+		}
+		userinfo := base64.StdEncoding.EncodeToString([]byte(cipher + ":" + password))
+		return fmt.Sprintf("ss://%s@%s:%d#%s", userinfo, ip, port, name)
 	case "hysteria2":
 		return fmt.Sprintf("hysteria2://%s@%s:%d?obfs=salamander&obfs-password=salamander_pass&insecure=1",
 			uuid, ip, port)
+	case "mtproxy":
+		fakeDomain := "disk.yandex.ru"
+		full, err := chain.MTProxyFullSecret(privKey, fakeDomain)
+		if err != nil {
+			full = "ee" + privKey
+		}
+		return fmt.Sprintf("tg://proxy?server=%s&port=%d&secret=%s", ip, port, full)
 	default:
 		return fmt.Sprintf("# %s config for %s:%d", proto, ip, port)
 	}
@@ -1874,4 +2136,594 @@ func jsonMarshal(v any) string {
 		return fmt.Sprintf(`{"error": %q}`, err.Error())
 	}
 	return string(data)
+}
+
+// ─── Audit log ───────────────────────────────────────────────────────────────
+
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	limit := 200
+	logs, err := st.ListAuditLogs(limit)
+	if err != nil {
+		s.renderContent(w, r, "Audit", &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">failed to load audit log: %s</div>`, err.Error())})
+		return
+	}
+	if logs == nil {
+		logs = []*model.AuditLog{}
+	}
+	// Minimal table; replaced by a templ component in the UI block.
+	var b strings.Builder
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">Audit Log</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Time</th><th>Action</th><th>Target</th><th>ID</th><th>Actor</th><th>Payload</th></tr></thead><tbody>`)
+	for _, a := range logs {
+		b.WriteString(fmt.Sprintf("<tr><td class="+"whitespace-nowrap"+">%s</td><td><span class=\"badge badge-sm\">%s</span></td><td>%s</td><td class=\"font-mono text-xs\">%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/60\">%s</td></tr>",
+			a.TS.Format("2006-01-02 15:04:05"), a.Action, a.TargetType, a.TargetID, a.Actor, truncForDisplay(a.PayloadJSON, 80)))
+	}
+	b.WriteString(`</tbody></table></div></div></div>`)
+	s.renderContent(w, r, "Audit", &simpleHTML{html: b.String()})
+}
+
+// ─── Deploy status (pending-changes) ─────────────────────────────────────────
+
+// deployStatusRow is one row of the deploy-status view.
+type deployStatusRow struct {
+	NodeID           string    `json:"node_id"`
+	Name             string    `json:"name"`
+	Role             string    `json:"role"`
+	HasPending       bool      `json:"has_pending_changes"`
+	LastDeployedAt   time.Time `json:"last_deployed_at,omitempty"`
+	CurrentHash      string    `json:"current_hash,omitempty"`
+	LastDeployedHash string    `json:"last_deployed_hash,omitempty"`
+}
+
+func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
+	rows := s.computeDeployStatusRows(r)
+	var b strings.Builder
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">Deploy Status</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Node</th><th>Role</th><th>Status</th><th>Last deployed</th><th>Hash</th></tr></thead><tbody>`)
+	for _, row := range rows {
+		status := `<span class="badge badge-success badge-sm">applied</span>`
+		if row.HasPending {
+			status = `<span class="badge badge-warning badge-sm">pending</span>`
+		}
+		last := "never"
+		if !row.LastDeployedAt.IsZero() {
+			last = row.LastDeployedAt.Format("2006-01-02 15:04:05")
+		}
+		b.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/50\">%s</td></tr>",
+			row.Name, row.Role, status, last, truncForDisplay(row.LastDeployedHash, 12)))
+	}
+	b.WriteString(`</tbody></table></div></div></div>`)
+	s.renderContent(w, r, "Deploy Status", &simpleHTML{html: b.String()})
+}
+
+func (s *Server) handleDeployStatusJSON(w http.ResponseWriter, r *http.Request) {
+	s.renderJSON(w, s.computeDeployStatusRows(r))
+}
+
+// computeDeployStatusRows builds the per-node deploy-status list. has_pending =
+// never deployed (LastDeployedHash=="") OR render error OR current hash != last
+// hash. Current hash is computed from the merged config render (best-effort; a
+// render error counts as pending).
+func (s *Server) computeDeployStatusRows(r *http.Request) []deployStatusRow {
+	st := s.store()
+	infos, _ := st.ListNodeInfos()
+	rows := make([]deployStatusRow, 0, len(infos))
+	for _, info := range infos {
+		role := inferNodeRole(info)
+		row := deployStatusRow{
+			NodeID:           info.ID,
+			Name:             info.ID,
+			Role:             role,
+			LastDeployedAt:   info.LastDeployedAt,
+			LastDeployedHash: info.LastDeployedHash,
+		}
+		// Current render hash (best-effort).
+		if current, err := renderCurrentNodeConfig(st, info); err == nil {
+			row.CurrentHash = chain.ConfigHash([]byte(current))
+		}
+		row.HasPending = info.LastDeployedHash == "" || row.CurrentHash == "" || row.CurrentHash != info.LastDeployedHash
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// inferNodeRole guesses a node's role from its inbounds/chain membership, for
+// display purposes only (does not affect config generation).
+func inferNodeRole(info *model.NodeInfo) string {
+	for _, ib := range info.Inbounds {
+		if ib.Protocol == "mtproxy" {
+			return "mtproxy_server"
+		}
+	}
+	// AWG balancer if it has AWG inbounds; else proxy_node.
+	for _, ib := range info.Inbounds {
+		if ib.Protocol == "awg" {
+			return "awg_balancer"
+		}
+	}
+	return "proxy_node"
+}
+
+// renderCurrentNodeConfig renders the current merged config for a node without
+// pushing it (for hash comparison). Returns the JSON string.
+func renderCurrentNodeConfig(st *chain.Store, info *model.NodeInfo) (string, error) {
+	nodeChains, _ := st.GetChainsForNode(info.ID)
+	cfg, _, err := chain.RenderMergedNodeConfig(info, nodeChains)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// truncForDisplay shortens s to n chars with an ellipsis for table cells.
+func truncForDisplay(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+// ─── Protocol presets / credential generators ────────────────────────────────
+
+func (s *Server) handleProtocolPresetsJSON(w http.ResponseWriter, r *http.Request) {
+	s.renderJSON(w, chain.GetProtocolPresetsCatalog())
+}
+
+func (s *Server) handleCryptoWGKeypair(w http.ResponseWriter, r *http.Request) {
+	priv, pub, err := chain.GenerateRealityKeypair()
+	if err != nil {
+		s.renderJSON(w, map[string]string{"error": err.Error()})
+		return
+	}
+	psk, _ := chain.GenerateWGPresharedKey()
+	s.renderJSON(w, map[string]string{
+		"private_key":    priv,
+		"public_key":     pub,
+		"preshared_key":  psk,
+	})
+}
+
+func (s *Server) handleCryptoMTProxySecret(w http.ResponseWriter, r *http.Request) {
+	s.renderJSON(w, map[string]string{"secret_hex": chain.GenerateMTProxySecret()})
+}
+
+func (s *Server) handleCryptoProxyCreds(w http.ResponseWriter, r *http.Request) {
+	s.renderJSON(w, map[string]string{
+		"uuid":     chain.GenerateTUICUUID(),
+		"password": chain.GenerateProxyPassword(),
+	})
+}
+
+// handleProtocolsGenerate generates the credentials requested via ?what=...
+// (comma-separated tokens). Only requested fields are set in the response.
+func (s *Server) handleProtocolsGenerate(w http.ResponseWriter, r *http.Request) {
+	what := r.URL.Query().Get("what")
+	ssCipher := r.URL.Query().Get("ss_cipher")
+	if ssCipher == "" {
+		ssCipher = chain.SS_DEFAULT_CIPHER
+	}
+	out := map[string]string{}
+	for _, token := range strings.Split(what, ",") {
+		switch strings.TrimSpace(token) {
+		case "reality_keypair":
+			priv, pub, err := chain.GenerateRealityKeypair()
+			if err == nil {
+				out["reality_private_key"] = priv
+				out["reality_public_key"] = pub
+			}
+		case "reality_short_id":
+			out["reality_short_id"] = chain.GenerateRealityShortID()
+		case "trojan_password":
+			out["trojan_password"] = chain.GenerateTrojanPassword()
+		case "ss_password":
+			out["ss_password"] = chain.GenerateSSPassword(ssCipher)
+		case "hysteria2_password":
+			out["hysteria2_password"] = chain.GenerateHysteria2Password()
+			out["hysteria2_obfs_password"] = chain.GenerateHysteria2ObfsPassword()
+		case "tuic_uuid":
+			out["tuic_uuid"] = chain.GenerateTUICUUID()
+			out["tuic_password"] = chain.GenerateTUICPassword()
+		case "vmess_ws_path":
+			out["vmess_ws_path"] = chain.GenerateVMessWSPath()
+		}
+	}
+	s.renderJSON(w, out)
+}
+
+// handleAWGPresetJSON returns an AWG obfuscation preset for ?profile=lite|standard|pro.
+func (s *Server) handleAWGPresetJSON(w http.ResponseWriter, r *http.Request) {
+	profile := chain.AWGProfileName(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = chain.AWGProfilePro
+	}
+	params := chain.GenAWGParams(profile)
+	s.renderJSON(w, map[string]any{
+		"profile":           string(profile),
+		"params":            params,
+		"singbox_amnezia":   chain.ToSingboxAmnezia(params, 50),
+		"awg_conf_lines":    chain.ToAWGConfLines(params),
+	})
+}
+
+// handleAWGCPSJSON returns synthesized CPS I1-I5 packets for ?profile=tls|dns|sip|quic.
+func (s *Server) handleAWGCPSJSON(w http.ResponseWriter, r *http.Request) {
+	profile := r.URL.Query().Get("profile")
+	if profile == "" {
+		profile = "tls"
+	}
+	domain := r.URL.Query().Get("domain")
+	level := 3
+	mimicry := profile
+	if mimicry == "quic" || mimicry == "tls" || mimicry == "dns" || mimicry == "sip" {
+		// ok
+	} else {
+		mimicry = "tls"
+	}
+	mat := chain.GenerateAWGObfsMaterial(level, mimicry)
+	strs := chain.CPSMaterialStrings(mat)
+	if profile == "dns" && domain != "" {
+		// dns profile: first packet uses <r 2><b 0x...> over the requested domain
+		strs[0] = chain.CPSDNSString(mat.I1)
+	}
+	resp := map[string]any{
+		"profile": profile,
+		"domain":  domain,
+		"packets": strs[:],
+	}
+	s.renderJSON(w, resp)
+}
+
+// handleAWGCaptureJSON triggers a live QUIC capture against ?domain=... (Feature 1).
+func (s *Server) handleAWGCaptureJSON(w http.ResponseWriter, r *http.Request) {
+	domain := r.URL.Query().Get("domain")
+	res := chain.CaptureQUICSignature(domain, 0)
+	s.renderJSON(w, res)
+}
+
+// handleNodeConfigPreview renders a node's merged config without pushing it.
+func (s *Server) handleNodeConfigPreview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil {
+		s.renderJSON(w, map[string]string{"error": err.Error()})
+		return
+	}
+	cfg, _, err := chain.RenderMergedNodeConfig(info, nil)
+	if err != nil {
+		s.renderJSON(w, map[string]string{"error": "render: " + err.Error()})
+		return
+	}
+	b, _ := json.MarshalIndent(cfg, "", "  ")
+	s.renderJSON(w, map[string]string{"node_id": id, "config": string(b)})
+}
+
+// handleImportAWG SSH-imports existing AWG configs from the node and back-fills
+// placeholder inbound fields, then persists the NodeInfo.
+func (s *Server) handleImportAWG(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil {
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">node not found: %s</div>`, err.Error())})
+		return
+	}
+	res, err := chain.ImportAWGConfigs(info.Host, info.UseSudo, info)
+	if err != nil {
+		chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"error": err.Error()}, "operator")
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">AWG import failed: %s</div>`, err.Error())})
+		return
+	}
+	_ = st.SaveNodeInfo(info)
+	chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"exit_nodes": len(res.ExitNodes), "peers": len(res.Peers), "db_updated": res.DBUpdated}, "operator")
+
+	var b strings.Builder
+	b.WriteString(`<div class="alert alert-success">AWG import complete.</div>`)
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body">`)
+	if res.ServerConfig != nil {
+		b.WriteString(fmt.Sprintf(`<p>awg0.conf: ListenPort=%d, Jc=%d, S1=%d</p>`, res.ServerConfig.ListenPort, res.ServerConfig.JC, res.ServerConfig.S1))
+	}
+	b.WriteString(fmt.Sprintf(`<p>Exit nodes: %d, Peers: %d</p>`, len(res.ExitNodes), len(res.Peers)))
+	b.WriteString(fmt.Sprintf(`<p>DB update: %s</p>`, res.DBUpdated))
+	if res.Log != "" {
+		b.WriteString(fmt.Sprintf(`<pre class="text-xs whitespace-pre-wrap">%s</pre>`, res.Log))
+	}
+	b.WriteString(`</div></div>`)
+	s.render(w, r, &simpleHTML{html: b.String()})
+}
+
+// ─── Profiles + ClientAssignments ───────────────────────────────────────────
+
+func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	profiles, _ := st.ListProfiles()
+	if profiles == nil {
+		profiles = []*model.Profile{}
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">Profiles</h2>`)
+	b.WriteString(`<button class="btn btn-primary btn-sm" hx-get="/ui/profiles/new" hx-target="#modal-container">+ New Profile</button>`)
+	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Name</th><th>Client type</th><th>Server role</th><th>Auto-apply</th><th>Servers</th><th></th></tr></thead><tbody>`)
+	for _, p := range profiles {
+		auto := "no"
+		if p.AutoApply {
+			auto = "yes"
+		}
+		b.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td><button class="btn btn-ghost btn-xs" hx-get="/ui/profiles/%s/edit" hx-target="#modal-container">Edit</button> <button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/profiles/%s" hx-confirm="Delete profile %s?" hx-target="closest tr" hx-swap="outerHTML">Delete</button></td></tr>`,
+			p.Name, p.ClientType, p.ServerRole, auto, len(p.ServerIDs), p.ID, p.ID, p.Name))
+	}
+	b.WriteString(`</tbody></table></div><div id="modal-container"></div></div>`)
+	s.renderContent(w, r, "Profiles", &simpleHTML{html: b.String()})
+}
+
+func (s *Server) handleNewProfileForm(w http.ResponseWriter, r *http.Request) {
+	html := `<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">New Profile</h3><form hx-post="/ui/profiles" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" placeholder="Profile name" required><input name="description" class="input input-bordered w-full" placeholder="Description"><select name="client_type" class="select select-bordered w-full"><option value="user">user</option><option value="mtproxy">mtproxy</option><option value="awg-peer">awg-peer</option><option value="exit-node">exit-node</option></select><select name="server_role" class="select select-bordered w-full"><option value="any">any</option><option value="proxy_node">proxy_node</option><option value="awg_balancer">awg_balancer</option><option value="mtproxy_server">mtproxy_server</option></select><label class="label cursor-pointer"><span class="label-text">Auto-apply</span><input type="checkbox" name="auto_apply" class="checkbox" checked></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">Create</button></div></form></div></dialog>`
+	s.render(w, r, &simpleHTML{html: html})
+}
+
+func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	p := &model.Profile{
+		Name:        strings.TrimSpace(r.FormValue("name")),
+		Description: strings.TrimSpace(r.FormValue("description")),
+		ClientType:  r.FormValue("client_type"),
+		ServerRole:  r.FormValue("server_role"),
+		AutoApply:   r.FormValue("auto_apply") == "on",
+	}
+	if p.ServerRole == "" {
+		p.ServerRole = "any"
+	}
+	if p.Name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	if err := st.SaveProfile(p); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	chain.WriteAudit(st, "create", "profile", p.ID, chain.AuditPayload{"name": p.Name, "client_type": p.ClientType}, "operator")
+	http.Redirect(w, r, "/ui/profiles", http.StatusSeeOther)
+}
+
+func (s *Server) handleEditProfileForm(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := s.store().GetProfile(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	checked := ""
+	if p.AutoApply {
+		checked = "checked"
+	}
+	html := fmt.Sprintf(`<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">Edit Profile</h3><form hx-post="/ui/profiles/%s/edit" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" value="%s" required><input name="description" class="input input-bordered w-full" value="%s"><input name="client_type" class="input input-bordered w-full" value="%s"><input name="server_role" class="input input-bordered w-full" value="%s"><label class="label cursor-pointer"><span class="label-text">Auto-apply</span><input type="checkbox" name="auto_apply" class="checkbox" %s></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">Save</button></div></form></div></dialog>`,
+		p.ID, p.Name, p.Description, p.ClientType, p.ServerRole, checked)
+	s.render(w, r, &simpleHTML{html: html})
+}
+
+func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	p, err := st.GetProfile(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	p.Name = strings.TrimSpace(r.FormValue("name"))
+	p.Description = strings.TrimSpace(r.FormValue("description"))
+	p.ClientType = r.FormValue("client_type")
+	p.ServerRole = r.FormValue("server_role")
+	p.AutoApply = r.FormValue("auto_apply") == "on"
+	if err := st.SaveProfile(p); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	chain.WriteAudit(st, "update", "profile", p.ID, chain.AuditPayload{"name": p.Name}, "operator")
+	http.Redirect(w, r, "/ui/profiles", http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	if p, err := st.GetProfile(id); err == nil {
+		chain.WriteAudit(st, "delete", "profile", id, chain.AuditPayload{"name": p.Name}, "operator")
+	}
+	if err := st.DeleteProfile(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
+}
+
+func (s *Server) handleCreateAssignment(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	a := &model.ClientAssignment{
+		ProfileID:  pid,
+		ClientType: r.FormValue("client_type"),
+		ClientID:   r.FormValue("client_id"),
+	}
+	if err := s.store().SaveAssignment(a); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	chain.WriteAudit(s.store(), "assign", "client_assignment", a.ID, chain.AuditPayload{"profile_id": pid, "client_type": a.ClientType, "client_id": a.ClientID}, "operator")
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) handleDeleteAssignment(w http.ResponseWriter, r *http.Request) {
+	aid := r.PathValue("aid")
+	chain.WriteAudit(s.store(), "unassign", "client_assignment", aid, chain.AuditPayload{"id": aid}, "operator")
+	if err := s.store().DeleteAssignment(aid); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
+}
+
+func (s *Server) handleProfilesJSON(w http.ResponseWriter, r *http.Request) {
+	profiles, _ := s.store().ListProfiles()
+	s.renderJSON(w, profiles)
+}
+
+// ─── Per-node route rules ───────────────────────────────────────────────────
+
+func (s *Server) handleRouteRules(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	rules, _ := st.ListRouteRulesForNode(id)
+	if rules == nil {
+		rules = []*model.RouteRule{}
+	}
+	presets := chain.GetRoutingPresets("")
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(`<div class="space-y-4"><h2 class="text-2xl font-semibold">Route Rules — %s</h2>`, id))
+	// Apply-preset shortcut.
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h3 class="font-semibold">Apply routing preset</h3><form hx-post="/ui/nodes/` + id + `/route-rules" class="flex gap-2 items-end flex-wrap"><select name="match_values" class="select select-bordered select-sm">`)
+	for _, p := range presets {
+		b.WriteString(fmt.Sprintf(`<option value="%s">%s (%s, %d domains)</option>`, strings.Join(p.Domains, "\n"), p.Name, p.Category, len(p.Domains)))
+	}
+	b.WriteString(`</select><input type="hidden" name="match_type" value="domain_suffix"><input type="hidden" name="action" value="route"><input type="hidden" name="priority" value="100"><input type="hidden" name="enabled" value="on"><input type="hidden" name="preset_name" value="1"><button type="submit" class="btn btn-primary btn-sm">Add rule from preset</button></form></div></div>`)
+	// Existing rules.
+	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Priority</th><th>Match</th><th>Values</th><th>Action</th><th>Outbound</th><th></th></tr></thead><tbody>`)
+	for _, rr := range rules {
+		en := ""
+		if !rr.Enabled {
+			en = " opacity-50"
+		}
+		b.WriteString(fmt.Sprintf(`<tr class="%s"><td>%d</td><td>%s</td><td class="font-mono text-xs">%s</td><td>%s</td><td>%s</td><td><button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/nodes/%s/route-rules/%s" hx-confirm="Delete rule?" hx-target="closest tr" hx-swap="outerHTML">Delete</button></td></tr>`,
+			en, rr.Priority, rr.MatchType, truncForDisplay(strings.ReplaceAll(rr.MatchValues, "\n", ", "), 40), rr.Action, rr.OutboundTag, id, rr.ID))
+	}
+	b.WriteString(`</tbody></table></div></div>`)
+	s.renderContent(w, r, "Route Rules", &simpleHTML{html: b.String()})
+}
+
+func (s *Server) handleCreateRouteRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	priority, _ := strconv.Atoi(r.FormValue("priority"))
+	if priority == 0 {
+		priority = 100
+	}
+	rr := &model.RouteRule{
+		NodeID:      id,
+		Priority:    priority,
+		MatchType:   r.FormValue("match_type"),
+		MatchValues: r.FormValue("match_values"),
+		Action:      r.FormValue("action"),
+		OutboundTag: r.FormValue("outbound_tag"),
+		Comment:     r.FormValue("comment"),
+		Enabled:     r.FormValue("enabled") == "on",
+	}
+	if rr.MatchType == "" {
+		rr.MatchType = "domain_suffix"
+	}
+	if rr.Action == "" {
+		rr.Action = "route"
+	}
+	if err := s.store().SaveRouteRule(rr); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	chain.WriteAudit(s.store(), "create", "route_rule", rr.ID, chain.AuditPayload{"node_id": id, "match_type": rr.MatchType, "action": rr.Action}, "operator")
+	chain.ScheduleAutoApply(id, "route rule create")
+	http.Redirect(w, r, "/ui/nodes/"+id+"/route-rules", http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteRouteRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	rid := r.PathValue("rid")
+	chain.WriteAudit(s.store(), "delete", "route_rule", rid, chain.AuditPayload{"node_id": id}, "operator")
+	if err := s.store().DeleteRouteRule(rid); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	chain.ScheduleAutoApply(id, "route rule delete")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(""))
+}
+
+func (s *Server) handleRoutingPresetsJSON(w http.ResponseWriter, r *http.Request) {
+	s.renderJSON(w, chain.GetRoutingPresets(r.URL.Query().Get("category")))
+}
+
+// ─── Unified clients page ───────────────────────────────────────────────────
+
+// unifiedClientRow is one row of the unified clients view.
+type unifiedClientRow struct {
+	ClientType string `json:"client_type"`
+	ClientID   string `json:"client_id"`
+	Name       string `json:"name"`
+	NodeID     string `json:"node_id"`
+	NodeName   string `json:"node_name"`
+	Enabled    bool   `json:"enabled"`
+	Link       string `json:"link"`
+}
+
+func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	users, _ := st.ListUsers()
+	mtp, _ := st.ListMtproxyUsers()
+	infos, _ := st.ListNodeInfos()
+	infoByID := map[string]*model.NodeInfo{}
+	for _, info := range infos {
+		infoByID[info.ID] = info
+	}
+
+	var rows []unifiedClientRow
+	// Users (proxy clients on chains/standalone inbounds).
+	for _, u := range users {
+		rows = append(rows, unifiedClientRow{ClientType: "user", ClientID: u.ID, Name: u.Name, Enabled: u.Active})
+	}
+	// MTProxy users.
+	for _, m := range mtp {
+		nodeName := m.NodeID
+		if info, ok := infoByID[m.NodeID]; ok {
+			nodeName = info.ID
+		}
+		rows = append(rows, unifiedClientRow{ClientType: "mtproxy", ClientID: m.ID, Name: m.Name, NodeID: m.NodeID, NodeName: nodeName, Enabled: m.Enabled})
+	}
+
+	// Sort by name.
+	for i := 1; i < len(rows); i++ {
+		for j := i; j > 0 && rows[j].Name < rows[j-1].Name; j-- {
+			rows[j], rows[j-1] = rows[j-1], rows[j]
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">Clients</h2>`)
+	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Type</th><th>Name</th><th>Node</th><th>Enabled</th></tr></thead><tbody>`)
+	for _, row := range rows {
+		en := `<span class="badge badge-success badge-sm">active</span>`
+		if !row.Enabled {
+			en = `<span class="badge badge-ghost badge-sm">disabled</span>`
+		}
+		node := row.NodeName
+		if node == "" {
+			node = "—"
+		}
+		b.WriteString(fmt.Sprintf(`<tr><td><span class="badge badge-sm">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>`, row.ClientType, row.Name, node, en))
+	}
+	b.WriteString(`</tbody></table></div></div>`)
+	s.renderContent(w, r, "Clients", &simpleHTML{html: b.String()})
 }

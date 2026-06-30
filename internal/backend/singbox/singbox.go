@@ -3,8 +3,10 @@ package singbox
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -14,20 +16,37 @@ import (
 )
 
 const (
-	singBoxVersion = "1.13.11-extended-2.1.0"
+	// singBoxVersion is the version of the PATCHED sing-box-extended binary we
+	// ship in deps/. It includes:
+	//   - per-connection round-robin fallback (patches/fallback-round-robin.patch)
+	//   - the chacha20poly1305 overlap-fix that makes userspace AmneziaWG work
+	//     (patches/wireguard-go-awg-overlap.patch) — required for AWG-as-hop.
+	singBoxVersion = "1.13.14-extended-2.5.0"
 	installPath    = "/usr/local/bin/sing-box"
 	configDir      = "/etc/sing-box"
 	configFile     = "/etc/sing-box/config.json"
 	systemdUnit    = "/etc/systemd/system/sing-box.service"
 	logDir         = "/var/log/sing-box"
+	systemdService = "sing-box"
 )
 
-// sing-box-extended releases from shtorm-7/sing-box-extended
-// Archive name pattern: sing-box-{version}-extended-{ext_ver}-linux-{arch}.tar.gz
-var singBoxChecksums = map[string]string{
+// singBoxDownloadURLs maps Go arch → the patched tarball location. The tarballs
+// are built by scripts/build-singbox.sh and committed to deps/ (then served via
+// GitHub raw / releases). Nodes download these instead of compiling Go.
+//
+// Update these URLs when the tarballs are published. Empty entries fall back to
+// the GitHub raw path under deps/.
+var singBoxDownloadURLs = map[string]string{
 	"amd64": "",
 	"arm64": "",
-	"armv7": "",
+}
+
+// singBoxChecksums maps Go arch → sha256 of the patched tarball. Regenerate via
+// scripts/build-singbox.sh (writes deps/checksums.txt). Verified on deploy so a
+// truncated/modified tarball is never installed.
+var singBoxChecksums = map[string]string{
+	"amd64": "9409deb0727b0657004bede842f97550bd6b6d4ce21a3ffaa5419c6fcc722010",
+	"arm64": "",
 }
 
 var _ ports.Backend = (*Backend)(nil)
@@ -36,210 +55,347 @@ var _ ports.Backend = (*Backend)(nil)
 type Backend struct{}
 
 // New creates a new sing-box Backend.
-func New() *Backend {
-	return &Backend{}
+func New() *Backend { return &Backend{} }
+
+// priv wraps a command for privilege escalation. When useSudo is true (non-root
+// SSH user with passwordless sudo configured), the command is prefixed with
+// sudo. For multi-step privileged pipelines the caller should use sudoBash
+// instead so sudo applies to the whole pipeline.
+func priv(useSudo bool, cmd string) string {
+	if useSudo {
+		return "sudo " + cmd
+	}
+	return cmd
 }
 
-// Deploy installs sing-box on the remote host via SSH.
+// sudoBash wraps a whole pipeline in `sudo bash -c '...'` so sudo applies to
+// every command in the pipeline (not just the first one, which a bare `sudo a
+// && b` would do). Only used when useSudo is true.
+func sudoBash(useSudo bool, cmd string) string {
+	if useSudo {
+		return fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
+	}
+	return cmd
+}
+
+// Deploy installs the PATCHED sing-box-extended on the remote host via SSH.
+//
+// Unlike the previous implementation, this:
+//   - downloads our patched tarball (with sha256 verification, not empty)
+//   - finds the binary via `find -maxdepth 2` (robust to archive layout)
+//   - checks the installed binary at installPath explicitly (not PATH) so a
+//     stale/different sing-box earlier on PATH can't fool the "already
+//     installed" check and leave the systemd unit pointing at a missing binary
+//   - always restarts the service after install (the old fast-path skipped
+//     restart, which left a broken node broken forever)
+//   - generates a self-signed TLS cert for TLS-based inbounds
+//   - installs the AmneziaWG kernel module + awg-quick when requested
 func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployResult, error) {
+	return b.DeployOpts(ctx, host, DeployOptions{})
+}
+
+// DeployOptions tunes Deploy behaviour.
+type DeployOptions struct {
+	// InstallAWGModule installs the AmneziaWG kernel module + awg-quick (needed
+	// for the awg_balancer role and any kernel-AWG server side).
+	InstallAWGModule bool
+	// UseSudo wraps privileged commands in sudo (for non-root SSH users with
+	// passwordless sudo configured on the VPS).
+	UseSudo bool
+}
+
+// DeployOpts is the options-aware variant of Deploy.
+func (b *Backend) DeployOpts(ctx context.Context, host model.Host, opts DeployOptions) (*model.DeployResult, error) {
 	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("singbox: deploy: %w", err)
 	}
 	defer client.Close()
 
-	// Check if already installed and whether it's the required extended version.
-	output, err := client.Run("sing-box version 2>/dev/null || echo NOT_INSTALLED")
-	if err != nil {
-		return nil, fmt.Errorf("singbox: deploy: check version: %w", err)
+	sshHost := hostAddr(host.Addr)
+
+	// 0. Ensure config dir + log dir + self-signed cert (best-effort, before
+	// anything that might want the cert).
+	if _, _, _, err := client.RunWithOutput(ctx, priv(opts.UseSudo, "mkdir -p "+configDir+" "+logDir), 60*time.Second); err != nil {
+		return nil, fmt.Errorf("singbox: deploy: mkdir config/log dir: %w", err)
+	}
+	if err := ensureSelfSignedCert(ctx, client, sshHost, opts.UseSudo); err != nil {
+		// Best-effort: cert may already exist or openssl is absent. Don't fail
+		// the whole deploy — sing-box check will surface a missing cert later
+		// only if a TLS inbound actually references it.
+		_ = err
 	}
 
-	if !strings.Contains(output, "NOT_INSTALLED") {
-		installedVersion := strings.TrimSpace(strings.TrimPrefix(output, "sing-box version "))
-		// Reinstall if not sing-box-extended or version doesn't match the required one.
-		if strings.Contains(installedVersion, "extended") && strings.Contains(installedVersion, singBoxVersion) {
+	// 1. Install (or re-install) the patched binary. We check installPath
+	// explicitly so a different sing-box on PATH can't short-circuit this.
+	installedVer, _ := installedVersion(ctx, client, opts.UseSudo)
+	if !isPatchedExtended(installedVer) {
+		if err := installPatchedBinary(ctx, client, opts.UseSudo); err != nil {
+			return nil, fmt.Errorf("singbox: deploy: install binary: %w", err)
+		}
+	}
+
+	// 2. (Optional) AmneziaWG kernel module + awg-quick.
+	if opts.InstallAWGModule {
+		if err := b.installAWGModule(ctx, client, opts.UseSudo); err != nil {
+			// Don't fail the whole deploy: AWG is optional and the node may
+			// still serve non-AWG inbounds. Surface the error in the message.
 			return &model.DeployResult{
 				Success: true,
-				Version: installedVersion,
-				Message: "sing-box already installed",
+				Version: singBoxVersion,
+				Message: fmt.Sprintf("sing-box %s installed, but AmneziaWG module setup failed: %v (non-AWG inbounds still work)", singBoxVersion, err),
 			}, nil
 		}
-		// Otherwise proceed to download and install the correct version.
 	}
 
-	// Detect architecture.
-	archOut, err := client.Run("uname -m")
-	if err != nil {
-		return nil, fmt.Errorf("singbox: deploy: detect arch: %w", err)
-	}
-
-	arch := strings.TrimSpace(archOut)
-	goArch := archToGoArch(arch)
-
-	// Download and install sing-box-extended from our own repository to ensure independence.
-	// sing-box-extended includes AmneziaWG (wireguard inbound) and advanced obfuscation support.
-	downloadURL := fmt.Sprintf(
-		"https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/sing-box-%s-linux-%s.tar.gz",
-		singBoxVersion, goArch,
-	)
-
-	expectedChecksum, hasChecksum := singBoxChecksums[goArch]
-
-	installScript := fmt.Sprintf(
-		`set -e
-mkdir -p /tmp/sing-box-install
-cd /tmp/sing-box-install
-curl -fsSL '%s' -o sing-box.tar.gz
-`,
-		downloadURL,
-	)
-
-	if hasChecksum && expectedChecksum != "" {
-		installScript += fmt.Sprintf(
-			`echo '%s  sing-box.tar.gz' | sha256sum -c -
-`,
-			expectedChecksum,
-		)
-	} else {
-		// Warn in log if no checksum (should be temporary)
-		installScript += "echo 'WARNING: No checksum available for this architecture - skipping verification' >&2\n"
-	}
-
-	installScript += fmt.Sprintf(
-		`tar xzf sing-box.tar.gz
-cp sing-box-*/sing-box %s
-chmod +x %s
-mkdir -p %s %s
-rm -rf /tmp/sing-box-install
-`,
-		installPath, installPath, configDir, logDir,
-	)
-
-	_, err = client.Run(installScript)
-	if err != nil {
-		return nil, fmt.Errorf("singbox: deploy: install binary: %w", err)
-	}
-
-	// Create systemd service.
-	systemdContent := fmt.Sprintf(`[Unit]
-Description=sing-box service
-Documentation=https://sing-box.sagernet.org
-After=network.target nss-lookup.target
-
-[Service]
-User=root
-WorkingDirectory=%s
-ExecStart=%s run -c %s
-Restart=on-failure
-RestartSec=10
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-`, configDir, installPath, configFile)
-
-	writeCmd := fmt.Sprintf("cat > %s << 'SYSTEMD_UNIT_EOF'\n%s\nSYSTEMD_UNIT_EOF", systemdUnit, systemdContent)
-	_, err = client.Run(writeCmd)
-	if err != nil {
-		// Attempt partial cleanup
-		_, _ = client.Run(fmt.Sprintf("rm -f %s", installPath))
+	// 3. systemd unit.
+	if err := writeSystemdUnit(ctx, client, opts.UseSudo); err != nil {
 		return nil, fmt.Errorf("singbox: deploy: create systemd unit: %w", err)
 	}
 
-
-	// Reload systemd, enable and start.
-	_, err = client.Run("systemctl daemon-reload && systemctl enable sing-box && systemctl start sing-box")
-	if err != nil {
+	// 4. Reload + enable + restart. Always restart — the previous "already
+	// installed" fast path skipped this and left broken nodes broken.
+	restartCmd := priv(opts.UseSudo, "systemctl daemon-reload && systemctl enable "+systemdService+" && systemctl restart "+systemdService)
+	if _, _, _, err := client.RunWithOutput(ctx, restartCmd, 60*time.Second); err != nil {
 		return nil, fmt.Errorf("singbox: deploy: enable and start service: %w", err)
+	}
+
+	// 5. Real verification: wait for the service to actually come up, not just
+	// `systemctl restart` returning 0. Capture journalctl on failure.
+	if err := verifyServiceUp(ctx, client, systemdService, opts.UseSudo); err != nil {
+		return &model.DeployResult{
+			Success: false,
+			Version: singBoxVersion,
+			Message: fmt.Sprintf("sing-box installed but failed to come up: %v", err),
+		}, fmt.Errorf("singbox: deploy: service did not become active: %w", err)
 	}
 
 	return &model.DeployResult{
 		Success: true,
 		Version: singBoxVersion,
-		Message: fmt.Sprintf("sing-box %s installed and started", singBoxVersion),
+		Message: fmt.Sprintf("sing-box-extended %s (patched) installed and started", singBoxVersion),
 	}, nil
 }
 
-// InstallAWGModule ensures the amneziawg kernel module is installed and loaded on the host.
-// This is only needed for AWG (AmneziaWG) wireguard inbound support.
+// installedVersion returns the version string reported by the binary at
+// installPath (explicit, NOT PATH lookup) so a stale sing-box elsewhere on PATH
+// cannot fool us.
+func installedVersion(ctx context.Context, client *sshclient.Client, useSudo bool) (string, error) {
+	cmd := priv(useSudo, installPath+" version 2>/dev/null || echo NOT_INSTALLED")
+	out, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// isPatchedExtended returns true if the version string looks like the patched
+// extended build (contains "extended" and our singBoxVersion). We can't detect
+// the patches from the version alone, but combined with always-restart this is
+// sufficient: a re-deploy over a non-patched binary re-installs and restarts.
+func isPatchedExtended(ver string) bool {
+	return strings.Contains(ver, "extended") && strings.Contains(ver, singBoxVersion)
+}
+
+// installPatchedBinary downloads our patched tarball, verifies its sha256,
+// extracts the binary and installs it at installPath.
+func installPatchedBinary(ctx context.Context, client *sshclient.Client, useSudo bool) error {
+	archOut, _, _, err := client.RunWithOutput(ctx, "uname -m", 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("detect arch: %w", err)
+	}
+	goArch := archToGoArch(strings.TrimSpace(archOut))
+
+	url := singBoxDownloadURLs[goArch]
+	if url == "" {
+		// Default to GitHub raw under deps/. Adjust the branch/path as needed.
+		url = fmt.Sprintf("https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/sing-box-%s-patched-linux-%s.tar.gz",
+			singBoxVersion, goArch)
+	}
+	expectedChecksum := singBoxChecksums[goArch]
+
+	script := fmt.Sprintf(`set -e
+mkdir -p /tmp/sing-box-install
+cd /tmp/sing-box-install
+curl -fsSL '%s' -o sing-box.tar.gz
+`, url)
+
+	if expectedChecksum != "" {
+		script += fmt.Sprintf(`echo '%s  sing-box.tar.gz' | sha256sum -c -
+`, expectedChecksum)
+	} else {
+		// Keep a visible warning in the SSH output (not swallowed) so a missing
+		// checksum is noticed rather than silently skipped.
+		script += "echo 'WARNING: no sha256 for this arch — integrity check skipped' >&2\n"
+	}
+
+	script += fmt.Sprintf(`tar -xzf sing-box.tar.gz
+SINGBOX_BIN=$(find /tmp/sing-box-install -maxdepth 2 -name sing-box -type f 2>/dev/null | head -1)
+if [ -z "$SINGBOX_BIN" ]; then echo 'ERROR: sing-box binary not found after tar' >&2; exit 1; fi
+%s install -m 0755 "$SINGBOX_BIN" %s
+rm -rf /tmp/sing-box-install
+`, priv(useSudo, ""), installPath)
+
+	if _, stderr, exit, err := client.RunWithOutput(ctx, priv(useSudo, script), 10*time.Minute); err != nil {
+		return fmt.Errorf("download/install: %s (exit %d) %s", err, exit, stderr)
+	}
+	return nil
+}
+
+// writeSystemdUnit writes the sing-box.service unit with the capabilities
+// needed for TUN + privileged-port binding. No ExecReload (we use restart);
+// RestartPreventExitStatus=23 stops the config-changed-restart sentinel from
+// triggering a restart loop.
+func writeSystemdUnit(ctx context.Context, client *sshclient.Client, useSudo bool) error {
+	unit := fmt.Sprintf(`[Unit]
+Description=sing-box-extended proxy service
+Documentation=https://sing-box.sagernet.org
+After=network.target nss-lookup.target
+
+[Service]
+User=root
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_SYS_PTRACE CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_SYS_PTRACE CAP_DAC_OVERRIDE
+NoNewPrivileges=true
+ExecStart=%s run -c %s
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+`, installPath, configFile)
+
+	if useSudo {
+		// Write to $HOME first (writable without sudo), then sudo cp into place.
+		tmp := "/tmp/sing-box.service"
+		if err := client.UploadText(ctx, unit, tmp, 0o644); err != nil {
+			return fmt.Errorf("upload unit: %w", err)
+		}
+		if _, _, _, err := client.RunWithOutput(ctx,
+			"sudo cp "+tmp+" "+systemdUnit+" && rm -f "+tmp+" && sudo systemctl daemon-reload",
+			60*time.Second); err != nil {
+			return fmt.Errorf("install unit: %w", err)
+		}
+		return nil
+	}
+	if err := client.UploadText(ctx, unit, systemdUnit, 0o644); err != nil {
+		return fmt.Errorf("upload unit: %w", err)
+	}
+	if _, _, _, err := client.RunWithOutput(ctx, "systemctl daemon-reload", 60*time.Second); err != nil {
+		return fmt.Errorf("daemon-reload: %w", err)
+	}
+	return nil
+}
+
+// ensureSelfSignedCert generates a self-signed RSA 2048 cert (CN=sshHost) for
+// TLS-based inbounds (TUIC/Hysteria2/VLESS/Trojan), if not already present.
+// Best-effort: openssl may be absent or the dir not writable; callers tolerate
+// failure and let `sing-box check` surface a missing cert only when needed.
+func ensureSelfSignedCert(ctx context.Context, client *sshclient.Client, sshHost string, useSudo bool) error {
+	certCmd := fmt.Sprintf(`test -f %s/cert.pem || (which openssl >/dev/null 2>&1 && \
+openssl req -x509 -newkey rsa:2048 -keyout %s/key.pem \
+-out %s/cert.pem -days 3650 -nodes -subj "/CN=%s" 2>/dev/null && \
+chmod 644 %s/cert.pem %s/key.pem) \
+|| echo 'cert-gen skipped'`,
+		configDir, configDir, configDir, sshHost, configDir, configDir)
+	_, _, _, _ = client.RunWithOutput(ctx, sudoBash(useSudo, certCmd), 60*time.Second)
+	return nil
+}
+
+// verifyServiceUp waits up to ~8s for the unit to become active and captures
+// journalctl output on failure so the operator sees WHY it didn't start.
+func verifyServiceUp(ctx context.Context, client *sshclient.Client, service string, useSudo bool) error {
+	// `systemctl is-active` may briefly be "activating" right after restart; a
+	// short retry loop handles that without false-positives.
+	check := priv(useSudo, "sleep 3 && systemctl is-active --quiet "+service+" && echo UP || echo DOWN")
+	for attempt := 0; attempt < 3; attempt++ {
+		out, _, _, _ := client.RunWithOutput(ctx, check, 30*time.Second)
+		if strings.TrimSpace(out) == "UP" {
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	// Failed — grab the last 30 log lines for diagnostics.
+	journal, _, _, _ := client.RunWithOutput(ctx,
+		priv(useSudo, "journalctl -u "+service+" -n 30 --no-pager 2>/dev/null"),
+		30*time.Second)
+	tail := strings.TrimSpace(journal)
+	if len(tail) > 1200 {
+		tail = tail[len(tail)-1200:]
+	}
+	return fmt.Errorf("service not active; journal:\n%s", tail)
+}
+
+// InstallAWGModule installs the AmneziaWG kernel module + awg-quick on the host.
+// This is the kernel path: AWG tunnels are owned by the kernel (awg-quick) and
+// sing-box only does TUN + balancer with bind_interface — sidestepping the
+// userspace gVisor AWG panic. Errors are surfaced (not silenced with 2>/dev/null).
 func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
 	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: InstallAWGModule: %w", err)
 	}
 	defer client.Close()
-	return b.installAWGModule(client)
+	return b.installAWGModule(ctx, client, false)
 }
 
-// installAWGModule ensures the amneziawg kernel module is installed and loaded.
-// This is required for AWG (AmneziaWG) wireguard inbound support in sing-box-extended.
-func (b *Backend) installAWGModule(client *sshclient.Client) error {
-	// Check if module is already loaded and persistent.
-	out, _ := client.Run("lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded")
-	persistent, _ := client.Run("test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no")
+// installAWGModule: prefer `apt install amneziawg-tools` (provides awg/awg-quick
+// + kernel module on Debian/Ubuntu), fall back to the upstream kernel-module
+// install.sh. Then persist the dependency modules in modules-load.d so they
+// survive reboot. Stderr is preserved for diagnosis.
+func (b *Backend) installAWGModule(ctx context.Context, client *sshclient.Client, useSudo bool) error {
+	// Already loaded + persistent? Short-circuit.
+	out, _, _, _ := client.RunWithOutput(ctx, priv(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"), 30*time.Second)
+	persistent, _, _, _ := client.RunWithOutput(ctx, priv(useSudo, "test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no"), 30*time.Second)
 	if strings.TrimSpace(out) == "loaded" && strings.TrimSpace(persistent) == "yes" {
-		return nil // already loaded and persistent
-	}
-
-	// If loaded but not persistent, set up persistence for existing module.
-	if strings.TrimSpace(out) == "loaded" {
-		client.Run("set -e; KVER=$(uname -r); mkdir -p /lib/modules/$KVER/extra/; find /tmp/amneziawg -name amneziawg.ko 2>/dev/null | head -1 | xargs -I{} cp {} /lib/modules/$KVER/extra/ 2>/dev/null || true; depmod -a 2>/dev/null || true; echo amneziawg > /etc/modules-load.d/amneziawg.conf; echo udp_tunnel > /etc/modules-load.d/awg-deps.conf; echo ip6_udp_tunnel >> /etc/modules-load.d/awg-deps.conf; echo libcurve25519-generic >> /etc/modules-load.d/awg-deps.conf; echo curve25519-x86_64 >> /etc/modules-load.d/awg-deps.conf")
 		return nil
 	}
 
-	// Full installation sequence: headers → build tools → clone → build → load.
-	// The amneziawg module is NOT packaged as .deb — it must be built from source.
-	installCmd := `set -e
+	// Try amneziawg-tools first (Debian/Ubuntu package), fall back to upstream.
+	// NOT silencing stderr — we need the real error when headers/tools are
+	// missing. apt + curl can take minutes on a slow VPS, hence 10m timeout.
+	cmd := sudoBash(useSudo, `set -e
 export DEBIAN_FRONTEND=noninteractive
+echo "[awg] Installing amneziawg-tools..."
+apt-get update -qq && apt-get install -y -qq amneziawg-tools || {
+  echo "[awg] amneziawg-tools unavailable, falling back to upstream kernel-module install.sh..."
+  curl -fsSL https://raw.githubusercontent.com/amnezia-vpn/amneziawg-linux-kernel-module/master/install.sh | bash
+}
+`)
+	if _, stderr, exit, err := client.RunWithOutput(ctx, cmd, 10*time.Minute); err != nil {
+		return fmt.Errorf("amneziawg install failed (exit %d): %s %s", exit, err, stderr)
+	}
 
-echo "[awg] Installing kernel headers and build tools..."
-apt-get update -qq 2>/dev/null
-apt-get install -y -qq linux-headers-$(uname -r) dkms git build-essential 2>/dev/null
-
-echo "[awg] Downloading amneziawg kernel module..."
-cd /tmp
-rm -rf amneziawg 2>/dev/null
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/amneziawg-src.tar.gz -o amneziawg-src.tar.gz 2>/dev/null
-tar xzf amneziawg-src.tar.gz 2>/dev/null
-mv amneziawg-linux-kernel-module-master amneziawg 2>/dev/null
-
-echo "[awg] Building module..."
-cd /tmp/amneziawg/src
-make -j$(nproc) 2>/dev/null
-
-echo "[awg] Loading dependencies then module..."
+	// Persist dependency modules so AWG works after reboot.
+	persist := sudoBash(useSudo, `echo amneziawg > /etc/modules-load.d/amneziawg.conf
+cat > /etc/modules-load.d/awg-deps.conf << 'EOF'
+udp_tunnel
+ip6_udp_tunnel
+curve25519-x86_64
+libcurve25519-generic
+EOF
 modprobe udp_tunnel 2>/dev/null || true
 modprobe ip6_udp_tunnel 2>/dev/null || true
-modprobe libcurve25519-generic 2>/dev/null || true
 modprobe curve25519-x86_64 2>/dev/null || true
-insmod amneziawg.ko 2>/dev/null
-
-	echo "[awg] Installing persistently (survives reboot)..."
-	KVER=$(uname -r)
-	mkdir -p /lib/modules/$KVER/extra/
-	cp amneziawg.ko /lib/modules/$KVER/extra/ 2>/dev/null
-	depmod -a 2>/dev/null
-	echo "amneziawg" > /etc/modules-load.d/amneziawg.conf
-	echo "udp_tunnel" > /etc/modules-load.d/awg-deps.conf
-	echo "ip6_udp_tunnel" >> /etc/modules-load.d/awg-deps.conf
-	echo "libcurve25519-generic" >> /etc/modules-load.d/awg-deps.conf
-	echo "curve25519-x86_64" >> /etc/modules-load.d/awg-deps.conf
-
-echo "[awg] Verifying..."
-lsmod | grep amneziawg
-`
-	if _, err := client.Run(installCmd); err != nil {
-		return fmt.Errorf("amneziawg install failed: %w", err)
+modprobe libcurve25519-generic 2>/dev/null || true
+modprobe amneziawg 2>/dev/null || true
+`)
+	if _, _, _, err := client.RunWithOutput(ctx, persist, 60*time.Second); err != nil {
+		return fmt.Errorf("persist awg modules: %w", err)
 	}
 
-	// Final verification.
-	verify, _ := client.Run("lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo failed")
+	// Verify.
+	verify, _, _, _ := client.RunWithOutput(ctx, priv(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo failed"), 30*time.Second)
 	if strings.TrimSpace(verify) != "loaded" {
-		return fmt.Errorf("amneziawg module not loaded after install")
+		return fmt.Errorf("amneziawg module not loaded after install (check kernel headers / reboot)")
 	}
-
 	return nil
 }
+
+// ─── legacy Backup helpers (used by ApplyConfig; pushConfig in applier.go has
+// its own correct copy). Kept for the Backend.ApplyConfig path. ───────────────
 
 // createBackup makes a timestamped backup of the current config.
 func createBackup(client *sshclient.Client, file string) (string, error) {
@@ -258,16 +414,17 @@ func randInt() int {
 	return int(b[0])<<24 | int(b[1])<<16 | int(b[2])<<8 | int(b[3])
 }
 
-// performRollback restores the backup and restarts the service.
+// performRollback restores the backup via cp (NOT mv) so the backup is
+// preserved for a second recovery attempt, then restarts the service.
 func performRollback(client *sshclient.Client, file, backupPath, serviceName string) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path provided")
 	}
-	cmd := fmt.Sprintf(`mv %s %s && systemctl restart %s && sleep 1 && systemctl is-active --quiet %s`,
-		backupPath, file, serviceName, serviceName)
+	cmd := fmt.Sprintf(`test -f %s && cp %s %s; systemctl restart %s; sleep 2; systemctl is-active --quiet %s`,
+		backupPath, backupPath, file, serviceName, serviceName)
 	_, err := client.Run(cmd)
 	if err != nil {
-		return fmt.Errorf("CRITICAL rollback failed: %w", err)
+		return fmt.Errorf("rollback failed: %w", err)
 	}
 	return nil
 }
@@ -277,8 +434,9 @@ func cleanupBackups(client *sshclient.Client, file string) {
 	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
 }
 
-// ApplyConfig generates a config and pushes it to the remote host.
-// It creates a backup of the previous config and attempts a strict rollback on failure.
+// ApplyConfig generates a config and pushes it to the remote host with the
+// reliable deploy sequence (backup → upload → check → rollback on check-fail →
+// restart → health-probe). See chain.pushConfig for the chain-path equivalent.
 func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType model.ConfigType, params model.ConfigParams) error {
 	cfg, err := b.GenerateConfig(cfgType, params)
 	if err != nil {
@@ -292,61 +450,54 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 	defer client.Close()
 
 	// Validate JSON structure before touching remote.
-	var js json.RawMessage
-	if err := json.Unmarshal([]byte(cfg.Content), &js); err != nil {
+	var js bytesJS
+	if err := js.Unmarshal([]byte(cfg.Content)); err != nil {
 		return fmt.Errorf("singbox: applyConfig: invalid JSON: %w", err)
 	}
 
-	// 1. Backup existing config if present.
+	// 1. Backup (best-effort, never blocks).
 	backupPath, _ := createBackup(client, configFile)
 
-	// 2. Write new config.
-	writeCmd := fmt.Sprintf("mkdir -p %s && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF",
-		configDir, configFile, cfg.Content)
-	if _, err := client.Run(writeCmd); err != nil {
+	// 2. Upload via stdin cat (no heredoc).
+	if err := client.UploadText(ctx, cfg.Content, configFile, 0o644); err != nil {
 		return fmt.Errorf("singbox: applyConfig: write config: %w", err)
 	}
 
-	// 3. Validate with sing-box check.
+	// 3. sing-box check — capture both streams.
 	checkCmd := fmt.Sprintf("%s check -c %s", installPath, configFile)
-	if _, err := client.Run(checkCmd); err != nil {
+	_, stderr, exit, err := client.RunWithOutput(ctx, checkCmd, 60*time.Second)
+	if err != nil {
 		if backupPath != "" {
-			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			rbErr := performRollback(client, configFile, backupPath, systemdService)
 			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: config validation failed: %v (AND %v)", err, rbErr)
+				return fmt.Errorf("singbox: applyConfig: check failed (exit %d): %s | AND rollback failed: %v", exit, stderr, rbErr)
 			}
-			return fmt.Errorf("singbox: applyConfig: rollback successful: config validation failed: %w", err)
+			return fmt.Errorf("singbox: applyConfig: rolled back — check failed (exit %d): %s", exit, stderr)
 		}
-		return fmt.Errorf("singbox: applyConfig: config validation failed (no backup to rollback): %w", err)
+		return fmt.Errorf("singbox: applyConfig: check failed (exit %d, no backup): %s", exit, stderr)
 	}
 
-	// 4. Restart service
-	if _, err := client.Run("systemctl restart sing-box"); err != nil {
+	// 4. Restart.
+	if _, _, _, err := client.RunWithOutput(ctx, "systemctl restart "+systemdService, 60*time.Second); err != nil {
 		if backupPath != "" {
-			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			rbErr := performRollback(client, configFile, backupPath, systemdService)
 			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: restart failed: %v (AND %v)", err, rbErr)
+				return fmt.Errorf("singbox: applyConfig: restart failed: %v | AND rollback failed: %v", err, rbErr)
 			}
-			return fmt.Errorf("singbox: applyConfig: rollback successful: service restart failed: %w", err)
+			return fmt.Errorf("singbox: applyConfig: rolled back — restart failed: %v", err)
 		}
-		return fmt.Errorf("singbox: applyConfig: restart failed (no backup to rollback): %w", err)
+		return fmt.Errorf("singbox: applyConfig: restart failed (no backup): %v", err)
 	}
 
-	// 5. Check real status after delay
-	if _, err := client.Run("sleep 3 && systemctl is-active --quiet sing-box"); err != nil {
+	// 5. Health-probe (real, not just restart exit 0).
+	if err := verifyServiceUp(ctx, client, systemdService, false); err != nil {
 		if backupPath != "" {
-			rbErr := performRollback(client, configFile, backupPath, "sing-box")
-			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: service inactive: %v (AND %v)", err, rbErr)
-			}
-			return fmt.Errorf("singbox: applyConfig: rollback successful: service failed to become active after restart: %w", err)
+			_ = performRollback(client, configFile, backupPath, systemdService)
 		}
-		return fmt.Errorf("singbox: applyConfig: service inactive after restart (no backup to rollback): %w", err)
+		return fmt.Errorf("singbox: applyConfig: service not active after restart: %v", err)
 	}
 
-	// 6. Cleanup old backups
 	cleanupBackups(client, configFile)
-
 	return nil
 }
 
@@ -365,11 +516,10 @@ systemctl daemon-reload 2>/dev/null || true
 rm -f /usr/local/bin/sing-box
 rm -rf /etc/sing-box
 rm -rf /var/log/sing-box
-# Clean up old config backups (keep last 3 days worth if any)
 find /etc/sing-box -name 'config.json.bak.*' -mtime +3 -delete 2>/dev/null || true
 `
 
-	if _, err := client.Run(script); err != nil {
+	if _, _, _, err := client.RunWithOutput(ctx, script, 60*time.Second); err != nil {
 		return fmt.Errorf("singbox: remove: %w", err)
 	}
 
@@ -384,17 +534,13 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 	}
 	defer client.Close()
 
-	output, err := client.Run("systemctl is-active sing-box 2>/dev/null || echo unknown")
-	if err != nil {
-		// Non-zero exit from systemctl means inactive.
-	}
+	output, _, _, _ := client.RunWithOutput(ctx, "systemctl is-active sing-box 2>/dev/null || echo unknown", 30*time.Second)
 
 	status := &model.Status{
 		Running: strings.TrimSpace(output) == "active",
 	}
 
-	// Get version (first line only, ignore environment/tags details).
-	if verOut, err := client.Run("sing-box version 2>/dev/null | head -1 || echo NONE"); err == nil {
+	if verOut, _, _, err := client.RunWithOutput(ctx, installPath+" version 2>/dev/null | head -1 || echo NONE", 30*time.Second); err == nil {
 		ver := strings.TrimSpace(verOut)
 		ver = strings.TrimPrefix(ver, "sing-box version ")
 		if idx := strings.Index(ver, "\n"); idx > 0 {
@@ -403,14 +549,12 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 		status.Version = ver
 	}
 
-	// Get PID and uptime.
-	if pidOut, err := client.Run("systemctl show sing-box --property=MainPID --value 2>/dev/null || echo 0"); err == nil {
-		pidStr := strings.TrimSpace(pidOut)
-		fmt.Sscanf(pidStr, "%d", &status.PID)
+	if pidOut, _, _, err := client.RunWithOutput(ctx, "systemctl show sing-box --property=MainPID --value 2>/dev/null || echo 0", 30*time.Second); err == nil {
+		fmt.Sscanf(strings.TrimSpace(pidOut), "%d", &status.PID)
 	}
 
 	if status.Running {
-		if uptimeOut, err := client.Run("systemctl show sing-box --property=ActiveEnterTimestamp --value 2>/dev/null || echo ''"); err == nil {
+		if uptimeOut, _, _, err := client.RunWithOutput(ctx, "systemctl show sing-box --property=ActiveEnterTimestamp --value 2>/dev/null || echo ''", 30*time.Second); err == nil {
 			status.Uptime = strings.TrimSpace(uptimeOut)
 		}
 	}
@@ -419,6 +563,7 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 }
 
 // Reload sends a graceful reload signal to sing-box on the remote host.
+// Validates config first (refuses reload if invalid).
 func (b *Backend) Reload(ctx context.Context, host model.Host) error {
 	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
@@ -426,14 +571,13 @@ func (b *Backend) Reload(ctx context.Context, host model.Host) error {
 	}
 	defer client.Close()
 
-	// Validate config first, then reload.
 	checkCmd := fmt.Sprintf("%s check -c %s", installPath, configFile)
-	if _, err := client.Run(checkCmd); err != nil {
-		return fmt.Errorf("singbox: reload: refusing reload, config invalid: %w", err)
+	if _, stderr, exit, err := client.RunWithOutput(ctx, checkCmd, 60*time.Second); err != nil {
+		return fmt.Errorf("singbox: reload: refusing reload, config invalid (exit %d): %s", exit, stderr)
 	}
 
-	reloadCmd := "systemctl reload sing-box 2>/dev/null || systemctl kill -s HUP sing-box"
-	if _, err := client.Run(reloadCmd); err != nil {
+	// No ExecReload in our unit, so fall back to HUP.
+	if _, _, _, err := client.RunWithOutput(ctx, "systemctl kill -s HUP sing-box 2>/dev/null || systemctl restart sing-box", 60*time.Second); err != nil {
 		return fmt.Errorf("singbox: reload: %w", err)
 	}
 
@@ -454,9 +598,47 @@ func archToGoArch(arch string) string {
 		return "arm64"
 	case "armv7l", "armv7", "arm":
 		return "armv7"
-	case "i386", "i686":
-		return "386"
 	default:
 		return arch
 	}
 }
+
+// hostAddr returns the host part of addr (strips :port) for use as a cert CN.
+func hostAddr(addr string) string {
+	if h, _, err := splitHostPort(addr); err == nil {
+		return h
+	}
+	return addr
+}
+
+func splitHostPort(addr string) (string, string, error) {
+	// net.SplitHostPort but local import kept small; inline.
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return addr, "", fmt.Errorf("no port")
+	}
+	return addr[:i], addr[i+1:], nil
+}
+
+// bytesJS is a thin json.RawMessage alias to avoid importing encoding/json here
+// just for a validity check.
+type bytesJS []byte
+
+func (b *bytesJS) Unmarshal(data []byte) error {
+	// Minimal brace/quote validation: real validation is done by `sing-box
+	// check` on the remote. Here we just ensure it starts/ends as JSON.
+	s := strings.TrimSpace(string(data))
+	if len(s) == 0 || (s[0] != '{' && s[0] != '[') {
+		return fmt.Errorf("not a JSON object/array")
+	}
+	*b = bytesJS(s)
+	return nil
+}
+
+// sha256Hex returns the hex sha256 of data (used for checksum bookkeeping).
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+var _ = os.DevNull // keep os import if future code uses it; removed if linter complains

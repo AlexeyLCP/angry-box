@@ -2,9 +2,11 @@ package ssh
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -12,6 +14,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
+
+// defaultRunTimeout is the per-command deadline for Run when no context is
+// supplied. Long operations (apt-get install, make, curl of a large tarball)
+// should pass their own context with a larger timeout via RunContext.
+const defaultRunTimeout = 5 * time.Minute
 
 // HostKeyManager is used to verify remote host keys.
 type HostKeyManager interface {
@@ -118,26 +125,132 @@ func Connect(addr, user, keyPath string) (*Client, error) {
 }
 
 // Run executes a command on the remote host and returns stdout.
-// Stderr is included in the error if the command fails.
+// Stderr is included in the error message if the command fails.
+//
+// Note: on failure Run returns an empty string and discards stdout. Use
+// RunWithOutput when you need both streams (e.g. to surface `sing-box check`
+// diagnostics) — Run is kept for backwards compatibility with callers that
+// only care about success/failure.
 func (c *Client) Run(cmd string) (string, error) {
+	stdout, _, _, err := c.runWithDeadline(context.Background(), cmd, defaultRunTimeout)
+	return stdout, err
+}
+
+// RunContext is like Run but honours ctx for cancellation/deadline. A zero
+// timeout means "use ctx only"; a non-zero timeout additionally caps the
+// command via an internal timer (useful when ctx has no deadline).
+func (c *Client) RunContext(ctx context.Context, cmd string, timeout time.Duration) (string, error) {
+	stdout, _, _, err := c.runWithDeadline(ctx, cmd, timeout)
+	return stdout, err
+}
+
+// RunWithOutput runs cmd and returns stdout, stderr, the exit code and error
+// separately. stderr is NEVER discarded, even on success — this is what the
+// deploy/install path needs to surface real diagnostics (sing-box check
+// errors, systemctl/journalctl output) instead of opaque "exit status 1".
+// exitCode is -1 if the command could not be started or the exit status could
+// not be determined.
+func (c *Client) RunWithOutput(ctx context.Context, cmd string, timeout time.Duration) (stdout, stderr string, exitCode int, err error) {
+	return c.runWithDeadline(ctx, cmd, timeout)
+}
+
+// runWithDeadline is the single implementation behind Run/RunContext/RunWithOutput.
+func (c *Client) runWithDeadline(ctx context.Context, cmd string, timeout time.Duration) (stdout, stderr string, exitCode int, err error) {
 	session, err := c.client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("ssh: new session: %w", err)
+		return "", "", -1, fmt.Errorf("ssh: new session: %w", err)
 	}
 	defer session.Close()
 
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
+	var outBuf, errBuf bytes.Buffer
+	session.Stdout = &outBuf
+	session.Stderr = &errBuf
 
-	if err := session.Run(cmd); err != nil {
-		if stderr.Len() > 0 {
-			return "", fmt.Errorf("ssh: %s: %s", err, stderr.String())
-		}
-		return "", fmt.Errorf("ssh: %w", err)
+	// Compose the effective context: caller's ctx, plus an internal timeout
+	// if one was given. The internal timer ensures long apt/make commands do
+	// not hang forever even when the caller's ctx has no deadline.
+	runCtx := ctx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	done := make(chan struct{})
+	var runErr error
+	go func() {
+		defer close(done)
+		runErr = session.Run(cmd)
+	}()
+	select {
+	case <-done:
+	case <-runCtx.Done():
+		// Forcefully terminate the remote command if the deadline fired.
+		_ = session.Signal(ssh.SIGKILL)
+		<-done
+		runErr = fmt.Errorf("ssh: command timed out: %w", runCtx.Err())
 	}
 
-	return stdout.String(), nil
+	exitCode = -1
+	if ee, ok := runErr.(*ssh.ExitError); ok {
+		exitCode = ee.ExitStatus()
+	}
+
+	if runErr != nil {
+		if errBuf.Len() > 0 {
+			return outBuf.String(), errBuf.String(), exitCode, fmt.Errorf("ssh: %s: %s", runErr, errBuf.String())
+		}
+		return outBuf.String(), "", exitCode, fmt.Errorf("ssh: %w", runErr)
+	}
+	return outBuf.String(), errBuf.String(), exitCode, nil
+}
+
+// UploadText writes content to remotePath over stdin via `cat > path && chmod`.
+// This avoids heredocs (which can truncate on delimiter collision and break on
+// binary/cert content) and avoids interpolating file content into a shell
+// command string (no injection / quoting issues). mode is the file mode bits
+// to chmod on the remote file (e.g. 0o644).
+func (c *Client) UploadText(ctx context.Context, content, remotePath string, mode os.FileMode) error {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return fmt.Errorf("ssh: new session: %w", err)
+	}
+	defer session.Close()
+
+	// We pipe content to cat's stdin; the command itself only sets the path
+	// and mode, never the content, so the content is not subject to shell
+	// expansion.
+	cmd := fmt.Sprintf("cat > %s && chmod %o %s", remotePath, mode, remotePath)
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("ssh: stdin pipe: %w", err)
+	}
+
+	runCtx := ctx
+	if _, ok := runCtx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, defaultRunTimeout)
+		defer cancel()
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, werr := io.WriteString(stdin, content)
+		_ = stdin.Close()
+		done <- session.Run(cmd)
+		_ = werr // best-effort; a write failure surfaces as Run failure
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("ssh: upload %s: %w", remotePath, err)
+		}
+		return nil
+	case <-runCtx.Done():
+		_ = session.Signal(ssh.SIGKILL)
+		<-done
+		return fmt.Errorf("ssh: upload %s timed out: %w", remotePath, runCtx.Err())
+	}
 }
 
 // Close terminates the SSH connection.

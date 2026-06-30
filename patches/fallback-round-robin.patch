@@ -1,0 +1,55 @@
+# Round-robin patch for fallback outbound
+# File: protocol/group/fallback.go
+# sing-box-extended v1.13.14-extended-2.5.0
+#
+# Adds rrCounter to the Fallback struct and rotates the active outbound list
+# in DialContext so each new connection starts from the next node, giving
+# per-connection round-robin load balancing across equal exit nodes (4 nodes →
+# n1, n2, n3, n4, n1, ... — ~25% each). Without this, fallback always starts
+# from the first active outbound.
+#
+# Apply: patch -p1 < fallback-round-robin.patch  (in sing-box-extended repo root)
+diff --git a/protocol/group/fallback.go b/protocol/group/fallback.go
+index 772367a..e49bc2f 100644
+--- a/protocol/group/fallback.go
++++ b/protocol/group/fallback.go
+@@ -32,6 +32,7 @@ type Fallback struct {
+ 	tags             []string
+ 	outbounds        map[string]adapter.Outbound
+ 	lastUsedOutbound string
++	rrCounter        uint64
+ 	blacklistTimeout time.Duration
+ 	blacklist        map[string]time.Time
+ 	mtx              sync.Mutex
+@@ -90,6 +91,15 @@ func (s *Fallback) DialContext(ctx context.Context, network string, destination
+ 			active = append(active, tag)
+ 		}
+ 	}
++	if len(active) > 0 {
++		start := int(s.rrCounter % uint64(len(active)))
++		s.rrCounter++
++		rotated := make([]string, len(active))
++		for i := range active {
++			rotated[i] = active[(i+start)%len(active)]
++		}
++		active = rotated
++	}
+ 	s.mtx.Unlock()
+ 
+ 	var err error
+@@ -134,6 +144,15 @@ func (s *Fallback) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
+ 			active = append(active, tag)
+ 		}
+ 	}
++	if len(active) > 0 {
++		start := int(s.rrCounter % uint64(len(active)))
++		s.rrCounter++
++		rotated := make([]string, len(active))
++		for i := range active {
++			rotated[i] = active[(i+start)%len(active)]
++		}
++		active = rotated
++	}
+ 	s.mtx.Unlock()
+ 
+ 	var err error

@@ -50,7 +50,8 @@ type UserProtocol string
 const (
 	UserProtocolVLESSReality UserProtocol = "vless-reality"
 	UserProtocolTUIC         UserProtocol = "tuic"
-	UserProtocolAWG          UserProtocol = "awg" // AmneziaWG
+	UserProtocolAWG          UserProtocol = "awg"     // AmneziaWG
+	UserProtocolMTProxy      UserProtocol = "mtproxy" // Telegram MTProxy FakeTLS
 )
 
 // TransportType for inter-node links.

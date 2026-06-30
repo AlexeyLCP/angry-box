@@ -8,8 +8,11 @@ import (
 	"github.com/alexeylcp/angry-box/internal/i18n"
 )
 
-// SpiderWeb renders the visual chain editor (SVG-based spider web).
-templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo) {
+// SpiderWeb renders the visual chain editor (SVG-based spider web) with
+// graph edges (ConnectionLink), persistent node positions, and native SVG
+// pan/zoom. Links are the source of truth for topology; Chain.Nodes is the
+// materialized deploy path kept in sync by the handlers.
+templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo, links []*model.ConnectionLink) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Spider Web") }</h2>
@@ -24,174 +27,72 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 			</div>
 		</div>
 
-		<!-- SVG Canvas for spider web topology -->
+		<!-- SVG Canvas with pan/zoom -->
 		<div class="card bg-base-100 shadow overflow-hidden">
-			<div class="p-4 border-b border-base-300">
-				<div class="text-sm text-base-content/60">{ i18n.T(ctx, "Visual map of all nodes and connections. Drag nodes to rearrange. Green = online.") }</div>
+			<div class="p-4 border-b border-base-300 flex items-center justify-between">
+				<div class="text-sm text-base-content/60">{ i18n.T(ctx, "Drag nodes to rearrange (positions are saved). Scroll to zoom, drag background to pan. Green = online.") }</div>
+				<div class="flex gap-1">
+					<button class="btn btn-xs btn-ghost" onclick="spiderZoom(1.2)">+</button>
+					<button class="btn btn-xs btn-ghost" onclick="spiderZoom(1/1.2)">−</button>
+					<button class="btn btn-xs btn-ghost" onclick="spiderReset()">reset</button>
+				</div>
 			</div>
-			<div class="bg-base-200" style="min-height: 450px; position: relative;">
+			<div class="bg-base-200 relative" style="min-height: 550px;">
 				if len(hosts) == 0 {
 					<div class="flex items-center justify-center h-64 text-base-content/50">
 						{ i18n.T(ctx, "No nodes registered.") } <a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="link link-primary ml-1">{ i18n.T(ctx, "Add nodes first") }</a>.
 					</div>
 				} else {
-					<svg id="spider-svg" viewBox="0 0 800 450" class="w-full" style="min-height: 450px;">
+					<svg id="spider-svg" viewBox="0 0 1600 900" class="w-full" style="min-height: 550px; cursor: grab; touch-action: none;">
 						<defs>
 							<marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
 								<polygon points="0 0, 10 3.5, 0 7" fill="oklch(var(--p))" />
 							</marker>
 						</defs>
+						<g id="spider-viewport" transform="translate(0,0) scale(1)">
+							<!-- Pan catcher: transparent rect covering the viewport -->
+							<rect x="0" y="0" width="1600" height="900" fill="transparent" id="spider-pan-catcher" style="cursor: grab;"/>
 
-						<!-- Connection links from chains -->
-						for _, link := range spiderLinks(chains, hosts) {
-							<line
-								x1={ fmt.Sprintf("%.0f", link.X1) }
-								y1={ fmt.Sprintf("%.0f", link.Y1) }
-								x2={ fmt.Sprintf("%.0f", link.X2) }
-								y2={ fmt.Sprintf("%.0f", link.Y2) }
-								data-from={ link.FromID }
-								data-to={ link.ToID }
-								stroke="oklch(var(--p) / 0.4)"
-								stroke-width="2"
-								stroke-dasharray="6,3"
-								marker-end="url(#arrowhead)"
-							/>
-							<text
-								x={ fmt.Sprintf("%.0f", (link.X1+link.X2)/2) }
-								y={ fmt.Sprintf("%.0f", (link.Y1+link.Y2)/2 - 8) }
-								text-anchor="middle"
-								class="text-[10px]"
-								fill="oklch(var(--bc) / 0.5)">
-								{ link.Transport }
-							</text>
-						}
+							<!-- Graph edges from ConnectionLink (source of truth) -->
+							for _, link := range spiderGraphLinks(links, hosts, infos, chains) {
+								<line
+									x1={ fmt.Sprintf("%.0f", link.X1) }
+									y1={ fmt.Sprintf("%.0f", link.Y1) }
+									x2={ fmt.Sprintf("%.0f", link.X2) }
+									y2={ fmt.Sprintf("%.0f", link.Y2) }
+									data-from={ link.FromID }
+									data-to={ link.ToID }
+									data-link-id={ link.ID }
+									stroke="oklch(var(--p) / 0.45)"
+									stroke-width="2"
+									stroke-dasharray="6,3"
+									marker-end="url(#arrowhead)"
+								/>
+								<text
+									x={ fmt.Sprintf("%.0f", (link.X1+link.X2)/2) }
+									y={ fmt.Sprintf("%.0f", (link.Y1+link.Y2)/2 - 8) }
+									text-anchor="middle"
+									class="text-[10px]"
+									fill="oklch(var(--bc) / 0.5)">
+									{ string(link.Transport) }
+								</text>
+							}
 
-						<!-- Nodes as circles -->
-						for _, sn := range spiderNodes(hosts, infos, chains) {
-							@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y)
-						}
+							<!-- Nodes -->
+							for _, sn := range spiderNodes(hosts, infos, chains) {
+								@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y)
+							}
+						</g>
 					</svg>
+					<script src="/static/js/spider.js"></script>
+					<script>
+						initSpiderInteraction();
+					</script>
 				}
 			</div>
 		</div>
 
-		
-		<script>
-			(function() {
-				var svg = document.getElementById('spider-svg');
-				if (!svg) return;
-				var dragged = null;
-				var offsetX = 0, offsetY = 0;
-
-				svg.addEventListener('mousedown', function(e) {
-					var node = e.target.closest('.spider-node');
-					if (!node) return;
-					// Don't drag if clicking + button
-					if (e.target.classList.contains('node-add-btn') || e.target.classList.contains('node-add-text')) return;
-					dragged = node;
-					var ct = svg.createSVGPoint();
-					ct.x = e.clientX;
-					ct.y = e.clientY;
-					var pt = ct.matrixTransform(svg.getScreenCTM().inverse());
-					var inner = node.querySelector('.node-inner');
-					offsetX = parseFloat(inner.getAttribute('cx')) - pt.x;
-					offsetY = parseFloat(inner.getAttribute('cy')) - pt.y;
-					node.style.cursor = 'grabbing';
-					e.preventDefault();
-				});
-
-				svg.addEventListener('mousemove', function(e) {
-					if (!dragged) return;
-					var ct = svg.createSVGPoint();
-					ct.x = e.clientX;
-					ct.y = e.clientY;
-					var pt = ct.matrixTransform(svg.getScreenCTM().inverse());
-					var nx = pt.x + offsetX;
-					var ny = pt.y + offsetY;
-					var circles = dragged.querySelectorAll('circle');
-					circles[0].setAttribute('cx', nx);
-					circles[0].setAttribute('cy', ny);
-					circles[1].setAttribute('cx', nx);
-					circles[1].setAttribute('cy', ny);
-					circles[2].setAttribute('cx', nx + 10);
-					circles[2].setAttribute('cy', ny - 10);
-					if (circles[3]) { circles[3].setAttribute('cx', nx + 14); circles[3].setAttribute('cy', ny + 12); }
-					var texts = dragged.querySelectorAll('text');
-					texts[0] && texts[0].setAttribute('x', nx);
-					texts[0] && texts[0].setAttribute('y', ny - 18);
-					texts[1] && texts[1].setAttribute('x', nx);
-					texts[1] && texts[1].setAttribute('y', ny + 4);
-					texts[2] && texts[2].setAttribute('x', nx);
-					texts[2] && texts[2].setAttribute('y', ny + 14);
-					if (texts[3]) { texts[3].setAttribute('x', nx + 14); texts[3].setAttribute('y', ny + 16); }
-					// Update connected lines
-					var nodeId = dragged.getAttribute('data-node-id');
-					var lines = svg.querySelectorAll('line[data-from], line[data-to]');
-					lines.forEach(function(line) {
-						if (line.getAttribute('data-from') === nodeId) {
-							line.setAttribute('x1', nx);
-							line.setAttribute('y1', ny);
-							var tx = line.nextElementSibling;
-							if (tx && tx.tagName === 'text') {
-								tx.setAttribute('x', (nx + parseFloat(line.getAttribute('x2')))/2);
-								tx.setAttribute('y', (ny + parseFloat(line.getAttribute('y2')))/2 - 8);
-							}
-						}
-						if (line.getAttribute('data-to') === nodeId) {
-							line.setAttribute('x2', nx);
-							line.setAttribute('y2', ny);
-							var tx = line.nextElementSibling;
-							if (tx && tx.tagName === 'text') {
-								tx.setAttribute('x', (parseFloat(line.getAttribute('x1')) + nx)/2);
-								tx.setAttribute('y', (parseFloat(line.getAttribute('y1')) + ny)/2 - 8);
-							}
-						}
-					});
-				});
-
-				svg.addEventListener('mouseup', function() {
-					if (!dragged) return;
-					dragged.style.cursor = 'move';
-					dragged = null;
-				});
-
-				svg.addEventListener('mouseleave', function() {
-					if (!dragged) return;
-					dragged.style.cursor = 'move';
-					dragged = null;
-				});
-
-				// Show + button on hover
-				svg.addEventListener('mouseover', function(e) {
-					var node = e.target.closest('.spider-node');
-					if (!node) return;
-					var addBtn = node.querySelector('.node-add-btn');
-					var addTxt = node.querySelector('.node-add-text');
-					if (addBtn) addBtn.setAttribute('opacity', '1');
-					if (addTxt) addTxt.setAttribute('opacity', '1');
-				});
-				svg.addEventListener('mouseout', function(e) {
-					var node = e.target.closest('.spider-node');
-					if (!node) return;
-					var addBtn = node.querySelector('.node-add-btn');
-					var addTxt = node.querySelector('.node-add-text');
-					if (addBtn) addBtn.setAttribute('opacity', '0');
-					if (addTxt) addTxt.setAttribute('opacity', '0');
-				});
-
-				// + button click: pre-fill connection form
-				svg.addEventListener('click', function(e) {
-					if (!e.target.classList.contains('node-add-btn') && !e.target.classList.contains('node-add-text')) return;
-					var node = e.target.closest('.spider-node');
-					if (!node) return;
-					var nodeId = node.getAttribute('data-node-id');
-					var sel = document.querySelector('select[name="from_node"]');
-					if (sel) sel.value = nodeId;
-				});
-			})();
-		</script>
-
-<!-- Add connection form -->
+		<!-- Add connection form -->
 		<div class="card bg-base-100 shadow">
 			<div class="card-body p-3">
 				<h3 class="font-semibold mb-2">{ i18n.T(ctx, "Create New Connection") }</h3>
@@ -221,7 +122,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							</select>
 						</div>
 						<div class="form-control">
-							<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Transport") }</span><span class="label-text-alt text-base-content/50 text-[10px]">{ i18n.T(ctx, "max obfuscation") }</span></label>
+							<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Transport") }</span></label>
 							<select name="transport" class="select select-bordered select-sm">
 								<option value="xhttp" selected>{ i18n.T(ctx, "XHTTP (max obfuscation, recommended)") }</option>
 								<option value="reality">{ i18n.T(ctx, "Reality + XHTTP (max obfuscation)") }</option>
@@ -241,7 +142,36 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 			</div>
 		</div>
 
-		<!-- Existing Chains -->
+		<!-- Existing edges -->
+		if len(links) > 0 {
+			<div class="card bg-base-100 shadow">
+				<div class="card-body p-3">
+					<h3 class="font-semibold mb-2">{ i18n.T(ctx, "Connections") }</h3>
+					<div class="space-y-1">
+						for _, l := range links {
+							<div class="flex items-center justify-between border border-base-300 rounded-lg p-2 text-sm">
+								<div>
+									<span class="font-mono">{ l.FromNodeID }</span>
+									<span class="text-base-content/50 mx-1">→</span>
+									<span class="font-mono">{ l.ToNodeID }</span>
+									<span class="text-base-content/50 ml-2">| { l.Transport } | { l.ChainName }</span>
+								</div>
+								<button
+									class="btn btn-ghost btn-xs text-error"
+									hx-delete={ "/ui/spider/links/" + l.ID }
+									hx-confirm={ i18n.T(ctx, "Delete connection ") + l.FromNodeID + "→" + l.ToNodeID + "?" }
+									hx-target="#main-content"
+									hx-swap="outerHTML">
+									{ i18n.T(ctx, "Delete") }
+								</button>
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+		}
+
+		<!-- Existing Chains (apply/delete shortcuts) -->
 		if len(chains) > 0 {
 			<div class="card bg-base-100 shadow">
 				<div class="card-body p-3">
@@ -298,7 +228,7 @@ func chainNodeList(nodes []model.ChainNode) string {
 // spiderNode renders a single node circle on the SVG canvas
 templ spiderNode(id string, country string, chains []*model.Chain, x, y float64) {
 	<g class="spider-node cursor-pointer" data-node-id={ id }>
-		<circle
+		<circle class="node-inner"
 			cx={ fmt.Sprintf("%.0f", x) }
 			cy={ fmt.Sprintf("%.0f", y) }
 			r="16"
@@ -312,28 +242,28 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64)
 			r="12"
 			fill="oklch(var(--p) / 0.15)"
 		/>
-		<circle
+		<circle class="status-dot"
 			cx={ fmt.Sprintf("%.0f", x + 10) }
 			cy={ fmt.Sprintf("%.0f", y - 10) }
 			r="3"
 			fill="oklch(var(--su))"
 		/>
 		if country != "" {
-			<text
+			<text class="country-label"
 				x={ fmt.Sprintf("%.0f", x) }
 				y={ fmt.Sprintf("%.0f", y - 18) }
 				text-anchor="middle"
 				class="text-xs"
 				fill="oklch(var(--bc))">{ country }</text>
 		}
-		<text
+		<text class="node-id-label"
 			x={ fmt.Sprintf("%.0f", x) }
 			y={ fmt.Sprintf("%.0f", y + 4) }
 			text-anchor="middle"
 			class="text-[11px] font-mono font-semibold"
 			fill="oklch(var(--bc))">{ id }</text>
 		if spiderChainCount(id, chains) > 0 {
-			<text
+			<text class="chain-count-label"
 				x={ fmt.Sprintf("%.0f", x) }
 				y={ fmt.Sprintf("%.0f", y + 14) }
 				text-anchor="middle"
@@ -343,28 +273,20 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64)
 	</g>
 }
 
-// nodePosition computes a circular layout position for a node
-func nodePosition(id string, hosts []*model.Host, idx int, total int) (float64, float64) {
+// nodePosition computes a circular layout position for a node WITHOUT a saved
+// position. Saved positions (NodeInfo.PosX/PosY) take precedence in spiderNodes.
+func nodePosition(idx int, total int) (float64, float64) {
 	if total == 0 {
-		return 400, 225
+		return 800, 450
 	}
 	angle := float64(idx)*2.0*math.Pi/float64(total) - math.Pi/2.0
-	r := 170.0
+	r := 250.0
 	if total <= 3 {
-		r = 130.0
+		r = 180.0
 	}
-	x := 400.0 + r*math.Cos(angle)
-	y := 225.0 + r*math.Sin(angle)
+	x := 800.0 + r*math.Cos(angle)
+	y := 450.0 + r*math.Sin(angle)
 	return x, y
-}
-
-func idxOf(id string, hosts []*model.Host) int {
-	for i, h := range hosts {
-		if h.ID == id {
-			return i
-		}
-	}
-	return 0
 }
 
 func findInfoSpider(id string, infos []*model.NodeInfo) *model.NodeInfo {
@@ -377,9 +299,10 @@ func findInfoSpider(id string, infos []*model.NodeInfo) *model.NodeInfo {
 }
 
 type spiderLinkData struct {
-	X1, Y1, X2, Y2 float64
-	Transport       string
-	FromID, ToID    string
+	ID                  string
+	X1, Y1, X2, Y2      float64
+	Transport           model.TransportType
+	FromID, ToID        string
 }
 
 type spiderNodeData struct {
@@ -388,32 +311,46 @@ type spiderNodeData struct {
 	X, Y    float64
 }
 
-func spiderLinks(chains []*model.Chain, hosts []*model.Host) []spiderLinkData {
-	var links []spiderLinkData
-	for _, c := range chains {
-		for i := 0; i < len(c.Nodes)-1; i++ {
-			x1, y1 := nodePosition(c.Nodes[i].ID, hosts, idxOf(c.Nodes[i].ID, hosts), len(hosts))
-			x2, y2 := nodePosition(c.Nodes[i+1].ID, hosts, idxOf(c.Nodes[i+1].ID, hosts), len(hosts))
-			links = append(links, spiderLinkData{
-				X1: x1, Y1: y1, X2: x2, Y2: y2,
-				Transport: string(c.Transport),
-				FromID: c.Nodes[i].ID, ToID: c.Nodes[i+1].ID,
-			})
-		}
+// spiderGraphLinks builds the edge list for rendering from ConnectionLink (the
+// topology source of truth). Endpoints are resolved from saved node positions
+// (NodeInfo.PosX/PosY) with the circular layout as a fallback.
+func spiderGraphLinks(links []*model.ConnectionLink, hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain) []spiderLinkData {
+	var out []spiderLinkData
+	for _, l := range links {
+		x1, y1 := nodePosFor(l.FromNodeID, hosts, infos)
+		x2, y2 := nodePosFor(l.ToNodeID, hosts, infos)
+		out = append(out, spiderLinkData{
+			ID: l.ID, X1: x1, Y1: y1, X2: x2, Y2: y2,
+			Transport: l.Transport, FromID: l.FromNodeID, ToID: l.ToNodeID,
+		})
 	}
-	return links
+	_ = chains
+	return out
+}
+
+// nodePosFor returns the (x, y) for a node ID: the saved position if set,
+// otherwise the circular-layout fallback keyed by host index.
+func nodePosFor(id string, hosts []*model.Host, infos []*model.NodeInfo) (float64, float64) {
+	if ni := findInfoSpider(id, infos); ni != nil && (ni.PosX != 0 || ni.PosY != 0) {
+		return ni.PosX, ni.PosY
+	}
+	return nodePosition(idxOf(id, hosts), len(hosts))
 }
 
 func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain) []spiderNodeData {
 	var nodes []spiderNodeData
 	for i, h := range hosts {
-		x, y := nodePosition(h.ID, hosts, i, len(hosts))
+		x, y := nodePosFor(h.ID, hosts, infos)
+		if x == 0 && y == 0 {
+			x, y = nodePosition(i, len(hosts))
+		}
 		country := ""
 		if ni := findInfoSpider(h.ID, infos); ni != nil {
 			country = ni.Country
 		}
 		nodes = append(nodes, spiderNodeData{ID: h.ID, Country: country, X: x, Y: y})
 	}
+	_ = chains
 	return nodes
 }
 
@@ -428,4 +365,13 @@ func spiderChainCount(id string, chains []*model.Chain) int {
 		}
 	}
 	return count
+}
+
+func idxOf(id string, hosts []*model.Host) int {
+	for i, h := range hosts {
+		if h.ID == id {
+			return i
+		}
+	}
+	return 0
 }

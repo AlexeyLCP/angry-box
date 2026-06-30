@@ -38,6 +38,16 @@ type chainRole struct {
 	Preset      ConnectionPreset
 }
 
+// RenderMergedNodeConfig is the exported variant of buildMergedNodeConfig for
+// callers that need to preview/dry-run a node's merged config without pushing
+// it (e.g. the Deploy Status hash comparison and config preview endpoint).
+func RenderMergedNodeConfig(
+	nodeInfo *model.NodeInfo,
+	nodeChains []*model.Chain,
+) (*config.SingboxConfig, *MergeReport, error) {
+	return buildMergedNodeConfig(nodeInfo, nodeChains)
+}
+
 func buildMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
