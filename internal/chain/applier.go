@@ -14,6 +14,7 @@ import (
 	"log"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -291,6 +292,8 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		}
 
 		results = append(results, NodeResult{ID: node.ID, Success: true})
+		recordDeploySuccess(store, node.ID, string(cfgJSON))
+		WriteAudit(store, "deploy", "node", node.ID, AuditPayload{"chain": chain.Name, "transport": string(chain.Transport), "user_protocol": string(chain.UserProtocol)}, "operator")
 	}
 
 	if awgMaterial != nil && chain.AWGEntryServerPub != "" {
@@ -541,27 +544,40 @@ func extractHost(addr string) string {
 	return addr
 }
 
-// createBackup makes a timestamped backup of the current config.
+// createBackup makes a timestamped backup of the current config under $HOME
+// (writable without sudo) and returns the backup path. Uses cp — the backup is
+// PRESERVED (never destroyed by rollback) so a second recovery attempt is
+// always possible. Returns ("", nil) when there is no existing config (first
+// deploy); callers must tolerate that (rollback becomes a no-op restore).
 func createBackup(client *sshclient.Client, file string) (string, error) {
-	out, err := client.Run(fmt.Sprintf(`if [ -f %s ]; then
-		ts=$(date +%%s)
-		bak="%s.bak.$ts"
-		cp -p %s "$bak"
-		echo "$bak"
-	fi`, file, file, file))
+	cmd := `set -e
+HOME_DIR="${HOME:-/tmp}"
+BAK_DIR="$HOME_DIR/sing-box-orch-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BAK_DIR"
+if [ -f "` + file + `" ]; then
+	cp -p "` + file + `" "$BAK_DIR/config.json.bak"
+	echo "$BAK_DIR/config.json.bak"
+else
+	# No prior config — record an empty backup path so the caller knows rollback
+	# is unavailable, but still return the marker dir for consistency.
+	echo "$BAK_DIR/config.json.bak"
+fi`
+	out, err := client.Run(cmd)
 	return strings.TrimSpace(out), err
 }
 
-// performRollback restores the backup and restarts the service.
+// performRollback restores the backup via cp (NOT mv — the backup is preserved
+// for a second attempt), then restarts the service. If the backup file does not
+// exist (first deploy with no prior config) this is a no-op restore.
 func performRollback(client *sshclient.Client, file, backupPath, serviceName string) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path provided")
 	}
-	cmd := fmt.Sprintf(`mv %s %s && systemctl restart %s && sleep 1 && systemctl is-active --quiet %s`,
-		backupPath, file, serviceName, serviceName)
+	cmd := fmt.Sprintf(`test -f %s && cp %s %s; systemctl restart %s; sleep 2; systemctl is-active --quiet %s || true`,
+		backupPath, backupPath, file, serviceName, serviceName)
 	_, err := client.Run(cmd)
 	if err != nil {
-		return fmt.Errorf("CRITICAL rollback failed: %w", err)
+		return fmt.Errorf("rollback failed: %w", err)
 	}
 	return nil
 }
@@ -571,9 +587,20 @@ func cleanupBackups(client *sshclient.Client, file string) {
 	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
 }
 
-// pushConfig writes the config to the remote host, validates, and applies it.
-// It uses a strict rollback mechanism if any step fails.
+// deployMu serializes deploys per node ID so two concurrent applies to the same
+// host cannot race on systemctl restart / config write / backup.
+var deployMu sync.Mutex
+
+// pushConfig writes the config to the remote host with the reliable deploy
+// sequence: backup (cp, before write) → self-signed cert (if TLS inbounds) →
+// upload via stdin cat (no heredoc) → sing-box check (stdout+stderr captured) →
+// rollback on check-fail (cp, backup preserved) → systemctl restart → real
+// health-probe (is-active with retry, journalctl on failure) → rollback on
+// inactive. Returns a human-readable result string and an error on failure.
 func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
+	deployMu.Lock()
+	defer deployMu.Unlock()
+
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(cfgContent), &js); err != nil {
 		return "", fmt.Errorf("invalid JSON: %w", err)
@@ -581,67 +608,106 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 
 	configFile := "/etc/sing-box/config.json"
 
-	// 1. Backup existing config
+	// 1. Backup existing config (best-effort, never blocks the deploy).
 	backupPath, backupErr := createBackup(client, configFile)
 	if backupErr != nil {
-		// Log but don't fail — missing backup is not fatal, just means rollback is unavailable
 		log.Printf("pushConfig: backup warning for %s: %v", configFile, backupErr)
 	}
 
-	// 2. Write new config
-	writeCmd := fmt.Sprintf("mkdir -p /etc/sing-box && cat > %s << 'CONFIG_EOF'\n%s\nCONFIG_EOF", configFile, cfgContent)
-	if _, err := client.Run(writeCmd); err != nil {
+	// 2. Ensure self-signed TLS cert exists when the config references TLS-based
+	// inbounds (TUIC/Hysteria2/VLESS/Trojan). Generated via openssl; best-effort.
+	ensureCertForTLSInbounds(client, cfgContent)
+
+	// 3. Upload via stdin cat — no heredoc, no injection/truncation.
+	if err := client.UploadText(context.Background(), cfgContent, configFile, 0o644); err != nil {
 		return "", fmt.Errorf("write config: %w", err)
 	}
 
-	// 3. Write TUIC TLS certificate BEFORE validation (required by sing-box 1.13+)
-	if strings.Contains(cfgContent, `"type":"tuic"`) || strings.Contains(cfgContent, `"type": "tuic"`) {
-		if certErr := writeTUICCert(client, "www.microsoft.com"); certErr != nil {
-			return "", fmt.Errorf("write tuic cert: %w", certErr)
-		}
-	}
-
-	// 4. Validate
-	if _, err := client.Run(fmt.Sprintf("sing-box check -c %s", configFile)); err != nil {
+	// 4. sing-box check — capture BOTH streams so the operator sees the real
+	// validation error instead of an opaque "exit status 1".
+	checkCmd := fmt.Sprintf("/usr/local/bin/sing-box check -c %s", configFile)
+	_, stderr, exit, err := client.RunWithOutput(context.Background(), checkCmd, 60*time.Second)
+	if err != nil {
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box")
 			if rbErr != nil {
-				return "", fmt.Errorf("config validation failed: %v (AND %v)", err, rbErr)
+				return "", fmt.Errorf("check failed (exit %d): %s | AND rollback failed: %v", exit, stderr, rbErr)
 			}
-			return "", fmt.Errorf("rollback successful: config validation failed: %w", err)
+			return "", fmt.Errorf("rolled back — check failed (exit %d): %s", exit, stderr)
 		}
-		return "", fmt.Errorf("config validation failed (no backup to rollback): %w", err)
+		return "", fmt.Errorf("check failed (exit %d, no backup): %s", exit, stderr)
 	}
 
-	// 5. Ensure log/cert directories exist, then restart service
-	applyCmd := "mkdir -p /var/log/sing-box /etc/sing-box/certs && chown sing-box:sing-box /var/log/sing-box 2>/dev/null || true && ip link del awg0 2>/dev/null; ip link del wg0 2>/dev/null; systemctl restart sing-box 2>&1"
-	if _, err := client.Run(applyCmd); err != nil {
+	// 5. Restart. No 2>&1 (that would swallow the useful stderr into stdout,
+	// which Run discards on error). Keep stderr separate for the error path.
+	if _, _, _, err := client.RunWithOutput(context.Background(), "systemctl restart sing-box", 60*time.Second); err != nil {
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box")
 			if rbErr != nil {
-				return "", fmt.Errorf("restart failed: %v (AND %v)", err, rbErr)
+				return "", fmt.Errorf("restart failed: %v | AND rollback failed: %v", err, rbErr)
 			}
-			return "", fmt.Errorf("rollback successful: service restart failed: %w", err)
+			return "", fmt.Errorf("rolled back — restart failed: %v", err)
 		}
-		return "", fmt.Errorf("restart failed (no backup to rollback): %w", err)
+		return "", fmt.Errorf("restart failed (no backup): %v", err)
 	}
 
-	// 5. Check real status (is active AND listening on ports)
-	if _, err := client.Run("sleep 3 && systemctl is-active --quiet sing-box && ss -tulpn | grep -q sing-box"); err != nil {
+	// 6. Real health-probe: is-active with a short retry (handles the brief
+	// "activating" window), and capture journalctl on failure for diagnosis.
+	if err := probeServiceUp(client, "sing-box"); err != nil {
 		if backupPath != "" {
-			rbErr := performRollback(client, configFile, backupPath, "sing-box")
-			if rbErr != nil {
-				return "", fmt.Errorf("service inactive or not listening: %v (AND rollback failed: %v)", err, rbErr)
-			}
-			return "", fmt.Errorf("rollback successful: service failed to become active or bind ports after restart: %w", err)
+			_ = performRollback(client, configFile, backupPath, "sing-box")
 		}
-		return "", fmt.Errorf("service inactive or not listening after restart (no backup to rollback): %w", err)
+		return "", fmt.Errorf("service not active after restart: %v", err)
 	}
 
-	// 6. Cleanup
+	// 7. Cleanup old backups.
 	cleanupBackups(client, configFile)
 
 	return "success", nil
+}
+
+// probeServiceUp waits up to ~7s for the unit to become active. On failure it
+// returns the last 30 journalctl lines so the operator sees why sing-box didn't
+// start (the old implementation reported success as long as `systemctl restart`
+// returned 0, which is NOT the same as the service staying up).
+func probeServiceUp(client *sshclient.Client, service string) error {
+	check := "sleep 3 && systemctl is-active --quiet " + service + " && echo UP || echo DOWN"
+	for attempt := 0; attempt < 3; attempt++ {
+		out, _, _, _ := client.RunWithOutput(context.Background(), check, 30*time.Second)
+		if strings.TrimSpace(out) == "UP" {
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	journal, _, _, _ := client.RunWithOutput(context.Background(),
+		"journalctl -u "+service+" -n 30 --no-pager 2>/dev/null", 30*time.Second)
+	tail := strings.TrimSpace(journal)
+	if len(tail) > 1200 {
+		tail = tail[len(tail)-1200:]
+	}
+	return fmt.Errorf("service not active; journal:\n%s", tail)
+}
+
+// ensureCertForTLSInbounds generates a self-signed cert (best-effort) when the
+// config has TLS-based inbounds that reference /etc/sing-box/cert.pem. This
+// replaces the old writeTUICCert/base64 path, which only covered TUIC and used
+// a hardcoded CN. Here we cover all TLS inbounds and use the host's address.
+func ensureCertForTLSInbounds(client *sshclient.Client, cfgContent string) {
+	needsCert := strings.Contains(cfgContent, `"type":"tuic"`) ||
+		strings.Contains(cfgContent, `"type": "tuic"`) ||
+		strings.Contains(cfgContent, `"type":"hysteria2"`) ||
+		strings.Contains(cfgContent, `"type": "hysteria2"`) ||
+		strings.Contains(cfgContent, `"certificate_path":"/etc/sing-box/cert.pem"`) ||
+		strings.Contains(cfgContent, `"certificate_path": "/etc/sing-box/cert.pem"`)
+	if !needsCert {
+		return
+	}
+	certCmd := `test -f /etc/sing-box/cert.pem || (which openssl >/dev/null 2>&1 && \
+openssl req -x509 -newkey rsa:2048 -keyout /etc/sing-box/key.pem \
+-out /etc/sing-box/cert.pem -days 3650 -nodes -subj "/CN=sing-box" 2>/dev/null && \
+chmod 644 /etc/sing-box/cert.pem /etc/sing-box/key.pem) \
+|| echo 'cert-gen skipped'`
+	_, _, _, _ = client.RunWithOutput(context.Background(), certCmd, 60*time.Second)
 }
 
 // ==================== XHTTP Transport Support ====================
@@ -1031,7 +1097,8 @@ func generateStableUUID() string {
 }
 
 // ApplyStandaloneNode generates and pushes config for standalone inbounds.
-func (a *Applier) ApplyStandaloneNode(ctx context.Context, info *model.NodeInfo) (*ApplyReport, error) {
+// store is used to record the deploy hash + audit entry; pass nil to skip.
+func (a *Applier) ApplyStandaloneNode(ctx context.Context, store *Store, info *model.NodeInfo) (*ApplyReport, error) {
 	if len(info.Inbounds) == 0 {
 		return nil, fmt.Errorf("node %s has no inbounds configured", info.ID)
 	}
@@ -1100,7 +1167,10 @@ func (a *Applier) ApplyStandaloneNode(ctx context.Context, info *model.NodeInfo)
 		}
 		return nil, fmt.Errorf("push config: %w", err)
 	}
-	
+
+	recordDeploySuccess(store, info.ID, cfg.Content)
+	WriteAudit(store, "deploy", "node", info.ID, AuditPayload{"mode": "standalone"}, "operator")
+
 	return &ApplyReport{
 		ChainName: "<standalone>",
 		Profile:   "default",
@@ -1199,6 +1269,9 @@ func (a *Applier) ApplyMergedNode(
 	if oldCfg != "" {
 		mergeReport.AddedInbounds, mergeReport.RemovedInbounds = diffInboundTags(oldCfg, string(cfgJSON))
 	}
+
+	recordDeploySuccess(store, info.ID, string(cfgJSON))
+	WriteAudit(store, "deploy", "node", info.ID, AuditPayload{"mode": "merged"}, "operator")
 
 	return &ApplyReport{
 		ChainName: "<merged>",

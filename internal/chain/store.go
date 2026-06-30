@@ -1,6 +1,7 @@
 package chain
 
 import (
+	cryptoRand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -70,13 +71,19 @@ func NewStore(path string) *Store {
 }
 
 type storeFile struct {
-	Hosts    []*model.Host          `json:"hosts"`
-	Chains   []*model.Chain         `json:"chains"`
-	Users    []*model.User          `json:"users,omitempty"`
-	Settings *model.PanelSettings   `json:"settings,omitempty"`
-	NodeInfos []*model.NodeInfo     `json:"node_infos,omitempty"`
-	Metrics  []*model.NodeMetrics   `json:"metrics,omitempty"`
-	KnownHosts []*model.KnownHost   `json:"known_hosts,omitempty"`
+	Hosts        []*model.Host           `json:"hosts"`
+	Chains       []*model.Chain          `json:"chains"`
+	Users        []*model.User           `json:"users,omitempty"`
+	Settings     *model.PanelSettings    `json:"settings,omitempty"`
+	NodeInfos    []*model.NodeInfo       `json:"node_infos,omitempty"`
+	Metrics      []*model.NodeMetrics    `json:"metrics,omitempty"`
+	KnownHosts   []*model.KnownHost      `json:"known_hosts,omitempty"`
+	Profiles     []*model.Profile        `json:"profiles,omitempty"`
+	Assignments  []*model.ClientAssignment `json:"assignments,omitempty"`
+	RouteRules   []*model.RouteRule      `json:"route_rules,omitempty"`
+	AuditLogs    []*model.AuditLog       `json:"audit_logs,omitempty"`
+	MtproxyUsers []*model.MtproxyUser    `json:"mtproxy_users,omitempty"`
+	Links        []*model.ConnectionLink `json:"links,omitempty"`
 }
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────
@@ -671,6 +678,536 @@ func (s *Store) ResolveKey(keyID string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// ─── Profiles ────────────────────────────────────────────────────────────────
+
+// SaveProfile persists a profile (create or update by ID). Name must be unique.
+func (s *Store) SaveProfile(p *model.Profile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if p.ID == "" {
+		p.ID = newID()
+	}
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = timeNow()
+	}
+	p.UpdatedAt = timeNow()
+
+	// Enforce unique name (case-sensitive) across other profiles.
+	for _, existing := range sf.Profiles {
+		if existing.ID != p.ID && existing.Name == p.Name {
+			return fmt.Errorf("store: profile name %q already exists", p.Name)
+		}
+	}
+
+	replaced := false
+	for i, ex := range sf.Profiles {
+		if ex.ID == p.ID {
+			sf.Profiles[i] = p
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		sf.Profiles = append(sf.Profiles, p)
+	}
+	return s.writeStore(sf)
+}
+
+// GetProfile returns a profile by ID.
+func (s *Store) GetProfile(id string) (*model.Profile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range sf.Profiles {
+		if p.ID == id {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("store: profile %q not found", id)
+}
+
+// ListProfiles returns all profiles.
+func (s *Store) ListProfiles() ([]*model.Profile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.Profile{}, nil
+		}
+		return nil, err
+	}
+	return sf.Profiles, nil
+}
+
+// DeleteProfile removes a profile and its assignments (cascade).
+func (s *Store) DeleteProfile(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return err
+	}
+	found := false
+	for i, p := range sf.Profiles {
+		if p.ID == id {
+			sf.Profiles = append(sf.Profiles[:i], sf.Profiles[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("store: profile %q not found", id)
+	}
+	// Cascade-delete assignments pointing at this profile.
+	kept := sf.Assignments[:0]
+	for _, a := range sf.Assignments {
+		if a.ProfileID != id {
+			kept = append(kept, a)
+		}
+	}
+	sf.Assignments = kept
+	return s.writeStore(sf)
+}
+
+// ─── ClientAssignments ───────────────────────────────────────────────────────
+
+// SaveAssignment creates a client assignment. Uniqueness of
+// (profile_id, client_type, client_id) is enforced.
+func (s *Store) SaveAssignment(a *model.ClientAssignment) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if a.ID == "" {
+		a.ID = newID()
+	}
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = timeNow()
+	}
+	for _, ex := range sf.Assignments {
+		if ex.ProfileID == a.ProfileID && ex.ClientType == a.ClientType && ex.ClientID == a.ClientID {
+			return fmt.Errorf("store: assignment already exists")
+		}
+	}
+	sf.Assignments = append(sf.Assignments, a)
+	return s.writeStore(sf)
+}
+
+// ListAssignments returns all assignments.
+func (s *Store) ListAssignments() ([]*model.ClientAssignment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.ClientAssignment{}, nil
+		}
+		return nil, err
+	}
+	return sf.Assignments, nil
+}
+
+// ListAssignmentsForProfile returns assignments for a given profile.
+func (s *Store) ListAssignmentsForProfile(profileID string) ([]*model.ClientAssignment, error) {
+	all, err := s.ListAssignments()
+	if err != nil {
+		return nil, err
+	}
+	var out []*model.ClientAssignment
+	for _, a := range all {
+		if a.ProfileID == profileID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// DeleteAssignment removes an assignment by ID.
+func (s *Store) DeleteAssignment(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return err
+	}
+	for i, a := range sf.Assignments {
+		if a.ID == id {
+			sf.Assignments = append(sf.Assignments[:i], sf.Assignments[i+1:]...)
+			return s.writeStore(sf)
+		}
+	}
+	return fmt.Errorf("store: assignment %q not found", id)
+}
+
+// ─── RouteRules ──────────────────────────────────────────────────────────────
+
+// SaveRouteRule persists a route rule (create or update by ID).
+func (s *Store) SaveRouteRule(r *model.RouteRule) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if r.ID == "" {
+		r.ID = newID()
+	}
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = timeNow()
+	}
+	replaced := false
+	for i, ex := range sf.RouteRules {
+		if ex.ID == r.ID {
+			sf.RouteRules[i] = r
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		sf.RouteRules = append(sf.RouteRules, r)
+	}
+	return s.writeStore(sf)
+}
+
+// ListRouteRulesForNode returns enabled+disabled route rules for a node, sorted by priority.
+func (s *Store) ListRouteRulesForNode(nodeID string) ([]*model.RouteRule, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.RouteRule{}, nil
+		}
+		return nil, err
+	}
+	var out []*model.RouteRule
+	for _, r := range sf.RouteRules {
+		if r.NodeID == nodeID {
+			out = append(out, r)
+		}
+	}
+	// stable priority sort (lower first)
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].Priority < out[j-1].Priority; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out, nil
+}
+
+// DeleteRouteRule removes a route rule by ID.
+func (s *Store) DeleteRouteRule(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return err
+	}
+	for i, r := range sf.RouteRules {
+		if r.ID == id {
+			sf.RouteRules = append(sf.RouteRules[:i], sf.RouteRules[i+1:]...)
+			return s.writeStore(sf)
+		}
+	}
+	return fmt.Errorf("store: route rule %q not found", id)
+}
+
+// ─── AuditLogs (append-mostly) ───────────────────────────────────────────────
+
+// SaveAuditLog appends an audit entry. ID/TS are filled if empty.
+func (s *Store) SaveAuditLog(a *model.AuditLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if a.ID == "" {
+		a.ID = newID()
+	}
+	if a.TS.IsZero() {
+		a.TS = timeNow()
+	}
+	if a.Actor == "" {
+		a.Actor = "operator"
+	}
+	sf.AuditLogs = append(sf.AuditLogs, a)
+	// Cap the log to the most recent 5000 entries to avoid unbounded growth.
+	if len(sf.AuditLogs) > 5000 {
+		sf.AuditLogs = sf.AuditLogs[len(sf.AuditLogs)-5000:]
+	}
+	return s.writeStore(sf)
+}
+
+// ListAuditLogs returns audit entries newest-first, capped to limit.
+func (s *Store) ListAuditLogs(limit int) ([]*model.AuditLog, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.AuditLog{}, nil
+		}
+		return nil, err
+	}
+	if limit <= 0 || limit > len(sf.AuditLogs) {
+		limit = len(sf.AuditLogs)
+	}
+	// newest-first (reverse over the slice)
+	out := make([]*model.AuditLog, 0, limit)
+	for i := len(sf.AuditLogs) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, sf.AuditLogs[i])
+	}
+	return out, nil
+}
+
+// ─── MtproxyUsers ────────────────────────────────────────────────────────────
+
+// SaveMtproxyUser persists an MTProxy user (create or update by ID). Name must
+// be unique per node.
+func (s *Store) SaveMtproxyUser(u *model.MtproxyUser) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if u.ID == "" {
+		u.ID = newID()
+	}
+	if u.CreatedAt.IsZero() {
+		u.CreatedAt = timeNow()
+	}
+	for _, ex := range sf.MtproxyUsers {
+		if ex.ID != u.ID && ex.NodeID == u.NodeID && ex.Name == u.Name {
+			return fmt.Errorf("store: mtproxy user %q already exists on node %q", u.Name, u.NodeID)
+		}
+	}
+	replaced := false
+	for i, ex := range sf.MtproxyUsers {
+		if ex.ID == u.ID {
+			sf.MtproxyUsers[i] = u
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		sf.MtproxyUsers = append(sf.MtproxyUsers, u)
+	}
+	return s.writeStore(sf)
+}
+
+// ListMtproxyUsers returns all MTProxy users.
+func (s *Store) ListMtproxyUsers() ([]*model.MtproxyUser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.MtproxyUser{}, nil
+		}
+		return nil, err
+	}
+	return sf.MtproxyUsers, nil
+}
+
+// ListMtproxyUsersForNode returns MTProxy users for a node.
+func (s *Store) ListMtproxyUsersForNode(nodeID string) ([]*model.MtproxyUser, error) {
+	all, err := s.ListMtproxyUsers()
+	if err != nil {
+		return nil, err
+	}
+	var out []*model.MtproxyUser
+	for _, u := range all {
+		if u.NodeID == nodeID {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+// DeleteMtproxyUser removes an MTProxy user by ID.
+func (s *Store) DeleteMtproxyUser(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return err
+	}
+	for i, u := range sf.MtproxyUsers {
+		if u.ID == id {
+			sf.MtproxyUsers = append(sf.MtproxyUsers[:i], sf.MtproxyUsers[i+1:]...)
+			return s.writeStore(sf)
+		}
+	}
+	return fmt.Errorf("store: mtproxy user %q not found", id)
+}
+
+// newID returns a unique identifier for a new store entity (time-based + random
+// suffix), matching the style of existing node/user IDs.
+func newID() string {
+	b := make([]byte, 4)
+	_, _ = cryptoRand.Read(b)
+	return fmt.Sprintf("%d-%x", timeNow().UnixNano(), b)
+}
+
+// ─── ConnectionLinks (spider web edges) ─────────────────────────────────────
+
+// SaveLink persists a connection link (create or update by ID). Uniqueness of
+// (from, to, chain) is enforced — a duplicate edge is rejected. ID is generated
+// if empty.
+func (s *Store) SaveLink(l *model.ConnectionLink) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if l.ID == "" {
+		l.ID = newID()
+	}
+	for _, ex := range sf.Links {
+		if ex.FromNodeID == l.FromNodeID && ex.ToNodeID == l.ToNodeID && ex.ChainName == l.ChainName && ex.ID != l.ID {
+			return fmt.Errorf("store: link %s→%s on chain %q already exists", l.FromNodeID, l.ToNodeID, l.ChainName)
+		}
+	}
+	replaced := false
+	for i, ex := range sf.Links {
+		if ex.ID == l.ID {
+			sf.Links[i] = l
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		sf.Links = append(sf.Links, l)
+	}
+	return s.writeStore(sf)
+}
+
+// ListLinks returns all connection links.
+func (s *Store) ListLinks() ([]*model.ConnectionLink, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.ConnectionLink{}, nil
+		}
+		return nil, err
+	}
+	return sf.Links, nil
+}
+
+// ListLinksForChain returns links belonging to a chain.
+func (s *Store) ListLinksForChain(chainName string) ([]*model.ConnectionLink, error) {
+	all, err := s.ListLinks()
+	if err != nil {
+		return nil, err
+	}
+	var out []*model.ConnectionLink
+	for _, l := range all {
+		if l.ChainName == chainName {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+// GetLink returns a link by ID.
+func (s *Store) GetLink(id string) (*model.ConnectionLink, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range sf.Links {
+		if l.ID == id {
+			return l, nil
+		}
+	}
+	return nil, fmt.Errorf("store: link %q not found", id)
+}
+
+// DeleteLink removes a link by ID.
+func (s *Store) DeleteLink(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return err
+	}
+	for i, l := range sf.Links {
+		if l.ID == id {
+			sf.Links = append(sf.Links[:i], sf.Links[i+1:]...)
+			return s.writeStore(sf)
+		}
+	}
+	return fmt.Errorf("store: link %q not found", id)
+}
+
+// SaveNodePosition persists a node's spider-web layout coordinates. Creates a
+// NodeInfo record if none exists yet so the position survives even for nodes
+// that haven't been applied.
+func (s *Store) SaveNodePosition(nodeID string, x, y float64) error {
+	info, err := s.GetNodeInfo(nodeID)
+	if err != nil {
+		info = &model.NodeInfo{}
+	}
+	info.ID = nodeID
+	info.PosX = x
+	info.PosY = y
+	return s.SaveNodeInfo(info)
 }
 
 // ─── internals ─────────────────────────────────────────────────────────────────

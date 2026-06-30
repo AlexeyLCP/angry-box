@@ -1,0 +1,150 @@
+package chain
+
+// cryptogen.go — on-demand credential generators for the UI "Generate" buttons
+// and the /ui/api/crypto/* / /ui/api/protocols/generate endpoints. Ported from
+// VPN/orchestrator/app/services/crypto.py + protocol_presets.py generators.
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+
+	"golang.org/x/crypto/curve25519"
+)
+
+// GenerateRealityKeypair returns (private, public) base64-url X25519 keys,
+// suitable for a REALITY inbound. Reuses the same X25519 as WireGuard.
+func GenerateRealityKeypair() (priv, pub string, err error) {
+	return generateWGKeypair()
+}
+
+// generateWGKeypair returns base64 WireGuard/AWG/Reality keys (clamped X25519).
+func generateWGKeypair() (priv, pub string, err error) {
+	privBytes := make([]byte, 32)
+	if _, err = rand.Read(privBytes); err != nil {
+		return "", "", err
+	}
+	privBytes[0] &= 248
+	privBytes[31] &= 127
+	privBytes[31] |= 64
+	pubBytes, err := curve25519.X25519(privBytes, curve25519.Basepoint)
+	if err != nil {
+		return "", "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(privBytes), base64.RawURLEncoding.EncodeToString(pubBytes), nil
+}
+
+// GenerateWGPresharedKey returns a base64-encoded 32-byte preshared key.
+func GenerateWGPresharedKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+// GenerateRealityShortID returns a random short id of 0..8 bytes (0..16 hex
+// chars). n==0 → "" (empty is a valid REALITY short id).
+func GenerateRealityShortID() string {
+	n := randInt(0, 8)
+	if n == 0 {
+		return ""
+	}
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b) // always even-length
+}
+
+// GenerateRealityShortIDs returns count short ids, the first always "".
+func GenerateRealityShortIDs(count int) []string {
+	ids := make([]string, 0, count)
+	ids = append(ids, "")
+	for i := 1; i < count; i++ {
+		ids = append(ids, GenerateRealityShortID())
+	}
+	return ids
+}
+
+// GenerateTrojanPassword returns a base64 of 16 random bytes (~24 chars).
+func GenerateTrojanPassword() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// GenerateSSPassword returns a password for the given Shadowsocks cipher. 2022
+// ciphers (key length > 0) get base64 of N random bytes; legacy ciphers get 32
+// hex chars.
+func GenerateSSPassword(cipher string) string {
+	keyLen := SS_CIPHERS[cipher]
+	if keyLen == 0 {
+		cipher = SS_DEFAULT_CIPHER
+		keyLen = SS_CIPHERS[cipher]
+	}
+	if keyLen > 0 {
+		b := make([]byte, keyLen)
+		_, _ = rand.Read(b)
+		return base64.StdEncoding.EncodeToString(b)
+	}
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// GenerateHysteria2Password returns a url-safe base64 of 16 random bytes.
+func GenerateHysteria2Password() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)
+}
+
+// GenerateHysteria2ObfsPassword returns the obfs password (same shape as the
+// main password).
+func GenerateHysteria2ObfsPassword() string { return GenerateHysteria2Password() }
+
+// GenerateTUICUUID returns a v4 UUID string.
+func GenerateTUICUUID() string { return generateStableUUID() }
+
+// GenerateTUICPassword returns a url-safe base64 of 16 random bytes.
+func GenerateTUICPassword() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)
+}
+
+// GenerateVMessWSPath returns "/<8 url-safe chars>".
+func GenerateVMessWSPath() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "/" + base64.URLEncoding.EncodeToString(b)
+}
+
+// GenerateMTProxySecret returns 16 random bytes hex-encoded (32 chars).
+func GenerateMTProxySecret() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// MTProxyFullSecret composes the sing-box/mtg FakeTLS secret:
+//   "ee" + secret_hex + hex(fake_tls_domain)
+// secret_hex must be 32 chars (16 bytes).
+func MTProxyFullSecret(secretHex, fakeTLSDomain string) (string, error) {
+	if len(secretHex) != 32 {
+		return "", fmt.Errorf("mtproxy secret must be 32 hex chars, got %d", len(secretHex))
+	}
+	return "ee" + secretHex + hex.EncodeToString([]byte(fakeTLSDomain)), nil
+}
+
+// GenerateProxyPassword returns a 16-char ASCII password (a-zA-Z0-9).
+func GenerateProxyPassword() string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	out := make([]byte, 16)
+	for i, c := range b {
+		out[i] = alphabet[int(c)%len(alphabet)]
+	}
+	return string(out)
+}

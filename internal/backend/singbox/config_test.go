@@ -14,231 +14,122 @@ func resetDefaultProfile(t *testing.T) {
 	chain.SetDefaultProfile("maximum_stealth_2026")
 }
 
-func TestGenerateTransport_XHTTPFromProfile(t *testing.T) {
+// TestGenerateConfig_Transport_DefaultIsRealityXHTTP: the CLI `config -type
+// transport` path now renders VLESS REALITY+XHTTP max obfuscation (the unified
+// role renderer), regardless of the legacy "transport" profile — no more fake
+// configs.
+func TestGenerateConfig_Transport_DefaultIsRealityXHTTP(t *testing.T) {
 	resetDefaultProfile(t)
-	chain.SetDefaultProfile("china_2026")
-
 	b := New()
 	cfg, err := b.GenerateConfig(model.ConfigTransport, model.ConfigParams{Port: 443})
 	if err != nil {
-		t.Fatalf("GenerateConfig transport failed: %v", err)
+		t.Fatalf("GenerateConfig transport: %v", err)
 	}
-
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(cfg.Content), &parsed); err != nil {
-		t.Fatal(err)
+		t.Fatalf("invalid JSON: %v", err)
 	}
-
-	inbounds := parsed["inbounds"].([]any)
-	inb := inbounds[0].(map[string]any)
-
+	inb := parsed["inbounds"].([]any)[0].(map[string]any)
+	if inb["type"] != "vless" {
+		t.Errorf("expected vless, got %v", inb["type"])
+	}
 	transport := inb["transport"].(map[string]any)
-	if transport["type"] != "http" {
-		t.Errorf("expected XHTTP transport for china_2026, got %v", transport["type"])
+	if transport["type"] != "xhttp" {
+		t.Errorf("expected xhttp transport, got %v", transport["type"])
 	}
-	if transport["path"] != "/shopping/bag" {
-		t.Errorf("expected china path, got %v", transport["path"])
-	}
-}
-
-func TestGenerateUser_AWGWithClientPubKey(t *testing.T) {
-	resetDefaultProfile(t)
-
-	b := New()
-	params := model.ConfigParams{
-		Port: 8443,
-		Extra: map[string]any{
-			"clientPubKey": "TEST-CLIENT-PUB-KEY-FROM-USER",
-		},
-	}
-
-	cfg, err := b.GenerateConfig(model.ConfigUser, params)
-	if err != nil {
-		t.Fatalf("GenerateConfig user AWG failed: %v", err)
-	}
-
-	if !strings.Contains(cfg.Content, "TEST-CLIENT-PUB-KEY-FROM-USER") {
-		t.Error("provided client pubkey was not used in AWG peers")
-	}
-	if strings.Contains(cfg.Content, "CLIENT_PUBLIC_KEY_HERE") {
-		t.Error("placeholder appeared even when client key was provided")
+	if transport["x_padding_method"] != "tokenish" {
+		t.Errorf("expected tokenish padding, got %v", transport["x_padding_method"])
 	}
 }
 
-func TestGenerateUser_AWGWithoutClientKey_StillValid(t *testing.T) {
+// TestGenerateConfig_User_AWG: CLI `config -type user -protocol awg` renders a
+// real userspace AWG wireguard endpoint (with amnezia), NOT a fake tun+direct
+// server config. This is the bug the refactor fixed.
+func TestGenerateConfig_User_AWG(t *testing.T) {
 	resetDefaultProfile(t)
-
 	b := New()
-	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{Port: 8443})
+	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{
+		Port: 8443, Protocol: "awg",
+	})
 	if err != nil {
-		t.Fatalf("GenerateConfig failed: %v", err)
+		t.Fatalf("GenerateConfig user AWG: %v", err)
 	}
-
-	// The low-level generator may emit placeholder when no client key is supplied.
-	// Higher layers (CLI apply-chain / config command) are responsible for pre-generating
-	// a client key to avoid this. We only check that the output is still valid JSON.
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(cfg.Content), &parsed); err != nil {
-		t.Fatalf("generated config is not valid JSON: %v", err)
+		t.Fatalf("invalid JSON: %v", err)
 	}
-	// AWG uses server endpoint (wireguard) + TUN inbound
-	eps := parsed["endpoints"].([]any)
-	if len(eps) == 0 {
-		t.Fatal("expected endpoints section for AWG")
+	eps, ok := parsed["endpoints"].([]any)
+	if !ok || len(eps) == 0 {
+		t.Fatal("AWG user config must have a wireguard endpoint (not a tun inbound)")
 	}
 	ep := eps[0].(map[string]any)
 	if ep["type"] != "wireguard" {
-		t.Errorf("expected wireguard endpoint type, got %v", ep["type"])
+		t.Errorf("endpoint type: got %v, want wireguard", ep["type"])
+	}
+}
+
+// TestGenerateConfig_User_TUIC: CLI `config -type user -protocol tuic` renders
+// a REAL TUIC inbound (not a wireguard/AWG endpoint as it did before the fix).
+func TestGenerateConfig_User_TUIC(t *testing.T) {
+	resetDefaultProfile(t)
+	b := New()
+	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{
+		Port: 8443, Protocol: "tuic",
+	})
+	if err != nil {
+		t.Fatalf("GenerateConfig user TUIC: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(cfg.Content), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
 	}
 	inb := parsed["inbounds"].([]any)[0].(map[string]any)
-	if inb["type"] != "tun" {
-		t.Errorf("expected tun inbound type, got %v", inb["type"])
+	if inb["type"] != "tuic" {
+		t.Fatalf("expected tuic inbound, got %v (the pre-refactor bug was tuic->wireguard)", inb["type"])
+	}
+	// TUIC users must carry uuid + password.
+	users := inb["users"].([]any)
+	if len(users) == 0 {
+		t.Fatal("tuic inbound has no users")
+	}
+	u := users[0].(map[string]any)
+	if u["uuid"] == nil || u["password"] == nil {
+		t.Error("tuic user missing uuid/password")
 	}
 }
 
-func TestGenerateUser_DifferentProfilesProduceDifferentAWGParams(t *testing.T) {
+// TestGenerateConfig_User_DefaultIsRealityXHTTP: with no explicit protocol,
+// the user config falls back to VLESS REALITY+XHTTP (not AWG as before).
+func TestGenerateConfig_User_DefaultIsRealityXHTTP(t *testing.T) {
 	resetDefaultProfile(t)
-
 	b := New()
-
-	chain.SetDefaultProfile("russia_2026")
-	cfgRu, _ := b.GenerateConfig(model.ConfigUser, model.ConfigParams{})
-	chain.SetDefaultProfile("china_2026")
-	cfgCn, _ := b.GenerateConfig(model.ConfigUser, model.ConfigParams{})
-
-	if strings.Contains(cfgRu.Content, `"jc": 7`) && strings.Contains(cfgCn.Content, `"jc": 7`) {
-		// both have high jc — not a great differentiator, but at least check something changed
-		t.Log("profiles produced similar AWG params (acceptable for some profiles)")
-	}
-}
-
-func TestGenerateUser_TUIC(t *testing.T) {
-	resetDefaultProfile(t)
-
-	// Force a profile that might prefer TUIC or just test that TUIC path exists
-	// For now we just ensure it doesn't crash and produces tuic when we hack it slightly.
-	// Better: temporarily load a preset without AWG? For simplicity we test current behavior.
-
-	b := New()
-	// Current logic prefers AWG if present in preset. We just verify the generator doesn't panic
-	// on user config and produces something.
 	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{Port: 8443})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(cfg.Content, `"type":`) {
-		t.Error("generated config looks invalid")
+	if !strings.Contains(cfg.Content, `"type": "vless"`) {
+		t.Errorf("default user config should be vless reality+xhttp, got: %s", cfg.Content[:200])
+	}
+	if !strings.Contains(cfg.Content, `"reality"`) {
+		t.Error("default user config missing reality")
 	}
 }
 
-func TestGenerateTransport_XHTTP_RichHeaders(t *testing.T) {
+// TestGenerateConfig_AllProfilesProduceValidJSON ensures every profile still
+// yields valid JSON through the new role renderer.
+func TestGenerateConfig_AllProfilesProduceValidJSON(t *testing.T) {
 	resetDefaultProfile(t)
-	chain.SetDefaultProfile("russia_2026")
-
 	b := New()
-	cfg, err := b.GenerateConfig(model.ConfigTransport, model.ConfigParams{Port: 443})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var parsed map[string]any
-	json.Unmarshal([]byte(cfg.Content), &parsed)
-
-	inb := parsed["inbounds"].([]any)[0].(map[string]any)
-	transport := inb["transport"].(map[string]any)
-
-	if transport["type"] != "http" {
-		t.Error("expected http transport")
-	}
-
-	headers := transport["headers"].(map[string]any)
-	if _, ok := headers["Accept-Language"]; !ok {
-		t.Error("expected rich headers from russia_2026 profile")
-	}
-}
-
-func TestGenerateUser_AWG_DifferentProfiles(t *testing.T) {
-	resetDefaultProfile(t)
-
-	b := New()
-
-	profiles := []string{"russia_2026", "iran_2026", "china_2026", "maximum_stealth_2026"}
-	for _, prof := range profiles {
-		chain.SetDefaultProfile(prof)
-		cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{Port: 8443})
-		if err != nil {
-			t.Errorf("failed for profile %s: %v", prof, err)
-			continue
-		}
-		if !strings.Contains(cfg.Content, `"type": "wireguard"`) {
-			t.Errorf("profile %s did not produce wireguard AWG", prof)
-		}
-	}
-}
-
-func TestGenerateUser_AllCombinations(t *testing.T) {
-	resetDefaultProfile(t)
-
-	b := New()
-
-	testCases := []struct {
-		name      string
-		profile   string
-		protocol  string // via Extra or implicit
-		clientKey string
-		wantType  string
-		wantNoPH  bool // should not contain placeholder
-	}{
-		{"russia_awg_with_key", "russia_2026", "awg", "test-client-pub-abc", "wireguard", true},
-		{"china_awg_no_key", "china_2026", "awg", "", "wireguard", true}, // now auto-generates sample at CLI, but generator itself may still use placeholder
-		// Note: current generateUser prefers AWG when the profile defines it.
-		// This case documents current behavior rather than ideal "force TUIC".
-		{"iran_awg", "iran_2026", "awg", "", "wireguard", true},
-		{"max_awg", "maximum_stealth_2026", "awg", "another-client-pub", "wireguard", true},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			chain.SetDefaultProfile(tc.profile)
-
-			params := model.ConfigParams{Port: 8443}
-			if tc.clientKey != "" {
-				params.Extra = map[string]any{"clientPubKey": tc.clientKey}
-			}
-
-			cfg, err := b.GenerateConfig(model.ConfigUser, params)
-			if err != nil {
-				t.Fatalf("GenerateConfig failed: %v", err)
-			}
-
-			if !strings.Contains(cfg.Content, `"type": "`+tc.wantType+`"`) {
-				t.Errorf("expected type %s, got config: %s", tc.wantType, cfg.Content[:200])
-			}
-
-			if tc.wantNoPH && strings.Contains(cfg.Content, "CLIENT_PUBLIC_KEY_HERE") && tc.clientKey != "" {
-				t.Error("placeholder appeared when client key was explicitly provided")
-			}
-		})
-	}
-}
-
-func TestGenerateConfig_Transport_AllProfiles(t *testing.T) {
-	resetDefaultProfile(t)
-
-	b := New()
-
 	for _, prof := range []string{"russia_2026", "iran_2026", "china_2026", "maximum_stealth_2026"} {
 		chain.SetDefaultProfile(prof)
-
 		cfg, err := b.GenerateConfig(model.ConfigTransport, model.ConfigParams{Port: 443})
 		if err != nil {
-			t.Errorf("transport gen failed for %s: %v", prof, err)
+			t.Errorf("profile %s: %v", prof, err)
 			continue
 		}
-
-		// All modern profiles should produce either reality or xhttp vless
-		if !strings.Contains(cfg.Content, `"type": "vless"`) {
-			t.Errorf("profile %s transport config missing vless", prof)
+		var v any
+		if err := json.Unmarshal([]byte(cfg.Content), &v); err != nil {
+			t.Errorf("profile %s: invalid JSON: %v", prof, err)
 		}
 	}
 }

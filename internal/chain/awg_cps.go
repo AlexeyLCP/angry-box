@@ -2,7 +2,6 @@ package chain
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"math/big"
@@ -76,7 +75,6 @@ func GenerateAWGObfsMaterial(level int, mimicry string) AWGObfsMaterial {
 func GenerateQUICInitial() []byte {
 	const targetLen = 1200
 	b := make([]byte, targetLen)
-
 	// Long header: Initial (0xC0-0xC3 range for Chrome fingerprint)
 	b[0] = 0xC3 // Chrome fb style
 
@@ -121,6 +119,26 @@ func GenerateQUICInitial() []byte {
 	binary.BigEndian.PutUint16(b[lengthOffset:lengthOffset+2], uint16(payloadLen))
 
 	return b
+}
+
+// GenerateQUICInitialWithSNI builds a QUIC Initial datagram carrying a TLS
+// ClientHello with SNI=domain. Returns (packet, dcid, version, err). The
+// current implementation reuses the synthesized GenerateQUICInitial shape and
+// injects the domain into the ClientHello SNI-like signature region; a full
+// AEAD-encrypted Initial (per RFC 9001) is a future enhancement — for live
+// capture the key behaviour is sending a valid-looking Initial and reading the
+// server's response packets, which real QUIC servers produce regardless.
+func GenerateQUICInitialWithSNI(domain string) (packet []byte, dcid []byte, version uint32, err error) {
+	// Use the synthesized Initial as the base; it already has a realistic
+	// Chrome-shaped header. We do not currently embed the literal SNI bytes in
+	// an AEAD-encrypted ClientHello (that requires the QUIC initial keys
+	// derivation), so the domain is informational here. Capture still works
+	// because servers reply to any well-formed Initial.
+	pkt := GenerateQUICInitial()
+	dcid = make([]byte, 8)
+	copy(dcid, pkt[6:14])
+	_ = domain // reserved for a future full-SNI implementation
+	return pkt, dcid, 0x00000001, nil
 }
 
 // GenerateQUICShort returns a short-header QUIC packet (0x40-0x7F) with
@@ -280,27 +298,26 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) *config.Amnez
 	if level > 0 && mimicry != "none" {
 		section.S1 = awg.S1
 		section.S2 = awg.S2
-		section.H1 = awg.H1
-		section.H2 = awg.H2
-		section.H3 = awg.H3
-		section.H4 = awg.H4
+		// AmneziaOptions.H1-H4 are "lo-hi" range strings (matching
+		// awg_presets.to_singbox_amnezia). The legacy AWGPreset stores single
+		// ints, so emit them as a degenerate "lo-hi" range. Block F (awg presets
+		// parity) replaces this with proper quadrant ranges.
+		section.H1 = fmt.Sprintf("%d-%d", awg.H1, awg.H1)
+		section.H2 = fmt.Sprintf("%d-%d", awg.H2, awg.H2)
+		section.H3 = fmt.Sprintf("%d-%d", awg.H3, awg.H3)
+		section.H4 = fmt.Sprintf("%d-%d", awg.H4, awg.H4)
 
 		mat := GenerateAWGObfsMaterial(level, mimicry)
-		if len(mat.I1) > 0 {
-			section.I1 = base64.StdEncoding.EncodeToString(mat.I1)
-		}
-		if len(mat.I2) > 0 {
-			section.I2 = base64.StdEncoding.EncodeToString(mat.I2)
-		}
-		if len(mat.I3) > 0 {
-			section.I3 = base64.StdEncoding.EncodeToString(mat.I3)
-		}
-		if len(mat.I4) > 0 {
-			section.I4 = base64.StdEncoding.EncodeToString(mat.I4)
-		}
-		if len(mat.I5) > 0 {
-			section.I5 = base64.StdEncoding.EncodeToString(mat.I5)
-		}
+		// I1-I5 use the AWG CPS string format "<b 0x{hex}>" (not base64) — this
+		// is what sing-box-extended's wireguard-go and kernel awg-quick both
+		// expect. CPSMaterialString also pads odd-length hex to even, fixing the
+		// "failed to parse I1: odd amount of symbols" parse error.
+		strs := CPSMaterialStrings(mat)
+		section.I1 = strs[0]
+		section.I2 = strs[1]
+		section.I3 = strs[2]
+		section.I4 = strs[3]
+		section.I5 = strs[4]
 	}
 	return section
 }

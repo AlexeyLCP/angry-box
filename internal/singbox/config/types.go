@@ -53,9 +53,10 @@ type DNSRule struct {
 
 // DirectOutbound represents a simple direct outbound connection.
 type DirectOutbound struct {
-	Type string       `json:"type"` // always "direct"
-	Tag  string       `json:"tag"`
-	Dial *DialOptions `json:"dial,omitempty"`
+	Type          string       `json:"type"` // always "direct"
+	Tag           string       `json:"tag"`
+	BindInterface string       `json:"bind_interface,omitempty"` // kernel AWG interface (awg-exit-nX)
+	Dial          *DialOptions `json:"dial,omitempty"`
 }
 
 // BlockOutbound represents a simple block outbound connection.
@@ -64,15 +65,25 @@ type BlockOutbound struct {
 	Tag  string `json:"tag"`
 }
 
+// FallbackOutbound is the sing-box-extended priority fallback group. With our
+// round-robin patch applied it does per-connection round-robin across the
+// listed outbounds; blacklist_timeout temporarily excludes failing nodes.
+type FallbackOutbound struct {
+	Type            string   `json:"type"` // "fallback"
+	Tag             string   `json:"tag"`
+	Outbounds       []string `json:"outbounds"`
+	BlacklistTimeout string  `json:"blacklist_timeout,omitempty"`
+}
+
 // StrategyOutbound represents a routing strategy outbound (e.g. urltest, failover).
 type StrategyOutbound struct {
-	Type      string   `json:"type"`
-	Tag       string   `json:"tag"`
-	Outbounds []string `json:"outbounds"`
-	Default   string   `json:"default,omitempty"`
-	URL       string   `json:"url,omitempty"`
-	Interval  string   `json:"interval,omitempty"`
-	Tolerance int      `json:"tolerance,omitempty"`
+	Type      string       `json:"type"`
+	Tag       string       `json:"tag"`
+	Outbounds []string     `json:"outbounds"`
+	Default   string       `json:"default,omitempty"`
+	URL       string       `json:"url,omitempty"`
+	Interval  string       `json:"interval,omitempty"`
+	Tolerance int          `json:"tolerance,omitempty"`
 	Dial      *DialOptions `json:"dial,omitempty"`
 }
 
@@ -90,14 +101,22 @@ type RoutingSection struct {
 	DefaultDomainResolver string           `json:"default_domain_resolver,omitempty"`
 }
 
-// RouteRuleEntry represents a single routing rule.
+// RouteRuleEntry represents a single routing rule. sing-box 1.13+ uses action
+// rules (sniff/hijack-dns/route/reject) instead of the old inbound/outbound
+// pairing; we keep both shapes via omitempty.
 type RouteRuleEntry struct {
 	Inbound      []string `json:"inbound,omitempty"`
-	Outbound     string   `json:"outbound"`
+	Outbound     string   `json:"outbound,omitempty"`
+	AuthUser     []string `json:"auth_user,omitempty"`
 	GeoIP        []string `json:"geoip,omitempty"`
 	GeoSite      []string `json:"geosite,omitempty"`
+	Domain       []string `json:"domain,omitempty"`
 	DomainSuffix []string `json:"domain_suffix,omitempty"`
+	DomainKeyword []string `json:"domain_keyword,omitempty"`
+	IPCidr       []string `json:"ip_cidr,omitempty"`
+	Protocol     []string `json:"protocol,omitempty"`
 	RuleSet      []string `json:"rule_set,omitempty"`
+	Action       string   `json:"action,omitempty"` // sniff | hijack-dns | route | reject | ...
 }
 
 // RuleSetEntry represents an external rule set (SRS).
@@ -145,21 +164,47 @@ type VLESSUser struct {
 
 // OutboundTLSOptions represents TLS options for outbound connections.
 type OutboundTLSOptions struct {
-	Enabled    bool                    `json:"enabled"`
-	ServerName string                  `json:"server_name,omitempty"`
-	UTLS       *UTLSOptions            `json:"utls,omitempty"`
-	Reality    *OutboundRealityOptions `json:"reality,omitempty"`
+	Enabled          bool                    `json:"enabled"`
+	ServerName       string                  `json:"server_name,omitempty"`
+	ALPN             []string                `json:"alpn,omitempty"`
+	MinVersion       string                  `json:"min_version,omitempty"`
+	MaxVersion       string                  `json:"max_version,omitempty"`
+	CurvePreferences []string                `json:"curve_preferences,omitempty"`
+	UTLS             *UTLSOptions            `json:"utls,omitempty"`
+	Reality          *OutboundRealityOptions `json:"reality,omitempty"`
+	ECH              *ECHOptions             `json:"ech,omitempty"`
+	Fragment             bool   `json:"fragment,omitempty"`
+	FragmentFallbackDelay string `json:"fragment_fallback_delay,omitempty"`
+	RecordFragment        bool   `json:"record_fragment,omitempty"`
 }
 
 // InboundTLSOptions represents TLS options for inbound connections.
 type InboundTLSOptions struct {
-	Enabled         bool                   `json:"enabled"`
-	ServerName      string                 `json:"server_name,omitempty"`
-	Reality         *InboundRealityOptions `json:"reality,omitempty"`
-	Certificate     string                 `json:"certificate,omitempty"`
-	Key             string                 `json:"key,omitempty"`
-	CertificatePath string                 `json:"certificate_path,omitempty"`
-	KeyPath         string                 `json:"key_path,omitempty"`
+	Enabled               bool                   `json:"enabled"`
+	ServerName            string                 `json:"server_name,omitempty"`
+	ALPN                  []string               `json:"alpn,omitempty"`
+	MinVersion            string                 `json:"min_version,omitempty"`
+	MaxVersion            string                 `json:"max_version,omitempty"`
+	CurvePreferences      []string               `json:"curve_preferences,omitempty"`
+	Reality               *InboundRealityOptions `json:"reality,omitempty"`
+	ECH                   *InboundECHOptions     `json:"ech,omitempty"`
+	Certificate           string                 `json:"certificate,omitempty"`
+	Key                   string                 `json:"key,omitempty"`
+	CertificatePath       string                 `json:"certificate_path,omitempty"`
+	KeyPath               string                 `json:"key_path,omitempty"`
+}
+
+// ECHOptions is the client-side ECH block (no key list on the client).
+type ECHOptions struct {
+	Enabled bool `json:"enabled"`
+}
+
+// InboundECHOptions is the server-side ECH block: a config list + the post-
+// quantum signature schemes flag (sing-box-extended 2.5.0).
+type InboundECHOptions struct {
+	Enabled                    bool     `json:"enabled"`
+	Key                        []string `json:"key,omitempty"`
+	PQSignatureSchemesEnabled  bool     `json:"pq_signature_schemes_enabled,omitempty"`
 }
 
 // UTLSOptions represents uTLS options.
@@ -200,10 +245,37 @@ type TransportOptions struct {
 	Host        []string            `json:"host,omitempty"`
 	Path        string              `json:"path,omitempty"`
 	Method      string              `json:"method,omitempty"`
+	Mode        string              `json:"mode,omitempty"` // xhttp: packet-up | stream-up | auto
 	Headers     map[string][]string `json:"headers,omitempty"`
 	IdleTimeout string              `json:"idle_timeout,omitempty"`
 	PingTimeout string              `json:"ping_timeout,omitempty"`
 	Extra       *XHTTPExtra         `json:"extra,omitempty"`
+
+	// sing-box-extended XHTTP obfuscation fields (REALITY+XHTTP max obfuscation).
+	XPaddingBytes         string           `json:"x_padding_bytes,omitempty"`
+	XPaddingObfsMode      bool             `json:"x_padding_obfs_mode,omitempty"`
+	XPaddingMethod        string           `json:"x_padding_method,omitempty"`
+	XPaddingPlacement     string           `json:"x_padding_placement,omitempty"`
+	XPaddingKey           string           `json:"x_padding_key,omitempty"`
+	XPaddingHeader        string           `json:"x_padding_header,omitempty"`
+	SessionPlacement      string           `json:"session_placement,omitempty"`
+	SeqPlacement          string           `json:"seq_placement,omitempty"`
+	UplinkDataPlacement   string           `json:"uplink_data_placement,omitempty"`
+	UplinkHTTPMethod      string           `json:"uplink_http_method,omitempty"`
+	ScMaxEachPostBytes    string           `json:"sc_max_each_post_bytes,omitempty"`
+	ScMinPostsIntervalMs  string           `json:"sc_min_posts_interval_ms,omitempty"`
+	ScMaxBufferedPosts    int              `json:"sc_max_buffered_posts,omitempty"`
+	ScStreamUpServerSecs  string           `json:"sc_stream_up_server_secs,omitempty"`
+	NoGRPCHeader          bool             `json:"no_grpc_header,omitempty"`
+	NoSSEHeader           bool             `json:"no_sse_header,omitempty"`
+	Xmux                  *XmuxOptions     `json:"xmux,omitempty"`
+}
+
+// XmuxOptions is the XHTTP xmux multiplexing block.
+type XmuxOptions struct {
+	MaxConcurrency    string `json:"max_concurrency,omitempty"`
+	HMaxRequestTimes  string `json:"h_max_request_times,omitempty"`
+	HMaxReusableSecs  string `json:"h_max_reusable_secs,omitempty"`
 }
 
 // XHTTPExtra contains sing-box-extended specific options for XHTTP transport.
@@ -251,33 +323,43 @@ type WireGuardPeer struct {
 	AllowedIPs []string `json:"allowed_ips,omitempty"`
 }
 
-// AmneziaOptions represents AWG specific extensions for wireguard in sing-box-extended.
+// AmneziaOptions represents AWG specific extensions for wireguard in
+// sing-box-extended. JSON keys are lowercase (matching awg_presets'
+// to_singbox_amnezia: jc/jmin/jmax/s1-s4/h1-h4/itime). H1-H4 are "lo-hi" range
+// strings. I1-I5 are CPS packet strings in `<b 0xHEX>` / `<r N><b 0xHEX>` form
+// (optional; when present must be even-length hex — the deploy path pads them).
 type AmneziaOptions struct {
-	JC   int    `json:"jc,omitempty"`
-	JMIN int    `json:"jmin,omitempty"`
-	JMAX int    `json:"jmax,omitempty"`
-	S1   int    `json:"s1,omitempty"`
-	S2   int    `json:"s2,omitempty"`
-	H1   int    `json:"h1,omitempty"`
-	H2   int    `json:"h2,omitempty"`
-	H3   int    `json:"h3,omitempty"`
-	H4   int    `json:"h4,omitempty"`
-	I1   string `json:"i1,omitempty"`
-	I2   string `json:"i2,omitempty"`
-	I3   string `json:"i3,omitempty"`
-	I4   string `json:"i4,omitempty"`
-	I5   string `json:"i5,omitempty"`
+	JC    int    `json:"jc,omitempty"`
+	JMIN  int    `json:"jmin,omitempty"`
+	JMAX  int    `json:"jmax,omitempty"`
+	S1    int    `json:"s1,omitempty"`
+	S2    int    `json:"s2,omitempty"`
+	S3    int    `json:"s3,omitempty"`
+	S4    int    `json:"s4,omitempty"`
+	H1    string `json:"h1,omitempty"`
+	H2    string `json:"h2,omitempty"`
+	H3    string `json:"h3,omitempty"`
+	H4    string `json:"h4,omitempty"`
+	I1    string `json:"i1,omitempty"`
+	I2    string `json:"i2,omitempty"`
+	I3    string `json:"i3,omitempty"`
+	I4    string `json:"i4,omitempty"`
+	I5    string `json:"i5,omitempty"`
+	ITime int    `json:"itime,omitempty"`
 }
 
 // TUNInbound represents a sing-box TUN inbound.
 type TUNInbound struct {
-	Type          string   `json:"type"` // "tun"
-	Tag           string   `json:"tag"`
-	InterfaceName string   `json:"interface_name,omitempty"`
-	Address       []string `json:"address,omitempty"`
-	MTU           int      `json:"mtu,omitempty"`
-	Stack         string   `json:"stack,omitempty"`
-	AutoRoute     bool     `json:"auto_route,omitempty"`
+	Type             string   `json:"type"` // "tun"
+	Tag              string   `json:"tag"`
+	InterfaceName    string   `json:"interface_name,omitempty"`
+	Address          []string `json:"address,omitempty"`
+	MTU              int      `json:"mtu,omitempty"`
+	Stack            string   `json:"stack,omitempty"` // "mixed" recommended (kernel TCP + gVisor UDP for QUIC)
+	AutoRoute        bool     `json:"auto_route,omitempty"`
+	IncludeInterface []string `json:"include_interface,omitempty"` // kernel AWG server iface, e.g. ["awg0"]
+	StrictRoute      bool     `json:"strict_route,omitempty"`
+	AutoRedirect     bool     `json:"auto_redirect,omitempty"`
 }
 
 // DirectInbound represents a sing-box direct inbound.
