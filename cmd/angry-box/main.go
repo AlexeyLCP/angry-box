@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
+	"github.com/alexeylcp/angry-box/internal/backend/singbox"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -576,6 +577,8 @@ func nodeCmd(cmd string) {
 	fs.StringVar(&profile, "profile", "", "obfuscation profile (russia_2026, iran_2026, china_2026, maximum_stealth_2026)")
 	fs.StringVar(&clientPubKey, "client-pubkey", "", "client public key for AWG user configs")
 	fs.StringVar(&transport, "transport", "xhttp", "transport for -type=transport (xhttp or reality)")
+	useSudo := fs.Bool("sudo", false, "wrap privileged remote commands in sudo (for non-root SSH users with passwordless sudo)")
+	installAWG := fs.Bool("install-awg", false, "also install the AmneziaWG kernel module during deploy")
 	_ = fs.Parse(os.Args[2:])
 
 	// For single node commands, we don't have a storePath flag directly defined in nodeCmd,
@@ -592,7 +595,8 @@ func nodeCmd(cmd string) {
 	case "deploy":
 		requireHostFlags()
 		host := model.Host{Addr: addr, User: user, KeyPath: keyPath}
-		result, err := b.Deploy(ctx, host)
+		opts := singbox.DeployOptions{UseSudo: *useSudo, InstallAWGModule: *installAWG}
+		result, err := b.(*singbox.Backend).DeployOpts(ctx, host, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "deploy failed: %v\n", err)
 			os.Exit(1)

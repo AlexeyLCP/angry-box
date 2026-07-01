@@ -225,6 +225,14 @@ func (c *Client) UploadText(ctx context.Context, content, remotePath string, mod
 		return fmt.Errorf("ssh: stdin pipe: %w", err)
 	}
 
+	// IMPORTANT: start the remote command (cat) BEFORE writing to stdin. The
+	// previous order (Write → Close → Run) deadlocked for content larger than
+	// the pipe buffer, and produced empty files for small content (cat read an
+	// already-closed stdin). Start drains stdin into the file as we write.
+	if err := session.Start(cmd); err != nil {
+		return fmt.Errorf("ssh: start: %w", err)
+	}
+
 	runCtx := ctx
 	if _, ok := runCtx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -236,8 +244,8 @@ func (c *Client) UploadText(ctx context.Context, content, remotePath string, mod
 	go func() {
 		_, werr := io.WriteString(stdin, content)
 		_ = stdin.Close()
-		done <- session.Run(cmd)
-		_ = werr // best-effort; a write failure surfaces as Run failure
+		done <- session.Wait()
+		_ = werr // best-effort; a write failure surfaces as Wait failure
 	}()
 
 	select {

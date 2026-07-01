@@ -276,7 +276,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			continue
 		}
 
-		_, pushErr := pushConfig(client, string(cfgJSON))
+		_, pushErr := pushConfig(client, string(cfgJSON), nodeInfo.UseSudo)
 		client.Close()
 		if pushErr != nil {
 			if strings.Contains(pushErr.Error(), "rollback successful") {
@@ -569,12 +569,15 @@ fi`
 // performRollback restores the backup via cp (NOT mv — the backup is preserved
 // for a second attempt), then restarts the service. If the backup file does not
 // exist (first deploy with no prior config) this is a no-op restore.
-func performRollback(client *sshclient.Client, file, backupPath, serviceName string) error {
+func performRollback(client *sshclient.Client, file, backupPath, serviceName string, useSudo bool) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path provided")
 	}
 	cmd := fmt.Sprintf(`test -f %s && cp %s %s; systemctl restart %s; sleep 2; systemctl is-active --quiet %s || true`,
 		backupPath, backupPath, file, serviceName, serviceName)
+	if useSudo {
+		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
+	}
 	_, err := client.Run(cmd)
 	if err != nil {
 		return fmt.Errorf("rollback failed: %w", err)
@@ -596,10 +599,25 @@ var deployMu sync.Mutex
 // upload via stdin cat (no heredoc) → sing-box check (stdout+stderr captured) →
 // rollback on check-fail (cp, backup preserved) → systemctl restart → real
 // health-probe (is-active with retry, journalctl on failure) → rollback on
-// inactive. Returns a human-readable result string and an error on failure.
-func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
+// inactive. useSudo wraps privileged commands for non-root SSH users. Returns
+// a human-readable result string and an error on failure.
+func pushConfig(client *sshclient.Client, cfgContent string, useSudo bool) (string, error) {
 	deployMu.Lock()
 	defer deployMu.Unlock()
+
+	// sudo wraps a single command; sudoBash wraps a pipeline.
+	sudo := func(cmd string) string {
+		if useSudo {
+			return "sudo " + cmd
+		}
+		return cmd
+	}
+	sudoB := func(cmd string) string {
+		if !useSudo {
+			return cmd
+		}
+		return fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
+	}
 
 	var js json.RawMessage
 	if err := json.Unmarshal([]byte(cfgContent), &js); err != nil {
@@ -618,18 +636,31 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 	// inbounds (TUIC/Hysteria2/VLESS/Trojan). Generated via openssl; best-effort.
 	ensureCertForTLSInbounds(client, cfgContent)
 
-	// 3. Upload via stdin cat — no heredoc, no injection/truncation.
-	if err := client.UploadText(context.Background(), cfgContent, configFile, 0o644); err != nil {
-		return "", fmt.Errorf("write config: %w", err)
+	// 3. Upload via stdin cat. When useSudo, the target (/etc/sing-box/config.json)
+	// is root-owned, so we write to $HOME first and sudo cp into place (UploadText
+	// itself can't sudo the cat, and the path isn't writable as lcp).
+	if useSudo {
+		tmp := "/tmp/angry-config-" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".json"
+		if err := client.UploadText(context.Background(), cfgContent, tmp, 0o644); err != nil {
+			return "", fmt.Errorf("write config (tmp): %w", err)
+		}
+		if _, _, _, err := client.RunWithOutput(context.Background(),
+			sudoB("cp "+tmp+" "+configFile+" && chmod 644 "+configFile+" && rm -f "+tmp), 30*time.Second); err != nil {
+			return "", fmt.Errorf("write config: %w", err)
+		}
+	} else {
+		if err := client.UploadText(context.Background(), cfgContent, configFile, 0o644); err != nil {
+			return "", fmt.Errorf("write config: %w", err)
+		}
 	}
 
 	// 4. sing-box check — capture BOTH streams so the operator sees the real
 	// validation error instead of an opaque "exit status 1".
-	checkCmd := fmt.Sprintf("/usr/local/bin/sing-box check -c %s", configFile)
+	checkCmd := sudo(fmt.Sprintf("/usr/local/bin/sing-box check -c %s", configFile))
 	_, stderr, exit, err := client.RunWithOutput(context.Background(), checkCmd, 60*time.Second)
 	if err != nil {
 		if backupPath != "" {
-			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			rbErr := performRollback(client, configFile, backupPath, "sing-box", useSudo)
 			if rbErr != nil {
 				return "", fmt.Errorf("check failed (exit %d): %s | AND rollback failed: %v", exit, stderr, rbErr)
 			}
@@ -640,9 +671,9 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 
 	// 5. Restart. No 2>&1 (that would swallow the useful stderr into stdout,
 	// which Run discards on error). Keep stderr separate for the error path.
-	if _, _, _, err := client.RunWithOutput(context.Background(), "systemctl restart sing-box", 60*time.Second); err != nil {
+	if _, _, _, err := client.RunWithOutput(context.Background(), sudoB("systemctl restart sing-box"), 60*time.Second); err != nil {
 		if backupPath != "" {
-			rbErr := performRollback(client, configFile, backupPath, "sing-box")
+			rbErr := performRollback(client, configFile, backupPath, "sing-box", useSudo)
 			if rbErr != nil {
 				return "", fmt.Errorf("restart failed: %v | AND rollback failed: %v", err, rbErr)
 			}
@@ -653,9 +684,9 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 
 	// 6. Real health-probe: is-active with a short retry (handles the brief
 	// "activating" window), and capture journalctl on failure for diagnosis.
-	if err := probeServiceUp(client, "sing-box"); err != nil {
+	if err := probeServiceUp(client, "sing-box", useSudo); err != nil {
 		if backupPath != "" {
-			_ = performRollback(client, configFile, backupPath, "sing-box")
+			_ = performRollback(client, configFile, backupPath, "sing-box", useSudo)
 		}
 		return "", fmt.Errorf("service not active after restart: %v", err)
 	}
@@ -670,8 +701,14 @@ func pushConfig(client *sshclient.Client, cfgContent string) (string, error) {
 // returns the last 30 journalctl lines so the operator sees why sing-box didn't
 // start (the old implementation reported success as long as `systemctl restart`
 // returned 0, which is NOT the same as the service staying up).
-func probeServiceUp(client *sshclient.Client, service string) error {
-	check := "sleep 3 && systemctl is-active --quiet " + service + " && echo UP || echo DOWN"
+func probeServiceUp(client *sshclient.Client, service string, useSudo bool) error {
+	sudoB := func(cmd string) string {
+		if !useSudo {
+			return cmd
+		}
+		return fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
+	}
+	check := sudoB("sleep 3 && systemctl is-active --quiet " + service + " && echo UP || echo DOWN")
 	for attempt := 0; attempt < 3; attempt++ {
 		out, _, _, _ := client.RunWithOutput(context.Background(), check, 30*time.Second)
 		if strings.TrimSpace(out) == "UP" {
@@ -680,7 +717,7 @@ func probeServiceUp(client *sshclient.Client, service string) error {
 		time.Sleep(2 * time.Second)
 	}
 	journal, _, _, _ := client.RunWithOutput(context.Background(),
-		"journalctl -u "+service+" -n 30 --no-pager 2>/dev/null", 30*time.Second)
+		sudoB("journalctl -u "+service+" -n 30 --no-pager 2>/dev/null"), 30*time.Second)
 	tail := strings.TrimSpace(journal)
 	if len(tail) > 1200 {
 		tail = tail[len(tail)-1200:]
@@ -1160,7 +1197,7 @@ func (a *Applier) ApplyStandaloneNode(ctx context.Context, store *Store, info *m
 	}
 	
 	// We pass empty UserProtocol because we don't have a single specific user protocol here
-	_, err = pushConfig(client, cfg.Content)
+	_, err = pushConfig(client, cfg.Content, info.UseSudo)
 	if err != nil {
 		if strings.Contains(err.Error(), "rollback successful") {
 			return nil, fmt.Errorf("ROLLBACK APPLIED: %w", err)
@@ -1257,7 +1294,7 @@ func (a *Applier) ApplyMergedNode(
 	oldCfgBytes, _ := client.Run("cat /etc/sing-box/config.json 2>/dev/null")
 	oldCfg := string(oldCfgBytes)
 
-	_, pushErr := pushConfig(client, string(cfgJSON))
+	_, pushErr := pushConfig(client, string(cfgJSON), info.UseSudo)
 	if pushErr != nil {
 		if strings.Contains(pushErr.Error(), "rollback successful") {
 			return nil, mergeReport, fmt.Errorf("ROLLBACK APPLIED: %w", pushErr)

@@ -153,9 +153,30 @@ func (b *Backend) DeployOpts(ctx context.Context, host model.Host, opts DeployOp
 		return nil, fmt.Errorf("singbox: deploy: create systemd unit: %w", err)
 	}
 
+	// 3b. Ensure a minimal valid config.json exists so the service can start
+	// (Deploy only installs the binary — Apply pushes the real config). Without
+	// this, a fresh deploy starts sing-box with no config and it crashes. The
+	// minimal config has empty inbounds/outbounds + info logging; Apply replaces
+	// it on the first push.
+	minimalCfg := `{"log":{"level":"info"},"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}]}`
+	if opts.UseSudo {
+		tmp := "/tmp/angry-min-config.json"
+		if err := client.UploadText(ctx, minimalCfg, tmp, 0o644); err != nil {
+			return nil, fmt.Errorf("singbox: deploy: write minimal config (tmp): %w", err)
+		}
+		if _, _, _, err := client.RunWithOutput(ctx,
+			sudoBash(true, "cp "+tmp+" "+configFile+" && chmod 644 "+configFile+" && rm -f "+tmp), 30*time.Second); err != nil {
+			return nil, fmt.Errorf("singbox: deploy: write minimal config: %w", err)
+		}
+	} else {
+		_ = client.UploadText(ctx, minimalCfg, configFile, 0o644) // best-effort; may exist already
+	}
+
 	// 4. Reload + enable + restart. Always restart — the previous "already
 	// installed" fast path skipped this and left broken nodes broken.
-	restartCmd := priv(opts.UseSudo, "systemctl daemon-reload && systemctl enable "+systemdService+" && systemctl restart "+systemdService)
+	// Wrap the whole pipeline in `sudo bash -c` so sudo applies to all three
+	// systemctl calls (a bare `sudo a && b && c` only sudo's the first).
+	restartCmd := sudoBash(opts.UseSudo, "systemctl daemon-reload && systemctl enable "+systemdService+" && systemctl reset-failed "+systemdService+" ; systemctl restart "+systemdService)
 	if _, _, _, err := client.RunWithOutput(ctx, restartCmd, 60*time.Second); err != nil {
 		return nil, fmt.Errorf("singbox: deploy: enable and start service: %w", err)
 	}
@@ -212,6 +233,11 @@ func installPatchedBinary(ctx context.Context, client *sshclient.Client, useSudo
 		url = fmt.Sprintf("https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/sing-box-%s-patched-linux-%s.tar.gz",
 			singBoxVersion, goArch)
 	}
+	// Operator override: point deploy at a mirror/local HTTP server (e.g. for
+	// air-gapped installs or testing). Empty = use the default/registry URL.
+	if envURL := os.Getenv("ANGRY_BINARY_URL"); envURL != "" {
+		url = envURL
+	}
 	expectedChecksum := singBoxChecksums[goArch]
 
 	script := fmt.Sprintf(`set -e
@@ -232,11 +258,16 @@ curl -fsSL '%s' -o sing-box.tar.gz
 	script += fmt.Sprintf(`tar -xzf sing-box.tar.gz
 SINGBOX_BIN=$(find /tmp/sing-box-install -maxdepth 2 -name sing-box -type f 2>/dev/null | head -1)
 if [ -z "$SINGBOX_BIN" ]; then echo 'ERROR: sing-box binary not found after tar' >&2; exit 1; fi
-%s install -m 0755 "$SINGBOX_BIN" %s
+install -m 0755 "$SINGBOX_BIN" %s
 rm -rf /tmp/sing-box-install
-`, priv(useSudo, ""), installPath)
+`, installPath)
 
-	if _, stderr, exit, err := client.RunWithOutput(ctx, priv(useSudo, script), 10*time.Minute); err != nil {
+	// Wrap the whole install pipeline in `sudo bash -c` when useSudo, so sudo
+	// applies to every line (a bare `sudo set -e\nmkdir...` would run `sudo set`
+	// as a binary lookup — "sudo: set: command not found"). The install step
+	// itself needs sudo only for the final `install` to /usr/local/bin, but
+	// running the whole script as root is simplest and the script is trusted.
+	if _, stderr, exit, err := client.RunWithOutput(ctx, sudoBash(useSudo, script), 10*time.Minute); err != nil {
 		return fmt.Errorf("download/install: %s (exit %d) %s", err, exit, stderr)
 	}
 	return nil
@@ -309,7 +340,7 @@ chmod 644 %s/cert.pem %s/key.pem) \
 func verifyServiceUp(ctx context.Context, client *sshclient.Client, service string, useSudo bool) error {
 	// `systemctl is-active` may briefly be "activating" right after restart; a
 	// short retry loop handles that without false-positives.
-	check := priv(useSudo, "sleep 3 && systemctl is-active --quiet "+service+" && echo UP || echo DOWN")
+	check := sudoBash(useSudo, "sleep 3 && systemctl is-active --quiet "+service+" && echo UP || echo DOWN")
 	for attempt := 0; attempt < 3; attempt++ {
 		out, _, _, _ := client.RunWithOutput(ctx, check, 30*time.Second)
 		if strings.TrimSpace(out) == "UP" {
@@ -319,7 +350,7 @@ func verifyServiceUp(ctx context.Context, client *sshclient.Client, service stri
 	}
 	// Failed — grab the last 30 log lines for diagnostics.
 	journal, _, _, _ := client.RunWithOutput(ctx,
-		priv(useSudo, "journalctl -u "+service+" -n 30 --no-pager 2>/dev/null"),
+		sudoBash(useSudo, "journalctl -u "+service+" -n 30 --no-pager 2>/dev/null"),
 		30*time.Second)
 	tail := strings.TrimSpace(journal)
 	if len(tail) > 1200 {
@@ -347,8 +378,8 @@ func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
 // survive reboot. Stderr is preserved for diagnosis.
 func (b *Backend) installAWGModule(ctx context.Context, client *sshclient.Client, useSudo bool) error {
 	// Already loaded + persistent? Short-circuit.
-	out, _, _, _ := client.RunWithOutput(ctx, priv(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"), 30*time.Second)
-	persistent, _, _, _ := client.RunWithOutput(ctx, priv(useSudo, "test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no"), 30*time.Second)
+	out, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"), 30*time.Second)
+	persistent, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no"), 30*time.Second)
 	if strings.TrimSpace(out) == "loaded" && strings.TrimSpace(persistent) == "yes" {
 		return nil
 	}
@@ -387,7 +418,7 @@ modprobe amneziawg 2>/dev/null || true
 	}
 
 	// Verify.
-	verify, _, _, _ := client.RunWithOutput(ctx, priv(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo failed"), 30*time.Second)
+	verify, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo failed"), 30*time.Second)
 	if strings.TrimSpace(verify) != "loaded" {
 		return fmt.Errorf("amneziawg module not loaded after install (check kernel headers / reboot)")
 	}

@@ -94,7 +94,6 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 			"alpn":              []string{"h2", "http/1.1"},
 			"min_version":       "1.3",
 			"max_version":       "1.3",
-			"curve_preferences": []string{"X25519", "X25519MLKEM768"},
 			"reality": map[string]any{
 				"enabled": true,
 				"handshake": map[string]any{
@@ -105,11 +104,8 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 				"short_id":           p.ShortIDs,
 				"max_time_difference": "1m",
 			},
-			"ech": map[string]any{
-				"enabled":                     true,
-				"key":                         []string{}, // operator runs `sing-box generate ech-keypair`
-				"pq_signature_schemes_enabled": true,
-			},
+			// NOTE: ECH is intentionally omitted — sing-box-extended rejects
+			// "Reality is conflict with ECH". ECH applies to plain TLS, not REALITY.
 		},
 		"transport": xhttpTransportMap(sni, p.XHTTPPath),
 	}
@@ -174,10 +170,10 @@ func xhttpTransportMap(sni, path string) map[string]any {
 			"h_max_request_times": "600-900",
 			"h_max_reusable_secs": "1800-3000",
 		},
-		"headers": map[string][]string{
-			"User-Agent":      {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
-			"Accept":          {"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
-			"Accept-Language": {"en-US,en;q=0.5"},
+		"headers": map[string]string{
+			"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+			"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"Accept-Language": "en-US,en;q=0.5",
 		},
 	}
 }

@@ -44,17 +44,15 @@ func TestRenderProxyNode_Structure(t *testing.T) {
 	if tls["min_version"] != "1.3" || tls["max_version"] != "1.3" {
 		t.Errorf("TLS version range: got %v-%v, want 1.3-1.3", tls["min_version"], tls["max_version"])
 	}
-	curves, _ := tls["curve_preferences"].([]any)
-	curveStrs := toStrings(curves)
-	if !contains(curveStrs, "X25519MLKEM768") {
-		t.Errorf("missing post-quantum curve X25519MLKEM768: %v", curveStrs)
+	// NOTE: curve_preferences and ECH are intentionally NOT set on a REALITY
+	// inbound — sing-box-extended rejects "curve preferences is unavailable in
+	// reality" and "Reality is conflict with ECH". They are client-side / plain-
+	// TLS options. Asserting their absence guards against re-adding them.
+	if tls["curve_preferences"] != nil {
+		t.Errorf("curve_preferences must not be set on a REALITY inbound (sing-box rejects it): %v", tls["curve_preferences"])
 	}
-	ech := tls["ech"].(map[string]any)
-	if ech["enabled"] != true {
-		t.Error("ECH not enabled")
-	}
-	if ech["pq_signature_schemes_enabled"] != true {
-		t.Error("pq_signature_schemes_enabled not true")
+	if tls["ech"] != nil {
+		t.Errorf("ECH must not be set on a REALITY inbound (sing-box rejects it): %v", tls["ech"])
 	}
 
 	reality := tls["reality"].(map[string]any)
