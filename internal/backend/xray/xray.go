@@ -38,7 +38,24 @@ func New() *Backend {
 // InstallAWGModule is a no-op for xray — AWG is only supported by sing-box-extended.
 func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error { return nil }
 
+// DeployWithOptions implements ports.Backend. Xray does not support the AWG
+// kernel module (InstallAWGModule is ignored); UseSudo wraps the privileged
+// install/systemd commands for non-root SSH users with passwordless sudo.
+func (b *Backend) DeployWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) (*model.DeployResult, error) {
+	return b.deployWithOptions(ctx, host, opts)
+}
+
 func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployResult, error) {
+	return b.deployWithOptions(ctx, host, model.DeployOptions{})
+}
+
+func (b *Backend) deployWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) (*model.DeployResult, error) {
+	sudo := func(cmd string) string {
+		if opts.UseSudo {
+			return "sudo " + cmd
+		}
+		return cmd
+	}
 	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("xray: deploy: %w", err)
@@ -77,12 +94,15 @@ mkdir -p /tmp/xray-install
 cd /tmp/xray-install
 curl -fsSL '%s' -o xray.zip
 unzip -o xray.zip
-cp xray %s
-chmod +x %s
-mkdir -p %s
+%s
+%s
+%s
 rm -rf /tmp/xray-install
 `,
-		downloadURL, installPath, installPath, configDir,
+		downloadURL,
+		sudo(fmt.Sprintf("cp xray %s", installPath)),
+		sudo(fmt.Sprintf("chmod +x %s", installPath)),
+		sudo(fmt.Sprintf("mkdir -p %s", configDir)),
 	)
 
 	_, err = client.Run(installScript)
@@ -106,13 +126,13 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 `, installPath, configFile)
 
-	writeCmd := fmt.Sprintf("cat > %s << 'SYSTEMD_UNIT_EOF'\n%s\nSYSTEMD_UNIT_EOF", systemdUnit, systemdContent)
+	writeCmd := sudo(fmt.Sprintf("tee %s > /dev/null << 'SYSTEMD_UNIT_EOF'\n%s\nSYSTEMD_UNIT_EOF", systemdUnit, systemdContent))
 	_, err = client.Run(writeCmd)
 	if err != nil {
 		return nil, fmt.Errorf("xray: deploy: create systemd unit: %w", err)
 	}
 
-	_, err = client.Run("systemctl daemon-reload && systemctl enable xray && systemctl start xray")
+	_, err = client.Run(sudo("systemctl daemon-reload && systemctl enable xray && systemctl start xray"))
 	if err != nil {
 		return nil, fmt.Errorf("xray: deploy: start service: %w", err)
 	}

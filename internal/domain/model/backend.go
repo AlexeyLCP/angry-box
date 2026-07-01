@@ -60,6 +60,22 @@ type DeployResult struct {
 	Message string
 }
 
+// DeployOptions tunes Deploy behaviour. It is the backend-agnostic contract for
+// options-aware deploys; each backend interprets the flags it understands and
+// ignores (or rejects) the rest. Carrying these on the Backend interface (via
+// DeployWithOptions) instead of type-asserting to a concrete backend keeps the
+// hexagonal boundary intact and avoids panics when the factory returns a
+// backend the caller did not hard-code for (CTO-review H5).
+type DeployOptions struct {
+	// InstallAWGModule installs the AmneziaWG kernel module + awg-quick (needed
+	// for the awg_balancer role and any kernel-AWG server side). Backends that
+	// do not support kernel AWG should ignore this flag.
+	InstallAWGModule bool
+	// UseSudo wraps privileged commands in sudo (for non-root SSH users with
+	// passwordless sudo configured on the VPS).
+	UseSudo bool
+}
+
 // Status describes the current state of a proxy process on a remote host.
 type Status struct {
 	Running bool

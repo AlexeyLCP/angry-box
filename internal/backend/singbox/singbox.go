@@ -94,14 +94,15 @@ func (b *Backend) Deploy(ctx context.Context, host model.Host) (*model.DeployRes
 	return b.DeployOpts(ctx, host, DeployOptions{})
 }
 
-// DeployOptions tunes Deploy behaviour.
-type DeployOptions struct {
-	// InstallAWGModule installs the AmneziaWG kernel module + awg-quick (needed
-	// for the awg_balancer role and any kernel-AWG server side).
-	InstallAWGModule bool
-	// UseSudo wraps privileged commands in sudo (for non-root SSH users with
-	// passwordless sudo configured on the VPS).
-	UseSudo bool
+// DeployOptions is an alias for model.DeployOptions so existing callers keep
+// compiling while the canonical type lives in the domain layer (shared by all
+// backends via the Backend.DeployWithOptions interface method).
+type DeployOptions = model.DeployOptions
+
+// DeployWithOptions implements ports.Backend and lets callers request sudo /
+// AWG-module installation without type-asserting to *Backend (CTO-review H5).
+func (b *Backend) DeployWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) (*model.DeployResult, error) {
+	return b.DeployOpts(ctx, host, opts)
 }
 
 // DeployOpts is the options-aware variant of Deploy.

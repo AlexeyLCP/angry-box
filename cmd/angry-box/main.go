@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
-	"github.com/alexeylcp/angry-box/internal/backend/singbox"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -595,8 +594,8 @@ func nodeCmd(cmd string) {
 	case "deploy":
 		requireHostFlags()
 		host := model.Host{Addr: addr, User: user, KeyPath: keyPath}
-		opts := singbox.DeployOptions{UseSudo: *useSudo, InstallAWGModule: *installAWG}
-		result, err := b.(*singbox.Backend).DeployOpts(ctx, host, opts)
+		opts := model.DeployOptions{UseSudo: *useSudo, InstallAWGModule: *installAWG}
+		result, err := b.DeployWithOptions(ctx, host, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "deploy failed: %v\n", err)
 			os.Exit(1)

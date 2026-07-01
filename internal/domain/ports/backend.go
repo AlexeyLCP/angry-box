@@ -12,6 +12,12 @@ type Backend interface {
 	// Deploy installs the proxy software on the remote host via SSH.
 	Deploy(ctx context.Context, host model.Host) (*model.DeployResult, error)
 
+	// DeployWithOptions is the options-aware variant of Deploy. It lets callers
+	// request sudo-wrapping and AWG kernel-module installation without
+	// type-asserting to a concrete backend, so the Factory can return any
+	// Backend implementation safely (CTO-review H5).
+	DeployWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) (*model.DeployResult, error)
+
 	// InstallAWGModule ensures the AmneziaWG kernel module is installed on the host.
 	// Only needed for AWG wireguard inbound support. Safe to call multiple times.
 	InstallAWGModule(ctx context.Context, host model.Host) error
