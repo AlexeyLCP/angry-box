@@ -605,7 +605,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.render(w, r, &simpleHTML{html: fmt.Sprintf(
-			`<div class="alert alert-error"><span>`+i18n.T(r.Context(), "Capture failed: %v")+`</span></div>`, sshErr,
+			`<div class="alert alert-error"><span>`+i18n.T(r.Context(), "Capture failed: %v")+`</span></div>`, escHTML(sshErr.Error()),
 		)})
 		return
 	}
@@ -617,7 +617,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 			// Auto-generate a new keypair
 			privPEM, _, err := sshclient.GenerateSSHKeypair()
 			if err != nil {
-				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key auto-generation failed: %v"), err)
+				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key auto-generation failed: %v"), escHTML(err.Error()))
 				host.KeyPath = "password:" + loginPass
 			} else {
 				// Save it to settings so we can use it
@@ -642,7 +642,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 
 		if selectedKey != "" {
 			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, selectedKey); err != nil {
-				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key installation failed: %v"), err)
+				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key installation failed: %v"), escHTML(err.Error()))
 				host.KeyPath = "password:" + loginPass
 			} else {
 				// Key installed successfully! Use the key instead of password.
@@ -671,7 +671,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
 		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Node %s captured! Running: %v, Version: %s.")+`%s</span>
 		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Refresh Nodes")+`</button></div>`,
-		id, status.Running, status.Version, installMsg,
+		escHTML(id), status.Running, escHTML(status.Version), installMsg,
 	)})
 }
 
@@ -2164,7 +2164,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	limit := 200
 	logs, err := st.ListAuditLogs(limit)
 	if err != nil {
-		s.renderContent(w, r, i18n.T(r.Context(), "Audit"), &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "failed to load audit log: %s")+`</div>`, err.Error())})
+		s.renderContent(w, r, i18n.T(r.Context(), "Audit"), &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "failed to load audit log: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 	if logs == nil {
@@ -2175,7 +2175,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">` + i18n.T(r.Context(), "Audit Log") + `</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Time") + `</th><th>` + i18n.T(r.Context(), "Action") + `</th><th>` + i18n.T(r.Context(), "Target") + `</th><th>` + i18n.T(r.Context(), "ID") + `</th><th>` + i18n.T(r.Context(), "Actor") + `</th><th>` + i18n.T(r.Context(), "Payload") + `</th></tr></thead><tbody>`)
 	for _, a := range logs {
 		b.WriteString(fmt.Sprintf("<tr><td class="+"whitespace-nowrap"+">%s</td><td><span class=\"badge badge-sm\">%s</span></td><td>%s</td><td class=\"font-mono text-xs\">%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/60\">%s</td></tr>",
-			a.TS.Format("2006-01-02 15:04:05"), a.Action, a.TargetType, a.TargetID, a.Actor, truncForDisplay(a.PayloadJSON, 80)))
+			a.TS.Format("2006-01-02 15:04:05"), escHTML(a.Action), escHTML(a.TargetType), escHTML(a.TargetID), escHTML(a.Actor), escHTML(truncForDisplay(a.PayloadJSON, 80))))
 	}
 	b.WriteString(`</tbody></table></div></div></div>`)
 	s.renderContent(w, r, i18n.T(r.Context(), "Audit"), &simpleHTML{html: b.String()})
@@ -2292,13 +2292,13 @@ func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 	det, err := takeover.DetectVPN(r.Context(), info.Host, info.UseSudo)
 	if err != nil {
 		chain.WriteAudit(st, "takeover", "node", id, chain.AuditPayload{"phase": "detect", "error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 
@@ -2315,10 +2315,10 @@ func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
 
 	b.WriteString(`<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><div>`)
 	b.WriteString(fmt.Sprintf(`<div><b>`+i18n.T(r.Context(), "Existing VPN detected: %s")+`</b><br>`+i18n.T(r.Context(), "Service:")+` <code>%s</code> (`+i18n.T(r.Context(), "active:")+` %v, `+i18n.T(r.Context(), "enabled:")+` %v)<br>`+i18n.T(r.Context(), "Config:")+` <code>%s</code></div>`,
-		det.Type, det.ServiceName, det.IsActive, det.IsEnabled, det.ConfigPath))
+		escHTML(string(det.Type)), escHTML(det.ServiceName), det.IsActive, det.IsEnabled, escHTML(det.ConfigPath)))
 	b.WriteString(`</div></div>`)
 	if len(det.Other) > 0 {
-		b.WriteString(`<div class="text-sm text-base-content/60 mt-1">` + i18n.T(r.Context(), "Also present: ") + strings.Join(det.Other, ", ") + `</div>`)
+		b.WriteString(`<div class="text-sm text-base-content/60 mt-1">` + i18n.T(r.Context(), "Also present: ") + escHTML(strings.Join(det.Other, ", ")) + `</div>`)
 	}
 	b.WriteString(`<div class="py-2 text-sm">` + i18n.T(r.Context(), "Takeover will: install sing-box, convert the existing config to sing-box with the same settings, <b>disable (not delete) the old VPN</b>, and start sing-box. Old config is backed up for rollback. If sing-box fails to come up, the old VPN is restored automatically.") + `</div>`)
 	b.WriteString(fmt.Sprintf(`<div class="flex gap-2"><button class="btn btn-primary btn-sm" hx-post="/ui/nodes/%s/takeover" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="`+i18n.T(r.Context(), "Take over this server? The old VPN will be disabled.")+`">`+i18n.T(r.Context(), "Take over")+`</button> <button class="btn btn-ghost btn-sm" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Cancel")+`</button></div>`, id))
@@ -2330,14 +2330,14 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 	// Re-detect (the detection from the modal isn't POSTed; re-probe to be safe).
 	det, err := takeover.DetectVPN(r.Context(), info.Host, info.UseSudo)
 	if err != nil {
 		chain.WriteAudit(st, "takeover", "node", id, chain.AuditPayload{"phase": "detect", "error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 	res, err := takeover.Takeover(r.Context(), st, factory.New(), info.Host, info.UseSudo, det)
@@ -2345,17 +2345,17 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 	// Render the result.
 	var b strings.Builder
 	if err != nil && res != nil && res.Status != "taken" {
-		b.WriteString(fmt.Sprintf(`<div class="alert alert-error"><b>`+i18n.T(r.Context(), "Takeover %s")+`</b><br>%s</div>`, res.Status, res.Message))
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-error"><b>`+i18n.T(r.Context(), "Takeover %s")+`</b><br>%s</div>`, escHTML(res.Status), escHTML(res.Message)))
 	} else if err != nil {
-		b.WriteString(fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Takeover failed: %s")+`</div>`, err.Error()))
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Takeover failed: %s")+`</div>`, escHTML(err.Error())))
 	} else {
-		b.WriteString(fmt.Sprintf(`<div class="alert alert-success"><b>`+i18n.T(r.Context(), "Takeover successful")+`</b><br>%s</div>`, res.Message))
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-success"><b>`+i18n.T(r.Context(), "Takeover successful")+`</b><br>%s</div>`, escHTML(res.Message)))
 	}
 	if res != nil {
 		b.WriteString(`<div class="card bg-base-100 shadow mt-2"><div class="card-body text-sm">`)
-		b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "From:")+` <b>%s</b> → sing-box</p>`, res.FromType))
+		b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "From:")+` <b>%s</b> → sing-box</p>`, escHTML(res.FromType)))
 		if res.OldService != "" {
-			b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Old service:")+` <code>%s</code> (`+i18n.T(r.Context(), "disabled, config backed up at")+` <code>%s</code>)</p>`, res.OldService, res.OldConfigBackup))
+			b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Old service:")+` <code>%s</code> (`+i18n.T(r.Context(), "disabled, config backed up at")+` <code>%s</code>)</p>`, escHTML(res.OldService), escHTML(res.OldConfigBackup)))
 		}
 		b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Converted inbounds: %d")+`</p>`, res.ConvertedInbounds))
 		if res.RollbackOccurred {
@@ -2508,13 +2508,13 @@ func (s *Server) handleImportAWG(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 	res, err := chain.ImportAWGConfigs(info.Host, info.UseSudo, info)
 	if err != nil {
 		chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "AWG import failed: %s")+`</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "AWG import failed: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
 	_ = st.SaveNodeInfo(info)
@@ -2529,7 +2529,7 @@ func (s *Server) handleImportAWG(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Exit nodes: %d, Peers: %d")+`</p>`, len(res.ExitNodes), len(res.Peers)))
 	b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "DB update: %s")+`</p>`, res.DBUpdated))
 	if res.Log != "" {
-		b.WriteString(fmt.Sprintf(`<pre class="text-xs whitespace-pre-wrap">%s</pre>`, res.Log))
+		b.WriteString(fmt.Sprintf(`<pre class="text-xs whitespace-pre-wrap">%s</pre>`, escHTML(res.Log)))
 	}
 	b.WriteString(`</div></div>`)
 	s.render(w, r, &simpleHTML{html: b.String()})
@@ -2553,7 +2553,7 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			auto = i18n.T(r.Context(), "yes")
 		}
 		b.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td><button class="btn btn-ghost btn-xs" hx-get="/ui/profiles/%s/edit" hx-target="#modal-container">`+i18n.T(r.Context(), "Edit")+`</button> <button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/profiles/%s" hx-confirm="`+i18n.T(r.Context(), "Delete profile %s?")+`" hx-target="closest tr" hx-swap="outerHTML">`+i18n.T(r.Context(), "Delete")+`</button></td></tr>`,
-			p.Name, p.ClientType, p.ServerRole, auto, len(p.ServerIDs), p.ID, p.ID, p.Name))
+			escHTML(p.Name), escHTML(p.ClientType), escHTML(p.ServerRole), auto, len(p.ServerIDs), escHTML(p.ID), escHTML(p.ID), escHTML(p.Name)))
 	}
 	b.WriteString(`</tbody></table></div><div id="modal-container"></div></div>`)
 	s.renderContent(w, r, i18n.T(r.Context(), "Profiles"), &simpleHTML{html: b.String()})
@@ -2604,7 +2604,7 @@ func (s *Server) handleEditProfileForm(w http.ResponseWriter, r *http.Request) {
 		checked = "checked"
 	}
 	html := fmt.Sprintf(`<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">`+i18n.T(r.Context(), "Edit Profile")+`</h3><form hx-post="/ui/profiles/%s/edit" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" value="%s" required><input name="description" class="input input-bordered w-full" value="%s"><input name="client_type" class="input input-bordered w-full" value="%s"><input name="server_role" class="input input-bordered w-full" value="%s"><label class="label cursor-pointer"><span class="label-text">`+i18n.T(r.Context(), "Auto-apply")+`</span><input type="checkbox" name="auto_apply" class="checkbox" %s></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">`+i18n.T(r.Context(), "Save")+`</button></div></form></div></dialog>`,
-		p.ID, p.Name, p.Description, p.ClientType, p.ServerRole, checked)
+		escHTML(p.ID), escHTML(p.Name), escHTML(p.Description), escHTML(p.ClientType), escHTML(p.ServerRole), checked)
 	s.render(w, r, &simpleHTML{html: html})
 }
 
