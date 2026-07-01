@@ -43,7 +43,12 @@ func DefaultConfig() *Config {
 	storeFile := "store.json"
 
 	return &Config{
-		ListenAddr:                ":9080",
+		// Security default: bind to loopback only. The control plane carries SSH
+		// private keys and can push configs that become RCE on the fleet, so it
+		// must not be exposed on all interfaces over plain HTTP by default.
+		// Operators who need remote access must explicitly opt in via
+		// --listen / listen_addr (ideally fronted by TLS).
+		ListenAddr:                "127.0.0.1:9080",
 		StoreFile:                 storeFile,
 		DefaultBackend:            "sing-box",
 		DefaultObfuscationProfile: "maximum_stealth_2026", // безопасный дефолт

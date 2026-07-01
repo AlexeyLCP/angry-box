@@ -734,6 +734,12 @@ func serveCmd() {
 	listen := fs.String("listen", defaultListen, "HTTP listen address")
 	fs.StringVar(&storePath, "file", defaultStore, "store file path")
 	devMode := fs.Bool("dev", false, "development mode: load UI from web/ instead of embedded")
+	// TLS: optional. When both cert and key are provided, the panel serves
+	// HTTPS instead of plain HTTP — strongly recommended whenever the panel is
+	// reachable beyond the loopback interface (the control plane carries SSH
+	// private keys and can issue fleet-wide RCE via config pushes).
+	tlsCert := fs.String("tls-cert", "", "path to TLS certificate (enables HTTPS when set together with --tls-key)")
+	tlsKey := fs.String("tls-key", "", "path to TLS private key (enables HTTPS when set together with --tls-cert)")
 	_ = fs.Parse(os.Args[2:])
 
 	// Dev mode can also be enabled via environment variable
@@ -778,6 +784,23 @@ func serveCmd() {
 		})
 	})
 
+	scheme := "http"
+	useTLS := *tlsCert != "" && *tlsKey != ""
+	if useTLS {
+		scheme = "https"
+	} else if isLoopbackListen(*listen) {
+		// Plain HTTP is acceptable on loopback (no network exposure).
+	} else {
+		// The panel is bound to a non-loopback address without TLS: warn loudly.
+		// Basic-Auth credentials and all responses (including SSH private keys
+		// and VPN secrets rendered in the UI) travel in cleartext and can be
+		// passively sniffed by anyone on the path (Wi-Fi/LAN/VPC/ISP).
+		fmt.Println("WARNING: serving plain HTTP on a non-loopback address.")
+		fmt.Println("WARNING: Basic-Auth credentials and panel secrets are sent in cleartext.")
+		fmt.Println("WARNING: use --tls-cert/--tls-key or a TLS-terminating reverse proxy,")
+		fmt.Println("WARNING: or bind to loopback with --listen 127.0.0.1:9080.")
+	}
+
 	fmt.Printf("angry-box %s daemon listening on %s\n", version, *listen)
 	listenHost := *listen
 	if strings.HasPrefix(listenHost, ":") {
@@ -785,7 +808,7 @@ func serveCmd() {
 	} else if strings.HasPrefix(listenHost, "0.0.0.0:") {
 		listenHost = "localhost" + strings.TrimPrefix(listenHost, "0.0.0.0")
 	}
-	fmt.Println("Web UI available at http://" + listenHost + "/ui")
+	fmt.Printf("Web UI available at %s://%s/ui\n", scheme, listenHost)
 
 	// Wrap the mux in CSRF protection for all state-changing requests. The
 	// panel uses HTTP Basic Auth, whose credentials are not protected by
@@ -793,10 +816,35 @@ func serveCmd() {
 	// can otherwise be submitted in an admin's session (e.g. the historical
 	// /ui/settings "auth_enabled" toggle that opened the whole panel).
 	handler := web.CSRSMiddleware(mux)
-	if err := http.ListenAndServe(*listen, handler); err != nil {
-		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
-		os.Exit(1)
+	if useTLS {
+		if err := http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, handler); err != nil {
+			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := http.ListenAndServe(*listen, handler); err != nil {
+			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+			os.Exit(1)
+		}
 	}
+}
+
+// isLoopbackListen reports whether the listen address binds only to the
+// loopback interface (e.g. "127.0.0.1:9080" or "[::1]:9080"). An empty host
+// (":9080") or "0.0.0.0:..." binds to all interfaces and is NOT loopback.
+func isLoopbackListen(addr string) bool {
+	host := addr
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		host = addr[:i]
+	}
+	host = strings.Trim(host, "[]")
+	switch host {
+	case "", "0.0.0.0", "::":
+		return false
+	case "127.0.0.1", "::1", "localhost":
+		return true
+	}
+	return strings.HasPrefix(host, "127.")
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

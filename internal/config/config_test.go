@@ -8,8 +8,13 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.ListenAddr != ":9080" {
-		t.Error("unexpected default listen addr")
+	// Security default: bind to the loopback interface only. Exposing the
+	// control plane (which carries SSH private keys and can push configs that
+	// become RCE on the fleet) on all interfaces over plain HTTP is unsafe.
+	// Operators who need remote access must opt in via --listen / listen_addr
+	// and ideally front it with TLS.
+	if cfg.ListenAddr != "127.0.0.1:9080" {
+		t.Errorf("unexpected default listen addr %q (want 127.0.0.1:9080)", cfg.ListenAddr)
 	}
 	if cfg.DefaultObfuscationProfile == "" {
 		t.Error("default obfuscation profile should be set")
