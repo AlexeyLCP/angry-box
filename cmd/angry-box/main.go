@@ -710,7 +710,7 @@ func serveCmd() {
 	cfg, _ := config.Load(configPath)
 	defaultListen := cfg.ListenAddr
 	if defaultListen == "" {
-		defaultListen = ":8090"
+		defaultListen = ":9080"
 	}
 	defaultStore := cfg.StoreFile
 	if defaultStore == "" {

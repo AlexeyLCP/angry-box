@@ -37,13 +37,13 @@ type Config struct {
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
-	storeFile := "/etc/angry-box/store.json"
-	if runtime.GOOS == "windows" {
-		storeFile = "store.json"
-	}
+	// Portable by default: store next to the binary (CWD) on every OS, so the
+	// orchestrator can be "just run from the desktop" without root/sudo or a
+	// fixed system path. System packagers can override via config file.
+	storeFile := "store.json"
 
 	return &Config{
-		ListenAddr:                ":8090",
+		ListenAddr:                ":9080",
 		StoreFile:                 storeFile,
 		DefaultBackend:            "sing-box",
 		DefaultObfuscationProfile: "maximum_stealth_2026", // безопасный дефолт
@@ -126,6 +126,9 @@ func (c *Config) Save(path string) error {
 }
 
 // DefaultConfigPath returns the standard location for the orchestrator config.
+// Portable by default: CWD on Windows and when no XDG_CONFIG_HOME is set, so the
+// binary runs "from the desktop" without writing to /etc. System packagers can
+// set XDG_CONFIG_HOME or pass --config explicitly.
 func DefaultConfigPath() string {
 	if runtime.GOOS == "windows" {
 		return "angry-box.toml"
@@ -133,5 +136,5 @@ func DefaultConfigPath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "angry-box", "angry-box.toml")
 	}
-	return "/etc/angry-box/angry-box.toml"
+	return "angry-box.toml"
 }
