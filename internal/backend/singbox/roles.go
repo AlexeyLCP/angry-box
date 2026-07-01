@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
 	"golang.org/x/crypto/curve25519"
@@ -422,13 +423,15 @@ func randomXHTTPPath() string {
 }
 
 // splitEndpoint splits host:port into host and int port. port is 0 if absent.
+// It uses net.SplitHostPort so bracketed IPv6 literals ([2001:db8::1]:51820)
+// and bare IPv6 addresses parse correctly instead of being split at the last
+// ':' (CTO-review H8).
 func splitEndpoint(ep string) (string, int) {
-	host, portStr := ep, ""
-	for i := len(ep) - 1; i >= 0; i-- {
-		if ep[i] == ':' {
-			host, portStr = ep[:i], ep[i+1:]
-			break
-		}
+	host, portStr, err := net.SplitHostPort(ep)
+	if err != nil {
+		// No port present: the whole input is the host (covers bare IPv6 like
+		// "2001:db8::1" and plain hostnames like "example.com").
+		return ep, 0
 	}
 	port := 0
 	if portStr != "" {

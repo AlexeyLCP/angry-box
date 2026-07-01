@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -644,12 +645,14 @@ func hostAddr(addr string) string {
 }
 
 func splitHostPort(addr string) (string, string, error) {
-	// net.SplitHostPort but local import kept small; inline.
-	i := strings.LastIndex(addr, ":")
-	if i < 0 {
-		return addr, "", fmt.Errorf("no port")
+	// net.SplitHostPort handles bracketed IPv6 literals ([2001:db8::1]:51820)
+	// correctly, stripping the brackets and splitting on the port colon. The
+	// previous last-':' heuristic mis-split IPv6 addresses (CTO-review H8).
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, "", err
 	}
-	return addr[:i], addr[i+1:], nil
+	return host, port, nil
 }
 
 // bytesJS is a thin json.RawMessage alias to avoid importing encoding/json here
