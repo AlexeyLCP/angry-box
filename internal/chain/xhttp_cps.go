@@ -1,5 +1,11 @@
 package chain
 
+// xhttp_cps.go — XHTTP transport obfuscation (rich realistic headers, padding,
+// modes). The realistic-header generation is inspired by NaiveProxy
+// (https://github.com/SagerNet/naive, BSD-3); the XHTTP transport + advanced
+// obfuscation fields are sourced from Xray (RPRX). Adapted via
+// VPN/orchestrator/app/services/xhttp_cps.py.
+
 import (
 	"crypto/rand"
 	"encoding/hex"

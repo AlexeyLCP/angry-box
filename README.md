@@ -108,7 +108,9 @@ angry-box apply-merged entry-node
 
 - Special thanks to **Aleksandr SacredX** for extensive testing and valuable ideas.
 - The live QUIC signature capture (used by Angry-BOX to fingerprint a real domain's QUIC silhouette for AmneziaWG CPS I1-I5) is ported from **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)**.
-- AmneziaWG obfuscation parameter generation (profiles + invariants) is ported from **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**.
+- AmneziaWG obfuscation parameter generation (profiles + invariants) and the synthesized CPS packet generators (TLS/DNS/SIP/QUIC ClientHello shapes for I1-I5) are ported from **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**.
+- XHTTP transport + advanced obfuscation fields sourced from the **Xray team (RPRX)**; realistic HTTP header generation inspired by **[NaiveProxy](https://github.com/SagerNet/naive)**.
+- **Hysteria2**, **NaiveProxy**, **Telemt**, and many Russian, Iranian, and Chinese anti-censorship researchers.
 
 ## License
 

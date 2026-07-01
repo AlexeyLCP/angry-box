@@ -1,5 +1,13 @@
 package chain
 
+// awg_cps.go — synthesized AWG CPS (Client Packet Signature) generators for the
+// I1-I5 fields: TLS ClientHello (Chrome GREASE), DNS EDNS0 query, SIP REGISTER,
+// and QUIC Initial packets. Ported from VPN/orchestrator/app/services/awg_cps.py,
+// which itself ports the CPS packet shapes from pumbaX/awg-multi-script
+// (https://github.com/pumbaX/awg-multi-script, MIT). The live-capture variant
+// (real server responses instead of synthesized packets) is in awgcapture.go
+// (ported from hoaxisr/awg-manager).
+
 import (
 	"crypto/rand"
 	"encoding/binary"

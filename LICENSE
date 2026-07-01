@@ -95,4 +95,14 @@ Angry-BOX renders its Web UI with templ.
 * **Repository:** [a-h/templ](https://github.com/a-h/templ)
 * **License:** MIT License
 
+### 8. Xray-core (XHTTP transport inspiration)
+Angry-BOX's XHTTP transport + advanced obfuscation field shapes are sourced from Xray-core (RPRX) ( Angry-BOX does not ship the Xray binary; it targets sing-box-extended, which implements the same XHTTP transport).
+* **Repository:** [XTLS/Xray-core](https://github.com/XTLS/Xray-core)
+* **License:** GNU General Public License v3.0 (GPLv3)
+
+### 9. NaiveProxy (realistic header inspiration)
+Angry-BOX's realistic HTTP header generation for XHTTP transport is inspired by NaiveProxy ( Angry-BOX does not ship the NaiveProxy binary).
+* **Repository:** [SagerNet/naive](https://github.com/SagerNet/naive)
+* **License:** BSD 3-Clause License
+
 *All trademarks, logos and brand names are the property of their respective owners. All company, product and service names used in this project are for identification purposes only.*
