@@ -18,6 +18,7 @@ Angry-BOX — оригинальный продукт, написанный с �
 
 - **Захват существующего VPN-сервера (takeover):** подключение к ноде с работающим VPN (AWG / awg-quick, sing-box, Xray/3x-ui, MTProxy/telemt) → Angry-BOX обнаруживает его, предупреждает и — по согласию — ставит sing-box, **конвертирует существующий конфиг в sing-box с теми же настройками**, отключает (но не удаляет) старый VPN, запускает sing-box и **автоматически откатывается на старый VPN**, если sing-box не поднялся.
 - **Живой захват QUIC-сигнатуры:** снятие отпечатка реального QUIC-силуэта домена (UDP→QUIC Initial с SNI=domain→захват ответов сервера) и использование его как AmneziaWG CPS I1-I5, чтобы DPI видел трафик, неотличимый от настоящего QUIC к этому домену.
+- **Импорт существующих AmneziaWG-конфигов:** подтягивание AWG-интерфейса + списка пиров работающего сервера по SSH и back-fill в inbound'ы ноды **неразрушающе** (placeholder-only — никогда не перезаписывает ключи, порты и пресеты, заданные оператором). Позволяет принять AWG-бокс без перепечатывания.
 - **Автоматическая оркестрация:** не нужно писать сложные JSON-конфиги `sing-box` вручную. Angry-BOX генерирует, валидирует и деплоит конфиги по SSH за секунды.
 - **Продвинутая обфускация:** VLESS REALITY+XHTTP max obfuscation (REALITY без ECH, tokenish padding, cookie placement, xmux, поддержка пост-квантовых кривых на клиенте), AmneziaWG (kernel + userspace), TUIC, Hysteria2, MTProxy FakeTLS — с 4 уровнями обфускации (max/high/standard/minimal) и 45 пресетами маршрутизации (Telegram/YouTube/Netflix/…).
 - **Multi-hop цепи:** 2- и 3-узловые прокси-цепи; AmneziaWG работает и как клиентская точка входа (kernel awg-quick + sing-box bind_interface), и как межузловой hop (userspace wireguard endpoint с amnezia — патченный бинарь чинит upstream-панику `chacha20poly1305`, которая ранее роняла kernel-mode AWG).
@@ -26,6 +27,7 @@ Angry-BOX — оригинальный продукт, написанный с �
 - **Современный Web UI:** паутина-редактор топологии (рёбра графа, персистентные позиции узлов, нативный SVG pan/zoom), deploy-status (бейдж pending-changes), журнал аудита, профили/сервисы, единый список клиентов, route rules — на HTMX + TailwindCSS + DaisyUI + templ.
 - **Фоновый auto-apply:** мутации юзеров/inbound'ов триггерят фоновый SSH-деплой (hybrid-режим); per-host lock сериализует.
 - **100% независимость:** Angry-BOX поставляет собственный **патченный sing-box-extended** бинарь (deps/), поэтому слабые VPS не компилируют Go — просто скачивают.
+- **Два бекенда — sing-box-extended + Xray:** `deploy`/`apply`/`remove`/`reload` работают для обоих ядер. AmneziaWG (kernel + userspace) требует sing-box-extended; Xray используется там, где его реализация XHTTP/REALITY предпочтительнее.
 - **Zero-Footprint:** на нодах работает только ядро `sing-box`; оркестратор живёт на твоей управляющей машине.
 
 ## Скриншоты
@@ -109,7 +111,7 @@ angry-box config -port 443
 - Особая благодарность **Aleksandr SacredX** за обширное тестирование и ценные идеи.
 - Живой захват QUIC-сигнатуры (используется Angry-BOX для снятия отпечатка QUIC-силуэта реального домена под AmneziaWG CPS I1-I5) портирован из **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)**.
 - Генерация параметров обфускации AmneziaWG (профили + инварианты) и синтезированные генераторы CPS-пакетов (формы TLS/DNS/SIP/QUIC ClientHello для I1-I5) портированы из **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**.
-- XHTTP-транспорт и продвинутые поля обфускации — от **команды Xray (RPRX)**; реалистичная генерация HTTP-заголовков вдохновлена **[NaiveProxy](https://github.com/SagerNet/naive)**.
+- XHTTP-транспорт и продвинутые поля обфускации — от **команды Xray (RPRX)**; реалистичная генерация HTTP-заголовков вдохновлена **[NaiveProxy](https://github.com/SagerNet/naive)**; мышление о chunk-фрагментации заимствовано из дизайна **Hysteria2 Gecko**.
 - **Hysteria2**, **NaiveProxy**, **Telemt** и многие российские, иранские и китайские исследователи анти-цензуры.
 
 ## Сборка из исходников

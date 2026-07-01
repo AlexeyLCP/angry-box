@@ -18,6 +18,7 @@ Angry-BOX یک محصول کاملاً اورجینال است که از صفر 
 
 - **بازپس‌گیری سرور VPN موجود (takeover):** اتصال به نودی که VPN فعلی (AWG / awg-quick، sing-box، Xray/3x-ui، MTProxy/telemt) روی آن اجرا می‌شود → Angry-BOX آن را تشخیص می‌دهد، هشدار می‌دهد و — با تأیید شما — sing-box را نصب می‌کند، **کانفیگ موجود را با همان تنظیمات به sing-box تبدیل می‌کند**، VPN قدیمی را غیرفعال (اما نه حذف) می‌کند، sing-box را راه‌اندازی می‌کند و اگر sing-box بالا نیاید **به‌طور خودکار به VPN قدیمی بازمی‌گردد**.
 - **ضبط امضای زنده QUIC:** اثر انگشت QUIC-silhouette واقعی دامنه (UDP→QUIC Initial با SNI=domain→ضبط پاسخ‌های سرور) و استفاده از آن به‌عنوان AmneziaWG CPS I1-I5، تا DPI ترافیکی غیرقابل‌تشخیص از QUIC واقعی به آن دامنه ببیند.
+- **وارد کردن کانفیگ‌های موجود AmneziaWG:** دریافت رابط AWG + لیست peer سرور در حال اجرا از طریق SSH و بازپر کردن آن به‌عنوان inboundهای نود به‌صورت **غیرتخریبی** (فقط placeholder — هرگز کلیدها/پورت‌ها/presetهای تنظیم‌شده توسط اپراتور را بازنویسی نمی‌کند). امکان پذیرش یک باکس AWG بدون نیاز به تایپ مجدد.
 - **ارکستراسیون خودکار:** نیازی به نوشتن دستی کانفیگ‌های پیچیده JSON برای `sing-box` نیست. Angry-BOX در چند ثانیه کانفیگ‌ها را از طریق SSH تولید، اعتبارسنجی و مستقر می‌کند.
 - **تلطیش پیشرفته:** VLESS REALITY+XHTTP با حداکثر تلطیش (REALITY بدون ECH، padding با tokenish، قرار دادن cookie، xmux، پشتیبانی از منحنی پس-کوانتومی سمت کلاینت)، AmneziaWG (هسته + userspace)، TUIC، Hysteria2، MTProxy FakeTLS — با ۴ سطح تلطیش (max/high/standard/minimal) و ۴۵ preset مسیریابی (Telegram/YouTube/Netflix/…).
 - **زنجیره‌های چندهاپی (multi-hop):** ساخت زنجیره‌های ۲ یا ۳ نودی؛ AmneziaWG هم به‌عنوان نقطه ورود کلاینت (هسته awg-quick + bind_interface) و هم به‌عنوان hop بین‌نودی (userspace wireguard endpoint با amnezia — باینری پچ‌شده panic بالادستی `chacha20poly1305` را که قبلاً AWG حالت هسته را خراب می‌کرد، برطرف می‌کند).
@@ -26,6 +27,7 @@ Angry-BOX یک محصول کاملاً اورجینال است که از صفر 
 - **رابط کاربری وب مدرن:** ویرایشگر توپولوژی spider-web (لبه‌های گراف، موقعیت‌های پایدار نود، pan/zoom بومی SVG)، وضعیت deploy (نشانگر pending-changes)، گزارش ممیزی، پروفایل‌ها/سرویس‌ها، کلاینت‌های یکپارچه، قوانین مسیریابی — بر پایه HTMX + TailwindCSS + DaisyUI + templ.
 - **auto-apply پس‌زمینه:** تغییرات کاربر/inbound یک deploy SSH پس‌زمینه را راه می‌اندازد (حالت ترکیبی)؛ قفل per-host آنها را سریال می‌کند.
 - **۱۰۰٪ مستقل:** Angry-BOX باینری **sing-box-extended پچ‌شده** خود را (deps/) عرضه می‌کند، بنابراین VPSهای ضعیف هرگز Go را کامپایل نمی‌کنند — فقط دانلود می‌کنند.
+- **دو هسته — sing-box-extended + Xray:** `deploy`/`apply`/`remove`/`reload` برای هر دو هسته کار می‌کنند. AmneziaWG (هسته + userspace) نیازمند sing-box-extended است؛ Xray جایی که پیاده‌سازی XHTTP/REALITY آن مناسب‌تر باشد استفاده می‌شود.
 - **Zero-Footprint:** سرورهای نود فقط هسته `sing-box` را اجرا می‌کنند؛ ارکستراتور کاملأ روی ماشین کنترل شما قرار دارد.
 
 ## اسکرین‌شات‌ها
@@ -109,7 +111,7 @@ angry-box config -port 443
 - تشکر ویژه از **Aleksandr SacredX** برای آزمایش گسترده و ایده‌های ارزشمند.
 - ضبط امضای زنده QUIC (که Angry-BOX برای اثر انگشت QUIC-silhouette دامنه واقعی تحت AmneziaWG CPS I1-I5 استفاده می‌کند) از **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)** پورت شده است.
 - تولید پارامترهای تلطیش AmneziaWG (پروفایل‌ها + ناوراری‌ها) و ژنراتورهای سنتزشده بسته CPS (شکل‌های TLS/DNS/SIP/QUIC ClientHello برای I1-I5) از **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)** پورت شده‌اند.
-- انتقال XHTTP + فیلدهای تلطیش پیشرفته از **تیم Xray (RPRX)**؛ تولید هدر HTTP واقع‌گرایانه با الهام از **[NaiveProxy](https://github.com/SagerNet/naive)**.
+- انتقال XHTTP + فیلدهای تلطیش پیشرفته از **تیم Xray (RPRX)**؛ تولید هدر HTTP واقع‌گرایانه با الهام از **[NaiveProxy](https://github.com/SagerNet/naive)**؛ تفکر fragment خرد‌گیری از طراحی **Hysteria2 Gecko** برگرفته شده است.
 - **Hysteria2**، **NaiveProxy**، **Telemt**، و بسیاری از پژوهشگران ضد-سانسور روسی، ایرانی و چینی.
 
 ## ساخت از کد منبع

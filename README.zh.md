@@ -18,6 +18,7 @@ Angry-BOX 是从零开始编写的原创产品，不是 3x-ui、LucX-UI、x-ui �
 
 - **接管现有 VPN 服务器（takeover）：** 连接到运行现有 VPN（AWG / awg-quick、sing-box、Xray/3x-ui、MTProxy/telemt）的节点 → Angry-BOX 检测到它、发出警告，并在同意后安装 sing-box，**将现有配置转换为相同设置的 sing-box 配置**，禁用（但不删除）旧 VPN，启动 sing-box，如果 sing-box 启动失败则**自动回滚到旧 VPN**。
 - **实时 QUIC 签名捕获：** 获取真实域名的 QUIC 轮廓（UDP→QUIC Initial with SNI=domain→捕获服务器响应），用作 AmneziaWG CPS I1-I5，使 DPI 看到的流量与该域名的真实 QUIC 不可区分。
+- **导入现有 AmneziaWG 配置：** 通过 SSH 拉取运行中服务器的 AWG 接口 + peer 列表，并以**非破坏性**方式回填为节点的入站（仅占位符 — 从不覆盖操作员设定的密钥、端口或预设）。无需重新输入即可接管 AWG 节点。
 - **自动化编排：** 无需手动编写复杂的 `sing-box` JSON 配置。Angry-BOX 通过 SSH 在几秒内生成、验证并部署配置。
 - **高级混淆：** VLESS REALITY+XHTTP max obfuscation（无 ECH 的 REALITY、tokenish 填充、cookie 放置、xmux、客户端侧后量子曲线支持），AmneziaWG（内核 + 用户态），TUIC，Hysteria2，MTProxy FakeTLS — 提供 4 个混淆级别（max/high/standard/minimal）和 45 个路由预设（Telegram/YouTube/Netflix/…）。
 - **多跳链：** 构建 2 节点或 3 节点代理链；AmneziaWG 既可作为客户端入口点（内核 awg-quick + sing-box bind_interface），也可作为节点间跳（带 amnezia 的用户态 wireguard endpoint — 修补后的二进制修复了之前导致内核模式 AWG 崩溃的上游 `chacha20poly1305` panic）。
@@ -26,6 +27,7 @@ Angry-BOX 是从零开始编写的原创产品，不是 3x-ui、LucX-UI、x-ui �
 - **现代 Web UI：** 蛛网拓扑编辑器（图边、持久化节点位置、原生 SVG 平移/缩放）、部署状态（待处理变更徽章）、审计日志、配置文件/服务、统一客户端、路由规则 — 基于 HTMX + TailwindCSS + DaisyUI + templ 构建。
 - **后台自动应用：** 用户/inbound 变更触发后台 SSH 部署（混合模式）；per-host lock 序列化。
 - **100% 独立：** Angry-BOX 附带自己的**修补版 sing-box-extended** 二进制文件（deps/），因此弱 VPS 无需编译 Go — 直接下载。
+- **双内核 — sing-box-extended + Xray：** `deploy`/`apply`/`remove`/`reload` 对两个内核都有效。AmneziaWG（内核 + 用户态）需要 sing-box-extended；当 Xray 的 XHTTP/REALITY 实现更合适时使用 Xray。
 - **零占用：** 节点服务器仅运行裸 `sing-box` 核心；编排器完全位于你的控制机上。
 
 ## 截图
@@ -109,7 +111,7 @@ angry-box config -port 443
 - 特别感谢 **Aleksandr SacredX** 的广泛测试和宝贵建议。
 - 实时 QUIC 签名捕获（Angry-BOX 用它为真实域名的 QUIC 轮廓提取指纹，用于 AmneziaWG CPS I1-I5）移植自 **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)**。
 - AmneziaWG 混淆参数生成（配置文件 + 不变量）和合成的 CPS 包生成器（用于 I1-I5 的 TLS/DNS/SIP/QUIC ClientHello 形状）移植自 **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**。
-- XHTTP 传输 + 高级混淆字段源自 **Xray 团队 (RPRX)**；逼真的 HTTP 头生成受 **[NaiveProxy](https://github.com/SagerNet/naive)** 启发。
+- XHTTP 传输 + 高级混淆字段源自 **Xray 团队 (RPRX)**；逼真的 HTTP 头生成受 **[NaiveProxy](https://github.com/SagerNet/naive)** 启发；分块碎片化思维采纳自 **Hysteria2 Gecko** 设计。
 - **Hysteria2**、**NaiveProxy**、**Telemt**，以及众多俄罗斯、伊朗和中国抗审查研究员。
 
 ## 从源码构建
