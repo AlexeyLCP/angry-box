@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 
 	"golang.org/x/crypto/curve25519"
 )
@@ -137,14 +138,21 @@ func MTProxyFullSecret(secretHex, fakeTLSDomain string) (string, error) {
 	return "ee" + secretHex + hex.EncodeToString([]byte(fakeTLSDomain)), nil
 }
 
-// GenerateProxyPassword returns a 16-char ASCII password (a-zA-Z0-9).
+// GenerateProxyPassword returns a 16-char ASCII password (a-zA-Z0-9) sampled
+// uniformly via crypto/rand. It uses rejection sampling through big.Int so the
+// distribution is unbiased — the previous int(c)%len(alphabet) approach skewed
+// the first symbols because 256 is not a multiple of 62 (CTO-review L8).
 func GenerateProxyPassword() string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
 	out := make([]byte, 16)
-	for i, c := range b {
-		out[i] = alphabet[int(c)%len(alphabet)]
+	for i := range out {
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			// crypto/rand should not fail in practice; if it does, refuse to
+			// emit a biased character rather than silently degrading.
+			panic("cryptogen: crypto/rand failed for proxy password: " + err.Error())
+		}
+		out[i] = alphabet[idx.Int64()]
 	}
 	return string(out)
 }

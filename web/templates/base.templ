@@ -110,7 +110,7 @@ templ Base(title string, content templ.Component) {
 		<script>
 			// Server-rendered JS i18n dictionary for the few client-side strings.
 			window.AB_I18N = {
-				lang: { i18n.Lang(ctx) },
+				lang: {{ i18n.Lang(ctx) }},
 				t: function(k){ var d=this.dict[this.lang]||{}; return d[k]||k; },
 				dict: {
 					ru: {

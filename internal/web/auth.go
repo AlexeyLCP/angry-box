@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 
@@ -30,7 +31,10 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 			return
 		}
 
-		if user != cfg.AuthUsername {
+		// Constant-time username comparison so an attacker cannot timing-
+		// distinguish a wrong username from a wrong password (CTO-review L4).
+		// The password is already compared via bcrypt (constant-time internally).
+		if subtle.ConstantTimeCompare([]byte(user), []byte(cfg.AuthUsername)) != 1 {
 			slog.Warn("auth: unknown user",
 				"remote_addr", r.RemoteAddr,
 				"username", user,

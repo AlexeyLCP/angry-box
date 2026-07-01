@@ -180,7 +180,7 @@ func GenerateSIP(domain string) string {
 		"Zoiper 5.5.8",
 	}[randInt(0, 3)]
 
-	return fmt.Sprintf(`REGISTER sip:%s SIP/2.0
+	return strings.ReplaceAll(fmt.Sprintf(`REGISTER sip:%s SIP/2.0
 Via: SIP/2.0/UDP 192.168.1.42:5060;branch=z9hG4bK-%08x
 Max-Forwards: 70
 From: <sip:alice@%s>;tag=%08x
@@ -194,7 +194,7 @@ Allow: INVITE, ACK, CANCEL, OPTIONS, BYE, REFER, NOTIFY, MESSAGE, SUBSCRIBE, INF
 Supported: replaces, timer, path
 Content-Length: 0
 
-`, domain, randUint32(), domain, randUint32(), domain, randUint32(), ua)
+`, domain, randUint32(), domain, randUint32(), domain, randUint32(), ua), "\n", "\r\n")
 }
 
 // GenerateDNS returns a DNS A query (with EDNS0 OPT RR) padded to the requested size.
