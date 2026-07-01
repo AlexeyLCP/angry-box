@@ -8,159 +8,127 @@ Angry-BOX 是从零开始编写的原创产品，不是 3x-ui、LucX-UI、x-ui �
 
 所有管理均通过 SSH 完成，目标节点上只运行 **sing-box-extended**（可选 xray）内核 + 最小配置，无任何 agent。
 
-## Features
+## 概览
 
-- Pure SSH control plane without persistent agents
-- 2026 powerful stealth presets (Russia/Iran/China/Maximum Stealth)
-- Advanced AWG + full CPS + realistic QUIC/SIP/DNS generators
-- High-quality XHTTP transport (padding, XMUX, realistic headers), both sing-box and xray
-- Stable user credentials (AWG keys and CPS generated once per chain)
-- Excellent router support (Keenetic .ipk + OpenWRT)
-- Native Windows build
-- Web UI + full CLI
+**Angry-BOX** 是一个完全原创、自研的编排器（控制平面），用于构建和管理复杂的抗 DPI 代理基础设施。
 
-## v0.7.2 新修复
+它通过 SSH 驱动 **sing-box-extended** 内核，节点上零 agent。全部逻辑——链式组合、基于角色的配置生成、回滚、UI 和部署——均从零编写。
 
-**v0.7.1 之后的修复和加固：**
-- 修复 Standalone Inbounds 保存时 Host 数据丢失的问题。
-- 通过 ApplyStandaloneNode 拦截解决 Standalone Inbounds 与 Chain Transport Inbounds 的冲突。
-- 修复两处 `flow: "xtls-rprx-vision"` 相关 bug。
-- 在真实流量下验证了 Graceful Rollback（无效配置自动回滚到上一个工作版本）。
-- 改进 merged config builder 中的 outbounds 标签提取。
+## 功能
 
-## v0.7.1 新特性
+- **接管现有 VPN 服务器（takeover）：** 连接到运行现有 VPN（AWG / awg-quick、sing-box、Xray/3x-ui、MTProxy/telemt）的节点 → Angry-BOX 检测到它、发出警告，并在同意后安装 sing-box，**将现有配置转换为相同设置的 sing-box 配置**，禁用（但不删除）旧 VPN，启动 sing-box，如果 sing-box 启动失败则**自动回滚到旧 VPN**。
+- **实时 QUIC 签名捕获：** 获取真实域名的 QUIC 轮廓（UDP→QUIC Initial with SNI=domain→捕获服务器响应），用作 AmneziaWG CPS I1-I5，使 DPI 看到的流量与该域名的真实 QUIC 不可区分。
+- **自动化编排：** 无需手动编写复杂的 `sing-box` JSON 配置。Angry-BOX 通过 SSH 在几秒内生成、验证并部署配置。
+- **高级混淆：** VLESS REALITY+XHTTP max obfuscation（无 ECH 的 REALITY、tokenish 填充、cookie 放置、xmux、客户端侧后量子曲线支持），AmneziaWG（内核 + 用户态），TUIC，Hysteria2，MTProxy FakeTLS — 提供 4 个混淆级别（max/high/standard/minimal）和 45 个路由预设（Telegram/YouTube/Netflix/…）。
+- **多跳链：** 构建 2 节点或 3 节点代理链；AmneziaWG 既可作为客户端入口点（内核 awg-quick + sing-box bind_interface），也可作为节点间跳（带 amnezia 的用户态 wireguard endpoint — 修补后的二进制修复了之前导致内核模式 AWG 崩溃的上游 `chacha20poly1305` panic）。
+- **故障转移与负载均衡：** `urltest`、`failover`、`selector`，以及修补后的 per-connection round-robin `fallback`。
+- **带回滚的可靠部署：** 每次应用都执行 backup（cp，保留）→ cert → upload → `sing-box check`（显示 stderr）→ restart → 真实健康探测 → 失败时回滚；per-node lock 防止并发部署竞争。
+- **现代 Web UI：** 蛛网拓扑编辑器（图边、持久化节点位置、原生 SVG 平移/缩放）、部署状态（待处理变更徽章）、审计日志、配置文件/服务、统一客户端、路由规则 — 基于 HTMX + TailwindCSS + DaisyUI + templ 构建。
+- **后台自动应用：** 用户/inbound 变更触发后台 SSH 部署（混合模式）；per-host lock 序列化。
+- **100% 独立：** Angry-BOX 附带自己的**修补版 sing-box-extended** 二进制文件（deps/），因此弱 VPS 无需编译 Go — 直接下载。
+- **零占用：** 节点服务器仅运行裸 `sing-box` 核心；编排器完全位于你的控制机上。
 
-- **统一节点配置（Merged Config）** -- 节点现在可以同时提供独立的入站连接（standalone inbounds），并参与多条代理链。新的 `apply-merged` 引擎构建了一个单一的 `config.json`，合并了所有角色：独立入站 + 链传输入站 + 链用户入口 + 统一的路由/DNS。不再有配置相互覆盖的问题。
-- **预检 SSH 检查** -- 在修改任何远程配置之前验证所有节点的 SSH 连通性，防止部分部署失败。
-- **端口冲突检测** -- 统一配置生成器在部署前会检测并报告代理链和独立入站之间的端口冲突。
-- **标签差异（Tag Diff）可观测性** -- 每次应用配置后，UI 会显示与上一次相比新增（`+tag`）和移除（`-tag`）的入站/出站标签。
-- **自动生成 SSH 密钥** -- 添加节点（Capture Node）的 UI 可以自动生成 SSH 密钥对，并一键安装到远程主机。
-- **多语言（i18n）支持** -- Web UI 提供英语、俄语、中文和波斯语。
-- **独立的节点配置** -- 独立应用单个节点的入站配置，并享有与代理链相同的回滚（rollback）保护机制。
+## 截图
 
-## Quick Start
+<div align="center">
+  <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>Angry-BOX Web UI 仪表盘 (v0.1.0)</em>
+</div>
 
-```bash
-# 1. Install
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
+> 截图反映 v0.1.0 重写（基于角色的配置生成、接管、蛛网图编辑器、部署状态、审计）。
 
-# 2. Add node
-angry-box host add node1 --addr 203.0.113.10:22 --user root --key ~/.ssh/id_ed25519
+## 架构
 
-# 3. Create chain with 2026 preset
-angry-box chain create mychain --nodes node1 --strategy urltest --profile pro_2026 --transport xhttp --user-protocol awg
+与需要在每台服务器上安装重型代理的传统面板不同，Angry-BOX 采用**无状态无代理方法**：
 
-# 4. Deploy (uses merged config!)
-angry-box apply-chain mychain
+```mermaid
+graph LR
+    Client((客户端<br/>AmneziaWG)) -->|混淆流量| Node1[入口节点<br/>VPS 1]
+    Node1 -->|XHTTP / Reality| Node2[出口节点<br/>VPS 2]
+    Node2 -->|干净流量| Web((互联网))
 
-# 5. Or apply merged config for a single node
-angry-box apply-merged node1
+    Orchestrator[Angry-BOX<br/>控制服务器] -.->|SSH / 配置推送| Node1
+    Orchestrator -.->|SSH / 配置推送| Node2
 ```
 
-Web UI at `http://localhost:8090`.
+## 入门
 
-## Installation
+### 1. 安装
 
-### One-liner script (recommended)
+从 [Releases](https://github.com/AlexeyLCP/angry-box/releases) 页面下载最新版本，或运行安装脚本：
 
 ```bash
-# Latest version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh
-
-# Specific version
-curl -fsSL https://raw.githubusercontent.com/alexeylcp/angry-box/main/scripts/install.sh | sh -s -- --version 0.7.2
+curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/angry-box/main/scripts/install.sh | sh
 ```
 
-### Pre-built binaries
+### 2. 启动 Web UI
 
-Download from [Releases](https://github.com/alexeylcp/angry-box/releases).
-
-**Linux**
 ```bash
-tar -xzf angry-box-0.7.2-linux-amd64.tar.gz
-cd angry-box-0.7.2-linux-amd64
-./angry-box --help
+angry-box serve -listen 0.0.0.0:8090
 ```
 
-**Windows**
-- Download `angry-box-0.7.2-windows-amd64.zip` or `.exe`
-- Run `angry-box.exe`
-- Web UI: `http://localhost:8090`
+*注意：首次运行会为 Web UI 生成随机安全密码。*
 
-### Routers (Keenetic / OpenWRT)
-
-See router section below.
-
-## Architecture
-
-Angry-BOX is only the **control plane**.
-
-- The orchestrator does not forward traffic.
-- All operations via SSH.
-- Remote nodes run only a lightweight proxy (sing-box or xray) + small config.
-
-**Two connection types:**
-- **Transport** -- internal chain hops (XHTTP recommended)
-- **User** -- real client entry points (TUIC v5 or AmneziaWG)
-
-## 2026 Stealth Presets
-
-Professional presets optimized for current DPI:
-
-| Preset                    | Target             | Key techniques                      |
-|---------------------------|--------------------|-------------------------------------|
-| `russia_2026`             | Russia             | Balanced XHTTP + AWG                |
-| `iran_2026`               | Iran               | Aggressive XHTTP + Reality          |
-| `china_2026`              | China              | Strong obfuscation + fragmentation  |
-| `maximum_stealth_2026`    | Maximum stealth    | Full XHTTP + AWG CPS                |
-| `pro_2026`                | Professional use   | Forced CPS 3 + QUIC 1200B           |
-| `xhttp_max_stealth_2026`  | Extreme XHTTP      | Maximum padding + XMUX              |
-
-## Router Support
-
-Native `.ipk` packages.
-
-| Platform          | Architecture           | Example package                           |
-|-------------------|------------------------|-------------------------------------------|
-| Keenetic          | `mipsel_24kc`          | `angry-box_X.Y.Z_mipsel_24kc.ipk`         |
-| Keenetic/OpenWRT  | `aarch64_cortex-a53`   | `angry-box_X.Y.Z_aarch64_cortex-a53.ipk`  |
-
-## Building from source
+### 3. CLI 快速开始
 
 ```bash
-git clone https://github.com/alexeylcp/angry-box.git
+# 1. 添加你的 VPS 节点
+angry-box host add entry-node --addr 1.2.3.4:22 --user root --key ~/.ssh/id_ed25519
+angry-box host add exit-node --addr 5.6.7.8:22 --user root --key ~/.ssh/id_ed25519
+
+# 2. 将修补后的 sing-box-extended 部署到节点
+#    (-sudo 用于具有免密 sudo 的非 root SSH 用户；-install-awg 还会安装 AmneziaWG 内核模块)
+angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519 -sudo
+angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519 -sudo
+
+# 3. 创建链
+angry-box chain create my-chain --nodes entry-node,exit-node --user-protocol awg --transport xhttp
+
+# 4. 应用链（生成 + 推送配置到所有节点，失败时回滚）
+angry-box apply-chain my-chain
+
+# 5. 在本地生成独立配置（例如 REALITY+XHTTP）而不推送
+angry-box config -port 443
+```
+
+**接管**（检测 + 转换现有 VPN 服务器）可从 Web UI 使用：打开节点 → **接管**按钮。它检测 AWG/sing-box/Xray/MTProxy，将配置转换为相同设置的 sing-box，禁用旧 VPN，如果 sing-box 失败则自动回滚。
+
+## 第三方组件
+
+- **[sing-box](https://github.com/SagerNet/sing-box)** 和 **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (GPLv3)
+- **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (GPLv2)
+- **[awg-multi-script by pumbaX](https://github.com/pumbaX/awg-multi-script)** (MIT) — AmneziaWG 混淆最佳实践（Jc/Jmin/Jmax/S1-S4/H1-H4 不变量、CPS 包生成）
+- **[awg-manager by hoaxisr](https://github.com/hoaxisr/awg-manager)** (MIT) — 实时 QUIC 签名捕获算法（"接管现有 VPN" 捕获逻辑：通过 UDP 连接到 domain:443，发送 QUIC Initial，捕获服务器响应包作为 I1-I5）
+- **[templ](https://github.com/a-h/templ)** (MIT) — Web UI 的 HTML 模板
+- **[golang.org/x/crypto/ssh](https://go.googlesource.com/crypto)** (BSD-3-Clause) — Go SSH 客户端
+- **HTMX、TailwindCSS 和 DaisyUI** (MIT / BSD)
+
+## 致谢
+
+- 特别感谢 **Aleksandr SacredX** 的广泛测试和宝贵建议。
+- 实时 QUIC 签名捕获（Angry-BOX 用它为真实域名的 QUIC 轮廓提取指纹，用于 AmneziaWG CPS I1-I5）移植自 **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)**。
+- AmneziaWG 混淆参数生成（配置文件 + 不变量）和合成的 CPS 包生成器（用于 I1-I5 的 TLS/DNS/SIP/QUIC ClientHello 形状）移植自 **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**。
+- XHTTP 传输 + 高级混淆字段源自 **Xray 团队 (RPRX)**；逼真的 HTTP 头生成受 **[NaiveProxy](https://github.com/SagerNet/naive)** 启发。
+- **Hysteria2**、**NaiveProxy**、**Telemt**，以及众多俄罗斯、伊朗和中国抗审查研究员。
+
+## 从源码构建
+
+```bash
+git clone https://github.com/AlexeyLCP/angry-box.git
 cd angry-box
 
-# Production build
-make build
+# 生产构建（全部嵌入）
+go build -o angry-box ./cmd/angry-box
 
-# Dev mode
-make dev
+# 开发模式（从磁盘加载静态文件，无需重新构建即可编辑）
+ANGRY_BOX_DEV=1 go run ./cmd/angry-box serve
 ```
 
-## Acknowledgements
-
-Built on anti-censorship community research. Key contributors:
-- **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)** (MIT) — live QUIC signature capture algorithm (the "take over an existing VPN" capture logic: connect to domain:443 over UDP, send a QUIC Initial, capture server response packets as I1-I5).
-- **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)** (MIT) — CPS (QUIC/SIP/DNS) generators, AmneziaWG obfuscation profiles + invariants.
-- Xray team (RPRX), Hysteria2, NaiveProxy, Telemt.
-
-**Third-Party Components:** sing-box / sing-box-extended (GPLv3), AmneziaWG kernel module (GPLv2), templ (MIT), golang.org/x/crypto/ssh (BSD-3), HTMX/TailwindCSS/DaisyUI (MIT/BSD).
-
-## License
+## 许可证
 
 **PolyForm Noncommercial License 1.0.0**
 
-Free for personal, non-commercial, educational, and scientific use.
-**Any commercial use is prohibited.**
+免费用于个人、教育和研究目的。商业使用需要书面许可。
 
-See [LICENSE](LICENSE).
-
-## Support
-
-- Issues -> [GitHub Issues](https://github.com/alexeylcp/angry-box/issues)
-- Discussion -> GitHub Discussions
-
----
-
-**Current version:** 0.7.2 -- unified merged config, pre-flight checks, i18n, standalone config.
+完整文本见 [LICENSE](LICENSE)。

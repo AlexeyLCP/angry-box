@@ -23,23 +23,27 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 
 ## Features
 
-- **Automated Orchestration:** No need to manually write complex `sing-box` JSON configs. Angry-BOX generates, validates, and deploys configs over SSH in seconds.
-- **Advanced Obfuscation Protocols:** Native support for `AmneziaWG`, `XHTTP`, `VLESS-Reality`, and `Hysteria2`.
-- **Multi-Hop Chains:** Easily construct 2-node or 3-node proxy chains to route traffic securely through multiple jurisdictions.
-- **Failover & Load Balancing:** Built-in support for `urltest`, `failover`, and `selector` strategies.
-- **Modern Web UI:** Control everything from a sleek, responsive dashboard built with HTMX and TailwindCSS.
-- **100% Independent:** Angry-BOX stores all critical dependencies (like `sing-box-extended` binaries and `amneziawg` kernel modules) locally.
-- **Zero-Footprint:** Node servers only run the bare `sing-box` core. The orchestrator lives entirely on your control machine.
+- **Takeover an existing VPN server:** connect to a node running an existing VPN (AWG / awg-quick, sing-box, Xray/3x-ui, MTProxy/telemt), Angry-BOX detects it, warns you, and — on consent — installs sing-box, **converts the existing config to sing-box with the same settings**, disables (but does not delete) the old VPN, starts sing-box, and **auto-rolls back to the old VPN** if sing-box fails to come up.
+- **Live QUIC signature capture:** fingerprint a real domain's QUIC silhouette (UDP→QUIC Initial with SNI=domain→capture server responses) and use it as AmneziaWG CPS I1-I5, so DPI sees traffic indistinguishable from real QUIC to that domain.
+- **Automated Orchestration:** no need to manually write complex `sing-box` JSON configs. Angry-BOX generates, validates, and deploys configs over SSH in seconds.
+- **Advanced Obfuscation:** VLESS REALITY+XHTTP max obfuscation (ECH-less REALITY, tokenish padding, cookie placement, xmux, post-quantum curve support on the client), AmneziaWG (kernel + userspace), TUIC, Hysteria2, MTProxy FakeTLS — with 4 obfuscation levels (max/high/standard/minimal) and 45 routing presets (Telegram/YouTube/Netflix/…).
+- **Multi-Hop Chains:** construct 2-node or 3-node proxy chains; AmneziaWG works both as a client entry point (kernel awg-quick + sing-box bind_interface) and as an inter-node hop (userspace wireguard endpoint with amnezia — the patched binary fixes the upstream `chacha20poly1305` panic that previously crashed kernel-mode AWG).
+- **Failover & Load Balancing:** `urltest`, `failover`, `selector`, and a patched per-connection round-robin `fallback`.
+- **Reliable deploy with rollback:** every apply does backup (cp, preserved) → cert → upload → `sing-box check` (stderr surfaced) → restart → real health-probe → rollback on failure; per-node lock prevents concurrent-deploy races.
+- **Modern Web UI:** Spider-web topology editor (graph edges, persistent node positions, native SVG pan/zoom), deploy-status (pending-changes badge), audit log, profiles/services, unified clients, route rules — built with HTMX + TailwindCSS + DaisyUI + templ.
+- **Background auto-apply:** per-user/inbound mutations trigger a background SSH deploy (hybrid mode); per-host lock serializes.
+- **100% Independent:** Angry-BOX ships its own **patched sing-box-extended** binary (deps/), so weak VPSes never compile Go — they just download.
+- **Zero-Footprint:** node servers run only the bare `sing-box` core; the orchestrator lives entirely on your control machine.
 
 ## Screenshots
 
 <div align="center">
   <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
   <br>
-  <em>The Angry-BOX Web UI Dashboard (v0.7.2)</em>
+  <em>The Angry-BOX Web UI Dashboard (v0.1.0)</em>
 </div>
 
-> Screenshots refreshed for v0.7.2 UI (dark theme, merged config support, i18n). See also Russian version for additional views.
+> Screenshots reflect the v0.1.0 rewrite (role-based config generation, takeover, spider-web graph editor, deploy-status, audit).
 
 ## Architecture
 
@@ -80,19 +84,22 @@ angry-box serve -listen 0.0.0.0:8090
 angry-box host add entry-node --addr 1.2.3.4:22 --user root --key ~/.ssh/id_ed25519
 angry-box host add exit-node --addr 5.6.7.8:22 --user root --key ~/.ssh/id_ed25519
 
-# 2. Deploy sing-box core to the nodes
-angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519
-angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519
+# 2. Deploy the patched sing-box-extended to the nodes
+#    (-sudo for non-root SSH users with passwordless sudo; -install-awg also installs the AmneziaWG kernel module)
+angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519 -sudo
+angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519 -sudo
 
 # 3. Create a chain
 angry-box chain create my-chain --nodes entry-node,exit-node --user-protocol awg --transport xhttp
 
-# 4. Apply the chain (uses merged config -- preserves standalone inbounds!)
+# 4. Apply the chain (generates + pushes configs to all nodes, with rollback on failure)
 angry-box apply-chain my-chain
 
-# 5. Or apply a single node's merged config
-angry-box apply-merged entry-node
+# 5. Generate a standalone config locally (e.g. REALITY+XHTTP) without pushing
+angry-box config -port 443
 ```
+
+**Takeover** (detect + convert an existing VPN server) is available from the Web UI: open a node → **Takeover** button. It detects AWG/sing-box/Xray/MTProxy, converts the config to sing-box with the same settings, disables the old VPN, and auto-rolls back if sing-box fails.
 
 ## Third-Party Components
 
@@ -111,6 +118,19 @@ angry-box apply-merged entry-node
 - AmneziaWG obfuscation parameter generation (profiles + invariants) and the synthesized CPS packet generators (TLS/DNS/SIP/QUIC ClientHello shapes for I1-I5) are ported from **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**.
 - XHTTP transport + advanced obfuscation fields sourced from the **Xray team (RPRX)**; realistic HTTP header generation inspired by **[NaiveProxy](https://github.com/SagerNet/naive)**.
 - **Hysteria2**, **NaiveProxy**, **Telemt**, and many Russian, Iranian, and Chinese anti-censorship researchers.
+
+## Building from source
+
+```bash
+git clone https://github.com/AlexeyLCP/angry-box.git
+cd angry-box
+
+# Production build (everything embedded)
+go build -o angry-box ./cmd/angry-box
+
+# Dev mode (static files from disk, edits without rebuild)
+ANGRY_BOX_DEV=1 go run ./cmd/angry-box serve
+```
 
 ## License
 
