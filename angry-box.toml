@@ -1,8 +1,0 @@
-listen_addr = ":8090"
-store_file = "store.json"
-default_backend = "sing-box"
-default_obfuscation_profile = "maximum_stealth_2026"
-presets_file = ""
-auth_enabled = false
-auth_username = "admin"
-auth_password_hash = "$2a$10$rhp9.eJHxNrvQnidyx8QcOOIMSngvxqGz0biaroHQ51Ki6ffeVCLO"

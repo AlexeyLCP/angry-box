@@ -16,3 +16,11 @@ default_obfuscation_profile = "maximum_stealth_2026"
 # User-defined presets with the same name override the built-in ones.
 # Example file content: an array of objects with name, xhttp, awg, tuic, reality sections.
 # presets_file = "/etc/angry-box/custom-presets.json"
+
+# ── Web UI authentication ──────────────────────────────────────────────
+# Authentication is enabled by default. Leave auth_password_hash empty on
+# first launch and a random admin password will be generated and printed to
+# the log; change it in the Settings -> Auth page. Never commit a real hash.
+auth_enabled      = true
+auth_username     = "admin"
+auth_password_hash = ""
