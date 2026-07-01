@@ -1,6 +1,54 @@
 # Testing Plan — angry-box v0.1.0
 
-Two test layers: **unit** (offline, fast, in CI) and **E2E** (real VPS over SSH, manual/CI-on-demand).
+Three test layers: **unit** (offline, fast, in CI), **WSL smoke** (real Ubuntu over SSH, no live VPS needed), and **E2E** (real GCloud VPS, manual/CI-on-demand).
+
+---
+
+## 0. WSL smoke run — v0.1.0 results (executed)
+
+The WSL smoke suite (`internal/wslsmoke`, build tag `wsl_smoke`) drives the real app pipeline against an Ubuntu-24.04 WSL instance over SSH — no live VPS required. **Run via the app itself** (`Backend.DeployOpts`, `chain.PushConfigForTest`), no manual server steps. Setup + run instructions at the bottom of this section.
+
+### Result: 10 PASS / 1 SKIP / 0 FAIL
+
+| Test | Result | Note |
+|---|---|---|
+| TestWSL_SSHConnect | ✅ PASS | SSH + TOFU works against the WSL node |
+| TestWSL_DeployPatchedBinary | ✅ PASS | App downloads patched tarball, installs `/usr/local/bin/sing-box`, writes systemd unit, starts service (minimal config) |
+| TestWSL_ApplyRealityXHTTP | ✅ PASS | `RenderProxyNode` → `pushConfig` → `sing-box check` passes, service active |
+| TestWSL_RollbackOnBadConfig | ✅ PASS | Bad config fails check, rollback restores previous (REALITY+XHTTP), service stays active |
+| TestWSL_FirstDeployNoRollback | ✅ PASS | No prior config + bad config → error surfaced (no panic), rollback is a no-op |
+| TestWSL_AWGKernelInstall | ✅ PASS | Install path ran; amneziawg-tools unavailable in WSL apt + Microsoft kernel can't insmod — documented limitation, not a failure |
+| TestWSL_ImportAWGConfigs | ✅ PASS | Seeded awg0.conf + awg-exit-n1.conf → SSH import parsed ListenPort/Jc/S1 + exit PublicKey/Endpoint/amnezia, back-filled placeholder inbounds (`server_priv, client_pub`) |
+| TestWSL_QUICCapture | ⏭️ SKIP | UDP/443 blocked in the test environment; `CaptureQUICSignature` returned `does not support QUIC` (expected skip, not a bug) |
+| TestWSL_DeployStatusHash | ✅ PASS | `LastDeployedHash` recorded; different config → different hash → pending |
+| TestWSL_ConfigPreview | ✅ PASS | `RenderMergedNodeConfig` → valid JSON |
+| TestWSL_AutoApplyPerHostLock | ✅ PASS | Per-host `sync.Mutex` identity: same nodeID → same mutex, different → different |
+
+### Bugs found by the smoke run and fixed (commit 5921a59)
+
+1. **`sudo` + multiline scripts** — `sudo set -e\nmkdir...` ran `sudo set` as a binary lookup (`sudo: set: command not found`). Wrapped install/restart/verify/AWG pipelines in `sudo bash -c '...'`.
+2. **`UploadText` deadlock/empty files** — writing to stdin before `session.Run` left `cat` reading an already-closed stdin (empty files) or blocked on a full pipe buffer. Now `session.Start(cmd)` first, then write + Close + `session.Wait`.
+3. **XHTTP `headers` type** — sing-box-extended's V2RayXHTTP headers field is `map[string]string`, not `map[string][]string` → `cannot unmarshal array into ...headers of type string`. Fixed the generator.
+4. **REALITY + `curve_preferences`/`ECH` conflict** — sing-box-extended rejects `curve preferences is unavailable in reality` and `Reality is conflict with ECH`. Removed both from the REALITY inbound (they are client-side / plain-TLS options).
+
+Plus: `Backend.Deploy` now writes a minimal valid config.json so a fresh deploy starts instead of crashing on a missing config; `systemctl reset-failed` before restart; `pushConfig`/`performRollback`/`probeServiceUp` gained a `useSudo` parameter; CLI `deploy` gained `-sudo`/`-install-awg` flags and `ANGRY_BINARY_URL` env override.
+
+### WSL smoke setup + run
+
+One-time setup (see TESTING.md history / `wsl -d Ubuntu-24.04`):
+```bash
+# In WSL Ubuntu-24.04 (systemd enabled via /etc/wsl.conf [boot] systemd=true):
+sudo apt-get install -y openssh-server python3
+# Add the test public key to ~/.ssh/authorized_keys
+# Serve the patched tarball from the repo deps/:
+cd /mnt/c/.../angry-box/deps && python3 -m http.server 8000 &
+```
+Run from Windows:
+```bash
+WSL_TEST_HOST=127.0.0.1:22 WSL_TEST_USER=lcp WSL_TEST_KEY=$HOME/.ssh/angry-test-key \
+  go test -tags wsl_smoke ./internal/wslsmoke/ -run WSL -v -timeout 600s
+```
+The `ANGRY_BINARY_URL` env (used by `Backend.Deploy`) points at the local HTTP server so the test doesn't hit GitHub.
 
 ---
 
