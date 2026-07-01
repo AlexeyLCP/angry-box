@@ -1231,7 +1231,9 @@ func (s *Store) writeStore(sf *storeFile) error {
 		return fmt.Errorf("store: marshal: %w", err)
 	}
 
-	if err := os.WriteFile(s.path, data, 0o600); err != nil {
+	// Atomic write (temp + rename) so a crash mid-write cannot truncate the
+	// store file and lose the whole panel state (CTO-review M3).
+	if err := atomicWriteFile(s.path, data, 0o600); err != nil {
 		return fmt.Errorf("store: write: %w", err)
 	}
 	return nil
