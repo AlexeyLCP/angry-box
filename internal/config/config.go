@@ -117,17 +117,27 @@ func Load(path string) (*Config, error) {
 }
 
 // Save marshals the config back to TOML file.
+//
+// The file carries the admin password bcrypt hash, so it is created with mode
+// 0600 (owner read/write only) to prevent other users on the host from reading
+// the hash for offline brute-force (CTO-review M2). The directory is created
+// with 0755 so it remains traversable.
 func (c *Config) Save(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return toml.NewEncoder(f).Encode(c)
+	if err := toml.NewEncoder(f).Encode(c); err != nil {
+		return err
+	}
+	// Chmod after write: an existing file may have been created with looser
+	// perms earlier, and OpenFile only applies the mode on creation.
+	return os.Chmod(path, 0o600)
 }
 
 // DefaultConfigPath returns the standard location for the orchestrator config.

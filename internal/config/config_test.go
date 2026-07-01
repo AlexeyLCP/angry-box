@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -57,5 +58,29 @@ presets_file = "/etc/custom.json"
 	}
 	if cfg.PresetsFile != "/etc/custom.json" {
 		t.Error("presets_file not loaded")
+	}
+}
+
+// TestSave_FilePermissions0600 verifies that the config file — which carries
+// the admin password bcrypt hash — is written with restrictive permissions so
+// other users on the host cannot read it (CTO-review M2). On Windows the POSIX
+// permission bits are not meaningful, so the mode assertion is unix-only.
+func TestSave_FilePermissions0600(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "angry-box.toml")
+	cfg := DefaultConfig()
+	cfg.AuthPasswordHash = "$2a$10$dummyhash"
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		return // POSIX mode bits do not apply on Windows
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("config file perms = %o, want 0600 (it stores the admin password hash)", mode)
 	}
 }
