@@ -220,6 +220,19 @@ func isPatchedExtended(ver string) bool {
 	return strings.Contains(ver, "extended") && strings.Contains(ver, singBoxVersion)
 }
 
+// checksumForArch returns the expected sha256 of the patched sing-box tarball
+// for the given Go architecture. It fails closed: a missing or empty checksum
+// yields an error rather than silently skipping verification, so a compromised
+// release/mirror cannot be installed on an architecture we forgot to pin
+// (CTO-review M1).
+func checksumForArch(goArch string) (string, error) {
+	sum := singBoxChecksums[goArch]
+	if sum == "" {
+		return "", fmt.Errorf("singbox: no pinned sha256 checksum for arch %q — refusing to install an unverified binary (pin it in singBoxChecksums)", goArch)
+	}
+	return sum, nil
+}
+
 // installPatchedBinary downloads our patched tarball, verifies its sha256,
 // extracts the binary and installs it at installPath.
 func installPatchedBinary(ctx context.Context, client *sshclient.Client, useSudo bool) error {
@@ -228,6 +241,14 @@ func installPatchedBinary(ctx context.Context, client *sshclient.Client, useSudo
 		return fmt.Errorf("detect arch: %w", err)
 	}
 	goArch := archToGoArch(strings.TrimSpace(archOut))
+
+	// Fail closed BEFORE downloading: if we have no pinned checksum for this
+	// arch, refuse to install rather than shipping an unverified binary that
+	// runs as root on the fleet (CTO-review M1).
+	expectedChecksum, err := checksumForArch(goArch)
+	if err != nil {
+		return err
+	}
 
 	url := singBoxDownloadURLs[goArch]
 	if url == "" {
@@ -240,22 +261,13 @@ func installPatchedBinary(ctx context.Context, client *sshclient.Client, useSudo
 	if envURL := os.Getenv("ANGRY_BINARY_URL"); envURL != "" {
 		url = envURL
 	}
-	expectedChecksum := singBoxChecksums[goArch]
 
 	script := fmt.Sprintf(`set -e
 mkdir -p /tmp/sing-box-install
 cd /tmp/sing-box-install
 curl -fsSL '%s' -o sing-box.tar.gz
-`, url)
-
-	if expectedChecksum != "" {
-		script += fmt.Sprintf(`echo '%s  sing-box.tar.gz' | sha256sum -c -
-`, expectedChecksum)
-	} else {
-		// Keep a visible warning in the SSH output (not swallowed) so a missing
-		// checksum is noticed rather than silently skipped.
-		script += "echo 'WARNING: no sha256 for this arch — integrity check skipped' >&2\n"
-	}
+echo '%s  sing-box.tar.gz' | sha256sum -c -
+`, url, expectedChecksum)
 
 	script += fmt.Sprintf(`tar -xzf sing-box.tar.gz
 SINGBOX_BIN=$(find /tmp/sing-box-install -maxdepth 2 -name sing-box -type f 2>/dev/null | head -1)

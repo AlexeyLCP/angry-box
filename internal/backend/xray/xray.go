@@ -24,6 +24,27 @@ const (
 	systemdUnit = "/etc/systemd/system/xray.service"
 )
 
+// xrayChecksums maps Go arch → sha256 of the upstream Xray release zip. Pinned
+// so a compromised release/mirror cannot install an unverified binary as root
+// on the fleet (CTO-review M1). The map is intentionally empty until the xray
+// backend is wired into the factory (see CTO-review H4): until checksums are
+// populated, Deploy fails closed rather than installing an unverified binary.
+var xrayChecksums = map[string]string{
+	// "amd64": "...",  // TODO(H4): pin when xray backend is actually wired
+	// "arm64": "...",
+}
+
+// checksumForArch returns the expected sha256 of the Xray release zip for the
+// given Go arch, failing closed (error) when no checksum is pinned — refusing
+// to install an unverified binary rather than warning and skipping.
+func checksumForArch(goArch string) (string, error) {
+	sum := xrayChecksums[goArch]
+	if sum == "" {
+		return "", fmt.Errorf("xray: no pinned sha256 checksum for arch %q — refusing to install an unverified binary (pin it in xrayChecksums)", goArch)
+	}
+	return sum, nil
+}
+
 var _ ports.Backend = (*Backend)(nil)
 
 // Backend manages xray proxy instances on remote hosts.
@@ -83,6 +104,13 @@ func (b *Backend) deployWithOptions(ctx context.Context, host model.Host, opts m
 	arch := strings.TrimSpace(archOut)
 	goArch := archToGoArch(arch)
 
+	// Fail closed BEFORE downloading: refuse to install an unverified Xray
+	// binary that would run as root on the fleet (CTO-review M1).
+	expectedChecksum, err := checksumForArch(goArch)
+	if err != nil {
+		return nil, err
+	}
+
 	downloadURL := fmt.Sprintf(
 		"https://github.com/XTLS/Xray-core/releases/download/v%s/Xray-linux-%s.zip",
 		xrayVersion, goArch,
@@ -93,6 +121,7 @@ func (b *Backend) deployWithOptions(ctx context.Context, host model.Host, opts m
 mkdir -p /tmp/xray-install
 cd /tmp/xray-install
 curl -fsSL '%s' -o xray.zip
+echo '%s  xray.zip' | sha256sum -c -
 unzip -o xray.zip
 %s
 %s
@@ -100,6 +129,7 @@ unzip -o xray.zip
 rm -rf /tmp/xray-install
 `,
 		downloadURL,
+		expectedChecksum,
 		sudo(fmt.Sprintf("cp xray %s", installPath)),
 		sudo(fmt.Sprintf("chmod +x %s", installPath)),
 		sudo(fmt.Sprintf("mkdir -p %s", configDir)),
