@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -935,17 +934,4 @@ func popFirstArg(args []string) (first string, rest []string) {
 		}
 	}
 	return "", args
-}
-
-// generateStableUUIDForTUIC generates a stable UUID for TUIC user entry at chain creation time.
-func generateStableUUIDForTUIC() string {
-	// Simple stable generation for creation time (not cryptographic, just consistent)
-	b := make([]byte, 16)
-	// Use a fixed seed pattern based on time or better - for creation we can use proper random
-	// For simplicity and stability across runs we use the same pattern as before but at creation only
-	_, _ = rand.Read(b) // still random, but only called once at creation
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

@@ -510,23 +510,6 @@ func buildTUICTLSOptions(serverName string) *config.InboundTLSOptions {
 	}
 }
 
-// writeTUICCert generates and writes a self-signed TLS cert to the remote host.
-func writeTUICCert(client *sshclient.Client, serverName string) error {
-	cert, key, err := GenerateSelfSignedCert(serverName)
-	if err != nil {
-		return fmt.Errorf("generate tuic cert: %w", err)
-	}
-	// Use base64 to safely transfer PEM data through SSH (avoids heredoc escaping issues)
-	b64Cert := base64.StdEncoding.EncodeToString([]byte(cert))
-	b64Key := base64.StdEncoding.EncodeToString([]byte(key))
-	script := fmt.Sprintf(
-		"mkdir -p /etc/sing-box/certs && echo %s | base64 -d > /etc/sing-box/certs/tuic-cert.pem && echo %s | base64 -d > /etc/sing-box/certs/tuic-key.pem",
-		b64Cert, b64Key,
-	)
-	_, err = client.Run(script)
-	return err
-}
-
 // safeShortID returns at most the first 4 chars of a short ID, avoiding slice bounds panic.
 func safeShortID(s string) string {
 	if len(s) > 4 {

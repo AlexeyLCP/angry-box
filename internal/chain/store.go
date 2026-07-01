@@ -16,53 +16,17 @@ import (
 )
 
 // Store provides JSON-file persistence for hosts and chains.
+//
+// Concurrency model: a single in-process sync.RWMutex serializes access. The
+// Store does NOT provide cross-process safety — the orchestrator is assumed to
+// be the sole writer of its store file (single-daemon deployment). Running two
+// daemons against the same store file is unsupported and would race on the
+// read-modify-write cycle each SaveX performs. A previous FS-lock attempt
+// (mkdir-based mutex) was removed because it was never wired into the methods
+// and gave a false sense of multi-process safety.
 type Store struct {
 	mu   sync.RWMutex
 	path string
-}
-
-// acquireFSLock and releaseFSLock provide cross-process synchronization via a
-// directory-based mutex (store.json.lock). They are NOT currently wired into the
-// Store methods — only sync.RWMutex is used. To enable multi-process safety,
-// replace direct mu.Lock()/mu.RUnlock() calls with withLock()/withRLock().
-func (s *Store) acquireFSLock() {
-	lockPath := s.path + ".lock"
-	for {
-		if err := os.Mkdir(lockPath, 0o755); err == nil {
-			return
-		}
-		// If it exists, check if it's stale (e.g. older than 30 seconds)
-		if info, err := os.Stat(lockPath); err == nil {
-			if time.Since(info.ModTime()) > 30*time.Second {
-				os.Remove(lockPath)
-			}
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
-func (s *Store) releaseFSLock() {
-	os.Remove(s.path + ".lock")
-}
-
-// withLock executes the given function under a full write lock.
-func (s *Store) withLock(fn func()) {
-	s.mu.Lock()
-	s.acquireFSLock()
-	defer s.releaseFSLock()
-	defer s.mu.Unlock()
-	fn()
-}
-
-// withRLock executes the given function under a read lock.
-func (s *Store) withRLock(fn func()) {
-	s.mu.RLock()
-	// Read lock also acquires FSLock in shared mode, but Mkdir is exclusive.
-	// For simplicity, we just use exclusive for both since writes are rare.
-	s.acquireFSLock()
-	defer s.releaseFSLock()
-	defer s.mu.RUnlock()
-	fn()
 }
 
 // NewStore creates a store backed by the given JSON file.

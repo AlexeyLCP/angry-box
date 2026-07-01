@@ -176,66 +176,6 @@ func generateWireGuardKeypair() (privateKeyB64, publicKeyB64 string, err error) 
 	return privateKeyB64, publicKeyB64, nil
 }
 
-// generateTUICUser generates a TUIC user config using the given preset.
-func (b *Backend) generateTUICUser(params model.ConfigParams, preset *chain.ConnectionPreset, uuid string, port int) (*model.Config, error) {
-	tuic := preset.TUIC
-	if tuic == nil {
-		tuic = &chain.TUICPreset{CongestionControls: []string{"bbr"}, AuthTimeout: "3s"}
-	}
-
-	congestion := "bbr"
-	if len(tuic.CongestionControls) > 0 {
-		congestion = tuic.CongestionControls[0]
-	}
-	authTimeout := tuic.AuthTimeout
-	if authTimeout == "" {
-		authTimeout = "3s"
-	}
-
-	serverName := "www.microsoft.com"
-	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
-		serverName = preset.Reality.ServerNames[0]
-	}
-
-	password := uuid
-	if v, ok := params.Extra["tuicPassword"].(string); ok && v != "" {
-		password = v
-	}
-
-	inbound := config.TUICInbound{
-		Type:       "tuic",
-		Tag:        "user-in",
-		Listen:     "0.0.0.0",
-		ListenPort: port,
-		Users: []config.TUICUser{
-			{
-				UUID:     uuid,
-				Password: password,
-			},
-		},
-		CongestionControl: congestion,
-		AuthTimeout:       authTimeout,
-		ZeroRTTHandshake:  true,
-		Heartbeat:         "10s",
-		TLS: &config.InboundTLSOptions{
-			Enabled:    true,
-			ServerName: serverName,
-		},
-	}
-
-	inboundJSON, _ := json.Marshal(inbound)
-	outboundJSON, _ := json.Marshal(config.DirectOutbound{Type: "direct", Tag: "direct-out"})
-
-	cfg := singBoxConfig{
-		Log:       &logConfig{Level: "info", Output: "/var/log/sing-box/sing-box.log"},
-		Inbounds:  []json.RawMessage{inboundJSON},
-		Outbounds: []json.RawMessage{outboundJSON},
-	}
-
-	content, _ := json.MarshalIndent(cfg, "", "  ")
-	return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, nil
-}
-
 // generateAWGUser generates an AmneziaWG user config using the given preset.
 // Returns the server-side config + the server's public key (needed for client configs).
 func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.ConnectionPreset, uuid string, port int, clientPubKey string) (*model.Config, string, error) {

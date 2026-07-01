@@ -3,8 +3,6 @@ package singbox
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
@@ -680,12 +678,6 @@ func (b *bytesJS) Unmarshal(data []byte) error {
 	}
 	*b = bytesJS(s)
 	return nil
-}
-
-// sha256Hex returns the hex sha256 of data (used for checksum bookkeeping).
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }
 
 var _ = os.DevNull // keep os import if future code uses it; removed if linter complains
