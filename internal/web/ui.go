@@ -50,9 +50,6 @@ func NewServer(storePath string, devMode bool, cfg *config.Config, activeListenA
 	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg, ActiveListenAddr: activeListenAddr}
 }
 
-// isDev returns true if the server is in development mode.
-func (s *Server) isDev() bool { return s.devMode }
-
 // staticFS returns the filesystem to use for static assets.
 func (s *Server) staticFS() (fs.FS, error) {
 	if s.devMode {
@@ -158,16 +155,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 		http.Redirect(w, r, "/ui", http.StatusSeeOther)
 	})
 
-	// API endpoints for dashboard
-	mux.HandleFunc("GET /ui/api/stats", s.auth(s.handleStats))
-	mux.HandleFunc("GET /ui/api/metrics", s.auth(s.handleMetricsJSON))
+	// Dashboard stats partial (HTMX, used by the dashboard template).
 	mux.HandleFunc("GET /ui/dashboard/stats", s.auth(s.handleDashboardStatsHTML))
 
 	// Hosts (kept for backward compat, redirect to nodes)
 	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
-	mux.HandleFunc("POST /ui/hosts", s.auth(s.handleCreateHost))
-	mux.HandleFunc("DELETE /ui/hosts/{id}", s.auth(s.handleDeleteHost))
-	mux.HandleFunc("GET /ui/hosts/new", s.auth(s.handleNewHostForm))
+	// Hosts (kept for backward compat: status endpoint is used by node/chain tables).
+	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
 	mux.HandleFunc("GET /ui/hosts/{id}/status", s.auth(s.handleHostStatus))
 
 	// Nodes (new CRUD)
@@ -230,23 +224,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 
 	// Deploy status (pending-changes)
 	mux.HandleFunc("GET /ui/deploy-status", s.auth(s.handleDeployStatus))
-	mux.HandleFunc("GET /ui/api/deploy-status", s.auth(s.handleDeployStatusJSON))
-
-	// Protocol presets catalog + credential generators (for UI "Generate" buttons)
-	mux.HandleFunc("GET /ui/api/protocol-presets", s.auth(s.handleProtocolPresetsJSON))
-	mux.HandleFunc("GET /ui/api/crypto/wg-keypair", s.auth(s.handleCryptoWGKeypair))
-	mux.HandleFunc("GET /ui/api/crypto/mtproxy-secret", s.auth(s.handleCryptoMTProxySecret))
-	mux.HandleFunc("GET /ui/api/crypto/proxy-credentials", s.auth(s.handleCryptoProxyCreds))
-	mux.HandleFunc("GET /ui/api/protocols/generate", s.auth(s.handleProtocolsGenerate))
-	mux.HandleFunc("GET /ui/api/awg/preset", s.auth(s.handleAWGPresetJSON))
-	mux.HandleFunc("GET /ui/api/awg/cps", s.auth(s.handleAWGCPSJSON))
-	mux.HandleFunc("GET /ui/api/awg/capture", s.auth(s.handleAWGCaptureJSON))
-
-	// Config preview (render without pushing)
-	mux.HandleFunc("GET /ui/nodes/{id}/config/preview", s.auth(s.handleNodeConfigPreview))
-
-	// AWG config SSH import (take over an existing AWG balancer)
-	mux.HandleFunc("POST /ui/nodes/{id}/import-awg", s.auth(s.handleImportAWG))
 
 	// Profiles + ClientAssignments
 	mux.HandleFunc("GET /ui/profiles", s.auth(s.handleProfiles))
@@ -257,13 +234,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /ui/profiles/{id}", s.auth(s.handleDeleteProfile))
 	mux.HandleFunc("POST /ui/profiles/{id}/assignments", s.auth(s.handleCreateAssignment))
 	mux.HandleFunc("DELETE /ui/profiles/{id}/assignments/{aid}", s.auth(s.handleDeleteAssignment))
-	mux.HandleFunc("GET /ui/api/profiles", s.auth(s.handleProfilesJSON))
-
-	// Per-node route rules
-	mux.HandleFunc("GET /ui/nodes/{id}/route-rules", s.auth(s.handleRouteRules))
-	mux.HandleFunc("POST /ui/nodes/{id}/route-rules", s.auth(s.handleCreateRouteRule))
-	mux.HandleFunc("DELETE /ui/nodes/{id}/route-rules/{rid}", s.auth(s.handleDeleteRouteRule))
-	mux.HandleFunc("GET /ui/api/routing-presets", s.auth(s.handleRoutingPresetsJSON))
 
 	// Unified clients page
 	mux.HandleFunc("GET /ui/clients", s.auth(s.handleClients))
@@ -342,27 +312,6 @@ func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/ui/nodes/"+id+"/capture", http.StatusSeeOther)
 }
 
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	st := s.store()
-	hosts, _ := st.ListHosts()
-	chains, _ := st.ListChains()
-	users, _ := st.ListUsers()
-	metrics, _ := st.ListMetrics()
-
-	online := 0
-	for _, m := range metrics {
-		if m.Online {
-			online++
-		}
-	}
-	s.renderJSON(w, map[string]any{
-		"total_hosts":  len(hosts),
-		"online_hosts": online,
-		"total_chains": len(chains),
-		"total_users":  len(users),
-	})
-}
-
 func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	hosts, _ := st.ListHosts()
@@ -383,12 +332,6 @@ func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request
 		TotalUsers:  len(users),
 	}
 	s.render(w, r, templates.StatsCards(stats))
-}
-
-func (s *Server) handleMetricsJSON(w http.ResponseWriter, r *http.Request) {
-	st := s.store()
-	metrics, _ := st.ListMetrics()
-	s.renderJSON(w, metrics)
 }
 
 // ─── Nodes ─────────────────────────────────────────────────────────────────────
@@ -413,10 +356,6 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.renderContent(w, r, i18n.T(r.Context(), "Nodes"), templates.Nodes(hosts, infos, metrics, activeChains))
-}
-
-func (s *Server) handleNewHostForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, templates.NewHostForm())
 }
 
 func (s *Server) handleNewNodeForm(w http.ResponseWriter, r *http.Request) {
@@ -1810,47 +1749,6 @@ func mergeSSHKeys(stored, system []model.SSHKeyEntry) []model.SSHKeyEntry {
 
 // ─── Existing handlers (kept for backward compatibility) ───────────────────────
 
-func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
-		return
-	}
-	id := strings.TrimSpace(r.FormValue("id"))
-	addr := strings.TrimSpace(r.FormValue("addr"))
-	user := strings.TrimSpace(r.FormValue("user"))
-	if user == "" {
-		user = "root"
-	}
-	keyPath := strings.TrimSpace(r.FormValue("keyPath"))
-	if id == "" || addr == "" || keyPath == "" {
-		http.Error(w, i18n.T(r.Context(), "id, addr and keyPath are required"), http.StatusBadRequest)
-		return
-	}
-	st := s.store()
-	if err := st.SaveHost(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}); err != nil {
-		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save failed: %v"), err), http.StatusInternalServerError)
-		return
-	}
-	s.render(w, r, templates.HostRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}))
-}
-
-func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		http.Error(w, i18n.T(r.Context(), "missing id"), http.StatusBadRequest)
-		return
-	}
-	if err := s.store().DeleteHost(id); err != nil {
-		msg := fmt.Sprintf(`<tr class="bg-error/10"><td colspan="6" class="p-4 text-error font-medium">`+i18n.T(r.Context(), "Failed to delete: %v")+`. <button class="btn btn-xs btn-outline ml-4" onclick="location.reload()">Dismiss</button></td></tr>`, err)
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(msg))
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(""))
-}
-
 func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	chains, _ := st.ListChains()
@@ -2249,10 +2147,6 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 	s.renderContent(w, r, i18n.T(r.Context(), "Deploy Status"), &simpleHTML{html: b.String()})
 }
 
-func (s *Server) handleDeployStatusJSON(w http.ResponseWriter, r *http.Request) {
-	s.renderJSON(w, s.computeDeployStatusRows(r))
-}
-
 // computeDeployStatusRows builds the per-node deploy-status list. has_pending =
 // never deployed (LastDeployedHash=="") OR render error OR current hash != last
 // hash. Current hash is computed from the merged config render (best-effort; a
@@ -2401,175 +2295,6 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 	s.renderContent(w, r, i18n.T(r.Context(), "Takeover result"), &simpleHTML{html: b.String()})
 }
 
-// ─── Protocol presets / credential generators ────────────────────────────────
-
-func (s *Server) handleProtocolPresetsJSON(w http.ResponseWriter, r *http.Request) {
-	s.renderJSON(w, chain.GetProtocolPresetsCatalog())
-}
-
-func (s *Server) handleCryptoWGKeypair(w http.ResponseWriter, r *http.Request) {
-	priv, pub, err := chain.GenerateRealityKeypair()
-	if err != nil {
-		s.renderJSON(w, map[string]string{"error": err.Error()})
-		return
-	}
-	psk, _ := chain.GenerateWGPresharedKey()
-	s.renderJSON(w, map[string]string{
-		"private_key":    priv,
-		"public_key":     pub,
-		"preshared_key":  psk,
-	})
-}
-
-func (s *Server) handleCryptoMTProxySecret(w http.ResponseWriter, r *http.Request) {
-	s.renderJSON(w, map[string]string{"secret_hex": chain.GenerateMTProxySecret()})
-}
-
-func (s *Server) handleCryptoProxyCreds(w http.ResponseWriter, r *http.Request) {
-	s.renderJSON(w, map[string]string{
-		"uuid":     chain.GenerateTUICUUID(),
-		"password": chain.GenerateProxyPassword(),
-	})
-}
-
-// handleProtocolsGenerate generates the credentials requested via ?what=...
-// (comma-separated tokens). Only requested fields are set in the response.
-func (s *Server) handleProtocolsGenerate(w http.ResponseWriter, r *http.Request) {
-	what := r.URL.Query().Get("what")
-	ssCipher := r.URL.Query().Get("ss_cipher")
-	if ssCipher == "" {
-		ssCipher = chain.SS_DEFAULT_CIPHER
-	}
-	out := map[string]string{}
-	for _, token := range strings.Split(what, ",") {
-		switch strings.TrimSpace(token) {
-		case "reality_keypair":
-			priv, pub, err := chain.GenerateRealityKeypair()
-			if err == nil {
-				out["reality_private_key"] = priv
-				out["reality_public_key"] = pub
-			}
-		case "reality_short_id":
-			out["reality_short_id"] = chain.GenerateRealityShortID()
-		case "trojan_password":
-			out["trojan_password"] = chain.GenerateTrojanPassword()
-		case "ss_password":
-			out["ss_password"] = chain.GenerateSSPassword(ssCipher)
-		case "hysteria2_password":
-			out["hysteria2_password"] = chain.GenerateHysteria2Password()
-			out["hysteria2_obfs_password"] = chain.GenerateHysteria2ObfsPassword()
-		case "tuic_uuid":
-			out["tuic_uuid"] = chain.GenerateTUICUUID()
-			out["tuic_password"] = chain.GenerateTUICPassword()
-		case "vmess_ws_path":
-			out["vmess_ws_path"] = chain.GenerateVMessWSPath()
-		}
-	}
-	s.renderJSON(w, out)
-}
-
-// handleAWGPresetJSON returns an AWG obfuscation preset for ?profile=lite|standard|pro.
-func (s *Server) handleAWGPresetJSON(w http.ResponseWriter, r *http.Request) {
-	profile := chain.AWGProfileName(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = chain.AWGProfilePro
-	}
-	params := chain.GenAWGParams(profile)
-	s.renderJSON(w, map[string]any{
-		"profile":           string(profile),
-		"params":            params,
-		"singbox_amnezia":   chain.ToSingboxAmnezia(params, 50),
-		"awg_conf_lines":    chain.ToAWGConfLines(params),
-	})
-}
-
-// handleAWGCPSJSON returns synthesized CPS I1-I5 packets for ?profile=tls|dns|sip|quic.
-func (s *Server) handleAWGCPSJSON(w http.ResponseWriter, r *http.Request) {
-	profile := r.URL.Query().Get("profile")
-	if profile == "" {
-		profile = "tls"
-	}
-	domain := r.URL.Query().Get("domain")
-	level := 3
-	mimicry := profile
-	if mimicry == "quic" || mimicry == "tls" || mimicry == "dns" || mimicry == "sip" {
-		// ok
-	} else {
-		mimicry = "tls"
-	}
-	mat := chain.GenerateAWGObfsMaterial(level, mimicry)
-	strs := chain.CPSMaterialStrings(mat)
-	if profile == "dns" && domain != "" {
-		// dns profile: first packet uses <r 2><b 0x...> over the requested domain
-		strs[0] = chain.CPSDNSString(mat.I1)
-	}
-	resp := map[string]any{
-		"profile": profile,
-		"domain":  domain,
-		"packets": strs[:],
-	}
-	s.renderJSON(w, resp)
-}
-
-// handleAWGCaptureJSON triggers a live QUIC capture against ?domain=... (Feature 1).
-func (s *Server) handleAWGCaptureJSON(w http.ResponseWriter, r *http.Request) {
-	domain := r.URL.Query().Get("domain")
-	res := chain.CaptureQUICSignature(domain, 0)
-	s.renderJSON(w, res)
-}
-
-// handleNodeConfigPreview renders a node's merged config without pushing it.
-func (s *Server) handleNodeConfigPreview(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	st := s.store()
-	info, err := st.GetNodeInfo(id)
-	if err != nil {
-		s.renderJSON(w, map[string]string{"error": err.Error()})
-		return
-	}
-	cfg, _, err := chain.RenderMergedNodeConfig(info, nil)
-	if err != nil {
-		s.renderJSON(w, map[string]string{"error": "render: " + err.Error()})
-		return
-	}
-	b, _ := json.MarshalIndent(cfg, "", "  ")
-	s.renderJSON(w, map[string]string{"node_id": id, "config": string(b)})
-}
-
-// handleImportAWG SSH-imports existing AWG configs from the node and back-fills
-// placeholder inbound fields, then persists the NodeInfo.
-func (s *Server) handleImportAWG(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	st := s.store()
-	info, err := st.GetNodeInfo(id)
-	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, escHTML(err.Error()))})
-		return
-	}
-	res, err := chain.ImportAWGConfigs(info.Host, info.UseSudo, info)
-	if err != nil {
-		chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "AWG import failed: %s")+`</div>`, escHTML(err.Error()))})
-		return
-	}
-	_ = st.SaveNodeInfo(info)
-	chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"exit_nodes": len(res.ExitNodes), "peers": len(res.Peers), "db_updated": res.DBUpdated}, "operator")
-
-	var b strings.Builder
-	b.WriteString(`<div class="alert alert-success">` + i18n.T(r.Context(), "AWG import complete.") + `</div>`)
-	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body">`)
-	if res.ServerConfig != nil {
-		b.WriteString(fmt.Sprintf(`<p>awg0.conf: `+i18n.T(r.Context(), "ListenPort=%d, Jc=%d, S1=%d")+`</p>`, res.ServerConfig.ListenPort, res.ServerConfig.JC, res.ServerConfig.S1))
-	}
-	b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Exit nodes: %d, Peers: %d")+`</p>`, len(res.ExitNodes), len(res.Peers)))
-	b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "DB update: %s")+`</p>`, res.DBUpdated))
-	if res.Log != "" {
-		b.WriteString(fmt.Sprintf(`<pre class="text-xs whitespace-pre-wrap">%s</pre>`, escHTML(res.Log)))
-	}
-	b.WriteString(`</div></div>`)
-	s.render(w, r, &simpleHTML{html: b.String()})
-}
-
 // ─── Profiles + ClientAssignments ───────────────────────────────────────────
 
 func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
@@ -2710,95 +2435,6 @@ func (s *Server) handleDeleteAssignment(w http.ResponseWriter, r *http.Request) 
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(""))
-}
-
-func (s *Server) handleProfilesJSON(w http.ResponseWriter, r *http.Request) {
-	profiles, _ := s.store().ListProfiles()
-	s.renderJSON(w, profiles)
-}
-
-// ─── Per-node route rules ───────────────────────────────────────────────────
-
-func (s *Server) handleRouteRules(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	st := s.store()
-	rules, _ := st.ListRouteRulesForNode(id)
-	if rules == nil {
-		rules = []*model.RouteRule{}
-	}
-	presets := chain.GetRoutingPresets("")
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf(`<div class="space-y-4"><h2 class="text-2xl font-semibold">`+i18n.T(r.Context(), "Route Rules — %s")+`</h2>`, id))
-	// Apply-preset shortcut.
-	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h3 class="font-semibold">` + i18n.T(r.Context(), "Apply routing preset") + `</h3><form hx-post="/ui/nodes/` + id + `/route-rules" class="flex gap-2 items-end flex-wrap"><select name="match_values" class="select select-bordered select-sm">`)
-	for _, p := range presets {
-		b.WriteString(fmt.Sprintf(`<option value="%s">%s (%s, %d domains)</option>`, strings.Join(p.Domains, "\n"), p.Name, p.Category, len(p.Domains)))
-	}
-	b.WriteString(`</select><input type="hidden" name="match_type" value="domain_suffix"><input type="hidden" name="action" value="route"><input type="hidden" name="priority" value="100"><input type="hidden" name="enabled" value="on"><input type="hidden" name="preset_name" value="1"><button type="submit" class="btn btn-primary btn-sm">` + i18n.T(r.Context(), "Add rule from preset") + `</button></form></div></div>`)
-	// Existing rules.
-	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Priority") + `</th><th>` + i18n.T(r.Context(), "Match") + `</th><th>` + i18n.T(r.Context(), "Values") + `</th><th>` + i18n.T(r.Context(), "Action") + `</th><th>` + i18n.T(r.Context(), "Outbound") + `</th><th></th></tr></thead><tbody>`)
-	for _, rr := range rules {
-		en := ""
-		if !rr.Enabled {
-			en = " opacity-50"
-		}
-			b.WriteString(fmt.Sprintf(`<tr class="%s"><td>%d</td><td>%s</td><td class="font-mono text-xs">%s</td><td>%s</td><td>%s</td><td><button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/nodes/%s/route-rules/%s" hx-confirm="`+i18n.T(r.Context(), "Delete rule?")+`" hx-target="closest tr" hx-swap="outerHTML">`+i18n.T(r.Context(), "Delete")+`</button></td></tr>`,
-			en, rr.Priority, rr.MatchType, truncForDisplay(strings.ReplaceAll(rr.MatchValues, "\n", ", "), 40), rr.Action, rr.OutboundTag, id, rr.ID))
-	}
-	b.WriteString(`</tbody></table></div></div>`)
-	s.renderContent(w, r, i18n.T(r.Context(), "Route Rules"), &simpleHTML{html: b.String()})
-}
-
-func (s *Server) handleCreateRouteRule(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
-		return
-	}
-	priority, _ := strconv.Atoi(r.FormValue("priority"))
-	if priority == 0 {
-		priority = 100
-	}
-	rr := &model.RouteRule{
-		NodeID:      id,
-		Priority:    priority,
-		MatchType:   r.FormValue("match_type"),
-		MatchValues: r.FormValue("match_values"),
-		Action:      r.FormValue("action"),
-		OutboundTag: r.FormValue("outbound_tag"),
-		Comment:     r.FormValue("comment"),
-		Enabled:     r.FormValue("enabled") == "on",
-	}
-	if rr.MatchType == "" {
-		rr.MatchType = "domain_suffix"
-	}
-	if rr.Action == "" {
-		rr.Action = "route"
-	}
-	if err := s.store().SaveRouteRule(rr); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	chain.WriteAudit(s.store(), "create", "route_rule", rr.ID, chain.AuditPayload{"node_id": id, "match_type": rr.MatchType, "action": rr.Action}, "operator")
-	chain.ScheduleAutoApply(id, "route rule create")
-	http.Redirect(w, r, "/ui/nodes/"+id+"/route-rules", http.StatusSeeOther)
-}
-
-func (s *Server) handleDeleteRouteRule(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	rid := r.PathValue("rid")
-	chain.WriteAudit(s.store(), "delete", "route_rule", rid, chain.AuditPayload{"node_id": id}, "operator")
-	if err := s.store().DeleteRouteRule(rid); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	chain.ScheduleAutoApply(id, "route rule delete")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(""))
-}
-
-func (s *Server) handleRoutingPresetsJSON(w http.ResponseWriter, r *http.Request) {
-	s.renderJSON(w, chain.GetRoutingPresets(r.URL.Query().Get("category")))
 }
 
 // ─── Unified clients page ───────────────────────────────────────────────────

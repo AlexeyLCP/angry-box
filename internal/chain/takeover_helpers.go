@@ -71,16 +71,6 @@ func EnableService(client *sshclient.Client, service string, useSudo bool) error
 	return nil
 }
 
-// IsServiceEnabled reports whether a systemd unit is enabled. useSudo via sudo.
-func IsServiceEnabled(client *sshclient.Client, service string, useSudo bool) bool {
-	cmd := "systemctl is-enabled " + service + " 2>/dev/null"
-	if useSudo {
-		cmd = "sudo " + cmd
-	}
-	out, _, _, _ := client.RunWithOutput(context.Background(), cmd, 15*time.Second)
-	return strings.TrimSpace(out) == "enabled"
-}
-
 // RestoreFile copies a backed-up file back to its original path (rollback).
 func RestoreFile(client *sshclient.Client, backupPath, destPath string, useSudo bool) error {
 	if backupPath == "" {

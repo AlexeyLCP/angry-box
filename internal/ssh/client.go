@@ -136,14 +136,6 @@ func (c *Client) Run(cmd string) (string, error) {
 	return stdout, err
 }
 
-// RunContext is like Run but honours ctx for cancellation/deadline. A zero
-// timeout means "use ctx only"; a non-zero timeout additionally caps the
-// command via an internal timer (useful when ctx has no deadline).
-func (c *Client) RunContext(ctx context.Context, cmd string, timeout time.Duration) (string, error) {
-	stdout, _, _, err := c.runWithDeadline(ctx, cmd, timeout)
-	return stdout, err
-}
-
 // RunWithOutput runs cmd and returns stdout, stderr, the exit code and error
 // separately. stderr is NEVER discarded, even on success — this is what the
 // deploy/install path needs to surface real diagnostics (sing-box check
