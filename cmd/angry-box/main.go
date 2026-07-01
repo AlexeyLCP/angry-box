@@ -815,17 +815,25 @@ func serveCmd() {
 	// can otherwise be submitted in an admin's session (e.g. the historical
 	// /ui/settings "auth_enabled" toggle that opened the whole panel).
 	handler := web.CSRSMiddleware(mux)
-	if useTLS {
-		if err := http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, handler); err != nil {
-			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+	srv := &http.Server{Addr: *listen, Handler: handler}
+
+	// Graceful shutdown: on SIGINT/SIGTERM drain the HTTP server, stop the
+	// background metrics collector, and wait for in-flight background SSH
+	// deploys to finish instead of killing them mid-deploy (CTO-review H7).
+	go func() {
+		var serveErr error
+		if useTLS {
+			serveErr = srv.ListenAndServeTLS(*tlsCert, *tlsKey)
+		} else {
+			serveErr = srv.ListenAndServe()
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "serve: %v\n", serveErr)
 			os.Exit(1)
 		}
-	} else {
-		if err := http.ListenAndServe(*listen, handler); err != nil {
-			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
-			os.Exit(1)
-		}
-	}
+	}()
+
+	gracefulShutdown(srv, ui.Stop, chain.WaitAutoApply, installSignalHandler())
 }
 
 // isLoopbackListen reports whether the listen address binds only to the
