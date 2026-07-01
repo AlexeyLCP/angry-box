@@ -8,7 +8,7 @@
 PATH=/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin
 
 DAEMON="/opt/bin/angry-box"
-ARGS="serve --listen :8090 --file /opt/etc/angry-box/store.json"
+ARGS="serve --listen 0.0.0.0:9080 --file /opt/etc/angry-box/store.json"
 PIDFILE="/opt/var/run/angry-box.pid"
 LOGFILE="/opt/var/log/angry-box.log"
 

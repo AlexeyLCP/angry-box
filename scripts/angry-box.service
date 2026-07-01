@@ -6,7 +6,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/angry-box serve --listen :8090 --file /etc/angry-box/store.json
+ExecStart=/usr/local/bin/angry-box serve --listen 0.0.0.0:9080 --file /etc/angry-box/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576

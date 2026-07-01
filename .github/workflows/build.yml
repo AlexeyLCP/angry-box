@@ -114,7 +114,7 @@ jobs:
         run: |
           echo "==> Building test .ipk for arm64 OpenWRT/Entware"
           chmod +x ./scripts/build-opkg.sh
-          ./scripts/build-opkg.sh "dist/angry-box-linux-arm64" "$VERSION" aarch64_cortex-a53 dist
+          ./scripts/build-opkg.sh "dist/angry-box-linux-arm64" aarch64_cortex-a53 "$VERSION" dist
           ls -lh dist/*.ipk || true
 
       - uses: actions/upload-artifact@v4

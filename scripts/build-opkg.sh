@@ -7,13 +7,13 @@
 #   ./scripts/build-opkg.sh <binary> <arch> <version> [output_dir]
 #
 # Example (after cross-build):
-#   ./scripts/build-opkg.sh dist/angry-box-keenetic-mipsel mipsel_24kc 0.2.0 ./release
+#   ./scripts/build-opkg.sh dist/angry-box-keenetic-mipsel mipsel_24kc 0.1.0 ./release
 #
 set -euo pipefail
 
 BIN=${1:-}
 ARCH=${2:-}
-VERSION=${3:-0.5.0}
+VERSION=${3:-0.1.0}
 OUT=${4:-./release}
 
 if [[ -z "$BIN" || -z "$ARCH" ]]; then
@@ -67,7 +67,7 @@ if [ -x /etc/init.d/angry-box ]; then
   /etc/init.d/angry-box enable || true
 fi
 
-echo "Angry-BOX installed. Run 'angry-box --help' or configure via web UI on :8090"
+echo "Angry-BOX installed. Run 'angry-box --help' or configure via web UI on :9080"
 exit 0
 POSTINST
 chmod 755 "$PKG_DIR/CONTROL/postinst"

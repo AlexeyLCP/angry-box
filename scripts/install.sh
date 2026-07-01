@@ -205,54 +205,9 @@ install_dirs() {
     mkdir -p "$DATA_DIR"
     mkdir -p "$LOG_DIR"
 
-    # Create or upgrade store.json to v0.5.0 format
-    if [ ! -f "$CONFIG_DIR/store.json" ]; then
-        cat > "$CONFIG_DIR/store.json" << 'STORE_EOF'
-{
-  "hosts": [],
-  "chains": [],
-  "users": [],
-  "settings": {
-    "metrics_interval": 240
-  },
-  "node_infos": [],
-  "metrics": []
-}
-STORE_EOF
-        echo "    Created default store.json (v0.5.0)"
-    elif ! grep -q '"users"' "$CONFIG_DIR/store.json" 2>/dev/null; then
-        echo "    Upgrading store.json to v0.5.0 format..."
-        if command -v python3 >/dev/null 2>&1; then
-            python3 -c "
-import json
-d = json.load(open('$CONFIG_DIR/store.json'))
-d.setdefault('users', [])
-d.setdefault('settings', {'metrics_interval': 240})
-d.setdefault('node_infos', [])
-d.setdefault('metrics', [])
-json.dump(d, open('$CONFIG_DIR/store.json','w'), indent=2)
-"
-        elif command -v jq >/dev/null 2>&1; then
-            jq '. + {users: [], settings: {metrics_interval: 240}, node_infos: [], metrics: []}' \
-                "$CONFIG_DIR/store.json" > "${CONFIG_DIR}/store.json.tmp" && \
-                mv "${CONFIG_DIR}/store.json.tmp" "$CONFIG_DIR/store.json"
-        fi
-        echo "    Store upgraded"
-    fi
-
-    # Create a minimal modern config.toml if it doesn't exist
-    if [ ! -f "$CONFIG_DIR/config.toml" ]; then
-        cat > "$CONFIG_DIR/config.toml" << 'CONFIG_EOF'
-# Angry-BOX configuration
-# See documentation for all available options.
-
-listen_addr = "0.0.0.0:8090"
-log_level = "info"
-
-# storage_file = "store.json"   # default
-CONFIG_EOF
-        echo "    Created default config.toml"
-    fi
+    # The binary auto-creates angry-box.toml and store.json with correct
+    # v0.1.0 defaults on first run (via config.Load() and chain.NewStore),
+    # so the installer only needs to ensure the directories exist.
 }
 
 # ─── Install: service ──────────────────────────────────────────────────────────
@@ -278,7 +233,7 @@ start() {
         rm -f "$PID"
     fi
     mkdir -p "$(dirname "$STORE")" 2>/dev/null || true
-    "$BIN" serve -listen 0.0.0.0:8090 -file "$STORE" >/dev/null 2>&1 &
+    "$BIN" serve -listen 0.0.0.0:9080 -file "$STORE" >/dev/null 2>&1 &
     echo $! > "$PID"
     echo "angry-box started"
 }
@@ -311,7 +266,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_PATH serve -listen 0.0.0.0:8090 -file $CONFIG_DIR/store.json
+ExecStart=$INSTALL_PATH serve -listen 0.0.0.0:9080 -file $CONFIG_DIR/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -332,7 +287,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/angry-box serve -listen 0.0.0.0:8090 -file /etc/angry-box/store.json
+ExecStart=/usr/local/bin/angry-box serve -listen 0.0.0.0:9080 -file /etc/angry-box/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -384,7 +339,7 @@ print_done() {
 
     if [ "$IS_KEENETIC" = true ]; then
         echo "  Binary:     /opt/bin/angry-box"
-        echo "  Config:     /opt/etc/angry-box/config.toml"
+        echo "  Config:     /opt/etc/angry-box/angry-box.toml"
         echo "  Data:       /opt/var/lib/angry-box/"
         echo "  Logs:       /opt/var/log/angry-box.log"
         echo ""
@@ -394,7 +349,7 @@ print_done() {
     else
         if [ "$USER_MODE" = true ]; then
             echo "  Binary:     $INSTALL_PATH"
-            echo "  Config:     $CONFIG_DIR/config.toml"
+            echo "  Config:     $CONFIG_DIR/angry-box.toml"
             echo "  Data:       $DATA_DIR/"
             echo ""
             echo "  Control (user mode):"
@@ -403,7 +358,7 @@ print_done() {
             echo ""
         else
             echo "  Binary:     /usr/local/bin/angry-box"
-            echo "  Config:     /etc/angry-box/config.toml"
+            echo "  Config:     /etc/angry-box/angry-box.toml"
             echo "  Data:       /var/lib/angry-box/"
             echo ""
             echo "  Control:"
@@ -417,7 +372,7 @@ print_done() {
     echo "    angry-box host add mynode --addr <IP> --user root --key ~/.ssh/id_ed25519"
     echo "    angry-box deploy -addr <IP> -key ~/.ssh/id_ed25519"
     echo ""
-    echo "  API:  http://localhost:8090/health"
+    echo "  API:  http://localhost:9080/health"
     echo ""
     echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation from Releases:"
     echo "    opkg install angry-box_${VERSION}_mipsel_24kc.ipk         # Keenetic MIPS"
