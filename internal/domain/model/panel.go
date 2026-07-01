@@ -143,6 +143,10 @@ type NodeInbound struct {
 	ServerPrivKey string `json:"server_priv_key,omitempty"`
 	ServerPubKey  string `json:"server_pub_key,omitempty"`
 	ShortID       string `json:"short_id,omitempty"`
+	// ObfsPassword is the per-node Hysteria2 salamander obfs password. Each
+	// node gets its own random password so the fleet does not share a single
+	// predictable obfs secret. The client link must carry the same value.
+	ObfsPassword string `json:"obfs_password,omitempty"`
 
 	// For TLS-based standalone inbounds (TUIC, Hysteria2, etc.)
 	TLSCertificate string `json:"tls_certificate,omitempty"`

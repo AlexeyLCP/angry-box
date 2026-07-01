@@ -400,7 +400,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoint
 			Type: "hysteria2", Tag: tag, Listen: "::", ListenPort: ib.Port,
 			Users: []config.Hysteria2User{{Password: ib.UUID}},
 			UpMbps: 1000, DownMbps: 1000,
-			Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: "salamander_pass"},
+			Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: ib.ObfsPassword},
 		}
 		data, _ := json.Marshal(inb)
 		inbounds = append(inbounds, data)

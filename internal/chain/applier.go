@@ -1179,6 +1179,12 @@ func (a *Applier) applyStandaloneNodeLocked(ctx context.Context, store *Store, i
 				ib.ServerPrivKey = base64.RawURLEncoding.EncodeToString(privBytes) // password
 			}
 		}
+		// Hysteria2: ensure a per-node obfs password exists (older inbounds
+		// saved before this field was added have none). Generated once and
+		// persisted by the caller via SaveNodeInfo.
+		if ib.Protocol == "hysteria2" && ib.ObfsPassword == "" {
+			ib.ObfsPassword = GenerateHysteria2ObfsPassword()
+		}
 	}
 
 	backend := a.factory.Create()
@@ -1299,6 +1305,11 @@ func (a *Applier) applyMergedNodeLocked(
 					ib.ServerPubKey = pub
 				}
 			}
+		}
+		// Hysteria2: ensure a per-node obfs password exists (older inbounds
+		// saved before this field was added have none).
+		if ib.Protocol == "hysteria2" && ib.ObfsPassword == "" {
+			ib.ObfsPassword = GenerateHysteria2ObfsPassword()
 		}
 	}
 

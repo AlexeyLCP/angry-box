@@ -361,7 +361,7 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 				Users:     []config.Hysteria2User{{Password: ib.ServerPrivKey}},
 				UpMbps:    1000,
 				DownMbps:  1000,
-				Obfs:      &config.Hysteria2Obfs{Type: "salamander", Password: "salamander_pass"},
+				Obfs:      &config.Hysteria2Obfs{Type: "salamander", Password: ib.ObfsPassword},
 			}
 
 			if ib.TLSCertificate != "" && ib.TLSPrivateKey != "" {

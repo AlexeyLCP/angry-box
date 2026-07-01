@@ -816,8 +816,16 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 				newIb.TLSPrivateKey = oldIb.TLSPrivateKey
 				newIb.AWGClientPub = oldIb.AWGClientPub
 				newIb.AWGClientPriv = oldIb.AWGClientPriv
+				newIb.ObfsPassword = oldIb.ObfsPassword
 				break
 			}
+		}
+
+		// Hysteria2: generate a per-node obfs password once and persist it, so
+		// the server and the client link share the same secret and the fleet
+		// does not use a single predictable obfs password.
+		if newIb.Protocol == "hysteria2" && newIb.ObfsPassword == "" {
+			newIb.ObfsPassword = chain.GenerateHysteria2ObfsPassword()
 		}
 
 		// Generate self-signed TLS certificate for protocols that need it (TUIC, Hysteria2, etc.)
@@ -1274,7 +1282,7 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 	}
 
 	ip := strings.Split(entry.Addr, ":")[0]
-	return buildClientURI(proto, ip, 8443, c.TUICEntryUserUUID, c.TUICEntryUserPassword, c.AWGEntryServerPub, "", c.Name, u)
+	return buildClientURI(proto, ip, 8443, c.TUICEntryUserUUID, c.TUICEntryUserPassword, c.AWGEntryServerPub, "", c.Name, u, "", false)
 }
 
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
@@ -1296,7 +1304,11 @@ func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) strin
 		}
 		return fmt.Sprintf("tg://proxy?server=%s&port=%d&secret=%s", ip, ib.Port, full)
 	}
-	return buildClientURI(ib.Protocol, ip, ib.Port, ib.UUID, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u)
+	// Hysteria2 uses a self-signed cert when TLSCertificate is present, so the
+	// client link must carry insecure=1 only in that case; the per-node obfs
+	// password travels via ib.ObfsPassword.
+	insecure := ib.Protocol == "hysteria2" && ib.TLSCertificate != ""
+	return buildClientURI(ib.Protocol, ip, ib.Port, ib.UUID, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u, ib.ObfsPassword, insecure)
 }
 
 // defaultFakeTLSDomain returns the MTProxy FakeTLS domain for an inbound (the
@@ -1364,7 +1376,7 @@ func contains(slice []string, val string) bool {
 }
 
 // buildClientURI is a unified helper for generating copy-pasteable client configurations (URIs)
-func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, name string, u *model.User) string {
+func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, name string, u *model.User, obfsPassword string, insecure bool) string {
 	switch proto {
 	case "awg":
 		if u != nil && u.ImportedSecret != "" && u.SecretType == "awg" {
@@ -1439,8 +1451,23 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 		userinfo := base64.StdEncoding.EncodeToString([]byte(cipher + ":" + password))
 		return fmt.Sprintf("ss://%s@%s:%d#%s", userinfo, ip, port, name)
 	case "hysteria2":
-		return fmt.Sprintf("hysteria2://%s@%s:%d?obfs=salamander&obfs-password=salamander_pass&insecure=1",
-			uuid, ip, port)
+		// Per-node obfs password: every node gets its own random salamander
+		// password instead of a single fleet-wide predictable one. If for some
+		// reason none was persisted, fall back to a generated value rather than
+		// the hardcoded default — but the server side must carry the same value.
+		obfsPW := obfsPassword
+		if obfsPW == "" {
+			obfsPW = chain.GenerateHysteria2ObfsPassword()
+		}
+		link := fmt.Sprintf("hysteria2://%s@%s:%d?obfs=salamander&obfs-password=%s", uuid, ip, port, obfsPW)
+		// insecure=1 disables the client's TLS certificate verification — only
+		// appropriate when the server uses a self-signed cert (which we
+		// generate for standalone Hysteria2). When a real cert is present the
+		// client should verify it, so we do not emit insecure=1 unconditionally.
+		if insecure {
+			link += "&insecure=1"
+		}
+		return link
 	case "mtproxy":
 		fakeDomain := "disk.yandex.ru"
 		full, err := chain.MTProxyFullSecret(privKey, fakeDomain)

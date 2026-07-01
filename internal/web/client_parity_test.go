@@ -184,7 +184,7 @@ func TestClientLink_Shadowsocks_StandaloneParity(t *testing.T) {
 
 func TestBuildClientURI_SS_EmbedsCipherAndPassword(t *testing.T) {
 	initDefaultProfile(t)
-	link := buildClientURI("ss", "203.0.113.7", 8388, "", "ss-pass-9", "", "", "u1", &model.User{ID: "u1"})
+	link := buildClientURI("ss", "203.0.113.7", 8388, "", "ss-pass-9", "", "", "u1", &model.User{ID: "u1"}, "", false)
 	mustContain(t, link, "ss://", "SS scheme")
 	mustContain(t, link, "203.0.113.7:8388", "SS endpoint parity")
 	// The password must be embedded (base64-encoded userinfo).
@@ -198,15 +198,44 @@ func TestBuildClientURI_SS_EmbedsCipherAndPassword(t *testing.T) {
 func TestClientLink_Hysteria2_StandaloneParity(t *testing.T) {
 	initDefaultProfile(t)
 	ib := model.NodeInbound{
-		Protocol: "hysteria2",
-		Port:     443,
-		UUID:     "hysteria-uuid-value",
+		Protocol:    "hysteria2",
+		Port:        443,
+		UUID:        "hysteria-uuid-value",
+		ObfsPassword: "node-specific-obfs-pass",
 	}
 	link := buildStandaloneLink("203.0.113.7", ib, &model.User{ID: "u1"})
 	mustContain(t, link, "hysteria2://", "Hysteria2 scheme")
 	mustContain(t, link, "hysteria-uuid-value", "Hysteria2 uuid parity")
 	mustContain(t, link, "203.0.113.7:443", "Hysteria2 endpoint parity")
-	mustContain(t, link, "obfs=salamander", "Hysteria2 obfs")
+	mustContain(t, link, "obfs=salamander", "Hysteria2 obfs type")
+	// The obfs password must be the per-node one, not the hardcoded default.
+	mustContain(t, link, "obfs-password=node-specific-obfs-pass", "Hysteria2 per-node obfs password parity")
+	mustNotContain(t, link, "salamander_pass", "Hysteria2 must not use the hardcoded obfs password")
+}
+
+func TestClientLink_Hysteria2_InsecureOnlyForSelfSignedCert(t *testing.T) {
+	initDefaultProfile(t)
+	t.Run("self-signed cert -> insecure=1", func(t *testing.T) {
+		ib := model.NodeInbound{
+			Protocol:       "hysteria2",
+			Port:           443,
+			UUID:           "u",
+			ObfsPassword:   "obfspw",
+			TLSCertificate: "self-signed-cert", // a self-signed cert is present -> insecure=1
+		}
+		link := buildStandaloneLink("203.0.113.7", ib, &model.User{ID: "u1"})
+		mustContain(t, link, "insecure=1", "self-signed cert must set insecure=1")
+	})
+	t.Run("no cert -> insecure absent", func(t *testing.T) {
+		ib := model.NodeInbound{
+			Protocol:     "hysteria2",
+			Port:         443,
+			UUID:         "u",
+			ObfsPassword: "obfspw",
+		}
+		link := buildStandaloneLink("203.0.113.7", ib, &model.User{ID: "u1"})
+		mustNotContain(t, link, "insecure=1", "insecure=1 must not be set when no self-signed cert is present")
+	})
 }
 
 // ---- MTProxy ----
