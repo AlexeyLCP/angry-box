@@ -26,8 +26,6 @@ type autoApplyContext struct {
 
 var (
 	autoApplyCtx    autoApplyContext
-	hostLocksMu     sync.Mutex
-	hostLocks       = map[string]*sync.Mutex{}
 	backgroundTasks sync.WaitGroup
 )
 
@@ -37,21 +35,14 @@ func InitAutoApply(f ports.Factory, storePath string) {
 	autoApplyCtx = autoApplyContext{factory: f, storePath: storePath}
 }
 
-// hostLock returns the per-host mutex, lazily created.
-func hostLock(nodeID string) *sync.Mutex {
-	hostLocksMu.Lock()
-	defer hostLocksMu.Unlock()
-	mu, ok := hostLocks[nodeID]
-	if !ok {
-		mu = &sync.Mutex{}
-		hostLocks[nodeID] = mu
-	}
-	return mu
-}
-
 // ScheduleAutoApply fires-and-forgets a background SSH deploy to nodeID. It
 // returns immediately; failures are logged + audited. No-op if autoApplyCtx is
 // unset (InitAutoApply not called).
+//
+// Serialization is handled INSIDE ApplyMergedNode via withHostLock, so this
+// background path and the explicit apply paths (CLI, web) share the same
+// per-host mutex and cannot interleave their SSH backup->write->restart
+// sequences on the same node (CTO-review C2).
 func ScheduleAutoApply(nodeID, reason string) {
 	if autoApplyCtx.factory == nil || nodeID == "" {
 		return
@@ -59,9 +50,6 @@ func ScheduleAutoApply(nodeID, reason string) {
 	backgroundTasks.Add(1)
 	go func() {
 		defer backgroundTasks.Done()
-		mu := hostLock(nodeID)
-		mu.Lock()
-		defer mu.Unlock()
 		runAutoDeploy(nodeID, reason)
 	}()
 }
