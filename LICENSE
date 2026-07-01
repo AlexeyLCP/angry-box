@@ -75,4 +75,24 @@ For WireGuard/AmneziaWG support, Angry-BOX builds and installs the `amneziawg-li
 * **TailwindCSS:** [MIT License](https://github.com/tailwindlabs/tailwindcss/blob/master/LICENSE)
 * **DaisyUI:** [MIT License](https://github.com/saadeghi/daisyui/blob/master/LICENSE)
 
+### 4. AmneziaWG obfuscation best practices (awg-multi-script)
+Angry-BOX ports AmneziaWG obfuscation parameter generation (Jc/Jmin/Jmax/S1-S4/H1-H4 invariants and the CPS I1-I5 packet generator) from awg-multi-script.
+* **Repository:** [pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)
+* **License:** MIT License
+
+### 5. Live QUIC signature capture (awg-manager)
+Angry-BOX ports the live QUIC capture algorithm (connect to domain:443 over UDP, send a QUIC Initial with SNI=domain, capture up to 5 server response packets as I1-I5) from awg-manager.
+* **Repository:** [hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)
+* **License:** MIT License
+
+### 6. Go SSH client (golang.org/x/crypto/ssh)
+Angry-BOX connects to remote nodes over SSH using the Go x/crypto library.
+* **Repository:** [golang.org/x/crypto](https://go.googlesource.com/crypto) (golang.org/x/crypto/ssh)
+* **License:** BSD 3-Clause License
+
+### 7. templ (HTML templating)
+Angry-BOX renders its Web UI with templ.
+* **Repository:** [a-h/templ](https://github.com/a-h/templ)
+* **License:** MIT License
+
 *All trademarks, logos and brand names are the property of their respective owners. All company, product and service names used in this project are for identification purposes only.*

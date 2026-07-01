@@ -1,11 +1,13 @@
 package chain
 
 // awgcapture.go — live QUIC signature capture, ported from
-// VPN/orchestrator/app/services/awg_capture.py. Connects to domain:443 over
-// UDP, sends a real QUIC Initial (SNI=domain), captures up to 5 server response
-// packets, and hex-encodes them as <b 0x...> for I1-I5. This yields a
-// domain-accurate QUIC silhouette that DPI cannot distinguish from real traffic
-// to that domain — stronger than the synthesized CPS packets.
+// VPN/orchestrator/app/services/awg_capture.py (which itself was ported from
+// hoaxisr/awg-manager — https://github.com/hoaxisr/awg-manager, MIT license).
+// Connects to domain:443 over UDP, sends a real QUIC Initial (SNI=domain),
+// captures up to 5 server response packets, and hex-encodes them as <b 0x...>
+// for I1-I5. This yields a domain-accurate QUIC silhouette that DPI cannot
+// distinguish from real traffic to that domain — stronger than the synthesized
+// CPS packets.
 
 import (
 	"fmt"

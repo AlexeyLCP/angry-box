@@ -140,7 +140,12 @@ make dev
 
 ## Acknowledgements
 
-Built on anti-censorship community research. Key sources: pumbaX / awg-multi-script, Xray team (RPRX), Hysteria2, NaiveProxy, Telemt.
+Built on anti-censorship community research. Key sources:
+- **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)** (MIT) — live QUIC signature capture algorithm (the "take over an existing VPN" capture logic: connect to domain:443 over UDP, send a QUIC Initial, capture server response packets as I1-I5).
+- **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)** (MIT) — CPS (QUIC/SIP/DNS) generators, AmneziaWG obfuscation profiles + invariants.
+- Xray team (RPRX), Hysteria2, NaiveProxy, Telemt.
+
+**Third-Party Components:** sing-box / sing-box-extended (GPLv3), AmneziaWG kernel module (GPLv2), templ (MIT), golang.org/x/crypto/ssh (BSD-3), HTMX/TailwindCSS/DaisyUI (MIT/BSD).
 
 ## License
 

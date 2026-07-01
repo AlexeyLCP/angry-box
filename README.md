@@ -98,12 +98,17 @@ angry-box apply-merged entry-node
 
 - **[sing-box](https://github.com/SagerNet/sing-box)** and **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (GPLv3)
 - **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (GPLv2)
-- **[awg-multi-script by pumbaX](https://github.com/pumbaX/awg-multi-script)** - AmneziaWG obfuscation best practices
+- **[awg-multi-script by pumbaX](https://github.com/pumbaX/awg-multi-script)** (MIT) — AmneziaWG obfuscation best practices (Jc/Jmin/Jmax/S1-S4/H1-H4 invariants, CPS packet generation)
+- **[awg-manager by hoaxisr](https://github.com/hoaxisr/awg-manager)** (MIT) — live QUIC signature capture algorithm (the "Take over an existing VPN" capture logic: connect to domain:443 over UDP, send a QUIC Initial, capture server response packets as I1-I5)
+- **[templ](https://github.com/a-h/templ)** (MIT) — HTML templating for the Web UI
+- **[golang.org/x/crypto/ssh](https://go.googlesource.com/crypto)** (BSD-3-Clause) — Go SSH client
 - **HTMX, TailwindCSS, and DaisyUI** (MIT / BSD)
 
 ## Acknowledgements
 
 - Special thanks to **Aleksandr SacredX** for extensive testing and valuable ideas.
+- The live QUIC signature capture (used by Angry-BOX to fingerprint a real domain's QUIC silhouette for AmneziaWG CPS I1-I5) is ported from **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)**.
+- AmneziaWG obfuscation parameter generation (profiles + invariants) is ported from **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**.
 
 ## License
 

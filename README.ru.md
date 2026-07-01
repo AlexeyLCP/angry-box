@@ -176,9 +176,17 @@ make dev
 Angry-BOX is built on anti-censorship community research.
 
 **Key sources:**
-- pumbaX / awg-multi-script -- CPS, QUIC, SIP, DNS generators
-- Xray (RPRX) -- XHTTP transport and advanced obfuscation
-- Hysteria2, NaiveProxy, Telemt and many Russian, Iranian, and Chinese researchers
+- **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)** (MIT) — алгоритм живого захвата QUIC-сигнатуры (live QUIC capture: подключение к domain:443 по UDP, отправка QUIC Initial с SNI=domain, захват ответных пакетов сервера как I1-I5). Используется Angry-BOX для формирования CPS-пакетов под реальный домен.
+- **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)** (MIT) — генераторы CPS (QUIC, SIP, DNS), обфускация AmneziaWG (профили Jc/Jmin/Jmax/S1-S4/H1-H4 + инварианты).
+- Xray (RPRX) — XHTTP-транспорт и продвинутая обфускация
+- Hysteria2, NaiveProxy, Telemt и многие российские, иранские и китайские исследователи
+
+**Third-Party Components:**
+- **[sing-box](https://github.com/SagerNet/sing-box)** и **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (GPLv3)
+- **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (GPLv2)
+- **[templ](https://github.com/a-h/templ)** (MIT) — HTML-шаблоны для Web UI
+- **[golang.org/x/crypto/ssh](https://go.googlesource.com/crypto)** (BSD-3-Clause) — Go SSH-клиент
+- **HTMX, TailwindCSS, DaisyUI** (MIT / BSD)
 
 ## License
 
