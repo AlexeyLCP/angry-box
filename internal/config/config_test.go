@@ -8,7 +8,7 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.ListenAddr != ":8090" {
+	if cfg.ListenAddr != ":9080" {
 		t.Error("unexpected default listen addr")
 	}
 	if cfg.DefaultObfuscationProfile == "" {
