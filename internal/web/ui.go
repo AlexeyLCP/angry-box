@@ -1556,6 +1556,20 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 		newAuthEnabled := r.FormValue("auth_enabled") == "on"
 		if newAuthEnabled != s.cfg.AuthEnabled {
+			// Toggling auth_enabled is a privileged, security-sensitive change.
+			// Require the current admin password so that a forged POST (e.g. a
+			// CSRF attempt that slipped past the Origin check, or a hijacked
+			// session) cannot disable authentication for the whole panel and
+			// expose the fleet. When auth is currently enabled we verify the
+			// old password regardless of the toggle direction; when it is
+			// currently disabled there is no password to check yet.
+			if s.cfg.AuthEnabled {
+				oldPassword := strings.TrimSpace(r.FormValue("auth_old_password"))
+				if err := bcrypt.CompareHashAndPassword([]byte(s.cfg.AuthPasswordHash), []byte(oldPassword)); err != nil {
+					s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Failed to change auth settings: current password is incorrect.") + `</span></div>`})
+					return
+				}
+			}
 			s.cfg.AuthEnabled = newAuthEnabled
 			configNeedsSave = true
 			if newAuthEnabled {

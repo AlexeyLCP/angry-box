@@ -544,6 +544,7 @@ var locales = map[string]map[string]string{
 		"Note: SSH key auto-generation failed: %v": "Примечание: авто-генерация SSH-ключа не удалась: %v",
 		"Note: SSH key installation failed: %v": "Примечание: установка SSH-ключа не удалась: %v",
 		"Failed to change password: old password is incorrect.": "Не удалось изменить пароль: старый пароль неверен.",
+		"Failed to change auth settings: current password is incorrect.": "Не удалось изменить настройки аутентификации: текущий пароль неверен.",
 		"Settings saved, but config write failed: %v": "Настройки сохранены, но запись конфига не удалась: %v",
 		"Settings saved.": "Настройки сохранены.",
 		"Name and key data are required.": "Имя и данные ключа обязательны.",

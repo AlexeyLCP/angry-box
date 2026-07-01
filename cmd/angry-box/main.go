@@ -786,7 +786,14 @@ func serveCmd() {
 		listenHost = "localhost" + strings.TrimPrefix(listenHost, "0.0.0.0")
 	}
 	fmt.Println("Web UI available at http://" + listenHost + "/ui")
-	if err := http.ListenAndServe(*listen, mux); err != nil {
+
+	// Wrap the mux in CSRF protection for all state-changing requests. The
+	// panel uses HTTP Basic Auth, whose credentials are not protected by
+	// cookie SameSite attributes, so cross-origin POSTs from a malicious page
+	// can otherwise be submitted in an admin's session (e.g. the historical
+	// /ui/settings "auth_enabled" toggle that opened the whole panel).
+	handler := web.CSRSMiddleware(mux)
+	if err := http.ListenAndServe(*listen, handler); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		os.Exit(1)
 	}
