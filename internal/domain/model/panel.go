@@ -95,6 +95,38 @@ type NodeInfo struct {
 
 	// User-facing inbounds on this node (for per-user config generation).
 	Inbounds []NodeInbound `json:"inbounds,omitempty"`
+
+	// Takeover state — set when the node was captured from an existing VPN
+	// (awg/singbox/xray/mtproxy). Carries the old service name + config backup
+	// paths so the takeover can be rolled back to the old VPN if sing-box fails.
+	Takeover *TakeoverState `json:"takeover,omitempty"`
+}
+
+// TakeoverState records what angry-box found on the node and what it did to
+// take it over. Persisted on NodeInfo so the UI can show "taken over from Xray"
+// and so a rollback knows which old service + config to restore.
+type TakeoverState struct {
+	// DetectedType is the VPN kind that was detected: awg|singbox|xray|mtproxy.
+	DetectedType string `json:"detected_type"`
+	// OldServiceName is the systemd unit of the old VPN (e.g. "xray",
+	// "sing-box", "awg-quick@awg0"). Empty for kernel AWG (no single unit).
+	OldServiceName string `json:"old_service_name,omitempty"`
+	// OldConfigPath is the path of the old VPN's config file that was backed up.
+	OldConfigPath string `json:"old_config_path,omitempty"`
+	// OldConfigBackup is where the pre-takeover config was copied (under
+	// $HOME/sing-box-orch-backup-<ts>/) for rollback.
+	OldConfigBackup string `json:"old_config_backup,omitempty"`
+	// OldUnitBackup is where the old systemd unit was copied (if any).
+	OldUnitBackup string `json:"old_unit_backup,omitempty"`
+	// OldEnabled records whether the old service was enabled at takeover time
+	// (so rollback re-enables it only if it was enabled before).
+	OldEnabled bool `json:"old_enabled,omitempty"`
+	// ConvertedInbounds is how many inbounds the converter produced.
+	ConvertedInbounds int `json:"converted_inbounds,omitempty"`
+	// ConvertedAt is when the takeover completed.
+	ConvertedAt time.Time `json:"converted_at,omitempty"`
+	// Status: "taken" | "rolled-back" | "failed-both" | "detected".
+	Status string `json:"status,omitempty"`
 }
 
 // NodeInbound describes a user-facing inbound on a node.

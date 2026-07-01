@@ -143,6 +143,14 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 				</button>
 				<button
 					class="btn btn-ghost btn-xs"
+					hx-get={"/ui/nodes/" + h.ID + "/detect-vpn"}
+					hx-target="#main-content"
+					hx-swap="outerHTML"
+					hx-push-url="true">
+					{ i18n.T(ctx, "Takeover") }
+				</button>
+				<button
+					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/edit"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">

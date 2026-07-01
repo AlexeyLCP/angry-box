@@ -190,9 +190,13 @@ func (c *Client) runWithDeadline(ctx context.Context, cmd string, timeout time.D
 		runErr = fmt.Errorf("ssh: command timed out: %w", runCtx.Err())
 	}
 
-	exitCode = -1
-	if ee, ok := runErr.(*ssh.ExitError); ok {
-		exitCode = ee.ExitStatus()
+	exitCode = 0 // success unless proven otherwise
+	if runErr != nil {
+		if ee, ok := runErr.(*ssh.ExitError); ok {
+			exitCode = ee.ExitStatus()
+		} else {
+			exitCode = -1 // non-exit error (timeout, transport) — unknown status
+		}
 	}
 
 	if runErr != nil {

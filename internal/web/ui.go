@@ -22,6 +22,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
+	"github.com/alexeylcp/angry-box/internal/takeover"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
@@ -182,6 +183,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
 	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
+
+	// Takeover (detect existing VPN → convert → cutover → rollback on failure)
+	mux.HandleFunc("GET /ui/nodes/{id}/detect-vpn", s.auth(s.handleDetectVPN))
+	mux.HandleFunc("POST /ui/nodes/{id}/takeover", s.auth(s.handleTakeover))
 
 	// Chains (existing)
 	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
@@ -2264,6 +2269,87 @@ func truncForDisplay(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// ─── Takeover (detect existing VPN → convert → cutover → rollback) ───────────
+
+func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil {
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">node not found: %s</div>`, err.Error())})
+		return
+	}
+	det, err := takeover.DetectVPN(r.Context(), info.Host, info.UseSudo)
+	if err != nil {
+		chain.WriteAudit(st, "takeover", "node", id, chain.AuditPayload{"phase": "detect", "error": err.Error()}, "operator")
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Detect failed: %s</div>`, err.Error())})
+		return
+	}
+
+	// Render a warning + confirm modal.
+	var b strings.Builder
+	if det.Type == takeover.DetectedNone {
+		b.WriteString(`<div class="alert alert-info">No existing VPN detected on this node. Use Install to deploy sing-box from scratch.</div>`)
+		if det.Note != "" {
+			b.WriteString(fmt.Sprintf(`<div class="text-sm text-base-content/60">%s</div>`, det.Note))
+		}
+		s.render(w, r, &simpleHTML{html: b.String()})
+		return
+	}
+
+	b.WriteString(`<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><div>`)
+	b.WriteString(fmt.Sprintf(`<div><b>Existing VPN detected: %s</b><br>Service: <code>%s</code> (active: %v, enabled: %v)<br>Config: <code>%s</code></div>`,
+		det.Type, det.ServiceName, det.IsActive, det.IsEnabled, det.ConfigPath))
+	b.WriteString(`</div></div>`)
+	if len(det.Other) > 0 {
+		b.WriteString(`<div class="text-sm text-base-content/60 mt-1">Also present: ` + strings.Join(det.Other, ", ") + `</div>`)
+	}
+	b.WriteString(`<div class="py-2 text-sm">Takeover will: install sing-box, convert the existing config to sing-box with the same settings, <b>disable (not delete) the old VPN</b>, and start sing-box. Old config is backed up for rollback. If sing-box fails to come up, the old VPN is restored automatically.</div>`)
+	b.WriteString(fmt.Sprintf(`<div class="flex gap-2"><button class="btn btn-primary btn-sm" hx-post="/ui/nodes/%s/takeover" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="Take over this server? The old VPN will be disabled.">Take over</button> <button class="btn btn-ghost btn-sm" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">Cancel</button></div>`, id))
+	s.renderContent(w, r, "Takeover", &simpleHTML{html: b.String()})
+}
+
+func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil {
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">node not found: %s</div>`, err.Error())})
+		return
+	}
+	// Re-detect (the detection from the modal isn't POSTed; re-probe to be safe).
+	det, err := takeover.DetectVPN(r.Context(), info.Host, info.UseSudo)
+	if err != nil {
+		chain.WriteAudit(st, "takeover", "node", id, chain.AuditPayload{"phase": "detect", "error": err.Error()}, "operator")
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Detect failed: %s</div>`, err.Error())})
+		return
+	}
+	res, err := takeover.Takeover(r.Context(), st, factory.New(), info.Host, info.UseSudo, det)
+
+	// Render the result.
+	var b strings.Builder
+	if err != nil && res != nil && res.Status != "taken" {
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-error"><b>Takeover %s</b><br>%s</div>`, res.Status, res.Message))
+	} else if err != nil {
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-error">Takeover failed: %s</div>`, err.Error()))
+	} else {
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-success"><b>Takeover successful</b><br>%s</div>`, res.Message))
+	}
+	if res != nil {
+		b.WriteString(`<div class="card bg-base-100 shadow mt-2"><div class="card-body text-sm">`)
+		b.WriteString(fmt.Sprintf(`<p>From: <b>%s</b> → sing-box</p>`, res.FromType))
+		if res.OldService != "" {
+			b.WriteString(fmt.Sprintf(`<p>Old service: <code>%s</code> (disabled, config backed up at <code>%s</code>)</p>`, res.OldService, res.OldConfigBackup))
+		}
+		b.WriteString(fmt.Sprintf(`<p>Converted inbounds: %d</p>`, res.ConvertedInbounds))
+		if res.RollbackOccurred {
+			b.WriteString(`<p><b>Rollback occurred</b> — old VPN was restored.</p>`)
+		}
+		b.WriteString(`</div></div>`)
+	}
+	s.renderContent(w, r, "Takeover result", &simpleHTML{html: b.String()})
 }
 
 // ─── Protocol presets / credential generators ────────────────────────────────
