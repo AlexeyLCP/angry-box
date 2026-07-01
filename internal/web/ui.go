@@ -770,9 +770,17 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	}
 
 	for _, pStr := range ports {
-		port, _ := strconv.Atoi(pStr)
+		port, err := strconv.Atoi(pStr)
+		if err != nil {
+			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + fmt.Sprintf(i18n.T(r.Context(), "Invalid port %q: must be a number."), escHTML(pStr)) + `</span></div>`})
+			return
+		}
+		if verr := validatePort(port); verr != nil {
+			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + escHTML(verr.Error()) + `</span></div>`})
+			return
+		}
 		if cName, ok := chainPorts[port]; ok {
-			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.")+`</div>`, port, cName)})
+			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.")+`</div>`, port, escHTML(cName))})
 			return
 		}
 	}

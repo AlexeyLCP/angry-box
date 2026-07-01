@@ -685,6 +685,7 @@ var locales = map[string]map[string]string{
 		"active": "активен",
 		"disabled": "отключён",
 		"Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.": "Порт %d зарезервирован для цепочки %q на этой ноде и не может использоваться для автономных входящих.",
+		"Invalid port %q: must be a number.": "Неверный порт %q: должно быть число.",
 		"Note:": "Примечание:",
 		"SSH key auto-generation failed: %v": "Авто-генерация SSH-ключа не удалась: %v",
 		"SSH key installation failed: %v": "Установка SSH-ключа не удалась: %v",
