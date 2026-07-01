@@ -15,9 +15,8 @@ import (
 
 // Config holds runtime settings for the angry-box orchestrator itself.
 type Config struct {
-	ListenAddr     string `toml:"listen_addr"`
-	StoreFile      string `toml:"store_file"`
-	DefaultBackend string `toml:"default_backend"`
+	ListenAddr string `toml:"listen_addr"`
+	StoreFile  string `toml:"store_file"`
 
 	// DefaultObfuscationProfile — профиль обфускации по умолчанию.
 	// Возможные значения: "russia_2026", "iran_2026", "china_2026", "maximum_stealth_2026"
@@ -50,7 +49,6 @@ func DefaultConfig() *Config {
 		// --listen / listen_addr (ideally fronted by TLS).
 		ListenAddr:                "127.0.0.1:9080",
 		StoreFile:                 storeFile,
-		DefaultBackend:            "sing-box",
 		DefaultObfuscationProfile: "maximum_stealth_2026", // безопасный дефолт
 		PresetsFile:               "",                     // no extra presets by default
 		AuthEnabled:               true,                   // by default, authentication is enabled
@@ -76,9 +74,6 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.StoreFile == "" {
 		cfg.StoreFile = DefaultConfig().StoreFile
-	}
-	if cfg.DefaultBackend == "" {
-		cfg.DefaultBackend = DefaultConfig().DefaultBackend
 	}
 	if cfg.DefaultObfuscationProfile == "" {
 		cfg.DefaultObfuscationProfile = DefaultConfig().DefaultObfuscationProfile

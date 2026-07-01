@@ -465,7 +465,7 @@ var locales = map[string]map[string]string{
 
 		// Dashboard (index)
 		"Welcome to Angry-BOX": "Angry-BOX",
-		"Lightweight SSH orchestrator for sing-box and xray nodes.": "Легковесный SSH-оркестратор для нод sing-box и xray.",
+		"Lightweight SSH orchestrator for sing-box nodes.": "Легковесный SSH-оркестратор для нод sing-box.",
 		"Go to Hosts": "К нодам",
 		"Go to Chains": "К цепочкам",
 		"View Status": "Статус системы",

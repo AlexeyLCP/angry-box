@@ -6,7 +6,7 @@
 
 Angry-BOX is an original product written from scratch. It is **not** a fork of 3x-ui, LucX-UI, x-ui, or any other panel.
 
-Management is done exclusively over SSH. Target nodes run **only** sing-box-extended (optionally xray) with a minimal config — no agents.
+Management is done exclusively over SSH. Target nodes run **only** sing-box-extended with a minimal config — no agents.
 
 <p>
   <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
@@ -34,7 +34,6 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 - **Modern Web UI:** Spider-web topology editor (graph edges, persistent node positions, native SVG pan/zoom), deploy-status (pending-changes badge), audit log, profiles/services, unified clients, route rules — built with HTMX + TailwindCSS + DaisyUI + templ.
 - **Background auto-apply:** per-user/inbound mutations trigger a background SSH deploy (hybrid mode); per-host lock serializes.
 - **100% Independent:** Angry-BOX ships its own **patched sing-box-extended** binary (deps/), so weak VPSes never compile Go — they just download.
-- **Dual backend — sing-box-extended + Xray:** `deploy`/`apply`/`remove`/`reload` work for both cores. AmneziaWG (kernel + userspace) requires sing-box-extended; Xray is used where its XHTTP/REALITY implementation is preferable.
 - **Zero-Footprint:** node servers run only the bare `sing-box` core; the orchestrator lives entirely on your control machine.
 
 ## Screenshots

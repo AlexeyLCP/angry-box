@@ -5,14 +5,6 @@ import (
 	"time"
 )
 
-// BackendKind identifies a proxy backend implementation.
-type BackendKind string
-
-const (
-	SingBox BackendKind = "sing-box"
-	Xray    BackendKind = "xray"
-)
-
 // ConfigType distinguishes transport configs (inter-hop) from user configs (client-facing).
 type ConfigType int
 

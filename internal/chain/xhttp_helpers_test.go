@@ -93,27 +93,6 @@ func TestGenerateRealisticHeaders_EmptyHost(t *testing.T) {
 	}
 }
 
-// ─── GenerateXMUX ─────────────────────────────────────────────────────────────
-
-func TestGenerateXMUX(t *testing.T) {
-	xmux := GenerateXMUX()
-	if xmux == nil {
-		t.Fatal("xmux is nil")
-	}
-	if !xmux.Enabled {
-		t.Error("XMUX should be enabled")
-	}
-	if xmux.MaxConcurrency == "" {
-		t.Error("MaxConcurrency is empty")
-	}
-	if !strings.Contains(xmux.MaxConcurrency, "-") {
-		t.Errorf("MaxConcurrency should be a range: %s", xmux.MaxConcurrency)
-	}
-	if xmux.KeepAlive != "30s" {
-		t.Errorf("KeepAlive = %s", xmux.KeepAlive)
-	}
-}
-
 // ─── ApplyXHTTPObfuscation ────────────────────────────────────────────────────
 
 func TestApplyXHTTPObfuscation_WithPreset(t *testing.T) {
@@ -148,86 +127,6 @@ func TestApplyXHTTPObfuscation_NilPreset(t *testing.T) {
 func TestApplyXHTTPObfuscation_NilBoth(t *testing.T) {
 	// Should not panic
 	ApplyXHTTPObfuscation(nil, nil)
-}
-
-// ─── GenerateXHTTPMode ────────────────────────────────────────────────────────
-
-func TestGenerateXHTTPMode(t *testing.T) {
-	tests := []struct {
-		level int
-		want  string
-	}{
-		{0, "packet-up"},
-		{1, "packet-up"},
-		{2, "auto"},
-		{3, "stream-up"},
-		{4, "stream-up"},
-		{5, "stream-up"},
-	}
-	for _, tt := range tests {
-		got := GenerateXHTTPMode(tt.level)
-		if got != tt.want {
-			t.Errorf("GenerateXHTTPMode(%d) = %q, want %q", tt.level, got, tt.want)
-		}
-	}
-}
-
-// ─── GenerateXHTTPExtra ───────────────────────────────────────────────────────
-
-func TestGenerateXHTTPExtra(t *testing.T) {
-	// Level 0: basic
-	extra := GenerateXHTTPExtra(0, "test.com")
-	if extra == nil {
-		t.Fatal("extra is nil")
-	}
-	if extra.Mode == "" {
-		t.Error("Mode is empty")
-	}
-	if extra.XPaddingBytes == "" {
-		t.Error("XPaddingBytes is empty")
-	}
-	if extra.XMUX != nil {
-		t.Error("XMUX should be nil for level 0")
-	}
-}
-
-func TestGenerateXHTTPExtra_HighStealth(t *testing.T) {
-	// Level 2: should include XMUX
-	extra := GenerateXHTTPExtra(2, "test.com")
-	if extra.XMUX == nil {
-		t.Error("XMUX should be set for level 2")
-	}
-	if !extra.XMUX.Enabled {
-		t.Error("XMUX should be enabled")
-	}
-}
-
-func TestGenerateXHTTPExtra_MaxStealth(t *testing.T) {
-	// Level 3: should include fragmentation
-	extra := GenerateXHTTPExtra(3, "test.com")
-	if extra.Fragmentation == nil {
-		t.Error("Fragmentation should be set for level 3")
-	}
-	if !extra.Fragmentation.Enabled {
-		t.Error("Fragmentation should be enabled")
-	}
-}
-
-// ─── GenerateRealisticPreamble ────────────────────────────────────────────────
-
-func TestGenerateRealisticPreamble(t *testing.T) {
-	preamble := GenerateRealisticPreamble("example.com")
-	if len(preamble) != 3 {
-		t.Errorf("preamble length = %d, want 3", len(preamble))
-	}
-	for _, p := range preamble {
-		if !strings.Contains(p, "example.com") {
-			t.Errorf("preamble entry missing host: %s", p)
-		}
-		if !strings.HasPrefix(p, "https://") {
-			t.Errorf("preamble entry not https: %s", p)
-		}
-	}
 }
 
 // ─── clamped ──────────────────────────────────────────────────────────────────
@@ -461,17 +360,5 @@ func TestRandInt_Range(t *testing.T) {
 		if v < 10 || v > 20 {
 			t.Errorf("randInt(10,20) = %d", v)
 		}
-	}
-}
-
-// ─── XHTTP extra edge cases ──────────────────────────────────────────────────
-
-func TestXHTTPExtra_Level1(t *testing.T) {
-	extra := GenerateXHTTPExtra(1, "test.com")
-	if extra.XMUX != nil {
-		t.Error("XMUX should be nil for level 1")
-	}
-	if extra.Fragmentation != nil {
-		t.Error("Fragmentation should be nil for level 1")
 	}
 }
