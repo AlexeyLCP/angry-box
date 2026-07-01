@@ -107,6 +107,21 @@ templ Base(title string, content templ.Component) {
 			</div>
 			</div>
 
+		<script>
+			// Server-rendered JS i18n dictionary for the few client-side strings.
+			window.AB_I18N = {
+				lang: { i18n.Lang(ctx) },
+				t: function(k){ var d=this.dict[this.lang]||{}; return d[k]||k; },
+				dict: {
+					ru: {
+						"Key name": "Имя ключа",
+						"/path/to/key": "/путь/к/ключу",
+						"None": "Нет"
+					},
+					en: {}
+				}
+			};
+		</script>
 		<script src="/static/js/app.js"></script>
 	</body>
 	</html>

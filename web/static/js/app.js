@@ -1,8 +1,10 @@
 // Angry-BOX UI helpers
+// AB_I18N is server-rendered in base.templ; t(key) returns the active-language string.
+function abt(k){ return (window.AB_I18N && window.AB_I18N.t) ? window.AB_I18N.t(k) : k; }
 function addSSHKey() {
     var d = document.createElement('div');
     d.className = 'flex gap-2 items-end';
-    d.innerHTML = '<div class="form-control flex-1"><input type="text" name="ssh_key_name" class="input input-bordered input-sm" placeholder="Key name" /></div><div class="form-control flex-1"><input type="text" name="ssh_key_path" class="input input-bordered input-sm" placeholder="/path/to/key" /></div><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.parentElement.remove()">✕</button>';
+    d.innerHTML = '<div class="form-control flex-1"><input type="text" name="ssh_key_name" class="input input-bordered input-sm" placeholder="'+abt('Key name')+'" /></div><div class="form-control flex-1"><input type="text" name="ssh_key_path" class="input input-bordered input-sm" placeholder="'+abt('/path/to/key')+'" /></div><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.parentElement.remove()">✕</button>';
     document.getElementById('ssh-keys-list').appendChild(d);
 }
 
@@ -71,7 +73,7 @@ function filterPresetsForRow(protoSelect) {
     // Always add "None" option
     var noneOpt = document.createElement('option');
     noneOpt.value = '';
-    noneOpt.textContent = 'None';
+    noneOpt.textContent = abt('None');
     presetSelect.appendChild(noneOpt);
 
     var found = false;

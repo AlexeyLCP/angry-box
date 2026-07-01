@@ -276,7 +276,7 @@ func isHTMXRequest(r *http.Request) bool { return r.Header.Get("HX-Request") == 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := c.Render(r.Context(), w); err != nil {
-		http.Error(w, "render error", http.StatusInternalServerError)
+		http.Error(w, i18n.T(r.Context(), "render error"), http.StatusInternalServerError)
 	}
 }
 
@@ -318,7 +318,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		TotalUsers:  len(users),
 	}
 
-	s.renderContent(w, r, "Dashboard", templates.Dashboard(stats, hosts, metrics, infos, chains))
+	s.renderContent(w, r, i18n.T(r.Context(), "Dashboard"), templates.Dashboard(stats, hosts, metrics, infos, chains))
 }
 
 func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {
@@ -412,7 +412,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			activeChains[n.ID] = c.Name
 		}
 	}
-	s.renderContent(w, r, "Nodes", templates.Nodes(hosts, infos, metrics, activeChains))
+	s.renderContent(w, r, i18n.T(r.Context(), "Nodes"), templates.Nodes(hosts, infos, metrics, activeChains))
 }
 
 func (s *Server) handleNewHostForm(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +427,7 @@ func (s *Server) handleNewNodeForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
@@ -441,13 +441,13 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	bandwidth := strings.TrimSpace(r.FormValue("bandwidth"))
 
 	if id == "" || addr == "" {
-		http.Error(w, "id and addr are required", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "id and addr are required"), http.StatusBadRequest)
 		return
 	}
 
 	st := s.store()
 	if err := st.SaveHost(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}); err != nil {
-		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	st.SaveNodeInfo(&model.NodeInfo{
@@ -476,7 +476,7 @@ func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	host, err := st.GetHost(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	info, _ := st.GetNodeInfo(id)
@@ -488,13 +488,13 @@ func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	host, err := st.GetHost(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	host.Addr = strings.TrimSpace(r.FormValue("addr"))
@@ -545,13 +545,13 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	host, err := st.GetHost(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 
@@ -680,7 +680,7 @@ func (s *Server) handleNodeCaptureForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	host, err := st.GetHost(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	settings, _ := st.GetSettings()
@@ -723,7 +723,7 @@ func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
@@ -858,12 +858,12 @@ func (s *Server) handleSpiderWeb(w http.ResponseWriter, r *http.Request) {
 	chains, _ := st.ListChains()
 	infos, _ := st.ListNodeInfos()
 	links, _ := st.ListLinks()
-	s.renderContent(w, r, "Spider Web", templates.SpiderWeb(hosts, chains, infos, links))
+	s.renderContent(w, r, i18n.T(r.Context(), "Spider Web"), templates.SpiderWeb(hosts, chains, infos, links))
 }
 
 func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	fromNode := strings.TrimSpace(r.FormValue("from_node"))
@@ -872,11 +872,11 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	chainName := strings.TrimSpace(r.FormValue("chain_name"))
 
 	if fromNode == "" || toNode == "" || chainName == "" {
-		http.Error(w, "from_node, to_node, and chain_name are required", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "from_node, to_node, and chain_name are required"), http.StatusBadRequest)
 		return
 	}
 	if fromNode == toNode {
-		http.Error(w, "from_node and to_node must differ", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "from_node and to_node must differ"), http.StatusBadRequest)
 		return
 	}
 	if transport == "" {
@@ -886,14 +886,14 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	st := s.store()
 
 	// Resolve hosts (validates both ends exist).
-	fromHost, err := st.GetHost(fromNode)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("host %q not found", fromNode), http.StatusBadRequest)
-		return
-	}
-	toHost, err := st.GetHost(toNode)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("host %q not found", toNode), http.StatusBadRequest)
+		fromHost, err := st.GetHost(fromNode)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), fromNode), http.StatusBadRequest)
+			return
+		}
+		toHost, err := st.GetHost(toNode)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), toNode), http.StatusBadRequest)
 		return
 	}
 
@@ -958,7 +958,7 @@ func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) 
 	st := s.store()
 	link, err := st.GetLink(id)
 	if err != nil {
-		http.Error(w, "link not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "link not found"), http.StatusNotFound)
 		return
 	}
 	chainName := link.ChainName
@@ -1002,7 +1002,7 @@ func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSaveNodePosition(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	x, _ := strconv.ParseFloat(r.FormValue("x"), 64)
@@ -1051,7 +1051,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.renderContent(w, r, "Users", templates.Users(users, chains))
+	s.renderContent(w, r, i18n.T(r.Context(), "Users"), templates.Users(users, chains))
 }
 
 func (s *Server) handleNewUserForm(w http.ResponseWriter, r *http.Request) {
@@ -1061,7 +1061,7 @@ func (s *Server) handleNewUserForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
@@ -1075,7 +1075,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	secretType := strings.TrimSpace(r.FormValue("secret_type"))
 
 	if id == "" || name == "" {
-		http.Error(w, "id and name are required", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "id and name are required"), http.StatusBadRequest)
 		return
 	}
 
@@ -1104,7 +1104,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	st := s.store()
 	if err := st.SaveUser(u); err != nil {
-		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	chain.WriteAudit(st, "create", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
@@ -1116,7 +1116,7 @@ func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	u, err := s.store().GetUser(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	chains, _ := s.store().ListChains()
@@ -1126,13 +1126,13 @@ func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	u, err := st.GetUser(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 
@@ -1174,7 +1174,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		s.scheduleAutoApplyForUser(st, u, "user delete")
 	}
 	if err := st.DeleteUser(id); err != nil {
-		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "delete: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -1203,7 +1203,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	u, err := st.GetUser(id)
 	if err != nil {
-		http.Error(w, "user not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "user not found"), http.StatusNotFound)
 		return
 	}
 
@@ -1458,7 +1458,7 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	u, err := st.GetUser(id)
 	if err != nil {
-		http.Error(w, "user not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "user not found"), http.StatusNotFound)
 		return
 	}
 
@@ -1491,13 +1491,13 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQRImage(w http.ResponseWriter, r *http.Request) {
 	data := r.URL.Query().Get("data")
 	if data == "" {
-		http.Error(w, "missing data parameter", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "missing data parameter"), http.StatusBadRequest)
 		return
 	}
 
 	png, err := qrcode.Encode(data, qrcode.Medium, 256)
 	if err != nil {
-		http.Error(w, "qr generation failed", http.StatusInternalServerError)
+		http.Error(w, i18n.T(r.Context(), "qr generation failed"), http.StatusInternalServerError)
 		return
 	}
 
@@ -1526,12 +1526,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	activeListenAddr := s.ActiveListenAddr
-	s.renderContent(w, r, "Settings", templates.Settings(settings, hosts, chains, authEnabled, authUsername, listenAddr, activeListenAddr, sysKeys))
+	s.renderContent(w, r, i18n.T(r.Context(), "Settings"), templates.Settings(settings, hosts, chains, authEnabled, authUsername, listenAddr, activeListenAddr, sysKeys))
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
@@ -1579,7 +1579,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			// Hash new password
 			hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 			if err != nil {
-				http.Error(w, "failed to hash password", http.StatusInternalServerError)
+				http.Error(w, i18n.T(r.Context(), "failed to hash password"), http.StatusInternalServerError)
 				return
 			}
 			s.cfg.AuthPasswordHash = string(hash)
@@ -1644,7 +1644,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -1687,7 +1687,7 @@ func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		filtered = append(filtered, k)
 	}
 	if !found {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	settings.SSHKeys = filtered
@@ -1726,7 +1726,7 @@ func detectSystemKeys() []model.SSHKeyEntry {
 		seen[name] = true
 		keys = append(keys, model.SSHKeyEntry{
 			ID:      "system-" + name,
-			Name:    name + " (system)",
+			Name:    name,
 			KeyPath: sshDir + "/" + name,
 			Source:  "system",
 		})
@@ -1763,7 +1763,7 @@ func mergeSSHKeys(stored, system []model.SSHKeyEntry) []model.SSHKeyEntry {
 
 func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
@@ -1774,12 +1774,12 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	}
 	keyPath := strings.TrimSpace(r.FormValue("keyPath"))
 	if id == "" || addr == "" || keyPath == "" {
-		http.Error(w, "id, addr and keyPath are required", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "id, addr and keyPath are required"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	if err := st.SaveHost(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}); err != nil {
-		http.Error(w, fmt.Sprintf("save failed: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save failed: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	s.render(w, r, templates.HostRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}))
@@ -1788,7 +1788,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "missing id"), http.StatusBadRequest)
 		return
 	}
 	if err := s.store().DeleteHost(id); err != nil {
@@ -1806,7 +1806,7 @@ func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	chains, _ := st.ListChains()
 	hosts, _ := st.ListHosts()
-	s.renderContent(w, r, "Chains", templates.Chains(chains, hosts))
+	s.renderContent(w, r, i18n.T(r.Context(), "Chains"), templates.Chains(chains, hosts))
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -1820,13 +1820,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		content = templates.StatusPage(hosts, metrics)
 	}
-	s.renderContent(w, r, "Status", content)
+	s.renderContent(w, r, i18n.T(r.Context(), "Status"), content)
 }
 
 func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "missing id"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
@@ -1868,7 +1868,7 @@ func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -1902,7 +1902,7 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	nodeIDs = uniqueNodes
 
 	if name == "" || len(nodeIDs) < 1 {
-		http.Error(w, "name and at least one node are required", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "name and at least one node are required"), http.StatusBadRequest)
 		return
 	}
 
@@ -1911,7 +1911,7 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	for _, id := range nodeIDs {
 		h, err := st.GetHost(id)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("host %q not found", id), http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), id), http.StatusBadRequest)
 			return
 		}
 		nodes = append(nodes, model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath})
@@ -1941,7 +1941,7 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := st.SaveChain(c); err != nil {
-		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	s.render(w, r, templates.ChainRow(c))
@@ -1952,7 +1952,7 @@ func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	c, err := st.GetChain(name)
 	if err != nil {
-		http.Error(w, "chain not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "chain not found"), http.StatusNotFound)
 		return
 	}
 	hosts, _ := st.ListHosts()
@@ -1963,13 +1963,13 @@ func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	c, err := st.GetChain(name)
 	if err != nil {
-		http.Error(w, "chain not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "chain not found"), http.StatusNotFound)
 		return
 	}
 
@@ -2016,7 +2016,7 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := st.SaveChain(c); err != nil {
-		http.Error(w, fmt.Sprintf("save: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	// Return updated row
@@ -2026,11 +2026,11 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name == "" {
-		http.Error(w, "missing name", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "missing name"), http.StatusBadRequest)
 		return
 	}
 	if err := s.store().DeleteChain(name); err != nil {
-		http.Error(w, fmt.Sprintf("failed: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "failed: %v"), err), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -2040,13 +2040,13 @@ func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name == "" {
-		http.Error(w, "missing name", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "missing name"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	c, err := st.GetChain(name)
 	if err != nil {
-		s.render(w, r, templates.ApplyResult(name, false, nil, "chain not found"))
+		s.render(w, r, templates.ApplyResult(name, false, nil, i18n.T(r.Context(), "chain not found")))
 		return
 	}
 	resolved, err := st.ResolveNodes(c)
@@ -2079,13 +2079,13 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "missing id"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, templates.ApplyResult(id, false, nil, "node not found"))
+		s.render(w, r, templates.ApplyResult(id, false, nil, i18n.T(r.Context(), "node not found")))
 		return
 	}
 
@@ -2111,8 +2111,8 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 
 	resultMsg := ""
 	if mergeReport != nil {
-		parts := []string{fmt.Sprintf("%d standalone inbounds + chains: %v",
-			mergeReport.StandaloneCount, mergeReport.ChainsIncluded)}
+			parts := []string{fmt.Sprintf(i18n.T(r.Context(), "%d standalone inbounds + chains: %v"),
+				mergeReport.StandaloneCount, mergeReport.ChainsIncluded)}
 		if len(mergeReport.AddedInbounds) > 0 {
 			parts = append(parts, fmt.Sprintf("+%s", strings.Join(mergeReport.AddedInbounds, ", +")))
 		}
@@ -2150,7 +2150,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	limit := 200
 	logs, err := st.ListAuditLogs(limit)
 	if err != nil {
-		s.renderContent(w, r, "Audit", &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">failed to load audit log: %s</div>`, err.Error())})
+		s.renderContent(w, r, i18n.T(r.Context(), "Audit"), &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "failed to load audit log: %s")+`</div>`, err.Error())})
 		return
 	}
 	if logs == nil {
@@ -2158,13 +2158,13 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	// Minimal table; replaced by a templ component in the UI block.
 	var b strings.Builder
-	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">Audit Log</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Time</th><th>Action</th><th>Target</th><th>ID</th><th>Actor</th><th>Payload</th></tr></thead><tbody>`)
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">` + i18n.T(r.Context(), "Audit Log") + `</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Time") + `</th><th>` + i18n.T(r.Context(), "Action") + `</th><th>` + i18n.T(r.Context(), "Target") + `</th><th>` + i18n.T(r.Context(), "ID") + `</th><th>` + i18n.T(r.Context(), "Actor") + `</th><th>` + i18n.T(r.Context(), "Payload") + `</th></tr></thead><tbody>`)
 	for _, a := range logs {
 		b.WriteString(fmt.Sprintf("<tr><td class="+"whitespace-nowrap"+">%s</td><td><span class=\"badge badge-sm\">%s</span></td><td>%s</td><td class=\"font-mono text-xs\">%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/60\">%s</td></tr>",
 			a.TS.Format("2006-01-02 15:04:05"), a.Action, a.TargetType, a.TargetID, a.Actor, truncForDisplay(a.PayloadJSON, 80)))
 	}
 	b.WriteString(`</tbody></table></div></div></div>`)
-	s.renderContent(w, r, "Audit", &simpleHTML{html: b.String()})
+	s.renderContent(w, r, i18n.T(r.Context(), "Audit"), &simpleHTML{html: b.String()})
 }
 
 // ─── Deploy status (pending-changes) ─────────────────────────────────────────
@@ -2183,13 +2183,13 @@ type deployStatusRow struct {
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 	rows := s.computeDeployStatusRows(r)
 	var b strings.Builder
-	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">Deploy Status</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Node</th><th>Role</th><th>Status</th><th>Last deployed</th><th>Hash</th></tr></thead><tbody>`)
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">` + i18n.T(r.Context(), "Deploy Status") + `</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Node") + `</th><th>` + i18n.T(r.Context(), "Role") + `</th><th>` + i18n.T(r.Context(), "Status") + `</th><th>` + i18n.T(r.Context(), "Last deployed") + `</th><th>` + i18n.T(r.Context(), "Hash") + `</th></tr></thead><tbody>`)
 	for _, row := range rows {
-		status := `<span class="badge badge-success badge-sm">applied</span>`
+		status := `<span class="badge badge-success badge-sm">` + i18n.T(r.Context(), "applied") + `</span>`
 		if row.HasPending {
-			status = `<span class="badge badge-warning badge-sm">pending</span>`
+			status = `<span class="badge badge-warning badge-sm">` + i18n.T(r.Context(), "pending") + `</span>`
 		}
-		last := "never"
+		last := i18n.T(r.Context(), "never")
 		if !row.LastDeployedAt.IsZero() {
 			last = row.LastDeployedAt.Format("2006-01-02 15:04:05")
 		}
@@ -2197,7 +2197,7 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 			row.Name, row.Role, status, last, truncForDisplay(row.LastDeployedHash, 12)))
 	}
 	b.WriteString(`</tbody></table></div></div></div>`)
-	s.renderContent(w, r, "Deploy Status", &simpleHTML{html: b.String()})
+	s.renderContent(w, r, i18n.T(r.Context(), "Deploy Status"), &simpleHTML{html: b.String()})
 }
 
 func (s *Server) handleDeployStatusJSON(w http.ResponseWriter, r *http.Request) {
@@ -2278,20 +2278,20 @@ func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">node not found: %s</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, err.Error())})
 		return
 	}
 	det, err := takeover.DetectVPN(r.Context(), info.Host, info.UseSudo)
 	if err != nil {
 		chain.WriteAudit(st, "takeover", "node", id, chain.AuditPayload{"phase": "detect", "error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Detect failed: %s</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, err.Error())})
 		return
 	}
 
 	// Render a warning + confirm modal.
 	var b strings.Builder
 	if det.Type == takeover.DetectedNone {
-		b.WriteString(`<div class="alert alert-info">No existing VPN detected on this node. Use Install to deploy sing-box from scratch.</div>`)
+		b.WriteString(`<div class="alert alert-info">` + i18n.T(r.Context(), "No existing VPN detected on this node. Use Install to deploy sing-box from scratch.") + `</div>`)
 		if det.Note != "" {
 			b.WriteString(fmt.Sprintf(`<div class="text-sm text-base-content/60">%s</div>`, det.Note))
 		}
@@ -2300,15 +2300,15 @@ func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b.WriteString(`<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><div>`)
-	b.WriteString(fmt.Sprintf(`<div><b>Existing VPN detected: %s</b><br>Service: <code>%s</code> (active: %v, enabled: %v)<br>Config: <code>%s</code></div>`,
+	b.WriteString(fmt.Sprintf(`<div><b>`+i18n.T(r.Context(), "Existing VPN detected: %s")+`</b><br>`+i18n.T(r.Context(), "Service:")+` <code>%s</code> (`+i18n.T(r.Context(), "active:")+` %v, `+i18n.T(r.Context(), "enabled:")+` %v)<br>`+i18n.T(r.Context(), "Config:")+` <code>%s</code></div>`,
 		det.Type, det.ServiceName, det.IsActive, det.IsEnabled, det.ConfigPath))
 	b.WriteString(`</div></div>`)
 	if len(det.Other) > 0 {
-		b.WriteString(`<div class="text-sm text-base-content/60 mt-1">Also present: ` + strings.Join(det.Other, ", ") + `</div>`)
+		b.WriteString(`<div class="text-sm text-base-content/60 mt-1">` + i18n.T(r.Context(), "Also present: ") + strings.Join(det.Other, ", ") + `</div>`)
 	}
-	b.WriteString(`<div class="py-2 text-sm">Takeover will: install sing-box, convert the existing config to sing-box with the same settings, <b>disable (not delete) the old VPN</b>, and start sing-box. Old config is backed up for rollback. If sing-box fails to come up, the old VPN is restored automatically.</div>`)
-	b.WriteString(fmt.Sprintf(`<div class="flex gap-2"><button class="btn btn-primary btn-sm" hx-post="/ui/nodes/%s/takeover" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="Take over this server? The old VPN will be disabled.">Take over</button> <button class="btn btn-ghost btn-sm" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">Cancel</button></div>`, id))
-	s.renderContent(w, r, "Takeover", &simpleHTML{html: b.String()})
+	b.WriteString(`<div class="py-2 text-sm">` + i18n.T(r.Context(), "Takeover will: install sing-box, convert the existing config to sing-box with the same settings, <b>disable (not delete) the old VPN</b>, and start sing-box. Old config is backed up for rollback. If sing-box fails to come up, the old VPN is restored automatically.") + `</div>`)
+	b.WriteString(fmt.Sprintf(`<div class="flex gap-2"><button class="btn btn-primary btn-sm" hx-post="/ui/nodes/%s/takeover" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="`+i18n.T(r.Context(), "Take over this server? The old VPN will be disabled.")+`">`+i18n.T(r.Context(), "Take over")+`</button> <button class="btn btn-ghost btn-sm" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Cancel")+`</button></div>`, id))
+	s.renderContent(w, r, i18n.T(r.Context(), "Takeover"), &simpleHTML{html: b.String()})
 }
 
 func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
@@ -2316,14 +2316,14 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">node not found: %s</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, err.Error())})
 		return
 	}
 	// Re-detect (the detection from the modal isn't POSTed; re-probe to be safe).
 	det, err := takeover.DetectVPN(r.Context(), info.Host, info.UseSudo)
 	if err != nil {
 		chain.WriteAudit(st, "takeover", "node", id, chain.AuditPayload{"phase": "detect", "error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">Detect failed: %s</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, err.Error())})
 		return
 	}
 	res, err := takeover.Takeover(r.Context(), st, factory.New(), info.Host, info.UseSudo, det)
@@ -2331,25 +2331,25 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 	// Render the result.
 	var b strings.Builder
 	if err != nil && res != nil && res.Status != "taken" {
-		b.WriteString(fmt.Sprintf(`<div class="alert alert-error"><b>Takeover %s</b><br>%s</div>`, res.Status, res.Message))
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-error"><b>`+i18n.T(r.Context(), "Takeover %s")+`</b><br>%s</div>`, res.Status, res.Message))
 	} else if err != nil {
-		b.WriteString(fmt.Sprintf(`<div class="alert alert-error">Takeover failed: %s</div>`, err.Error()))
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Takeover failed: %s")+`</div>`, err.Error()))
 	} else {
-		b.WriteString(fmt.Sprintf(`<div class="alert alert-success"><b>Takeover successful</b><br>%s</div>`, res.Message))
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-success"><b>`+i18n.T(r.Context(), "Takeover successful")+`</b><br>%s</div>`, res.Message))
 	}
 	if res != nil {
 		b.WriteString(`<div class="card bg-base-100 shadow mt-2"><div class="card-body text-sm">`)
-		b.WriteString(fmt.Sprintf(`<p>From: <b>%s</b> → sing-box</p>`, res.FromType))
+		b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "From:")+` <b>%s</b> → sing-box</p>`, res.FromType))
 		if res.OldService != "" {
-			b.WriteString(fmt.Sprintf(`<p>Old service: <code>%s</code> (disabled, config backed up at <code>%s</code>)</p>`, res.OldService, res.OldConfigBackup))
+			b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Old service:")+` <code>%s</code> (`+i18n.T(r.Context(), "disabled, config backed up at")+` <code>%s</code>)</p>`, res.OldService, res.OldConfigBackup))
 		}
-		b.WriteString(fmt.Sprintf(`<p>Converted inbounds: %d</p>`, res.ConvertedInbounds))
+		b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Converted inbounds: %d")+`</p>`, res.ConvertedInbounds))
 		if res.RollbackOccurred {
-			b.WriteString(`<p><b>Rollback occurred</b> — old VPN was restored.</p>`)
+			b.WriteString(`<p><b>`+i18n.T(r.Context(), "Rollback occurred")+`</b> — `+i18n.T(r.Context(), "old VPN was restored.")+`</p>`)
 		}
 		b.WriteString(`</div></div>`)
 	}
-	s.renderContent(w, r, "Takeover result", &simpleHTML{html: b.String()})
+	s.renderContent(w, r, i18n.T(r.Context(), "Takeover result"), &simpleHTML{html: b.String()})
 }
 
 // ─── Protocol presets / credential generators ────────────────────────────────
@@ -2494,26 +2494,26 @@ func (s *Server) handleImportAWG(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	info, err := st.GetNodeInfo(id)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">node not found: %s</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "node not found: %s")+`</div>`, err.Error())})
 		return
 	}
 	res, err := chain.ImportAWGConfigs(info.Host, info.UseSudo, info)
 	if err != nil {
 		chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"error": err.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">AWG import failed: %s</div>`, err.Error())})
+		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "AWG import failed: %s")+`</div>`, err.Error())})
 		return
 	}
 	_ = st.SaveNodeInfo(info)
 	chain.WriteAudit(st, "import", "node", id, chain.AuditPayload{"exit_nodes": len(res.ExitNodes), "peers": len(res.Peers), "db_updated": res.DBUpdated}, "operator")
 
 	var b strings.Builder
-	b.WriteString(`<div class="alert alert-success">AWG import complete.</div>`)
+	b.WriteString(`<div class="alert alert-success">` + i18n.T(r.Context(), "AWG import complete.") + `</div>`)
 	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body">`)
 	if res.ServerConfig != nil {
-		b.WriteString(fmt.Sprintf(`<p>awg0.conf: ListenPort=%d, Jc=%d, S1=%d</p>`, res.ServerConfig.ListenPort, res.ServerConfig.JC, res.ServerConfig.S1))
+		b.WriteString(fmt.Sprintf(`<p>awg0.conf: `+i18n.T(r.Context(), "ListenPort=%d, Jc=%d, S1=%d")+`</p>`, res.ServerConfig.ListenPort, res.ServerConfig.JC, res.ServerConfig.S1))
 	}
-	b.WriteString(fmt.Sprintf(`<p>Exit nodes: %d, Peers: %d</p>`, len(res.ExitNodes), len(res.Peers)))
-	b.WriteString(fmt.Sprintf(`<p>DB update: %s</p>`, res.DBUpdated))
+	b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "Exit nodes: %d, Peers: %d")+`</p>`, len(res.ExitNodes), len(res.Peers)))
+	b.WriteString(fmt.Sprintf(`<p>`+i18n.T(r.Context(), "DB update: %s")+`</p>`, res.DBUpdated))
 	if res.Log != "" {
 		b.WriteString(fmt.Sprintf(`<pre class="text-xs whitespace-pre-wrap">%s</pre>`, res.Log))
 	}
@@ -2530,29 +2530,29 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		profiles = []*model.Profile{}
 	}
 	var b strings.Builder
-	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">Profiles</h2>`)
-	b.WriteString(`<button class="btn btn-primary btn-sm" hx-get="/ui/profiles/new" hx-target="#modal-container">+ New Profile</button>`)
-	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Name</th><th>Client type</th><th>Server role</th><th>Auto-apply</th><th>Servers</th><th></th></tr></thead><tbody>`)
+	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">` + i18n.T(r.Context(), "Profiles") + `</h2>`)
+	b.WriteString(`<button class="btn btn-primary btn-sm" hx-get="/ui/profiles/new" hx-target="#modal-container">` + i18n.T(r.Context(), "+ New Profile") + `</button>`)
+	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Name") + `</th><th>` + i18n.T(r.Context(), "Client type") + `</th><th>` + i18n.T(r.Context(), "Server role") + `</th><th>` + i18n.T(r.Context(), "Auto-apply") + `</th><th>` + i18n.T(r.Context(), "Servers") + `</th><th></th></tr></thead><tbody>`)
 	for _, p := range profiles {
-		auto := "no"
+		auto := i18n.T(r.Context(), "no")
 		if p.AutoApply {
-			auto = "yes"
+			auto = i18n.T(r.Context(), "yes")
 		}
-		b.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td><button class="btn btn-ghost btn-xs" hx-get="/ui/profiles/%s/edit" hx-target="#modal-container">Edit</button> <button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/profiles/%s" hx-confirm="Delete profile %s?" hx-target="closest tr" hx-swap="outerHTML">Delete</button></td></tr>`,
+		b.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td><button class="btn btn-ghost btn-xs" hx-get="/ui/profiles/%s/edit" hx-target="#modal-container">`+i18n.T(r.Context(), "Edit")+`</button> <button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/profiles/%s" hx-confirm="`+i18n.T(r.Context(), "Delete profile %s?")+`" hx-target="closest tr" hx-swap="outerHTML">`+i18n.T(r.Context(), "Delete")+`</button></td></tr>`,
 			p.Name, p.ClientType, p.ServerRole, auto, len(p.ServerIDs), p.ID, p.ID, p.Name))
 	}
 	b.WriteString(`</tbody></table></div><div id="modal-container"></div></div>`)
-	s.renderContent(w, r, "Profiles", &simpleHTML{html: b.String()})
+	s.renderContent(w, r, i18n.T(r.Context(), "Profiles"), &simpleHTML{html: b.String()})
 }
 
 func (s *Server) handleNewProfileForm(w http.ResponseWriter, r *http.Request) {
-	html := `<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">New Profile</h3><form hx-post="/ui/profiles" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" placeholder="Profile name" required><input name="description" class="input input-bordered w-full" placeholder="Description"><select name="client_type" class="select select-bordered w-full"><option value="user">user</option><option value="mtproxy">mtproxy</option><option value="awg-peer">awg-peer</option><option value="exit-node">exit-node</option></select><select name="server_role" class="select select-bordered w-full"><option value="any">any</option><option value="proxy_node">proxy_node</option><option value="awg_balancer">awg_balancer</option><option value="mtproxy_server">mtproxy_server</option></select><label class="label cursor-pointer"><span class="label-text">Auto-apply</span><input type="checkbox" name="auto_apply" class="checkbox" checked></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">Create</button></div></form></div></dialog>`
+	html := `<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">` + i18n.T(r.Context(), "New Profile") + `</h3><form hx-post="/ui/profiles" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" placeholder="` + i18n.T(r.Context(), "Profile name") + `" required><input name="description" class="input input-bordered w-full" placeholder="` + i18n.T(r.Context(), "Description") + `"><select name="client_type" class="select select-bordered w-full"><option value="user">user</option><option value="mtproxy">mtproxy</option><option value="awg-peer">awg-peer</option><option value="exit-node">exit-node</option></select><select name="server_role" class="select select-bordered w-full"><option value="any">any</option><option value="proxy_node">proxy_node</option><option value="awg_balancer">awg_balancer</option><option value="mtproxy_server">mtproxy_server</option></select><label class="label cursor-pointer"><span class="label-text">` + i18n.T(r.Context(), "Auto-apply") + `</span><input type="checkbox" name="auto_apply" class="checkbox" checked></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">` + i18n.T(r.Context(), "Create") + `</button></div></form></div></dialog>`
 	s.render(w, r, &simpleHTML{html: html})
 }
 
 func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	st := s.store()
@@ -2567,7 +2567,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 		p.ServerRole = "any"
 	}
 	if p.Name == "" {
-		http.Error(w, "name required", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "name required"), http.StatusBadRequest)
 		return
 	}
 	if err := st.SaveProfile(p); err != nil {
@@ -2582,14 +2582,14 @@ func (s *Server) handleEditProfileForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := s.store().GetProfile(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	checked := ""
 	if p.AutoApply {
 		checked = "checked"
 	}
-	html := fmt.Sprintf(`<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">Edit Profile</h3><form hx-post="/ui/profiles/%s/edit" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" value="%s" required><input name="description" class="input input-bordered w-full" value="%s"><input name="client_type" class="input input-bordered w-full" value="%s"><input name="server_role" class="input input-bordered w-full" value="%s"><label class="label cursor-pointer"><span class="label-text">Auto-apply</span><input type="checkbox" name="auto_apply" class="checkbox" %s></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">Save</button></div></form></div></dialog>`,
+	html := fmt.Sprintf(`<dialog open class="modal modal-open"><div class="modal-box"><h3 class="font-semibold mb-2">`+i18n.T(r.Context(), "Edit Profile")+`</h3><form hx-post="/ui/profiles/%s/edit" hx-target="#main-content" hx-swap="outerHTML" class="space-y-2"><input name="name" class="input input-bordered w-full" value="%s" required><input name="description" class="input input-bordered w-full" value="%s"><input name="client_type" class="input input-bordered w-full" value="%s"><input name="server_role" class="input input-bordered w-full" value="%s"><label class="label cursor-pointer"><span class="label-text">`+i18n.T(r.Context(), "Auto-apply")+`</span><input type="checkbox" name="auto_apply" class="checkbox" %s></label><div class="modal-action"><button type="submit" class="btn btn-primary btn-sm">`+i18n.T(r.Context(), "Save")+`</button></div></form></div></dialog>`,
 		p.ID, p.Name, p.Description, p.ClientType, p.ServerRole, checked)
 	s.render(w, r, &simpleHTML{html: html})
 }
@@ -2599,11 +2599,11 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	p, err := st.GetProfile(id)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	p.Name = strings.TrimSpace(r.FormValue("name"))
@@ -2636,7 +2636,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateAssignment(w http.ResponseWriter, r *http.Request) {
 	pid := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	a := &model.ClientAssignment{
@@ -2679,31 +2679,31 @@ func (s *Server) handleRouteRules(w http.ResponseWriter, r *http.Request) {
 	}
 	presets := chain.GetRoutingPresets("")
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf(`<div class="space-y-4"><h2 class="text-2xl font-semibold">Route Rules — %s</h2>`, id))
+	b.WriteString(fmt.Sprintf(`<div class="space-y-4"><h2 class="text-2xl font-semibold">`+i18n.T(r.Context(), "Route Rules — %s")+`</h2>`, id))
 	// Apply-preset shortcut.
-	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h3 class="font-semibold">Apply routing preset</h3><form hx-post="/ui/nodes/` + id + `/route-rules" class="flex gap-2 items-end flex-wrap"><select name="match_values" class="select select-bordered select-sm">`)
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h3 class="font-semibold">` + i18n.T(r.Context(), "Apply routing preset") + `</h3><form hx-post="/ui/nodes/` + id + `/route-rules" class="flex gap-2 items-end flex-wrap"><select name="match_values" class="select select-bordered select-sm">`)
 	for _, p := range presets {
 		b.WriteString(fmt.Sprintf(`<option value="%s">%s (%s, %d domains)</option>`, strings.Join(p.Domains, "\n"), p.Name, p.Category, len(p.Domains)))
 	}
-	b.WriteString(`</select><input type="hidden" name="match_type" value="domain_suffix"><input type="hidden" name="action" value="route"><input type="hidden" name="priority" value="100"><input type="hidden" name="enabled" value="on"><input type="hidden" name="preset_name" value="1"><button type="submit" class="btn btn-primary btn-sm">Add rule from preset</button></form></div></div>`)
+	b.WriteString(`</select><input type="hidden" name="match_type" value="domain_suffix"><input type="hidden" name="action" value="route"><input type="hidden" name="priority" value="100"><input type="hidden" name="enabled" value="on"><input type="hidden" name="preset_name" value="1"><button type="submit" class="btn btn-primary btn-sm">` + i18n.T(r.Context(), "Add rule from preset") + `</button></form></div></div>`)
 	// Existing rules.
-	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Priority</th><th>Match</th><th>Values</th><th>Action</th><th>Outbound</th><th></th></tr></thead><tbody>`)
+	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Priority") + `</th><th>` + i18n.T(r.Context(), "Match") + `</th><th>` + i18n.T(r.Context(), "Values") + `</th><th>` + i18n.T(r.Context(), "Action") + `</th><th>` + i18n.T(r.Context(), "Outbound") + `</th><th></th></tr></thead><tbody>`)
 	for _, rr := range rules {
 		en := ""
 		if !rr.Enabled {
 			en = " opacity-50"
 		}
-		b.WriteString(fmt.Sprintf(`<tr class="%s"><td>%d</td><td>%s</td><td class="font-mono text-xs">%s</td><td>%s</td><td>%s</td><td><button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/nodes/%s/route-rules/%s" hx-confirm="Delete rule?" hx-target="closest tr" hx-swap="outerHTML">Delete</button></td></tr>`,
+			b.WriteString(fmt.Sprintf(`<tr class="%s"><td>%d</td><td>%s</td><td class="font-mono text-xs">%s</td><td>%s</td><td>%s</td><td><button class="btn btn-ghost btn-xs text-error" hx-delete="/ui/nodes/%s/route-rules/%s" hx-confirm="`+i18n.T(r.Context(), "Delete rule?")+`" hx-target="closest tr" hx-swap="outerHTML">`+i18n.T(r.Context(), "Delete")+`</button></td></tr>`,
 			en, rr.Priority, rr.MatchType, truncForDisplay(strings.ReplaceAll(rr.MatchValues, "\n", ", "), 40), rr.Action, rr.OutboundTag, id, rr.ID))
 	}
 	b.WriteString(`</tbody></table></div></div>`)
-	s.renderContent(w, r, "Route Rules", &simpleHTML{html: b.String()})
+	s.renderContent(w, r, i18n.T(r.Context(), "Route Rules"), &simpleHTML{html: b.String()})
 }
 
 func (s *Server) handleCreateRouteRule(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
 	priority, _ := strconv.Atoi(r.FormValue("priority"))
@@ -2797,12 +2797,12 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var b strings.Builder
-	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">Clients</h2>`)
-	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Type</th><th>Name</th><th>Node</th><th>Enabled</th></tr></thead><tbody>`)
+	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">` + i18n.T(r.Context(), "Clients") + `</h2>`)
+	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Type") + `</th><th>` + i18n.T(r.Context(), "Name") + `</th><th>` + i18n.T(r.Context(), "Node") + `</th><th>` + i18n.T(r.Context(), "Enabled") + `</th></tr></thead><tbody>`)
 	for _, row := range rows {
-		en := `<span class="badge badge-success badge-sm">active</span>`
+		en := `<span class="badge badge-success badge-sm">` + i18n.T(r.Context(), "active") + `</span>`
 		if !row.Enabled {
-			en = `<span class="badge badge-ghost badge-sm">disabled</span>`
+			en = `<span class="badge badge-ghost badge-sm">` + i18n.T(r.Context(), "disabled") + `</span>`
 		}
 		node := row.NodeName
 		if node == "" {
@@ -2811,5 +2811,5 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 		b.WriteString(fmt.Sprintf(`<tr><td><span class="badge badge-sm">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>`, row.ClientType, row.Name, node, en))
 	}
 	b.WriteString(`</tbody></table></div></div>`)
-	s.renderContent(w, r, "Clients", &simpleHTML{html: b.String()})
+	s.renderContent(w, r, i18n.T(r.Context(), "Clients"), &simpleHTML{html: b.String()})
 }

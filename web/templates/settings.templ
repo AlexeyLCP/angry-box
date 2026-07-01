@@ -117,7 +117,7 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 										<div class="text-xs text-base-content/50">
 											<span class="badge badge-primary badge-xs">{ i18n.T(ctx, "Stored") }</span>
 											if len(key.KeyData) > 0 {
-												<span class="ml-1">({ fmt.Sprintf("%d", len(key.KeyData)) } bytes)</span>
+												<span class="ml-1">({ fmt.Sprintf(i18n.T(ctx, "%d bytes"), len(key.KeyData)) })</span>
 											}
 										</div>
 									</div>
@@ -201,7 +201,7 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					</div>
 					<div>
 						<div class="text-base-content/60">{ i18n.T(ctx, "Metrics Interval") }</div>
-						<div class="font-semibold">{ fmt.Sprintf("%d min", settings.MetricsInterval) }</div>
+						<div class="font-semibold">{ fmt.Sprintf(i18n.T(ctx, "%d min"), settings.MetricsInterval) }</div>
 					</div>
 				</div>
 			</div>
@@ -237,7 +237,7 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 				<div class="text-xs text-base-content/50">
 					<span class="badge badge-primary badge-xs">{ i18n.T(ctx, "Stored") }</span>
 					if len(key.KeyData) > 0 {
-						<span class="ml-1">({ fmt.Sprintf("%d", len(key.KeyData)) } bytes)</span>
+						<span class="ml-1">({ fmt.Sprintf(i18n.T(ctx, "%d bytes"), len(key.KeyData)) })</span>
 					}
 				</div>
 			</div>

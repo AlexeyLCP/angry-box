@@ -268,7 +268,7 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64)
 				y={ fmt.Sprintf("%.0f", y + 14) }
 				text-anchor="middle"
 				class="text-[9px]"
-				fill="oklch(var(--bc) / 0.5)">{ fmt.Sprintf("%d chain(s)", spiderChainCount(id, chains)) }</text>
+				fill="oklch(var(--bc) / 0.5)">{ fmt.Sprintf(i18n.T(ctx, "%d chain(s)"), spiderChainCount(id, chains)) }</text>
 		}
 	</g>
 }
