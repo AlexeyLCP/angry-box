@@ -35,6 +35,7 @@ Do NOT write React, Vue, or heavy vanilla JavaScript.
 - All UI is built with **Go Templ** (`web/templates/*.templ`).
 - All interactivity uses **HTMX** (`hx-get`, `hx-post`, `hx-target`, `hx-swap`).
 - Styling uses **TailwindCSS** and **DaisyUI**.
+- All user-facing strings MUST be wrapped in `i18n.T(ctx, "key")` (templates) or `i18n.T(r.Context(), "key")` (handlers in `ui.go`), with the key added to BOTH `en` and `ru` blocks in `internal/i18n/i18n.go`. JS-side strings use the server-rendered `window.AB_I18N` + `abt("key")` helper (see `base.templ` / `app.js`). Never hardcode English UI text.
 - *Always run `templ generate` after modifying UI files.*
 
 ### 2. Strict State Management (Store)
@@ -50,7 +51,10 @@ Remote connections use SSH.
 
 ### 4. Config Generation Separation
 - `internal/backend/singbox/config.go`: Defines the base sing-box config structures and standalone generation.
+- `internal/backend/singbox/roles.go`: Role-based renderers (`RenderProxyNode`, `RenderAWGBalancer`, `RenderAWGHop`) — NO amnezia/ECH/curve_preferences on REALITY inbound, XHTTP headers as `map[string]string`.
 - `internal/chain/applier.go`: Contains the complex logic for building multi-hop chain configurations, transit keys, and strategy routing.
+- `internal/chain/merged_config.go`: `RenderMergedNodeConfig` builds the merged single-node config (standalone + chain roles).
+- `internal/takeover/`: VPN takeover (detect existing AWG/sing-box/Xray/MTProxy → convert → cutover with rollback-to-old-VPN).
 - Do not mix UI logic with config generation logic.
 
 ### 5. Persistent Transit Keys
@@ -93,24 +97,32 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 ```
 /
 ├── cmd/
-│   └── server/          # Main entrypoint (main.go)
+│   └── angry-box/       # Main entrypoint (main.go) — CLI + serve
 ├── internal/
 │   ├── backend/
-│   │   └── singbox/     # Sing-box config generation and JSON types
+│   │   ├── factory/     # Backend factory
+│   │   ├── singbox/     # sing-box config generation (config.go, roles.go, singbox.go)
+│   │   └── xray/        # Xray backend (dual-core support)
 │   ├── chain/           # Core business logic
-│   │   ├── applier.go   # Applies configs to remote nodes via SSH
-│   │   ├── presets.go   # Protocol presets (Reality, XHTTP, TUIC)
-│   │   └── store.go     # JSON/BoltDB persistence layer
+│   │   ├── applier.go   # Applies configs to remote nodes via SSH (with rollback)
+│   │   ├── merged_config.go  # Role-based merged config builder
+│   │   ├── presets.go / protocolpresets.go / routingpresets.go
+│   │   ├── awgpresets_gen.go / awg_cps.go / awgcapture.go / awgimport.go
+│   │   ├── cryptogen.go      # Reality/WG/Trojan/SS/Hysteria2/TUIC/MTProxy key gen
+│   │   ├── audit.go / deploystatus.go / autoapply.go
+│   │   └── store.go     # JSON persistence layer (single source of truth)
+│   ├── takeover/        # VPN takeover (detect/convert/cutover + rollback-to-old)
 │   ├── domain/
-│   │   ├── model/       # Core data structures (Chain, NodeInfo, User)
+│   │   ├── model/       # Core data structures (Chain, NodeInfo, User, PanelSettings, Profile, AuditLog)
 │   │   └── ports/       # Interfaces (Factory, Backend, SSHClient)
+│   ├── i18n/            # Translations (en/ru) — i18n.T(ctx, "key")
 │   ├── sshclient/       # SSH connection handling, file pushing, service control
 │   └── web/
 │       └── ui.go        # HTTP/HTMX handlers, routing
 ├── web/
 │   ├── static/          # CSS, JS, assets
 │   └── templates/       # .templ files for the UI
-└── test_server.go       # E2E / local testing stubs
+└── scripts/             # install.sh, systemd service, Keenetic init, build-opkg
 ```
 
 ---
@@ -126,8 +138,8 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 - **Fix:** Check the `report` returned by `ApplyChain`. It contains the exact `sing-box check` error from the remote server. Look at `buildNodeConfig` to see what fields are missing or incorrectly typed.
 
 ### Pattern 3: Compilation Error on Config Types
-- **Cause:** You guessed the field name in `config.SingboxConfig` instead of looking it up.
-- **Fix:** ALWAYS check `internal/backend/singbox/config/types.go`. For example, routing rules are `RouteRuleEntry`, not `RoutingRule`.
+- **Cause:** You guessed the field name in the sing-box config structs instead of looking it up.
+- **Fix:** ALWAYS check `internal/backend/singbox/config.go` (the base config + standalone generation) and `internal/backend/singbox/roles.go` (`RenderProxyNode`/`RenderAWGBalancer`/`RenderAWGHop`). For example, routing rules are `RouteRuleEntry`, not `RoutingRule`.
 
 ### Pattern 4: Deadlocks in Store
 - **Cause:** `SaveChain` locks `mu`, and inside it calls `GetHost` which also locks `mu`.
@@ -156,11 +168,12 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 
 ## sing-box-extended (NOT plain sing-box)
 
-- Project uses **sing-box-extended** (`1.13.11-extended-2.1.0`) — NOT official sing-box
-- Binary in `deps/sing-box-1.13.11-extended-2.1.0-linux-amd64.tar.gz`
-- Installed by `angry-box deploy` which downloads from project's GitHub deps
-- Supports: amnezia field on wireguard endpoints, CPS/I1-I5 packets, MTProto
-- AWG kernel module built from `deps/amneziawg-src.tar.gz`
+- Project uses **sing-box-extended** (`1.13.14-extended-2.5.0-patched`) — NOT official sing-box.
+  This is a patched build (see `patches/`: wireguard-go chacha20poly1305 overlap fix + fallback round-robin).
+- Binary in `deps/sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz`
+- Installed by `angry-box deploy` which downloads from the project's GitHub deps (weak VPSes never compile Go — they just download).
+- Supports: amnezia field on wireguard endpoints, CPS/I1-I5 packets, MTProto, XHTTP max obfuscation.
+- AWG kernel module built from `deps/amneziawg-src.tar.gz` (kernel awg-quick + sing-box `bind_interface`).
 - Module requires: `curve25519_x86_64`, `libcurve25519_generic`, `udp_tunnel`, `ip6_udp_tunnel`
 
 ## Known Issues & Workarounds

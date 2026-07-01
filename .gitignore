@@ -1,8 +1,14 @@
 # Project-specific
 .superpowers/
 .worktrees/
+.playwright-mcp/
 /angry-box
 /angry-box.exe
+/angry-box.toml
+/store.json
+sing-box-server
+sing-box.zip
+e2e_test_result.png
 *.db
 coverage.out
 coverage.html
