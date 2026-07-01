@@ -204,7 +204,7 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 			</form>
 		</div>
 		<form method="dialog" class="modal-backdrop">
-			<button>close</button>
+			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 	</dialog>
 }
@@ -286,7 +286,7 @@ templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []str
 			</form>
 		</div>
 		<form method="dialog" class="modal-backdrop">
-			<button>close</button>
+			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 	</dialog>
 }
@@ -312,7 +312,7 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 								if n.Error != "" {
 									<span class="opacity-70 max-w-[300px] truncate inline-block align-bottom cursor-pointer"
 										onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none'"
-										title="Click to expand"> — { n.Error }</span>
+										title={ i18n.T(ctx, "Click to expand") }> — { n.Error }</span>
 									<span class="hidden text-[10px] font-mono opacity-60 mt-1 block max-w-full break-all">{ n.Error }</span>
 								}
 							}

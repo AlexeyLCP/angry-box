@@ -28,7 +28,7 @@ templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeM
 				<table class="table w-full">
 					<thead class="text-base-content/60 text-sm">
 						<tr class="border-b border-base-content/10">
-							<th class="font-medium">ID</th>
+							<th class="font-medium">{ i18n.T(ctx, "ID") }</th>
 							<th class="font-medium">{ i18n.T(ctx, "Address") }</th>
 							<th class="font-medium">{ i18n.T(ctx, "Country") }</th>
 							<th class="font-medium">{ i18n.T(ctx, "Bandwidth") }</th>
@@ -197,7 +197,7 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 					hx-on::after-request="this.closest('dialog').close()"
 					class="space-y-4">
 					<div class="form-control">
-						<label class="label"><span class="label-text">ID</span></label>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "ID") }</span></label>
 						<input type="text" name="id" class="input input-bordered" value={ h.ID } readonly />
 					</div>
 					<div class="form-control">
@@ -274,7 +274,7 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 			}
 		</div>
 		<form method="dialog" class="modal-backdrop">
-			<button>close</button>
+			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 	</dialog>
 }
@@ -435,7 +435,7 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 			<div id="inbounds-result" class="mt-2"></div>
 		</div>
 		<form method="dialog" class="modal-backdrop">
-			<button>close</button>
+			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 
 	</dialog>
@@ -551,7 +551,7 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys [
 			<div id="capture-result" class="mt-2"></div>
 		</div>
 		<form method="dialog" class="modal-backdrop">
-			<button>close</button>
+			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 	</dialog>
 }

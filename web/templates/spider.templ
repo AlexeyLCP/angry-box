@@ -34,7 +34,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 				<div class="flex gap-1">
 					<button class="btn btn-xs btn-ghost" onclick="spiderZoom(1.2)">+</button>
 					<button class="btn btn-xs btn-ghost" onclick="spiderZoom(1/1.2)">−</button>
-					<button class="btn btn-xs btn-ghost" onclick="spiderReset()">reset</button>
+					<button class="btn btn-xs btn-ghost" onclick="spiderReset()">{ i18n.T(ctx, "reset") }</button>
 				</div>
 			</div>
 			<div class="bg-base-200 relative" style="min-height: 550px;">
