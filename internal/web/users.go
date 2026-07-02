@@ -266,7 +266,20 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 	}
 
 	ip := strings.Split(entry.Addr, ":")[0]
-	return buildClientURI(proto, ip, 8443, c.TUICEntryUserUUID, c.TUICEntryUserPassword, c.AWGEntryServerPub, "", c.Name, u, "", false)
+	// Per-user TUIC creds take precedence over the chain-wide shared creds so
+	// each user's share link authenticates as that user (per-client routing).
+	// Fall back to chain-wide when the user has no per-user identity (legacy).
+	uuid := c.TUICEntryUserUUID
+	password := c.TUICEntryUserPassword
+	if u != nil {
+		if u.TUICUUID != "" {
+			uuid = u.TUICUUID
+		}
+		if u.TUICPassword != "" {
+			password = u.TUICPassword
+		}
+	}
+	return buildClientURI(proto, ip, 8443, uuid, password, c.AWGEntryServerPub, "", c.Name, u, "", false)
 }
 
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {

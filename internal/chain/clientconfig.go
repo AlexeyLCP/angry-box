@@ -20,15 +20,18 @@ import (
 )
 
 // ClientConfigParams carries what the generator needs: the chain (for entry
-// protocol + creds + entry node address) and the local proxy listen address.
+// protocol + entry node address) and the local proxy listen address.
 //
-// The TUIC user entry is single-user: it uses the chain-wide entry creds
-// (TUICEntryUserUUID/Password). There is intentionally no per-user cred field
-// here — model.User has no TUIC UUID/password, and adding a User field that is
-// silently ignored would mislead callers (CodeRabbit H2). Per-user routing is
-// a future feature that will require per-user inbounds on the server first.
+// User, when set, supplies per-user credentials: the TUIC outbound authenticates
+// with the user's TUICUUID/TUICPassword instead of the chain-wide shared creds,
+// so the server's multi-user inbound (B3) + auth_user route rules (B4) can
+// identify and steer this client. When User is nil or has no per-user creds,
+// the chain-wide creds are used (legacy behavior).
 type ClientConfigParams struct {
 	Chain *model.Chain
+	// User is optional; when set and populated with per-user creds, the client
+	// authenticates as that user (per-client routing). Nil -> chain-wide creds.
+	User *model.User
 	// LocalProxyAddr is the SOCKS/HTTP listen address for the client's inbound
 	// (e.g. "127.0.0.1:1080"). Defaults to 127.0.0.1:1080 (SOCKS) + mixed.
 	LocalProxyAddr string
@@ -65,8 +68,18 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 
 	switch c.UserProtocol {
 	case model.UserProtocolTUIC:
+		// Per-user creds take precedence; fall back to chain-wide shared creds
+		// when the user is nil or has no per-user TUIC identity (legacy).
 		uuid := c.TUICEntryUserUUID
 		password := c.TUICEntryUserPassword
+		if params.User != nil {
+			if params.User.TUICUUID != "" {
+				uuid = params.User.TUICUUID
+			}
+			if params.User.TUICPassword != "" {
+				password = params.User.TUICPassword
+			}
+		}
 		if uuid == "" {
 			uuid = tuicUUID(c)
 		}

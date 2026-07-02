@@ -433,3 +433,52 @@ func TestBuildMergedRoute_NoUsers_NoAuthUserRules(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderClientConfig_PerUserCreds verifies that a User with per-user TUIC
+// creds overrides the chain-wide creds in the rendered client config, and that
+// a nil/no-cred user falls back to chain-wide (legacy).
+func TestRenderClientConfig_PerUserCreds(t *testing.T) {
+	c := &model.Chain{
+		Name:                  "pu",
+		UserProtocol:          model.UserProtocolTUIC,
+		Strategy:              model.StrategyURLTest,
+		TUICEntryUserUUID:     "chain-uuid",
+		TUICEntryUserPassword: "chain-pass",
+		Nodes:                 []model.ChainNode{{ID: "entry", Addr: "entry.example.test:22"}},
+	}
+	// Per-user creds used.
+	cfg, err := RenderClientConfig(ClientConfigParams{Chain: c, User: &model.User{
+		ID: "u1", Name: "alice", TUICUUID: "alice-uuid", TUICPassword: "alice-pass",
+	}})
+	if err != nil {
+		t.Fatalf("RenderClientConfig: %v", err)
+	}
+	if !strings.Contains(cfg, `"uuid": "alice-uuid"`) {
+		t.Errorf("per-user TUICUUID not used in config\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"password": "alice-pass"`) {
+		t.Errorf("per-user TUICPassword not used in config\n%s", cfg)
+	}
+}
+
+func TestRenderClientConfig_NoUserCreds_FallsBackToChain(t *testing.T) {
+	c := &model.Chain{
+		Name:                  "fb",
+		UserProtocol:          model.UserProtocolTUIC,
+		Strategy:              model.StrategyURLTest,
+		TUICEntryUserUUID:     "chain-uuid",
+		TUICEntryUserPassword: "chain-pass",
+		Nodes:                 []model.ChainNode{{ID: "entry", Addr: "entry.example.test:22"}},
+	}
+	// Nil user -> chain-wide creds.
+	cfg, err := RenderClientConfig(ClientConfigParams{Chain: c})
+	if err != nil {
+		t.Fatalf("RenderClientConfig: %v", err)
+	}
+	if !strings.Contains(cfg, `"uuid": "chain-uuid"`) {
+		t.Errorf("chain-wide TUICUUID not used as fallback\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"password": "chain-pass"`) {
+		t.Errorf("chain-wide TUICPassword not used as fallback\n%s", cfg)
+	}
+}
