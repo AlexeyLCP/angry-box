@@ -291,9 +291,19 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 				ServerName: serverName,
 			}
 
-			if ib.TLSCertificate != "" && ib.TLSPrivateKey != "" {
-				tls.Certificate = ib.TLSCertificate
-				tls.Key = ib.TLSPrivateKey
+			cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+			if cert == "" || key == "" {
+				// Auto-generate a self-signed cert so the inbound is valid on a
+				// fresh node — mirrors buildStandaloneInOut (merged_config.go).
+				// Without this, a takeover-converted TUIC inbound (which carries
+				// no cert) fails sing-box check with "missing certificate".
+				if c, k, cerr := chain.GenerateSelfSignedCert(serverName); cerr == nil {
+					cert, key = c, k
+				}
+			}
+			if cert != "" && key != "" {
+				tls.Certificate = cert
+				tls.Key = key
 			}
 
 			inb := config.TUICInbound{
