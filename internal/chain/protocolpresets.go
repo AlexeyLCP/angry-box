@@ -7,13 +7,18 @@ package chain
 
 import "strings"
 
+// DefaultRealitySNI is the fallback REALITY handshake + TLS server_name. Akamai-
+// fronted microsoft SNI breaks REALITY camouflage handshakes on several VPS/NAT
+// paths; cloudflare/google targets validate reliably in sing-box 1.13+.
+const DefaultRealitySNI = "www.cloudflare.com"
+
 // REALITY_SNI_DOMAINS — vetted REALITY handshake targets (TLS 1.3 + H2, popular,
 // not DPI-blocked). Used as the default SNI pool for VLESS-REALITY.
 var REALITY_SNI_DOMAINS = []string{
-	"www.microsoft.com", "www.cloudflare.com", "www.apple.com",
+	"www.cloudflare.com", "dl.google.com", "google.com",
+	"www.microsoft.com", "www.apple.com",
 	"gateway.icloud.com", "itunes.apple.com", "www.tesla.com",
-	"dl.google.com", "google.com", "www.samsung.com",
-	"www.lovelive-anime.jp", "ozon.ru",
+	"www.samsung.com", "www.lovelive-anime.jp", "ozon.ru",
 }
 
 // REALITY_FINGERPRINTS — uTLS fingerprints for REALITY clients.
