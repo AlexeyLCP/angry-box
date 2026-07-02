@@ -84,6 +84,25 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 
 	fromCN := model.ChainNode{ID: fromHost.ID, Addr: fromHost.Addr, User: fromHost.User, KeyPath: fromHost.KeyPath}
 	toCN := model.ChainNode{ID: toHost.ID, Addr: toHost.Addr, User: toHost.User, KeyPath: toHost.KeyPath}
+	// Preserve persisted per-node state (explicit entry Role + transit key
+	// material) when the node was already part of this chain — otherwise a
+	// spider edge creation would drop entry designations and force a key
+	// regeneration on the next ApplyChain, breaking connected clients.
+	preserveNodeState := func(n *model.ChainNode) {
+		for _, old := range existing.Nodes {
+			if old.ID == n.ID {
+				n.Role = old.Role
+				n.TransitPrivKey = old.TransitPrivKey
+				n.TransitShortID = old.TransitShortID
+				n.TransitUUID = old.TransitUUID
+				n.Port = old.Port
+				n.Inbounds = old.Inbounds
+				return
+			}
+		}
+	}
+	preserveNodeState(&fromCN)
+	preserveNodeState(&toCN)
 
 	// Ensure fromNode is in the list.
 	fromIdx := indexOfChainNode(nodes, fromNode)
@@ -108,6 +127,26 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 		Nodes:     nodes,
 		Strategy:  model.StrategyURLTest,
 		Transport: model.TransportType(transport),
+	}
+	// Preserve the existing chain's protocol/strategy/creds when materializing
+	// from an edge — spider edge creation must not silently reset the user
+	// protocol, strategy, or stable entry credentials of an existing chain.
+	if existing != nil {
+		ch.Strategy = existing.Strategy
+		if ch.Strategy == "" {
+			ch.Strategy = model.StrategyURLTest
+		}
+		if existing.Transport != "" {
+			ch.Transport = existing.Transport
+		}
+		ch.UserProtocol = existing.UserProtocol
+		ch.ObfuscationProfile = existing.ObfuscationProfile
+		ch.UserEntryPort = existing.UserEntryPort
+		ch.AWGEntryServerPriv = existing.AWGEntryServerPriv
+		ch.AWGEntryServerPub = existing.AWGEntryServerPub
+		ch.AWGEntryClientPub = existing.AWGEntryClientPub
+		ch.TUICEntryUserUUID = existing.TUICEntryUserUUID
+		ch.TUICEntryUserPassword = existing.TUICEntryUserPassword
 	}
 	st.SaveChain(ch)
 	chain.WriteAudit(st, "create", "link", link.ID, chain.AuditPayload{"from": fromNode, "to": toNode, "chain": chainName, "transport": transport}, "operator")

@@ -69,6 +69,14 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// entry_nodes are the user-designated entry (user-facing) nodes. When at
+	// least one is selected, those nodes get Role=entry and the rest transit.
+	// When none are selected, all roles stay empty -> legacy "index 0 is entry".
+	entrySet := map[string]bool{}
+	for _, id := range r.Form["entry_nodes"] {
+		entrySet[strings.TrimSpace(id)] = true
+	}
+
 	st := s.store()
 	nodes := make([]model.ChainNode, 0, len(nodeIDs))
 	for _, id := range nodeIDs {
@@ -77,7 +85,11 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), id), http.StatusBadRequest)
 			return
 		}
-		nodes = append(nodes, model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath})
+		n := model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath}
+		if entrySet[id] {
+			n.Role = model.NodeRoleEntry
+		}
+		nodes = append(nodes, n)
 	}
 
 	c := &model.Chain{
@@ -165,13 +177,35 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 				uniqueNodes = append(uniqueNodes, id)
 			}
 		}
+		// entry_nodes for this edit. Empty set -> clear explicit roles, reverting
+		// to the legacy "index 0 is entry" behavior.
+		entrySet := map[string]bool{}
+		for _, id := range r.Form["entry_nodes"] {
+			entrySet[strings.TrimSpace(id)] = true
+		}
 		nodes := make([]model.ChainNode, 0, len(uniqueNodes))
 		for _, id := range uniqueNodes {
 			h, err := st.GetHost(id)
 			if err != nil {
 				continue
 			}
-			nodes = append(nodes, model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath})
+			n := model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath}
+			if entrySet[id] {
+				n.Role = model.NodeRoleEntry
+			}
+			// Preserve persisted transit key material when the node was already in
+			// the chain (re-applying an existing chain must not drop its keys).
+			for _, old := range c.Nodes {
+				if old.ID == id {
+					n.TransitPrivKey = old.TransitPrivKey
+					n.TransitShortID = old.TransitShortID
+					n.TransitUUID = old.TransitUUID
+					n.Port = old.Port
+					n.Inbounds = old.Inbounds
+					break
+				}
+			}
+			nodes = append(nodes, n)
 		}
 		if len(nodes) > 0 {
 			c.Nodes = nodes

@@ -191,10 +191,14 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 								<input type="checkbox" name="nodes" value={ h.ID } class="checkbox checkbox-sm" />
 								<span class="font-mono text-sm">{ h.ID }</span>
 								<span class="text-xs text-base-content/50">({ h.Addr })</span>
+								<label class="flex items-center gap-1 ml-auto cursor-pointer" title={ i18n.T(ctx, "Mark this node as an entry (user-facing). Select several to load-balance across entries.") }>
+									<input type="checkbox" name="entry_nodes" value={ h.ID } class="checkbox checkbox-xs checkbox-primary" />
+									<span class="text-xs text-primary">{ i18n.T(ctx, "entry") }</span>
+								</label>
 							</label>
 						}
 					</div>
-					<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Select nodes in order: first = entry (user connects here), last = exit (traffic leaves here), middle = hops") }</span></div>
+					<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Select nodes in order: first = entry (user connects here), last = exit (traffic leaves here), middle = hops. Tick 'entry' on several nodes to load-balance across multiple entries.") }</span></div>
 				</div>
 
 				<div class="modal-action">
@@ -273,6 +277,11 @@ templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []str
 									if chainHasNode(c, h.ID) { checked } />
 								<span class="font-mono text-sm">{ h.ID }</span>
 								<span class="text-xs text-base-content/50">({ h.Addr })</span>
+								<label class="flex items-center gap-1 ml-auto cursor-pointer" title={ i18n.T(ctx, "Mark this node as an entry (user-facing). Select several to load-balance across entries.") }>
+									<input type="checkbox" name="entry_nodes" value={ h.ID } class="checkbox checkbox-xs checkbox-primary"
+										if isChainEntry(c, h.ID) { checked } />
+									<span class="text-xs text-primary">{ i18n.T(ctx, "entry") }</span>
+								</label>
 							</label>
 						}
 					</div>
@@ -357,6 +366,18 @@ func chainHasNode(c *model.Chain, nodeID string) bool {
 	for _, n := range c.Nodes {
 		if n.ID == nodeID {
 			return true
+		}
+	}
+	return false
+}
+
+// isChainEntry reports whether nodeID is a user-facing entry for the chain.
+// Honors the explicit ChainNode.Role field; falls back to "index 0 is entry"
+// for legacy chains with no explicit role (matches resolveChainRoles).
+func isChainEntry(c *model.Chain, nodeID string) bool {
+	for i, n := range c.Nodes {
+		if n.ID == nodeID {
+			return n.Role == model.NodeRoleEntry || (n.Role == "" && i == 0)
 		}
 	}
 	return false
