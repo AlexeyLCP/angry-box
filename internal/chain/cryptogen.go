@@ -266,3 +266,22 @@ func awgIPKey(a string) string {
 	}
 	return a
 }
+
+// allocateAWGTransitIP returns the first free address in 10.9.0.0/24 (host part
+// 2..254; .1 is reserved, .255 is broadcast) for an inter-node AWG transport
+// link's client inner IP. Separate from allocateAWGPeerIP (which uses
+// 10.8.0.0/24 for user-entry peers) so the two subnets never collide. taken is
+// the list of TransitAWGAddress values already claimed by other nodes.
+func allocateAWGTransitIP(taken []string) string {
+	occupied := make(map[string]bool, len(taken))
+	for _, a := range taken {
+		occupied[awgIPKey(a)] = true
+	}
+	for host := 2; host <= 254; host++ {
+		ip := fmt.Sprintf("10.9.0.%d/32", host)
+		if !occupied[awgIPKey(ip)] {
+			return ip
+		}
+	}
+	return ""
+}

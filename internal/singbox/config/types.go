@@ -342,6 +342,29 @@ type WireGuardEndpoint struct {
 type WireGuardPeer struct {
 	PublicKey  string   `json:"public_key"`
 	AllowedIPs []string `json:"allowed_ips,omitempty"`
+	// Server-side endpoint peer endpoint (the client's address/port to dial
+	// back, or the next-hop address/port for a chain-hop endpoint). Optional;
+	// omitted for pure AllowedIPs-only peers.
+	Address                  string `json:"address,omitempty"`
+	Port                     int    `json:"port,omitempty"`
+	PersistentKeepaliveInterval int `json:"persistent_keepalive_interval,omitempty"`
+}
+
+// WireGuardOutbound represents a sing-box wireguard OUTBOUND (the client side
+// of a WireGuard link — dials a remote server endpoint). Used for inter-node
+// AWG chain transport: the previous node's outbound dialing the next node's
+// transit endpoint. Distinct from WireGuardEndpoint, which is the server side.
+type WireGuardOutbound struct {
+	Type           string          `json:"type"` // "wireguard"
+	Tag            string          `json:"tag"`
+	Server         string          `json:"server"`
+	ServerPort     int             `json:"server_port"`
+	LocalAddresses []string        `json:"local_addresses"` // this client's tunnel IPs
+	PrivateKey     string          `json:"private_key"`     // client's WG private key
+	PeerPublicKey  string          `json:"peer_public_key"` // server's WG public key
+	PreSharedKey   string          `json:"pre_shared_key,omitempty"`
+	MTU            int             `json:"mtu,omitempty"`
+	Amnezia        *AmneziaOptions `json:"amnezia,omitempty"`
 }
 
 // AmneziaOptions represents AWG specific extensions for wireguard in

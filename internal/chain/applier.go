@@ -240,6 +240,33 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 				node.TransitUUID = p.UUID
 			}
 		}
+
+		// AWG inter-node transport: per-link WireGuard keypairs. A transit node
+		// (i > 0) listens with a server keypair; a node with an outbound (i < n-1)
+		// dials the next hop with a client keypair + a unique inner tunnel IP
+		// from 10.9.0.0/24. Reuse existing keys if present (Rule 5: stable across
+		// redeploys). Only when chain.Transport == AWG.
+		if chain.Transport == model.TransportAWG {
+			if i > 0 && node.TransitAWGServerPriv == "" {
+				priv, pub, err := GenerateWireGuardKeypair()
+				if err != nil {
+					return nil, fmt.Errorf("chain: node %q: generate awg server keypair: %w", node.ID, err)
+				}
+				node.TransitAWGServerPriv = priv
+				node.TransitAWGServerPub = pub
+			}
+			if i < n-1 && node.TransitAWGClientPriv == "" {
+				priv, pub, err := GenerateWireGuardKeypair()
+				if err != nil {
+					return nil, fmt.Errorf("chain: node %q: generate awg client keypair: %w", node.ID, err)
+				}
+				node.TransitAWGClientPriv = priv
+				node.TransitAWGClientPub = pub
+			}
+			if i < n-1 && node.TransitAWGAddress == "" {
+				node.TransitAWGAddress = allocateAWGTransitIP(transitAddresses(chain))
+			}
+		}
 	}
 
 	// Save chain to store so GetChainsForNode sees it.
@@ -300,8 +327,11 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 
 		backend := a.factory.Create()
 
-		// Install AWG kernel module only when chain uses AWG as user protocol.
-		if chain.UserProtocol == model.UserProtocolAWG {
+		// Install AWG kernel module when AWG is the user-entry protocol OR the
+		// inter-node transport. The transport case covers transit nodes that
+		// carry an AWG link (chain.Transport == AWG) even when the user entry is
+		// TUIC/VLESS — without this the transit AWG endpoint has no module.
+		if chain.UserProtocol == model.UserProtocolAWG || chain.Transport == model.TransportAWG {
 			if awgErr := backend.InstallAWGModuleWithOptions(ctx, node.Host(), model.DeployOptions{UseSudo: nodeInfo.UseSudo}); awgErr != nil {
 				client.Close()
 				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
@@ -513,6 +543,95 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 	return data, nil
 }
 
+// buildAWGTransportInbound builds the transit-side fragment of an inter-node
+// AWG link: a userspace WireGuard endpoint (System: false) that listens on
+// node.Port with the node's TransitAWGServerPriv and accepts the previous
+// node's client as its single peer (peer pub = prev.TransitAWGClientPub,
+// allowed_ips = prev.TransitAWGAddress — the previous node's inner IP, so
+// route rules can match traffic arriving from it by source_ip_cidr). The tag
+// is the chain's transport-in tag so generic route rules steer decrypted
+// traffic down the chain. preset supplies the Amnezia obfuscation params.
+func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag string, preset *ConnectionPreset) json.RawMessage {
+	awg := preset.AWG
+	if awg == nil {
+		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
+	}
+	port := node.Port
+	if port == 0 {
+		port = defaultTransportPort
+	}
+	peer := config.WireGuardPeer{PublicKey: "CLIENT_PUBLIC_KEY_HERE"}
+	if prev != nil {
+		peer.PublicKey = prev.TransitAWGClientPub
+		if peer.PublicKey == "" {
+			peer.PublicKey = "CLIENT_PUBLIC_KEY_HERE"
+		}
+		if prev.TransitAWGAddress != "" {
+			peer.AllowedIPs = []string{prev.TransitAWGAddress}
+		}
+	}
+	ep := config.WireGuardEndpoint{
+		Type:       "wireguard",
+		Tag:        tag,
+		System:     false, // userspace wireguard-go (no kernel module needed to listen)
+		MTU:        1420,
+		Address:    []string{"10.9.0.1/24"}, // transit server inner address
+		PrivateKey: node.TransitAWGServerPriv,
+		ListenPort: port,
+		Peers:      []config.WireGuardPeer{peer},
+		Amnezia:    BuildAWGAmnezia(awg, preset),
+	}
+	data, _ := json.Marshal(ep)
+	return data
+}
+
+// buildAWGTransportOutbound builds the previous-node-side fragment of an
+// inter-node AWG link. sing-box-extended 1.13 removed the wireguard OUTBOUND
+// (deprecated in 1.11, gone in 1.13), so the client side is a WireGuard
+// ENDPOINT with a single peer that dials the next node's transit endpoint
+// (peer address/port + server public key). This mirrors RenderAWGHop's shape.
+// serverAddr is the next node's bare host (from extractHost(next.Addr));
+// next.Port is the next node's AWG listen port; thisNode.TransitAWGClientPriv
+// is the client private key; next.TransitAWGServerPub is the peer (server)
+// public key; thisNode.TransitAWGAddress is this client's inner tunnel IP.
+// The tag is the chain's inter-node outbound tag so route rules steer traffic
+// into this endpoint. preset supplies the Amnezia params (must match the
+// server endpoint's amnezia block or the handshake fails).
+func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag string, preset *ConnectionPreset) (json.RawMessage, error) {
+	awg := preset.AWG
+	if awg == nil {
+		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
+	}
+	serverPort := next.Port
+	if serverPort == 0 {
+		serverPort = defaultTransportPort
+	}
+	localAddr := thisNode.TransitAWGAddress
+	if localAddr == "" {
+		localAddr = "10.9.0.2/32"
+	}
+	ep := config.WireGuardEndpoint{
+		Type:       "wireguard",
+		Tag:        tag, // route rules reference this tag as the "outbound"
+		System:     false,
+		MTU:        1420,
+		Address:    []string{localAddr},
+		PrivateKey: thisNode.TransitAWGClientPriv,
+		Peers: []config.WireGuardPeer{
+			{
+				PublicKey:                  next.TransitAWGServerPub,
+				Address:                    serverAddr,
+				Port:                       serverPort,
+				PersistentKeepaliveInterval: 25,
+				AllowedIPs:                 []string{"0.0.0.0/0", "::/0"},
+			},
+		},
+		Amnezia: BuildAWGAmnezia(awg, preset),
+	}
+	data, _ := json.Marshal(ep)
+	return data, nil
+}
+
 func buildDirectOutbound(tag string) json.RawMessage {
 	out := config.DirectOutbound{
 		Type: "direct",
@@ -557,6 +676,19 @@ func extractHost(addr string) string {
 		return addr // no port: whole input is the host (covers bare IPv6)
 	}
 	return host
+}
+
+// transitAddresses returns the TransitAWGAddress values already claimed by
+// chain nodes, so allocateAWGTransitIP can pick a collision-free inner IP for a
+// new node. Used during AWG inter-node transport key generation in ApplyChain.
+func transitAddresses(chain *model.Chain) []string {
+	var taken []string
+	for i := range chain.Nodes {
+		if a := chain.Nodes[i].TransitAWGAddress; a != "" {
+			taken = append(taken, a)
+		}
+	}
+	return taken
 }
 
 // createBackup makes a timestamped backup of the current config under $HOME

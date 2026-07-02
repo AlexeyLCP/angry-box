@@ -461,13 +461,21 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 
 	if role.IsTransit {
 		tag := fmt.Sprintf("ch-%s-transport-in", cn)
-		var inb json.RawMessage
-		if c.Transport == model.TransportXHTTP {
-			inb = buildXHTTPTransportInbound(p, tag, &role.Preset)
-		} else {
-			inb = buildTransportInbound(p, tag)
+		switch c.Transport {
+		case model.TransportXHTTP:
+			inbounds = append(inbounds, buildXHTTPTransportInbound(p, tag, &role.Preset))
+		case model.TransportAWG:
+			// AWG transit is a WireGuard ENDPOINT (not a VLESS inbound); route
+			// rules still match it by the transport-in tag. The previous node
+			// (i-1) is this endpoint's single peer.
+			var prev *model.ChainNode
+			if role.NodeIndex > 0 {
+				prev = &c.Nodes[role.NodeIndex-1]
+			}
+			endpoints = append(endpoints, buildAWGTransportInbound(role.Node, prev, tag, &role.Preset))
+		default: // Reality
+			inbounds = append(inbounds, buildTransportInbound(p, tag))
 		}
-		inbounds = append(inbounds, inb)
 	}
 
 	if role.HasOutbound {
@@ -486,19 +494,35 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			np.ServerName = DefaultRealitySNI
 		}
 
-		outTag := fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
+		var outTag string
 		var outb json.RawMessage
 		var err error
-		if c.Transport == model.TransportXHTTP {
+		isAWGOut := false
+		switch c.Transport {
+		case model.TransportXHTTP:
+			outTag = fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
 			outb, err = buildXHTTPTransportOutbound(np, extractHost(next.Addr), outTag, &role.Preset)
-		} else {
+		case model.TransportAWG:
+			// AWG has no SNI; label the outbound by the next node's ID. The
+			// client side is a WireGuard endpoint (sing-box-extended 1.13 has
+			// no wireguard outbound), so it goes into endpoints[], not
+			// outbounds[] — route rules still reference it by tag.
+			outTag = fmt.Sprintf("ch-%s-out-awg-%s", cn, safeSNILabel(next.ID))
+			outb, err = buildAWGTransportOutbound(role.Node, &next, extractHost(next.Addr), outTag, &role.Preset)
+			isAWGOut = true
+		default: // Reality
+			outTag = fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
 			outb, err = buildTransportOutbound(np, extractHost(next.Addr), outTag)
 		}
 		if err == nil {
-			outbounds = append(outbounds, outb)
-			// Linear chains have a single inter-node outbound; wrapping it in
-			// urltest probes gstatic through the hop and returns EOF while transit
-			// is still failing, which breaks routing and masks the real error.
+			if isAWGOut {
+				endpoints = append(endpoints, outb)
+			} else {
+				outbounds = append(outbounds, outb)
+				// Linear chains have a single inter-node outbound; wrapping it in
+				// urltest probes gstatic through the hop and returns EOF while transit
+				// is still failing, which breaks routing and masks the real error.
+			}
 		}
 	}
 
@@ -766,8 +790,18 @@ func chainUserInboundTag(c *model.Chain, nodeID string) string {
 }
 
 // chainInterNodeOutboundTag is the vless/xhttp outbound tag for the next hop in
-// a linear chain (no urltest wrapper).
+// a linear chain (no urltest wrapper). The tag MUST match the one emitted by
+// buildChainRoleInOut's HasOutbound branch, so route rules can steer traffic to
+// it. For Reality/XHTTP the tag is derived from the SNI; for AWG transport
+// (no SNI) it is derived from the next node's ID.
 func chainInterNodeOutboundTag(role *chainRole) string {
+	if role.Chain.Transport == model.TransportAWG {
+		nextID := ""
+		if role.HasOutbound && role.NodeIndex+1 < len(role.Chain.Nodes) {
+			nextID = role.Chain.Nodes[role.NodeIndex+1].ID
+		}
+		return fmt.Sprintf("ch-%s-out-awg-%s", role.Chain.Name, safeSNILabel(nextID))
+	}
 	sn := ResolveServerName(&role.Preset)
 	return fmt.Sprintf("ch-%s-out-%s", role.Chain.Name, safeSNILabel(sn))
 }

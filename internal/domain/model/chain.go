@@ -34,7 +34,19 @@ type ChainNode struct {
 	TransitPrivKey string        `json:"transit_priv_key,omitempty"` // For Reality
 	TransitShortID string        `json:"transit_short_id,omitempty"` // For Reality
 	TransitUUID    string        `json:"transit_uuid,omitempty"`     // Shared UUID for auth
-	Inbounds       []NodeInbound `json:"inbounds,omitempty"`         // Standalone inbounds configured for this node
+
+	// Inter-node AWG transport keys (chain.Transport == "awg"). One WireGuard
+	// link per hop: the transit node listens (server keypair), the previous
+	// node dials (client keypair). Generated once in ApplyChain and persisted
+	// (Rule 5 — stable across redeploys so links don't break). The inner tunnel
+	// subnet is 10.9.0.0/24 (kept separate from the user-entry 10.8.0.0/24).
+	TransitAWGServerPriv string `json:"transit_awg_server_priv,omitempty"` // this node's WG server priv (transit inbound)
+	TransitAWGServerPub  string `json:"transit_awg_server_pub,omitempty"`  // derived/persisted server pub
+	TransitAWGClientPriv string `json:"transit_awg_client_priv,omitempty"` // this node's WG client priv (outbound to next hop)
+	TransitAWGClientPub  string `json:"transit_awg_client_pub,omitempty"`  // derived/persisted client pub
+	TransitAWGAddress    string `json:"transit_awg_address,omitempty"`     // this node's client inner tunnel IP, 10.9.0.X/32
+
+	Inbounds []NodeInbound `json:"inbounds,omitempty"` // Standalone inbounds configured for this node
 }
 
 // Chain is an ordered list of nodes forming a multi-hop proxy path.
