@@ -87,10 +87,18 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Generate per-user credentials for the selected protocols so this user
 	// can authenticate to a multi-user inbound with its own identity (the basis
-	// for per-client auth_user routing). Existing creds are preserved.
+	// for per-client routing). Existing creds are preserved.
 	chain.EnsureUserCreds(u)
 
 	st := s.store()
+
+	// Allocate a unique AWG tunnel IP for this user (per-client AWG routing
+	// keys on the peer's inner IP). Gather addresses already taken by other
+	// users so allocation does not collide.
+	if existingAWGIPs, err := takenAWGAddresses(st, u.ID); err == nil {
+		chain.EnsureUserAWGAddress(u, existingAWGIPs)
+	}
+
 	if err := st.SaveUser(u); err != nil {
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
@@ -146,6 +154,12 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	// was added to this user's Protocols list. Existing creds are preserved.
 	chain.EnsureUserCreds(u)
 
+	// Allocate a unique AWG tunnel IP if AWG was just added and the user has
+	// none yet. Avoid colliding with other users' addresses.
+	if existingAWGIPs, err := takenAWGAddresses(st, u.ID); err == nil {
+		chain.EnsureUserAWGAddress(u, existingAWGIPs)
+	}
+
 	st.SaveUser(u)
 	chain.WriteAudit(st, "update", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
 	s.scheduleAutoApplyForUser(st, u, "user update")
@@ -188,6 +202,27 @@ func (s *Server) scheduleAutoApplyForUser(st *chain.Store, u *model.User, reason
 			chain.ScheduleAutoApply(n.ID, reason+":"+chainName)
 		}
 	}
+}
+
+// takenAWGAddresses returns the AWG tunnel IPs already claimed by other users
+// (everyone except the user with excludeID). Used to allocate a collision-free
+// per-user AWGAddress. Errors from ListUsers are propagated (caller skips
+// allocation on error).
+func takenAWGAddresses(st *chain.Store, excludeID string) ([]string, error) {
+	users, err := st.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	var taken []string
+	for _, u := range users {
+		if u.ID == excludeID {
+			continue
+		}
+		if u.AWGAddress != "" {
+			taken = append(taken, u.AWGAddress)
+		}
+	}
+	return taken, nil
 }
 
 func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
@@ -265,6 +300,19 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 		proto = "awg"
 	}
 
+	// AWG chains render a per-user awg-quick .conf (each user is their own
+	// WireGuard peer; per-client routing keys on the peer's inner source IP).
+	if c.UserProtocol == model.UserProtocolAWG {
+		conf, err := chain.RenderClientAWGConf(chain.ClientConfigParams{
+			Chain: c,
+			User:  u,
+		})
+		if err != nil {
+			return "# " + err.Error()
+		}
+		return conf
+	}
+
 	ip := strings.Split(entry.Addr, ":")[0]
 	// Per-user TUIC creds take precedence over the chain-wide shared creds so
 	// each user's share link authenticates as that user (per-client routing).
@@ -288,11 +336,11 @@ func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) strin
 		// Full AWG client .conf with Amnezia obfuscation params from the active
 		// preset (Jc/Jmin/Jmax/S1-S4/H1-H4 + I1-I5 when CPS is enabled). This
 		// matches the server-side amnezia block so the client connects.
-		return buildAWGClientConf(ip, ib.Port, ib.AWGClientPriv, ib.ServerPubKey, ib.AWGClientPub, "")
+		return buildAWGClientConf(ip, ib.Port, ib.AWGClientPriv, ib.ServerPubKey, ib.AWGClientPub, "", "")
 	}
 	if ib.Protocol == "awg" && u.ImportedSecret != "" && u.SecretType == "awg" {
 		// Imported AWG private key — build a .conf using it.
-		return buildAWGClientConf(ip, ib.Port, u.ImportedSecret, ib.ServerPubKey, "", "")
+		return buildAWGClientConf(ip, ib.Port, u.ImportedSecret, ib.ServerPubKey, "", "", "")
 	}
 	if ib.Protocol == "mtproxy" {
 		full, err := chain.MTProxyFullSecret(ib.UUID, defaultFakeTLSDomain(ib))
@@ -318,15 +366,22 @@ func defaultFakeTLSDomain(ib model.NodeInbound) string {
 }
 
 // buildAWGClientConf renders a full awg-quick client .conf with Amnezia params.
-// hostOverride lets callers swap the domain/IP for the Endpoint line.
-func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride string) string {
+// hostOverride lets callers swap the domain/IP for the Endpoint line. address is
+// the client's tunnel IP (its peer AllowedIPs on the server); empty falls back
+// to the legacy single-client "10.8.0.2/24". For per-user (chain) configs the
+// caller passes the user's AWGAddress so each client gets a unique inner IP —
+// this is what source_ip_cidr per-client routing matches on.
+func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride, address string) string {
 	host := hostOverride
 	if host == "" {
 		host = ip
 	}
+	if address == "" {
+		address = "10.8.0.2/24"
+	}
 	var b strings.Builder
 	b.WriteString("[Interface]\n")
-	b.WriteString("Address = 10.8.0.2/24\n")
+	b.WriteString(fmt.Sprintf("Address = %s\n", address))
 	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", clientPriv))
 	b.WriteString("MTU = 1420\n\n")
 	b.WriteString("[Peer]\n")
@@ -377,7 +432,7 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 	switch proto {
 	case "awg":
 		if u != nil && u.ImportedSecret != "" && u.SecretType == "awg" {
-			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "")
+			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "", "")
 		}
 		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420", ip, port, pubKey)
 	case "tuic":

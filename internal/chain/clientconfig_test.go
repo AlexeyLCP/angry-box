@@ -360,11 +360,14 @@ func TestBuildMergedRoute_PerClientChainExit(t *testing.T) {
 	if len(roles) != 1 {
 		t.Fatalf("want 1 role, got %d", len(roles))
 	}
+	// TUIC auth_user matches by UUID (TUICUser has no Name). Carol has no
+	// TUICUUID -> userAuthIdentity returns "" -> skipped (no auth_user rule).
 	usersByChain := map[string][]model.User{
 		"pc": {
-			{Name: "alice", Active: true, ChainExit: map[string]string{"pc": "entry"}}, // egress at entry
-			{Name: "bob", Active: true, ChainExit: map[string]string{"pc": "middle"}},  // egress one hop down
-			{Name: "carol", Active: true},                                               // no pin -> default route
+			{Name: "alice", Active: true, TUICUUID: "alice-uuid", ChainExit: map[string]string{"pc": "entry"}}, // egress at entry
+			{Name: "bob", Active: true, TUICUUID: "bob-uuid", ChainExit: map[string]string{"pc": "middle"}},    // egress one hop down
+			{Name: "carol", Active: true, TUICUUID: "carol-uuid"},                                                  // no pin -> default route
+			{Name: "dave", Active: true, ChainExit: map[string]string{"pc": "entry"}},                              // no TUICUUID -> skipped
 		},
 	}
 	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain)
@@ -374,10 +377,10 @@ func TestBuildMergedRoute_PerClientChainExit(t *testing.T) {
 	var aliceRule, bobRule *config.RouteRuleEntry
 	for i := range rt.Rules {
 		r := &rt.Rules[i]
-		if len(r.AuthUser) == 1 && r.AuthUser[0] == "alice" {
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "alice-uuid" {
 			aliceRule = r
 		}
-		if len(r.AuthUser) == 1 && r.AuthUser[0] == "bob" {
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "bob-uuid" {
 			bobRule = r
 		}
 	}
@@ -394,16 +397,16 @@ func TestBuildMergedRoute_PerClientChainExit(t *testing.T) {
 	if bobRule.Outbound != wantOut {
 		t.Errorf("bob (exit=middle) outbound=%s, want %s", bobRule.Outbound, wantOut)
 	}
-	// carol has no pin -> only the generic inbound rule exists (no auth_user).
+	// carol (no pin) and dave (no TUICUUID) must not get auth_user rules.
 	for _, r := range rt.Rules {
-		if len(r.AuthUser) == 1 && r.AuthUser[0] == "carol" {
-			t.Error("carol (no pin) must not get an auth_user rule")
+		if len(r.AuthUser) == 1 && (r.AuthUser[0] == "carol-uuid" || r.AuthUser[0] == "dave") {
+			t.Errorf("carol (no pin) / dave (no TUICUUID) must not get an auth_user rule, got %v", r.AuthUser)
 		}
 	}
 	// auth_user rules must precede the generic entry inbound rule.
 	aliceIdx, entryIdx := -1, -1
 	for i, r := range rt.Rules {
-		if len(r.AuthUser) == 1 && r.AuthUser[0] == "alice" {
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "alice-uuid" {
 			aliceIdx = i
 		}
 		if len(r.Inbound) == 1 && r.Inbound[0] == "ch-pc-user-in" {
@@ -431,6 +434,369 @@ func TestBuildMergedRoute_NoUsers_NoAuthUserRules(t *testing.T) {
 		if len(r.AuthUser) > 0 {
 			t.Errorf("no users should yield no auth_user rules, got %+v", r)
 		}
+	}
+}
+
+// TestBuildMergedRoute_PerClientAWG_SourceIP verifies AWG per-client routing:
+// users are distinguished by their tunnel IP (AWGAddress), and route rules use
+// source_ip_cidr (not auth_user). A user pinned to the entry egresses here
+// (direct-out); a user pinned to the next hop forwards down the chain. A user
+// with no AWGAddress is skipped (cannot be matched by source IP). Rules precede
+// the generic inbound->outbound fallback.
+func TestBuildMergedRoute_PerClientAWG_SourceIP(t *testing.T) {
+	// Chain: entry -> middle -> exit. Render for the entry node.
+	c := &model.Chain{
+		Name:         "awgpc",
+		UserProtocol: model.UserProtocolAWG,
+		Nodes: []model.ChainNode{
+			{ID: "entry", Addr: "entry.example.test:22"},
+			{ID: "middle", Addr: "middle.example.test:22"},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	roles := resolveChainRoles("entry", []*model.Chain{c})
+	if len(roles) != 1 {
+		t.Fatalf("want 1 role, got %d", len(roles))
+	}
+	usersByChain := map[string][]model.User{
+		"awgpc": {
+			{Name: "alice", Active: true, AWGAddress: "10.8.0.2/32", ChainExit: map[string]string{"awgpc": "entry"}},  // egress at entry
+			{Name: "bob", Active: true, AWGAddress: "10.8.0.3/32", ChainExit: map[string]string{"awgpc": "middle"}}, // egress one hop down
+			{Name: "carol", Active: true, AWGAddress: "10.8.0.4/32"},                                                 // no pin -> default route
+			{Name: "dave", Active: true, ChainExit: map[string]string{"awgpc": "entry"}},                              // no AWGAddress -> skipped
+		},
+	}
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain)
+	if rt == nil {
+		t.Fatal("nil route")
+	}
+	var aliceRule, bobRule *config.RouteRuleEntry
+	for i := range rt.Rules {
+		r := &rt.Rules[i]
+		if len(r.SourceIPCIDR) == 1 && r.SourceIPCIDR[0] == "10.8.0.2/32" {
+			aliceRule = r
+		}
+		if len(r.SourceIPCIDR) == 1 && r.SourceIPCIDR[0] == "10.8.0.3/32" {
+			bobRule = r
+		}
+	}
+	if aliceRule == nil {
+		t.Fatal("no source_ip_cidr rule for alice (pinned to entry)")
+	}
+	if aliceRule.Outbound != "direct-out" {
+		t.Errorf("alice (exit=entry) outbound=%s, want direct-out", aliceRule.Outbound)
+	}
+	if len(aliceRule.AuthUser) != 0 {
+		t.Errorf("alice rule must use source_ip_cidr, not auth_user, got %v", aliceRule.AuthUser)
+	}
+	if bobRule == nil {
+		t.Fatal("no source_ip_cidr rule for bob (pinned to middle)")
+	}
+	wantOut := chainInterNodeOutboundTag(&roles[0])
+	if bobRule.Outbound != wantOut {
+		t.Errorf("bob (exit=middle) outbound=%s, want %s", bobRule.Outbound, wantOut)
+	}
+	// carol (no pin) and dave (no AWGAddress) must not get per-client rules.
+	for _, r := range rt.Rules {
+		if len(r.SourceIPCIDR) == 1 && r.SourceIPCIDR[0] == "10.8.0.4/32" {
+			t.Errorf("carol (no pin) must not get a source_ip_cidr rule, got %v", r.SourceIPCIDR)
+		}
+	}
+	// Per-client rules must precede the generic entry inbound rule.
+	aliceIdx, entryIdx := -1, -1
+	for i, r := range rt.Rules {
+		if len(r.SourceIPCIDR) == 1 && r.SourceIPCIDR[0] == "10.8.0.2/32" {
+			aliceIdx = i
+		}
+		if len(r.Inbound) == 1 && r.Inbound[0] == "ch-awgpc-user-in" {
+			entryIdx = i
+		}
+	}
+	if aliceIdx >= 0 && entryIdx >= 0 && aliceIdx > entryIdx {
+		t.Errorf("alice source_ip_cidr rule (idx %d) must precede generic entry rule (idx %d)", aliceIdx, entryIdx)
+	}
+}
+
+// TestBuildMergedRoute_PerClientAWG_MultiHopPin verifies that a pin to a node
+// further than one hop down is expressible with AWG source-IP routing — the
+// case that auth_user (TUIC/VLESS) cannot do. alice pins to exit (two hops down
+// from entry): entry forwards down, middle forwards down, exit direct-outs.
+// We render each node's roles and check the rule on each.
+func TestBuildMergedRoute_PerClientAWG_MultiHopPin(t *testing.T) {
+	c := &model.Chain{
+		Name:         "mh",
+		UserProtocol: model.UserProtocolAWG,
+		Nodes: []model.ChainNode{
+			{ID: "entry", Addr: "entry.example.test:22"},
+			{ID: "middle", Addr: "middle.example.test:22"},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	alice := model.User{
+		Name: "alice", Active: true, AWGAddress: "10.8.0.2/32",
+		ChainExit: map[string]string{"mh": "exit"}, // pin two hops down
+	}
+	usersByChain := map[string][]model.User{"mh": {alice}}
+
+	type want struct {
+		nodeID    string
+		outbound  string // "" means no per-client rule expected on this node
+		inTagWant string
+	}
+	cases := []want{
+		{"entry", "", "ch-mh-user-in"},       // entry: has outbound, before exit -> inter-node out
+		{"middle", "", "ch-mh-transport-in"}, // middle: has outbound, before exit -> inter-node out
+		{"exit", "direct-out", "ch-mh-transport-in"},
+	}
+	for i, w := range cases {
+		roles := resolveChainRoles(w.nodeID, []*model.Chain{c})
+		rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: w.nodeID}}, usersByChain)
+		if rt == nil {
+			t.Fatalf("node %s: nil route", w.nodeID)
+		}
+		var got *config.RouteRuleEntry
+		for j := range rt.Rules {
+			r := &rt.Rules[j]
+			if len(r.SourceIPCIDR) == 1 && r.SourceIPCIDR[0] == "10.8.0.2/32" {
+				got = r
+				break
+			}
+		}
+		switch w.outbound {
+		case "":
+			// expect an inter-node outbound rule (forward down the chain)
+			if got == nil {
+				t.Fatalf("node %s (case %d): no source_ip_cidr rule for alice", w.nodeID, i)
+			}
+			if got.Outbound == "direct-out" {
+				t.Errorf("node %s (case %d): outbound=direct-out, want inter-node forward", w.nodeID, i)
+			}
+		case "direct-out":
+			if got == nil {
+				t.Fatalf("node %s (case %d): no source_ip_cidr rule for alice", w.nodeID, i)
+			}
+			if got.Outbound != "direct-out" {
+				t.Errorf("node %s (case %d): outbound=%s, want direct-out", w.nodeID, i, got.Outbound)
+			}
+		}
+		if got != nil {
+			if len(got.Inbound) != 1 || got.Inbound[0] != w.inTagWant {
+				t.Errorf("node %s (case %d): inbound=%v, want [%s]", w.nodeID, i, got.Inbound, w.inTagWant)
+			}
+		}
+	}
+}
+
+// TestBuildMergedRoute_NoUsers_AWG_NoSourceIPRules — without users, no per-
+// client source_ip_cidr rules are emitted for an AWG chain.
+func TestBuildMergedRoute_NoUsers_AWG_NoSourceIPRules(t *testing.T) {
+	c := &model.Chain{
+		Name:         "awgnu",
+		UserProtocol: model.UserProtocolAWG,
+		Nodes: []model.ChainNode{
+			{ID: "entry", Addr: "entry.example.test:22"},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	roles := resolveChainRoles("entry", []*model.Chain{c})
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, nil)
+	for _, r := range rt.Rules {
+		if len(r.SourceIPCIDR) > 0 {
+			t.Errorf("no users should yield no source_ip_cidr rules, got %+v", r)
+		}
+	}
+}
+
+// TestBuildAWGUserInboundMulti_Peers verifies the multi-peer AWG endpoint: one
+// peer per active user with AWGPublicKey+AWGAddress, skipped users omitted, and
+// a placeholder peer when nobody qualifies.
+func TestBuildAWGUserInboundMulti_Peers(t *testing.T) {
+	preset := GetDefaultPreset()
+	users := []model.User{
+		{Name: "alice", Active: true, AWGPublicKey: "pub-alice", AWGAddress: "10.8.0.2/32"},
+		{Name: "bob", Active: true, AWGPublicKey: "pub-bob", AWGAddress: "10.8.0.3/32"},
+		{Name: "carol", Active: false, AWGPublicKey: "pub-carol", AWGAddress: "10.8.0.4/32"}, // inactive -> skip
+		{Name: "dave", Active: true, AWGPublicKey: "", AWGAddress: "10.8.0.5/32"},            // no pub -> skip
+		{Name: "eve", Active: true, AWGPublicKey: "pub-eve", AWGAddress: ""},                  // no addr -> skip
+	}
+	epJSON, _, err := buildAWGUserInboundMulti(8443, "ch-x-user-in", &preset, "", users)
+	if err != nil {
+		t.Fatalf("buildAWGUserInboundMulti: %v", err)
+	}
+	var ep config.WireGuardEndpoint
+	if err := json.Unmarshal(epJSON, &ep); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, epJSON)
+	}
+	if ep.Tag != "ch-x-user-in" {
+		t.Errorf("tag=%s, want ch-x-user-in", ep.Tag)
+	}
+	if len(ep.Peers) != 2 {
+		t.Fatalf("want 2 peers (alice, bob), got %d: %+v", len(ep.Peers), ep.Peers)
+	}
+	wantPeers := map[string]string{"pub-alice": "10.8.0.2/32", "pub-bob": "10.8.0.3/32"}
+	for _, p := range ep.Peers {
+		want, ok := wantPeers[p.PublicKey]
+		if !ok {
+			t.Errorf("unexpected peer pubkey %s", p.PublicKey)
+			continue
+		}
+		if len(p.AllowedIPs) != 1 || p.AllowedIPs[0] != want {
+			t.Errorf("peer %s allowed_ips=%v, want [%s]", p.PublicKey, p.AllowedIPs, want)
+		}
+	}
+}
+
+// TestBuildAWGUserInboundMulti_NoQualifiedUsers_Placeholder — when no user has
+// AWG creds, the endpoint still gets a placeholder peer so the config is valid.
+func TestBuildAWGUserInboundMulti_NoQualifiedUsers_Placeholder(t *testing.T) {
+	preset := GetDefaultPreset()
+	users := []model.User{{Name: "alice", Active: true}} // no AWG creds
+	epJSON, _, err := buildAWGUserInboundMulti(8443, "ch-x-user-in", &preset, "", users)
+	if err != nil {
+		t.Fatalf("buildAWGUserInboundMulti: %v", err)
+	}
+	var ep config.WireGuardEndpoint
+	if err := json.Unmarshal(epJSON, &ep); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(ep.Peers) != 1 {
+		t.Fatalf("want 1 placeholder peer, got %d", len(ep.Peers))
+	}
+	if ep.Peers[0].PublicKey != "CLIENT_PUBLIC_KEY_HERE" {
+		t.Errorf("placeholder pubkey=%s, want CLIENT_PUBLIC_KEY_HERE", ep.Peers[0].PublicKey)
+	}
+}
+
+// TestRenderClientAWGConf_PerUser verifies the per-user awg-quick .conf carries
+// the user's AWGPrivateKey + AWGAddress, the server public key, and the entry
+// endpoint. A pinned ChainExit to a direct entry selects that entry's host.
+func TestRenderClientAWGConf_PerUser(t *testing.T) {
+	c := &model.Chain{
+		Name:              "awgchain",
+		UserProtocol:      model.UserProtocolAWG,
+		AWGEntryServerPub: "SERVER_PUB",
+		Nodes: []model.ChainNode{
+			{ID: "entry", Addr: "entry.example.test:22"},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	u := &model.User{
+		Name: "alice", Active: true,
+		AWGPrivateKey: "ALICE_PRIV",
+		AWGAddress:    "10.8.0.5/32",
+	}
+	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: u})
+	if err != nil {
+		t.Fatalf("RenderClientAWGConf: %v", err)
+	}
+	for _, want := range []string{
+		"Address = 10.8.0.5/32",
+		"PrivateKey = ALICE_PRIV",
+		"PublicKey = SERVER_PUB",
+		"Endpoint = entry.example.test:",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("conf missing %q\n%s", want, conf)
+		}
+	}
+}
+
+// TestRenderClientAWGConf_PinnedEntry verifies ChainExit pin to a direct entry
+// makes the .conf dial that entry's host (not the default first entry).
+func TestRenderClientAWGConf_PinnedEntry(t *testing.T) {
+	c := &model.Chain{
+		Name:              "awgme",
+		UserProtocol:      model.UserProtocolAWG,
+		AWGEntryServerPub: "SERVER_PUB",
+		Nodes: []model.ChainNode{
+			{ID: "e1", Addr: "e1.example.test:22", Role: model.NodeRoleEntry},
+			{ID: "e2", Addr: "e2.example.test:22", Role: model.NodeRoleEntry},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	u := &model.User{
+		Name: "bob", Active: true,
+		AWGPrivateKey: "BOB_PRIV",
+		AWGAddress:    "10.8.0.6/32",
+		ChainExit:     map[string]string{"awgme": "e2"}, // pin to the 2nd entry
+	}
+	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: u})
+	if err != nil {
+		t.Fatalf("RenderClientAWGConf: %v", err)
+	}
+	if !strings.Contains(conf, "Endpoint = e2.example.test:") {
+		t.Errorf("pinned .conf should dial e2, got:\n%s", conf)
+	}
+	if strings.Contains(conf, "e1.example.test") {
+		t.Errorf("pinned .conf must not dial e1, got:\n%s", conf)
+	}
+}
+
+// TestRenderClientAWGConf_NotAWG — non-AWG chain returns an error.
+func TestRenderClientAWGConf_NotAWG(t *testing.T) {
+	c := &model.Chain{Name: "tuicchain", UserProtocol: model.UserProtocolTUIC,
+		Nodes: []model.ChainNode{{ID: "entry", Addr: "e.test:22"}}}
+	if _, err := RenderClientAWGConf(ClientConfigParams{Chain: c}); err == nil {
+		t.Fatal("expected error for non-AWG chain")
+	}
+}
+
+// TestAllocateAWGPeerIP verifies deterministic first-free allocation, skipping
+// the server (.1) and already-taken addresses.
+func TestAllocateAWGPeerIP(t *testing.T) {
+	taken := []string{"10.8.0.2/32", "10.8.0.3/32", "10.8.0.5/32"}
+	got := allocateAWGPeerIP(taken)
+	if got != "10.8.0.4/32" {
+		t.Errorf("first free after 2,3,5 = %s, want 10.8.0.4/32", got)
+	}
+	// normalization: "10.8.0.3" without /32 must collide with "10.8.0.3/32"
+	got = allocateAWGPeerIP([]string{"10.8.0.2", "10.8.0.3/32"})
+	if got != "10.8.0.4/32" {
+		t.Errorf("normalized collision: got %s, want 10.8.0.4/32", got)
+	}
+	// empty taken -> first allocatable is .2
+	if got := allocateAWGPeerIP(nil); got != "10.8.0.2/32" {
+		t.Errorf("empty taken: got %s, want 10.8.0.2/32", got)
+	}
+}
+
+// TestEnsureUserCreds_AWG_Keypair verifies AWG users get a WireGuard keypair
+// (but no address — that needs the store via EnsureUserAWGAddress).
+func TestEnsureUserCreds_AWG_Keypair(t *testing.T) {
+	u := &model.User{Name: "alice", Active: true, Protocols: []string{"awg"}}
+	EnsureUserCreds(u)
+	if u.AWGPrivateKey == "" || u.AWGPublicKey == "" {
+		t.Fatalf("AWG user should get a keypair, got priv=%q pub=%q", u.AWGPrivateKey, u.AWGPublicKey)
+	}
+	if u.AWGAddress != "" {
+		t.Errorf("EnsureUserCreds must not allocate AWGAddress (needs store), got %q", u.AWGAddress)
+	}
+	// idempotent: second call preserves existing creds
+	priv, pub := u.AWGPrivateKey, u.AWGPublicKey
+	EnsureUserCreds(u)
+	if u.AWGPrivateKey != priv || u.AWGPublicKey != pub {
+		t.Error("EnsureUserCreds overwrote existing AWG keypair")
+	}
+}
+
+// TestEnsureUserAWGAddress verifies address allocation against taken IPs.
+func TestEnsureUserAWGAddress(t *testing.T) {
+	u := &model.User{Name: "alice", Active: true, Protocols: []string{"awg"}}
+	EnsureUserAWGAddress(u, []string{"10.8.0.2/32"})
+	if u.AWGAddress != "10.8.0.3/32" {
+		t.Errorf("AWGAddress=%s, want 10.8.0.3/32", u.AWGAddress)
+	}
+	// already set -> not changed
+	u.AWGAddress = "10.8.0.9/32"
+	EnsureUserAWGAddress(u, []string{"10.8.0.9/32"})
+	if u.AWGAddress != "10.8.0.9/32" {
+		t.Errorf("AWGAddress changed: %s", u.AWGAddress)
+	}
+	// non-AWG user -> no address
+	other := &model.User{Name: "bob", Protocols: []string{"tuic"}}
+	EnsureUserAWGAddress(other, nil)
+	if other.AWGAddress != "" {
+		t.Errorf("non-AWG user got AWGAddress %q", other.AWGAddress)
 	}
 }
 

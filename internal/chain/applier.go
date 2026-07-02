@@ -1106,6 +1106,75 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 	return epJSON, pubKeyB64, nil
 }
 
+// buildAWGUserInboundMulti builds a multi-peer AWG endpoint for a chain entry
+// where each user is a distinct WireGuard peer. Every user contributes one peer
+// carrying their AWGPublicKey (so the server accepts their handshakes) and
+// their AWGAddress as AllowedIPs (the peer's inner source IP — this is what
+// per-client source_ip_cidr route rules match on). Users without an
+// AWGPublicKey or AWGAddress are skipped (they cannot be a peer). When no user
+// qualifies, the endpoint still gets a placeholder peer so the config is valid
+// (clients just won't be able to connect until creds are assigned).
+//
+// Returns the endpoint JSON and the server's public key (derived from
+// serverPrivKeyB64, or generated when empty — caller persists the latter).
+func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User) ([]byte, string, error) {
+	awg := preset.AWG
+	if awg == nil {
+		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
+	}
+
+	var privKeyB64, pubKeyB64 string
+	var err error
+	if serverPrivKeyB64 != "" {
+		privKeyB64 = serverPrivKeyB64
+		pubKeyB64, err = deriveWireGuardPublicFromPrivate(privKeyB64)
+		if err != nil {
+			return nil, "", fmt.Errorf("derive awg pub from provided priv: %w", err)
+		}
+	} else {
+		privKeyB64, pubKeyB64, err = generateWireGuardKeypair()
+		if err != nil {
+			return nil, "", fmt.Errorf("generate awg server keypair: %w", err)
+		}
+	}
+
+	peers := make([]config.WireGuardPeer, 0, len(users))
+	for _, u := range users {
+		if !u.Active {
+			continue
+		}
+		if u.AWGPublicKey == "" || u.AWGAddress == "" {
+			continue // no per-user AWG creds -> cannot be a peer
+		}
+		peers = append(peers, config.WireGuardPeer{
+			PublicKey:  u.AWGPublicKey,
+			AllowedIPs: []string{u.AWGAddress},
+		})
+	}
+	if len(peers) == 0 {
+		// No qualified users yet: keep the endpoint valid with a placeholder so
+		// sing-box accepts the config. Replaced once users get AWG creds.
+		peers = []config.WireGuardPeer{
+			{PublicKey: "CLIENT_PUBLIC_KEY_HERE", AllowedIPs: []string{"10.8.0.2/32"}},
+		}
+	}
+
+	ep := config.WireGuardEndpoint{
+		Type:       "wireguard",
+		Tag:        tag, // user-in tag — route rules address this endpoint by tag
+		System:     false,
+		MTU:        1420,
+		Address:    []string{"10.8.0.1/32"}, // server tunnel IP
+		PrivateKey: privKeyB64,
+		ListenPort: port,
+		Peers:      peers,
+		Amnezia:    BuildAWGAmnezia(awg, preset),
+	}
+
+	epJSON, _ := json.Marshal(ep)
+	return epJSON, pubKeyB64, nil
+}
+
 // deriveWireGuardPublicFromPrivate takes a base64 WireGuard private key and returns the corresponding public key.
 func deriveWireGuardPublicFromPrivate(privB64 string) (string, error) {
 	privBytes, err := base64.StdEncoding.DecodeString(privB64)

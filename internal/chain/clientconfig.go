@@ -56,6 +56,23 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 		return "", fmt.Errorf("client config: chain %q has no entry node", c.Name)
 	}
 
+	// Per-client entry selection: when the user pins a ChainExit to a node that
+	// IS an entry of this chain, connect only to that entry (the user egresses
+	// there). This is how per-client routing is realized for multi-hop chains —
+	// the inter-node hops do not propagate the end-user identity, so the pinned
+	// node must be the user's direct entry. When the pin is not an entry (or
+	// absent), fall back to all entries (load-balanced / first).
+	if params.User != nil {
+		if pinned, ok := params.User.ChainExit[c.Name]; ok && pinned != "" {
+			for _, n := range entries {
+				if n.ID == pinned {
+					entries = []*model.ChainNode{n}
+					break
+				}
+			}
+		}
+	}
+
 	listen := params.LocalProxyAddr
 	if listen == "" {
 		listen = "127.0.0.1:1080"
@@ -237,4 +254,116 @@ func splitHostPortSafe(addr string) (string, int) {
 		port = port*10 + int(r-'0')
 	}
 	return host, port
+}
+
+// RenderClientAWGConf produces an awg-quick client .conf (NOT a sing-box JSON)
+// for a chain whose user-entry protocol is AWG. Each user connects as their own
+// WireGuard peer: the .conf carries the user's AWGPrivateKey and AWGAddress
+// (the per-user inner IP that the server's per-client source_ip_cidr rules
+// match on). When params.User is nil or lacks per-user AWG creds, the chain-wide
+// shared client key/IP is used as a fallback (legacy single-client behavior).
+//
+// Entry selection mirrors RenderClientConfig: a user with a ChainExit pin to a
+// direct entry of this chain connects only to that entry; otherwise the first
+// entry is used (single entry) — AWG has no client-side load balancing, the
+// user dials one endpoint. EntryHostOverride replaces the parsed entry address
+// (e.g. "127.0.0.1" when the client runs on the entry VPS itself).
+//
+// Returns an error when the chain is not AWG or has no entry node.
+func RenderClientAWGConf(params ClientConfigParams) (string, error) {
+	c := params.Chain
+	if c == nil {
+		return "", fmt.Errorf("awg client conf: nil chain")
+	}
+	if c.UserProtocol != model.UserProtocolAWG {
+		return "", fmt.Errorf("awg client conf: chain %q user protocol is %q, not awg", c.Name, c.UserProtocol)
+	}
+	entries := chainEntryNodes(c)
+	if len(entries) == 0 {
+		return "", fmt.Errorf("awg client conf: chain %q has no entry node", c.Name)
+	}
+	// Per-client entry selection: pin to a direct entry when ChainExit matches
+	// one of this chain's entries (the user egresses there).
+	entry := entries[0]
+	if params.User != nil {
+		if pinned, ok := params.User.ChainExit[c.Name]; ok && pinned != "" {
+			for _, n := range entries {
+				if n.ID == pinned {
+					entry = n
+					break
+				}
+			}
+		}
+	}
+
+	// Per-user AWG creds take precedence over the chain-wide shared creds so
+	// each user's .conf authenticates as their own peer (per-client routing).
+	// Fallback to chain-wide when the user has no per-user identity (legacy).
+	clientPriv := ""
+	address := ""
+	if params.User != nil {
+		clientPriv = params.User.AWGPrivateKey
+		address = params.User.AWGAddress
+	}
+	serverPub := c.AWGEntryServerPub
+	port := chainEntryPort(c, entry.ID)
+
+	host := params.EntryHostOverride
+	if host == "" {
+		host = strings.Split(entry.Addr, ":")[0]
+	}
+	return renderAWGQuickConf(host, port, clientPriv, serverPub, address), nil
+}
+
+// renderAWGQuickConf builds the awg-quick .conf text with Amnezia obfuscation
+// params from the default preset. clientPriv/address empty -> legacy fallback
+// (placeholder key + 10.8.0.2/24); the caller should have real per-user creds
+// for production, but the .conf is still structurally valid.
+func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string) string {
+	if address == "" {
+		address = "10.8.0.2/24"
+	}
+	if clientPriv == "" {
+		clientPriv = "CLIENT_PRIVATE_KEY_HERE"
+	}
+	if serverPub == "" {
+		serverPub = "SERVER_PUBLIC_KEY_HERE"
+	}
+	var b strings.Builder
+	b.WriteString("[Interface]\n")
+	b.WriteString(fmt.Sprintf("Address = %s\n", address))
+	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", clientPriv))
+	b.WriteString("MTU = 1420\n\n")
+	b.WriteString("[Peer]\n")
+	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
+	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
+	b.WriteString("PersistentKeepalive = 25\n")
+	// Amnezia params from the default preset's AWG section (must match the
+	// server endpoint's amnezia block or the handshake fails).
+	if preset := GetDefaultPreset(); preset.AWG != nil {
+		amn := BuildAWGAmnezia(preset.AWG, &preset)
+		if amn != nil {
+			b.WriteString("\n")
+			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))
+			b.WriteString(fmt.Sprintf("Jmin = %d\n", amn.JMIN))
+			b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
+			b.WriteString(fmt.Sprintf("S1 = %d\n", amn.S1))
+			b.WriteString(fmt.Sprintf("S2 = %d\n", amn.S2))
+			b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
+			b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+			b.WriteString(fmt.Sprintf("H1 = %s\n", amn.H1))
+			b.WriteString(fmt.Sprintf("H2 = %s\n", amn.H2))
+			b.WriteString(fmt.Sprintf("H3 = %s\n", amn.H3))
+			b.WriteString(fmt.Sprintf("H4 = %s\n", amn.H4))
+			if amn.I1 != "" {
+				b.WriteString(fmt.Sprintf("I1 = %s\n", amn.I1))
+				b.WriteString(fmt.Sprintf("I2 = %s\n", amn.I2))
+				b.WriteString(fmt.Sprintf("I3 = %s\n", amn.I3))
+				b.WriteString(fmt.Sprintf("I4 = %s\n", amn.I4))
+				b.WriteString(fmt.Sprintf("I5 = %s\n", amn.I5))
+			}
+		}
+	}
+	return b.String()
 }

@@ -160,17 +160,24 @@ func TestBuildConnectionLink_NoNodes(t *testing.T) {
 	}
 }
 
-// TestBuildConnectionLink_AWG verifies a chain link builds for AWG.
+// TestBuildConnectionLink_AWG verifies a chain link builds an awg-quick .conf
+// for AWG (per-user peer; the .conf carries the server pub + entry endpoint).
 func TestBuildConnectionLink_AWG(t *testing.T) {
 	c := &model.Chain{
-		Name:               "c1",
-		UserProtocol:       model.UserProtocolAWG,
-		AWGEntryServerPub:  "awg-pub",
-		Nodes:              []model.ChainNode{{ID: "n0", Addr: "1.2.3.4:22"}},
+		Name:              "c1",
+		UserProtocol:      model.UserProtocolAWG,
+		AWGEntryServerPub: "awg-pub",
+		Nodes:             []model.ChainNode{{ID: "n0", Addr: "1.2.3.4:22"}},
 	}
 	link := buildConnectionLink(c, &model.User{})
-	if !strings.HasPrefix(link, "awg://1.2.3.4:8443") {
-		t.Errorf("got %q, want awg://1.2.3.4:8443", link)
+	if !strings.Contains(link, "[Interface]") {
+		t.Errorf("got %q, want a .conf", link)
+	}
+	if !strings.Contains(link, "Endpoint = 1.2.3.4:") {
+		t.Errorf("got %q, want Endpoint = 1.2.3.4: in .conf", link)
+	}
+	if !strings.Contains(link, "PublicKey = awg-pub") {
+		t.Errorf("got %q, want server pub awg-pub in .conf", link)
 	}
 }
 

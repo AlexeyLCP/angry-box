@@ -27,20 +27,37 @@ type User struct {
 	// Per-user protocol credentials (generated once at user-create, persisted,
 	// stable across applies; rotated only explicitly). These let each user
 	// authenticate to a multi-user inbound with their own identity, which is the
-	// basis for per-client (auth_user) routing. Empty fields = legacy behavior
-	// (the user falls back to the chain-wide / inbound-shared credentials).
+	// basis for per-client routing. Empty fields = legacy behavior (the user
+	// falls back to the chain-wide / inbound-shared credentials).
+	//
+	// TUIC/VLESS use an auth_user identity (UUID/Name) matched by sing-box route
+	// rules. AWG (AmneziaWG) is a WireGuard L3 tunnel — it has no auth_user;
+	// each user is a distinct peer identified by a PublicKey + a unique tunnel
+	// IP (AWGAddress). The tunnel IP doubles as the route-rule source IP
+	// (source_ip_cidr), so per-client routing for AWG keys on the peer's inner
+	// address, not on an auth_user string.
 	VLESSUUID    string `json:"vless_uuid,omitempty"`
 	TUICUUID     string `json:"tuic_uuid,omitempty"`
 	TUICPassword string `json:"tuic_password,omitempty"`
 	// Hysteria2Password is the per-user Hysteria2 password (the inbound's users
 	// array carries password-based auth, no separate UUID).
 	Hysteria2Password string `json:"hysteria2_password,omitempty"`
+	// AWG per-user peer credentials. AWGPrivateKey is the client's WireGuard
+	// private key (rendered into the per-user awg-quick .conf). AWGPublicKey is
+	// the corresponding public key — it goes into the server endpoint's Peers[]
+	// so the server accepts this user's handshakes. AWGAddress is the user's
+	// unique tunnel IP (e.g. "10.8.0.3/32"); it is both the peer's AllowedIPs
+	// on the server and the source_ip_cidr used by per-client route rules.
+	AWGPrivateKey string `json:"awg_private_key,omitempty"`
+	AWGPublicKey  string `json:"awg_public_key,omitempty"`
+	AWGAddress    string `json:"awg_address,omitempty"`
 
 	// ChainExit optionally pins a user to a specific exit node per chain. The
 	// map key is the chain name; the value is the ChainNode.ID of the exit.
 	// When set and the chain's route section is enabled (AB_ROUTE_DNS=1), a
-	// per-user auth_user route rule steers that user's traffic to the chosen
-	// exit's outbound. Empty map = use the chain's default exit (last node).
+	// per-user route rule steers that user's traffic to the chosen exit's
+	// outbound: for TUIC/VLESS via auth_user, for AWG via source_ip_cidr (the
+	// peer's tunnel IP). Empty map = use the chain's default exit (last node).
 	ChainExit map[string]string `json:"chain_exit,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`

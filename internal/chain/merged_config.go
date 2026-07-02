@@ -158,26 +158,46 @@ func buildMergedNodeConfig(
 // routed to its OutboundTag (default direct-out).
 //
 // Per-client routing (phase B4): when usersByChain carries users with a
-// ChainExit pin for a chain, emit an auth_user rule for that chain's entry
-// inbound steering the user's traffic to the chosen exit's outbound — direct-out
-// if the pinned exit is THIS node (egress here), or the inter-node outbound if
-// the pinned exit is the next hop. Rules with auth_user must come BEFORE the
-// generic inbound->outbound rules so they take precedence. A pin to a node that
-// is neither this node nor the next hop is not expressible in a linear chain and
-// is skipped (the user falls back to the chain's default route).
+// ChainExit pin for a chain, emit a per-user route rule for that chain's
+// entry/transit inbound steering the user's traffic to the chosen exit.
+//
+// Two mechanisms, by user-entry protocol:
+//   - TUIC/VLESS/Hysteria2: auth_user rule (the inbound carries a users[] array
+//     and the rule matches the user's auth identity — UUID for TUIC, Name for
+//     VLESS/Hysteria2). auth_user is an inbound-identity match, so it only
+//     works where the user's identity is re-asserted — i.e. on the entry. A pin
+//     to a node further than one hop down is NOT expressible (transit hops do
+//     not carry the end-user identity) and is skipped.
+//   - AWG: source_ip_cidr rule (each user is a WireGuard peer with a unique
+//     tunnel IP = AWGAddress). The inner source IP is preserved end-to-end
+//     through the inter-node XHTTP tunnel, so EVERY hop the user's traffic
+//     traverses can route by source IP. This makes a pin to ANY downstream node
+//     expressible: each hop before the pinned exit forwards down the chain
+//     (inter-node outbound), and the pinned exit itself routes to direct-out.
+//
+// Per-client rules must come BEFORE the generic inbound->outbound rules so they
+// take precedence. A user without the protocol's per-user cred (auth identity
+// for TUIC/VLESS, AWGAddress for AWG) is skipped — they fall back to the
+// chain's default route.
 func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain map[string][]model.User) *config.RoutingSection {
 	var rules []config.RouteRuleEntry
 
-	// Per-client auth_user rules first (highest precedence for the matched user).
+	// Per-client rules first (highest precedence for the matched user). Emitted
+	// on every node the user's traffic traverses: on the entry for the user-in
+	// inbound, and on each transit for the transport-in inbound.
 	for _, role := range roles {
-		if !role.IsEntry {
-			continue
-		}
 		users := usersForChain(usersByChain, role.Chain.Name)
 		if len(users) == 0 {
 			continue
 		}
-		inTag := chainUserInboundTag(role.Chain, role.Node.ID)
+		var inTag string
+		if role.IsEntry {
+			inTag = chainUserInboundTag(role.Chain, role.Node.ID)
+		} else if role.IsTransit {
+			inTag = fmt.Sprintf("ch-%s-transport-in", role.Chain.Name)
+		} else {
+			continue
+		}
 		nextID := ""
 		if role.HasOutbound {
 			nextID = role.Chain.Nodes[role.NodeIndex+1].ID
@@ -187,19 +207,50 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain 
 			if !pinned || exitID == "" {
 				continue
 			}
+			if role.Chain.UserProtocol == model.UserProtocolAWG {
+				// AWG: route by the peer's inner source IP. The source IP travels
+				// through the chain, so a pin to any downstream node works:
+				//   - this node IS the pinned exit -> direct-out (egress here);
+				//   - this node is BEFORE the pinned exit and has an outbound ->
+				//     forward down the chain (the pinned exit will direct-out it).
+				// A user without AWGAddress cannot be matched by source_ip_cidr.
+				if u.AWGAddress == "" {
+					continue
+				}
+				switch {
+				case exitID == role.Node.ID:
+					rules = append(rules, config.RouteRuleEntry{
+						Inbound: []string{inTag}, SourceIPCIDR: []string{u.AWGAddress}, Outbound: "direct-out",
+					})
+				case role.HasOutbound && nodeIsAtOrBefore(role, exitID):
+					rules = append(rules, config.RouteRuleEntry{
+						Inbound: []string{inTag}, SourceIPCIDR: []string{u.AWGAddress}, Outbound: chainInterNodeOutboundTag(&role),
+					})
+				}
+				continue
+			}
+			// TUIC/VLESS/Hysteria2: auth_user match. auth_user is an inbound
+			// identity match, only re-asserted on the entry; a pin beyond the
+			// next hop is not expressible and is skipped.
+			authID := userAuthIdentity(u, role.Chain.UserProtocol)
+			if authID == "" {
+				continue
+			}
 			switch {
 			case exitID == role.Node.ID:
-				// Egress at THIS node (the user pinned to the entry itself).
+				// Pinned exit is THIS node: egress here (direct-out), do not forward.
 				rules = append(rules, config.RouteRuleEntry{
-					Inbound: []string{inTag}, AuthUser: []string{u.Name}, Outbound: "direct-out",
+					Inbound: []string{inTag}, AuthUser: []string{authID}, Outbound: "direct-out",
 				})
 			case role.HasOutbound && exitID == nextID:
-				// Egress one hop down: forward to the next node.
+				// Pinned exit is the next hop: forward to it (it will egress there
+				// via its own auth_user direct-out rule).
 				rules = append(rules, config.RouteRuleEntry{
-					Inbound: []string{inTag}, AuthUser: []string{u.Name}, Outbound: chainInterNodeOutboundTag(&role),
+					Inbound: []string{inTag}, AuthUser: []string{authID}, Outbound: chainInterNodeOutboundTag(&role),
 				})
 			}
-			// Other pins are not expressible in a linear chain; skipped.
+			// Other pins (exit further down) are not expressible in a linear chain
+			// without per-hop auth_user propagation; skipped -> default route.
 		}
 	}
 
@@ -335,6 +386,41 @@ func usersForChain(usersByChain map[string][]model.User, chainName string) []mod
 	return usersByChain[chainName]
 }
 
+// nodeIsAtOrBefore reports whether the pinned exit node (exitID) sits strictly
+// downstream of role's node in the chain — i.e. role's node is BEFORE the
+// pinned exit and must forward traffic down the chain to reach it. Used by AWG
+// source-IP routing: a hop before the pinned exit forwards down the chain; the
+// pinned exit itself direct-outs. Returns false when exitID is this node, is
+// upstream, or is not found (handled by other branches).
+func nodeIsAtOrBefore(role chainRole, exitID string) bool {
+	c := role.Chain
+	for i, n := range c.Nodes {
+		if n.ID == exitID {
+			return i > role.NodeIndex
+		}
+	}
+	return false
+}
+
+// userAuthIdentity returns the sing-box inbound identity for auth_user route
+// matching. VLESS inbounds match by the user's Name; TUIC matches by UUID
+// (TUICUser has no Name field, so the UUID is the identity). Hysteria2 matches
+// by Name (Hysteria2User has a Name field). Returns "" when the user has no
+// per-user cred for the protocol (cannot be matched by auth_user — skip).
+func userAuthIdentity(u model.User, proto model.UserProtocol) string {
+	switch proto {
+	case model.UserProtocolTUIC:
+		return u.TUICUUID
+	case model.UserProtocolVLESSReality:
+		if u.VLESSUUID == "" {
+			return ""
+		}
+		return u.Name // VLESS users[] carry Name + UUID; auth_user matches Name
+	default:
+		return u.Name
+	}
+}
+
 func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outbounds, endpoints []json.RawMessage) {
 	c := role.Chain
 	cn := c.Name
@@ -345,9 +431,11 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 		inTag := chainUserInboundTag(c, role.Node.ID)
 		switch c.UserProtocol {
 		case model.UserProtocolAWG:
-			ep, _, err := buildAWGUserInbound(userPort, p.UUID,
-				inTag, &role.Preset,
-				c.AWGEntryServerPriv, awgClientPub(c))
+			// Multi-peer: one WireGuard peer per user (AWGPublicKey +
+			// AWGAddress). Per-client routing keys on the peer's inner source
+			// IP (source_ip_cidr), not auth_user — see buildMergedRoute.
+			ep, _, err := buildAWGUserInboundMulti(userPort, inTag, &role.Preset,
+				c.AWGEntryServerPriv, users)
 			if err == nil {
 				endpoints = append(endpoints, ep)
 			}

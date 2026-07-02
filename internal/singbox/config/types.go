@@ -114,6 +114,7 @@ type RouteRuleEntry struct {
 	DomainSuffix []string `json:"domain_suffix,omitempty"`
 	DomainKeyword []string `json:"domain_keyword,omitempty"`
 	IPCidr       []string `json:"ip_cidr,omitempty"`
+	SourceIPCIDR []string `json:"source_ip_cidr,omitempty"` // match source IP CIDR (AWG peer routing)
 	Protocol     []string `json:"protocol,omitempty"`
 	RuleSet      []string `json:"rule_set,omitempty"`
 	Action       string   `json:"action,omitempty"` // sniff | hijack-dns | route | reject | ...

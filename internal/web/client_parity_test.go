@@ -46,7 +46,9 @@ func mustNotContain(t *testing.T, s, sub, label string) {
 func TestClientLink_AWG_ChainCarriesServerPublicKey(t *testing.T) {
 	initDefaultProfile(t)
 	// Server side stores the entry node's AWG public key in chain.AWGEntryServerPub.
-	// buildConnectionLink must surface that exact key in the client link.
+	// buildConnectionLink now renders a per-user awg-quick .conf (each user is
+	// their own WireGuard peer); the .conf must carry that exact server public
+	// key in [Peer]PublicKey and the entry host in Endpoint.
 	c := &model.Chain{
 		Name:              "awg-chain",
 		UserProtocol:      model.UserProtocolAWG,
@@ -56,9 +58,8 @@ func TestClientLink_AWG_ChainCarriesServerPublicKey(t *testing.T) {
 	link := buildConnectionLink(c, &model.User{ID: "u1"})
 	mustContain(t, link, "203.0.113.7", "AWG chain IP")
 	mustContain(t, link, "SERVERPUB_BASE64_43chars___________", "AWG server public key")
-	mustContain(t, link, "awg://", "AWG scheme")
-	// Must NOT fall back to a tun/direct placeholder when a real key is present.
-	mustNotContain(t, link, "10.8.0.", "AWG chain link (should be URI, not .conf)")
+	mustContain(t, link, "[Interface]", "AWG .conf [Interface] section")
+	mustContain(t, link, "Endpoint = 203.0.113.7:", "AWG .conf Endpoint line")
 }
 
 func TestClientLink_AWG_StandaloneConfMatchesServer(t *testing.T) {

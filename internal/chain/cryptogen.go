@@ -168,13 +168,15 @@ func GenerateProxyPassword() string {
 // based on its Protocols list. It only generates what is empty — existing creds
 // are preserved (stable across applies; rotated only explicitly via the UI).
 // This is the basis for per-client routing: a multi-user inbound emits one
-// Users[] entry per user carrying these per-user creds, and an auth_user route
-// rule steers that user to a chosen exit. Empty Protocols leaves creds empty
-// (legacy behavior — the user falls back to chain-wide / shared inbound creds).
+// Users[] entry per user carrying these per-user creds, and a route rule steers
+// that user to a chosen exit. Empty Protocols leaves creds empty (legacy
+// behavior — the user falls back to chain-wide / shared inbound creds).
 //
-// VLESS/TUIC/Hysteria2 are covered here; AWG needs a per-user WireGuard keypair
-// (handled separately via ImportedSecret / generateWireGuardKeypair at assign
-// time, since each peer needs its own pubkey + AllowedIPs on the server).
+// VLESS/TUIC/Hysteria2 are matched by auth_user. AWG (AmneziaWG) has no
+// auth_user: each user is a WireGuard peer identified by a PublicKey + a unique
+// tunnel IP. EnsureUserCreds only generates the AWG keypair here (context-free);
+// the per-user tunnel IP must be allocated against the other users' IPs and is
+// assigned separately via EnsureUserAWGAddress (which needs the store).
 func EnsureUserCreds(u *model.User) {
 	if u == nil {
 		return
@@ -201,4 +203,66 @@ func EnsureUserCreds(u *model.User) {
 	if has("hysteria2") && u.Hysteria2Password == "" {
 		u.Hysteria2Password = GenerateHysteria2Password()
 	}
+	// AWG: generate the per-user WireGuard keypair (StdEncoding, as WireGuard
+	// expects). The tunnel IP (AWGAddress) is NOT allocated here — it requires
+	// the list of IPs already taken by other users (see EnsureUserAWGAddress).
+	if has("awg") && u.AWGPrivateKey == "" {
+		priv, pub, err := GenerateWireGuardKeypair()
+		if err == nil {
+			u.AWGPrivateKey = priv
+			u.AWGPublicKey = pub
+		}
+	}
+}
+
+// EnsureUserAWGAddress allocates a unique AWG tunnel IP for the user when AWG
+// is among their protocols and AWGAddress is still empty. existing is the set
+// of AWGAddress values already taken by other users (caller gathers them from
+// the store, e.g. via ListUsers). Allocation is deterministic — the first free
+// address — so existing users keep their IP across re-applies. No-op when AWG
+// is not a protocol or the address is already set.
+func EnsureUserAWGAddress(u *model.User, existing []string) {
+	if u == nil || u.AWGAddress != "" {
+		return
+	}
+	has := false
+	for _, p := range u.Protocols {
+		if p == "awg" {
+			has = true
+			break
+		}
+	}
+	if !has {
+		return
+	}
+	u.AWGAddress = allocateAWGPeerIP(existing)
+}
+
+// allocateAWGPeerIP returns the first free address in 10.8.0.0/24 (host part
+// 2..254; .1 is the server, .255 is broadcast). taken is the list of currently
+// occupied addresses (any form — with or without /32 suffix). Returns "" only
+// when the /24 is exhausted (unlikely for a single chain).
+func allocateAWGPeerIP(taken []string) string {
+	occupied := make(map[string]bool, len(taken))
+	for _, a := range taken {
+		occupied[awgIPKey(a)] = true
+	}
+	for host := 2; host <= 254; host++ {
+		ip := fmt.Sprintf("10.8.0.%d/32", host)
+		if !occupied[awgIPKey(ip)] {
+			return ip
+		}
+	}
+	return ""
+}
+
+// awgIPKey normalizes an AWG address to its bare IPv4 (strip /32 etc.) so that
+// "10.8.0.3/32" and "10.8.0.3" compare equal.
+func awgIPKey(a string) string {
+	for i := 0; i < len(a); i++ {
+		if a[i] == '/' {
+			return a[:i]
+		}
+	}
+	return a
 }

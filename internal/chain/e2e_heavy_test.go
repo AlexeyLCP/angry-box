@@ -403,6 +403,51 @@ tail -40 "$LOG" 2>/dev/null || true
 	_ = exitCfg
 }
 
+// TestE2E_Heavy_PerClientRouting verifies per-client routing end-to-end: two
+// users pinned via ChainExit to different exit nodes actually egress at their
+// pinned node.
+//
+// Per-client routing was redesigned to the AWG peer/source-IP model (each user
+// is a WireGuard peer with a unique inner IP; route rules match source_ip_cidr,
+// not auth_user). A full e2e here therefore needs an AWG chain entry (multi-peer
+// endpoint) + per-user awg-quick .conf clients brought up with `awg-quick up`
+// on the test VPSes — which requires the AWG kernel module installed on those
+// VPSes and root-level interface management. That infrastructure is not yet
+// staged for this test, so it is skipped by default.
+//
+// The routing LOGIC is covered by unit tests instead:
+//   - TestBuildMergedRoute_PerClientAWG_SourceIP   (source-IP rules, ordering)
+//   - TestBuildMergedRoute_PerClientAWG_MultiHopPin (pin beyond one hop — the
+//     case auth_user could not do)
+//   - TestBuildAWGUserInboundMulti_Peers           (multi-peer endpoint)
+//   - TestRenderClientAWGConf_PerUser / _PinnedEntry (per-user .conf)
+//
+// Set AB_E2E_AWG_PERCLIENT=1 (and AB_ROUTE_DNS=1) once the AWG kernel module is
+// confirmed on the test VPSes to run the real end-to-end check.
+func TestE2E_Heavy_PerClientRouting(t *testing.T) {
+	e2eHeavy(t)
+	if os.Getenv("AB_ROUTE_DNS") != "1" {
+		t.Skip("set AB_ROUTE_DNS=1 to verify per-client routing (requires route section)")
+	}
+	if os.Getenv("AB_E2E_AWG_PERCLIENT") != "1" {
+		t.Skip("per-client routing is now AWG peer/source-IP based; set " +
+			"AB_E2E_AWG_PERCLIENT=1 once the AWG kernel module is staged on the " +
+			"test VPSes. Routing logic is covered by unit tests " +
+			"(TestBuildMergedRoute_PerClientAWG_*).")
+	}
+	// Real AWG e2e: TODO when the AWG kernel module is available on the test
+	// VPSes. Outline (mirrors the unit-tested flow):
+	//   1. buildChainNodes(entry, middle, exit); chain UserProtocol=AWG.
+	//   2. Two users: alice (no pin -> default exit), bob (ChainExit=middle).
+	//      Assign per-user AWG creds (GenerateWireGuardKeypair + allocateAWGPeerIP).
+	//   3. deployChain -> entry config has a multi-peer endpoint (one peer per
+	//      user) + source_ip_cidr route rules (assert counts).
+	//   4. RenderClientAWGConf per user -> awg-quick .conf; upload to the entry
+	//      VPS, `awg-quick up`, curl egress IP, `awg-quick down`.
+	//   5. Assert alice egress == exit IP, bob egress == middle IP.
+	t.Skip("AWG per-client e2e not yet implemented — see test comment for the plan")
+}
+
 // TestE2E_Heavy_Balancer_URLTestInChain verifies a real urltest balancer
 // generated as a raw config (not the orchestrator's linear-chain config):
 // two SOCKS backends on middle/exit, a urltest outbound on entry selecting
