@@ -94,24 +94,38 @@ type AWGClientMaterial struct {
 	I1Type   string `json:"i1_type,omitempty"`
 }
 
-// publicKeyB64 returns the base64-encoded X25519 public key for Reality outbound.
-// In sing-box 1.12.0+, the reality public_key field is a base64-encoded 32-byte public key.
-func (h *hopParams) publicKeyB64() (string, error) {
-	privBytes, err := base64.RawURLEncoding.DecodeString(h.PrivateKey)
+// clampRealityPrivateKeyB64 clamps an X25519 private key per RFC 7748 and
+// returns it as base64 RawURL. Reality inbound and outbound must share the same
+// clamped scalar — deriving the public key from an unclamped stored private key
+// breaks the handshake ("REALITY: processed invalid connection").
+func clampRealityPrivateKeyB64(privB64 string) (string, error) {
+	privBytes, err := base64.RawURLEncoding.DecodeString(privB64)
 	if err != nil {
 		return "", fmt.Errorf("chain: decode private key: %w", err)
 	}
 	if len(privBytes) != 32 {
 		return "", fmt.Errorf("chain: private key is not 32 bytes")
 	}
+	privBytes[0] &= 248
+	privBytes[31] &= 127
+	privBytes[31] |= 64
+	return base64.RawURLEncoding.EncodeToString(privBytes), nil
+}
+
+// publicKeyB64 returns the base64-encoded X25519 public key for Reality outbound.
+// In sing-box 1.12.0+, the reality public_key field is a base64-encoded 32-byte public key.
+func (h *hopParams) publicKeyB64() (string, error) {
+	clamped, err := clampRealityPrivateKeyB64(h.PrivateKey)
+	if err != nil {
+		return "", err
+	}
+	privBytes, err := base64.RawURLEncoding.DecodeString(clamped)
+	if err != nil {
+		return "", fmt.Errorf("chain: decode private key: %w", err)
+	}
 
 	var priv, pub [32]byte
 	copy(priv[:], privBytes)
-	// Clamp private key (X25519 requirement)
-	priv[0] &= 248
-	priv[31] &= 127
-	priv[31] |= 64
-
 	curve25519.ScalarBaseMult(&pub, &priv)
 	return base64.RawURLEncoding.EncodeToString(pub[:]), nil
 }
@@ -187,6 +201,19 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			if priv, pub, kerr := generateWireGuardKeypair(); kerr == nil {
 				chain.AWGEntryServerPriv = priv
 				chain.AWGEntryServerPub = pub
+			}
+		}
+	}
+
+	// Persist TUIC user-entry creds once so server config and RenderClientConfig agree.
+	if chain.UserProtocol == model.UserProtocolTUIC {
+		if chain.TUICEntryUserUUID == "" || chain.TUICEntryUserPassword == "" {
+			uuid, password := GenerateStableTUICUserCreds()
+			if chain.TUICEntryUserUUID == "" {
+				chain.TUICEntryUserUUID = uuid
+			}
+			if chain.TUICEntryUserPassword == "" {
+				chain.TUICEntryUserPassword = password
 			}
 		}
 	}
@@ -364,7 +391,10 @@ func generateHopParams(port int, preset *ConnectionPreset) (*hopParams, error) {
 	if _, err := rand.Read(privKeyBytes); err != nil {
 		return nil, fmt.Errorf("generate reality key: %w", err)
 	}
-	privKeyB64 := base64.RawURLEncoding.EncodeToString(privKeyBytes)
+	privKeyB64, err := clampRealityPrivateKeyB64(base64.RawURLEncoding.EncodeToString(privKeyBytes))
+	if err != nil {
+		return nil, err
+	}
 
 	shortID := make([]byte, 8)
 	if _, err := rand.Read(shortID); err != nil {
@@ -372,7 +402,7 @@ func generateHopParams(port int, preset *ConnectionPreset) (*hopParams, error) {
 	}
 
 	// Prefer Reality preset, fallback to XHTTP host, then random
-	serverName := "www.microsoft.com"
+	serverName := DefaultRealitySNI
 	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
 		serverName = preset.Reality.ServerNames[0] // можно добавить рандомизацию позже
 	} else if preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
@@ -403,7 +433,7 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 			{
 				Name: tag,
 				UUID: p.UUID,
-				Flow: "xtls-rprx-vision",
+				Flow: "",
 			},
 		},
 		TLS: &config.InboundTLSOptions{
@@ -418,9 +448,6 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 				PrivateKey: p.PrivateKey,
 				ShortID:    []string{p.ShortID},
 			},
-		},
-		Multiplex: &config.MultiplexOptions{
-			Enabled: true,
 		},
 	}
 
@@ -466,7 +493,7 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 		Server:     serverAddr,
 		ServerPort: next.Port,
 		UUID:       next.UUID,
-		Flow:       "xtls-rprx-vision",
+		Flow:       "",
 		TLS: &config.OutboundTLSOptions{
 			Enabled:    true,
 			ServerName: next.ServerName,
@@ -479,9 +506,6 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 				PublicKey: pubKeyHex,
 				ShortID:   next.ShortID,
 			},
-		},
-		Multiplex: &config.MultiplexOptions{
-			Enabled: true,
 		},
 	}
 
@@ -954,7 +978,7 @@ func buildTUICUserInbound(port int, uuid, password, tag string, preset *Connecti
 		authTimeout = "3s"
 	}
 
-	serverName := "www.microsoft.com"
+	serverName := DefaultRealitySNI
 	if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
 		serverName = preset.Reality.ServerNames[0]
 	}
@@ -987,10 +1011,13 @@ func buildTUICUserInbound(port int, uuid, password, tag string, preset *Connecti
 // ensureCertForTLSInbounds never wrote for the tuic-cert.pem path, so sing-box
 // check failed on a fresh node. Inline cert mirrors the standalone TUIC path
 // (merged_config.go) and removes the dependency on remote cert generation.
+// ALPN h3 is required: a TUIC client (QUIC) aborts with "server did not select
+// an ALPN protocol" when the server omits it (caught by e2e client connect).
 func buildTUICInlineTLS(serverName string) *config.InboundTLSOptions {
 	tls := &config.InboundTLSOptions{
 		Enabled:    true,
 		ServerName: serverName,
+		ALPN:       []string{"h3"},
 	}
 	if cert, key, err := GenerateSelfSignedCert(serverName); err == nil {
 		tls.Certificate = cert

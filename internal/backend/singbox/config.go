@@ -289,6 +289,7 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 			tls := &config.InboundTLSOptions{
 				Enabled:    true,
 				ServerName: serverName,
+				ALPN:       []string{"h3"}, // required for QUIC/TUIC clients
 			}
 
 			cert, key := ib.TLSCertificate, ib.TLSPrivateKey

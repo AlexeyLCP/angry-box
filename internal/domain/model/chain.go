@@ -32,6 +32,10 @@ type Chain struct {
 	Transport          TransportType `json:"transport,omitempty"`           // transport between nodes (xhttp/reality)
 	UserProtocol       UserProtocol  `json:"user_protocol,omitempty"`       // user entry protocol (tuic/awg/vless-reality)
 	ObfuscationProfile string        `json:"obfuscation_profile,omitempty"` // optional explicit profile override (e.g. "china_2026")
+	// UserEntryPort overrides the default user-entry listen port (8443). 0 keeps
+	// the default. Needed when the VPS firewall only opens 443/standard ports —
+	// the entry can listen on 443 instead of 8443.
+	UserEntryPort int `json:"user_entry_port,omitempty"`
 
 	// Stable user-entry credentials (generated once at chain creation for AWG/TUIC).
 	// These must remain stable across applies so that client configs do not break.

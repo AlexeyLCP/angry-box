@@ -1,0 +1,182 @@
+package chain
+
+// clientconfig.go — renders a full sing-box CLIENT config (not just a share-link)
+// for a chain's user entry, so an operator can run sing-box locally and actually
+// connect through the chain. This is the counterpart of buildMergedNodeConfig:
+// the server side is built there; the client side is built here.
+//
+// Currently supports a TUIC user entry (the most common single-hop + multi-hop
+// entry protocol). The client dials the entry node's TUIC inbound and routes all
+// traffic through it; for multi-hop chains the entry node's own route/strategy
+// forwards to the next hop, so the client only needs to reach the entry.
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
+)
+
+// ClientConfigParams carries what the generator needs: the chain (for entry
+// protocol + creds + entry node address) and the user the config is for.
+type ClientConfigParams struct {
+	Chain *model.Chain
+	// User is optional; reserved for per-user creds when they diverge from the
+	// chain entry creds (currently the chain entry creds are used directly).
+	User *model.User
+	// LocalProxyAddr is the SOCKS/HTTP listen address for the client's inbound
+	// (e.g. "127.0.0.1:1080"). Defaults to 127.0.0.1:1080 (SOCKS) + mixed.
+	LocalProxyAddr string
+	// EntryHostOverride, when set, replaces the parsed entry node address in the
+	// TUIC outbound (e.g. "127.0.0.1" when the client runs on the entry VPS).
+	EntryHostOverride string
+}
+
+// RenderClientConfig produces the sing-box client config JSON for the chain's
+// user entry. Returns the pretty-printed JSON.
+func RenderClientConfig(params ClientConfigParams) (string, error) {
+	c := params.Chain
+	if c == nil || len(c.Nodes) == 0 {
+		return "", fmt.Errorf("client config: chain has no nodes")
+	}
+	entry := c.Nodes[0]
+	entryHost := extractHost(entry.Addr)
+	if params.EntryHostOverride != "" {
+		entryHost = params.EntryHostOverride
+	}
+	if entryHost == "" {
+		return "", fmt.Errorf("client config: cannot parse entry addr %q", entry.Addr)
+	}
+	entryPort := chainUserPort(c)
+
+	listen := params.LocalProxyAddr
+	if listen == "" {
+		listen = "127.0.0.1:1080"
+	}
+	listenHost, listenPort := splitListen(listen)
+
+	var outbounds []json.RawMessage
+	var inbounds []json.RawMessage
+
+	switch c.UserProtocol {
+	case model.UserProtocolTUIC:
+		uuid := c.TUICEntryUserUUID
+		password := c.TUICEntryUserPassword
+		if uuid == "" {
+			uuid = tuicUUID(c)
+		}
+		if password == "" {
+			password = tuicPassword(c)
+		}
+		serverName := DefaultRealitySNI
+		if p := resolveChainPreset(c); p.Reality != nil && len(p.Reality.ServerNames) > 0 {
+			serverName = p.Reality.ServerNames[0]
+		}
+		// TUIC uses a self-signed cert on the server; the client must skip
+		// verification (the cert is generated per-node and not CA-signed).
+		outb := config.TUICOutbound{
+			Type:              "tuic",
+			Tag:               "tuic-out",
+			Server:            entryHost,
+			ServerPort:        entryPort,
+			UUID:              uuid,
+			Password:          password,
+			CongestionControl: "bbr",
+			UDPRelayMode:      "native",
+			ZeroRTTHandshake:  true,
+			Heartbeat:         "10s",
+			TLS: &config.OutboundTLSOptions{
+				Enabled:          true,
+				ServerName:       serverName,
+				ALPN:             []string{"h3"},
+				Insecure:         true, // self-signed cert; see comment above
+			},
+		}
+		ob, _ := json.Marshal(outb)
+		outbounds = append(outbounds, ob)
+
+	default:
+		return "", fmt.Errorf("client config: unsupported user protocol %q (TUIC is implemented)", c.UserProtocol)
+	}
+
+	// direct outbound (final).
+	direct := config.DirectOutbound{Type: "direct", Tag: "direct-out"}
+	db, _ := json.Marshal(direct)
+	outbounds = append(outbounds, db)
+
+	// Local SOCKS+HTTP mixed inbound so a browser/curl can use the client.
+	inb := map[string]any{
+		"type":        "mixed",
+		"tag":         "mixed-in",
+		"listen":      listenHost,
+		"listen_port": listenPort,
+		"users":       []any{},
+	}
+	ib, _ := json.Marshal(inb)
+	inbounds = append(inbounds, ib)
+
+	// Route everything through the chain outbound; direct is the final fallback.
+	route := &config.RoutingSection{
+		Rules: []config.RouteRuleEntry{
+			{Outbound: "tuic-out"},
+		},
+		Final:                 "tuic-out",
+		AutoDetectInterface:   true,
+		DefaultDomainResolver: "dns-remote",
+	}
+
+	// DNS: a remote resolver through the chain + a direct for local/direct.
+	dns := &config.DNSConfig{
+		Servers: []config.DNSServer{
+			{Tag: "dns-remote", Type: "tls", Server: "1.1.1.1", Detour: "tuic-out"},
+			{Tag: "dns-direct", Type: "udp", Server: "8.8.8.8", Detour: "direct-out"},
+		},
+		Final: "dns-remote",
+	}
+
+	cfg := &config.SingboxConfig{
+		Log:       &config.LogOptions{Level: "info"},
+		Inbounds:  inbounds,
+		Outbounds: outbounds,
+		Route:     route,
+		DNS:       dns,
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// splitListen splits "host:port" into host and int port, defaulting the host to
+// 127.0.0.1 when absent. Uses net.SplitHostPort via extractHost's sibling logic.
+func splitListen(addr string) (string, int) {
+	host, port := splitHostPortSafe(addr)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if port == 0 {
+		port = 1080
+	}
+	return host, port
+}
+
+// splitHostPortSafe is a non-error variant of net.SplitHostPort for the client
+// listen address (which is always a simple host:port).
+func splitHostPortSafe(addr string) (string, int) {
+	idx := strings.LastIndexByte(addr, ':')
+	if idx < 0 {
+		return addr, 0
+	}
+	host := addr[:idx]
+	port := 0
+	for _, r := range addr[idx+1:] {
+		if r < '0' || r > '9' {
+			return host, 0
+		}
+		port = port*10 + int(r-'0')
+	}
+	return host, port
+}

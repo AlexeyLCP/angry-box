@@ -173,9 +173,13 @@ type OutboundTLSOptions struct {
 	UTLS             *UTLSOptions            `json:"utls,omitempty"`
 	Reality          *OutboundRealityOptions `json:"reality,omitempty"`
 	ECH              *ECHOptions             `json:"ech,omitempty"`
-	Fragment             bool   `json:"fragment,omitempty"`
-	FragmentFallbackDelay string `json:"fragment_fallback_delay,omitempty"`
-	RecordFragment        bool   `json:"record_fragment,omitempty"`
+	// Insecure skips certificate verification. Required when the server uses a
+	// per-node self-signed cert (TUIC/Hysteria2 standalone); never set for
+	// REALITY (REALITY verifies via the public key, not a CA).
+	Insecure               bool   `json:"insecure,omitempty"`
+	Fragment               bool   `json:"fragment,omitempty"`
+	FragmentFallbackDelay  string `json:"fragment_fallback_delay,omitempty"`
+	RecordFragment         bool   `json:"record_fragment,omitempty"`
 }
 
 // InboundTLSOptions represents TLS options for inbound connections.
@@ -302,6 +306,22 @@ type TUICInbound struct {
 type TUICUser struct {
 	UUID     string `json:"uuid"`
 	Password string `json:"password"`
+}
+
+// TUICOutbound represents a sing-box TUIC outbound (client side). Mirrors
+// TUICInbound but targets a remote server instead of listening.
+type TUICOutbound struct {
+	Type              string              `json:"type"` // "tuic"
+	Tag               string              `json:"tag"`
+	Server            string              `json:"server"`
+	ServerPort        int                 `json:"server_port"`
+	UUID              string              `json:"uuid"`
+	Password          string              `json:"password"`
+	CongestionControl string              `json:"congestion_control,omitempty"`
+	UDPRelayMode      string              `json:"udp_relay_mode,omitempty"` // native/quic
+	ZeroRTTHandshake  bool                `json:"zero_rtt_handshake,omitempty"`
+	Heartbeat         string              `json:"heartbeat,omitempty"`
+	TLS               *OutboundTLSOptions `json:"tls,omitempty"`
 }
 
 // WireGuardEndpoint represents a wireguard inbound/outbound.

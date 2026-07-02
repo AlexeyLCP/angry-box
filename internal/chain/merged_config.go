@@ -117,7 +117,7 @@ func buildMergedNodeConfig(
 		chainOutTag := "direct-out"
 		for _, r := range roles {
 			if r.HasOutbound {
-				chainOutTag = fmt.Sprintf("ch-%s-strategy", r.Chain.Name)
+				chainOutTag = chainInterNodeOutboundTag(&r)
 				break
 			}
 		}
@@ -125,7 +125,12 @@ func buildMergedNodeConfig(
 		if p := resolveChainPreset(roles[0].Chain); p.Routing.DirectDomains != nil {
 			directDomains = p.Routing.DirectDomains
 		}
-		cfg.DNS = BuildDNSWithDetour(chainOutTag, directDomains)
+		dns := BuildDNSWithDetour(chainOutTag, directDomains)
+		// Resolve names on-node (direct-out). Using dns-chain as final creates a
+		// bootstrap loop: the chain outbound needs the target IP before the tunnel
+		// can carry the DNS query that would learn that IP.
+		dns.Final = "dns-direct"
+		cfg.DNS = dns
 	}
 
 	return cfg, report, nil
@@ -149,11 +154,11 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo) *config.Routi
 		if len(inTags) == 0 {
 			continue
 		}
-		stratTag := "direct-out"
+		routeOut := "direct-out"
 		if role.HasOutbound {
-			stratTag = fmt.Sprintf("ch-%s-strategy", cn)
+			routeOut = chainInterNodeOutboundTag(&role)
 		}
-		rules = append(rules, config.RouteRuleEntry{Inbound: inTags, Outbound: stratTag})
+		rules = append(rules, config.RouteRuleEntry{Inbound: inTags, Outbound: routeOut})
 	}
 	for i, ib := range nodeInfo.Inbounds {
 		obTag := ib.OutboundTag
@@ -214,7 +219,7 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *Me
 		port := r.Node.Port
 		if port == 0 {
 			if r.IsEntry {
-				port = defaultUserPort
+				port = chainUserPort(r.Chain)
 			} else {
 				port = defaultTransportPort
 			}
@@ -256,9 +261,10 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 	p := ensureHopParams(role)
 
 	if role.IsEntry {
+		userPort := chainUserPort(c)
 		switch c.UserProtocol {
 		case model.UserProtocolAWG:
-			ep, _, err := buildAWGUserInbound(defaultUserPort, p.UUID,
+			ep, _, err := buildAWGUserInbound(userPort, p.UUID,
 				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset,
 				c.AWGEntryServerPriv, awgClientPub(c))
 			if err == nil {
@@ -274,12 +280,12 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 			inbounds = append(inbounds, tunJSON)
 
 		case model.UserProtocolTUIC:
-			inb := buildTUICUserInbound(defaultUserPort, tuicUUID(c), tuicPassword(c),
+			inb := buildTUICUserInbound(userPort, tuicUUID(c), tuicPassword(c),
 				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset, p)
 			inbounds = append(inbounds, inb)
 
 		default:
-			inb := buildUserInbound(defaultUserPort, p.UUID,
+			inb := buildUserInbound(userPort, p.UUID,
 				fmt.Sprintf("ch-%s-user-in", cn))
 			inbounds = append(inbounds, inb)
 		}
@@ -309,7 +315,7 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 			np.Port = defaultTransportPort
 		}
 		if np.ServerName == "" {
-			np.ServerName = "www.microsoft.com"
+			np.ServerName = DefaultRealitySNI
 		}
 
 		outTag := fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
@@ -322,12 +328,9 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 		}
 		if err == nil {
 			outbounds = append(outbounds, outb)
-			strat := BuildStrategyOutbound(string(c.Strategy), []string{outTag})
-			if strat != nil {
-				strat.Tag = fmt.Sprintf("ch-%s-strategy", cn)
-				sj, _ := json.Marshal(strat)
-				outbounds = append(outbounds, sj)
-			}
+			// Linear chains have a single inter-node outbound; wrapping it in
+			// urltest probes gstatic through the hop and returns EOF while transit
+			// is still failing, which breaks routing and masks the real error.
 		}
 	}
 
@@ -356,7 +359,13 @@ func ensureHopParams(role *chainRole) *hopParams {
 	if p.PrivateKey == "" {
 		b := make([]byte, 32)
 		rand.Read(b)
-		p.PrivateKey = base64.RawURLEncoding.EncodeToString(b)
+		clamped, err := clampRealityPrivateKeyB64(base64.RawURLEncoding.EncodeToString(b))
+		if err != nil {
+			clamped = base64.RawURLEncoding.EncodeToString(b)
+		}
+		p.PrivateKey = clamped
+	} else if clamped, err := clampRealityPrivateKeyB64(p.PrivateKey); err == nil {
+		p.PrivateKey = clamped
 	}
 	if p.ShortID == "" {
 		b := make([]byte, 8)
@@ -364,7 +373,7 @@ func ensureHopParams(role *chainRole) *hopParams {
 		p.ShortID = hex.EncodeToString(b)
 	}
 	if p.ServerName == "" {
-		p.ServerName = "www.microsoft.com"
+		p.ServerName = DefaultRealitySNI
 	}
 	return p
 }
@@ -376,7 +385,7 @@ func ResolveServerName(preset *ConnectionPreset) string {
 	if preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
 		return preset.XHTTP.Hosts[0]
 	}
-	return "www.microsoft.com"
+	return DefaultRealitySNI
 }
 
 func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoints []json.RawMessage) {
@@ -414,6 +423,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoint
 		tls := &config.InboundTLSOptions{
 			Enabled:    true,
 			ServerName: serverName,
+			ALPN:       []string{"h3"}, // required: QUIC/TUIC clients abort without an ALPN
 		}
 
 		cert := ib.TLSCertificate
@@ -526,6 +536,22 @@ func tuicPassword(c *model.Chain) string {
 		return c.TUICEntryUserPassword
 	}
 	return GenerateTUICPassword()
+}
+
+// chainUserPort returns the chain's user-entry listen port, defaulting to
+// defaultUserPort (8443) when UserEntryPort is unset.
+func chainUserPort(c *model.Chain) int {
+	if c.UserEntryPort > 0 {
+		return c.UserEntryPort
+	}
+	return defaultUserPort
+}
+
+// chainInterNodeOutboundTag is the vless/xhttp outbound tag for the next hop in
+// a linear chain (no urltest wrapper).
+func chainInterNodeOutboundTag(role *chainRole) string {
+	sn := ResolveServerName(&role.Preset)
+	return fmt.Sprintf("ch-%s-out-%s", role.Chain.Name, safeSNILabel(sn))
 }
 
 func safeSNILabel(sni string) string {
