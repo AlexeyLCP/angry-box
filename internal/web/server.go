@@ -1,0 +1,314 @@
+package web
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/a-h/templ"
+	"github.com/alexeylcp/angry-box/internal/backend/factory"
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/config"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+	webassets "github.com/alexeylcp/angry-box/web"
+	"github.com/alexeylcp/angry-box/web/templates"
+)
+
+// Server provides the HTMX web UI.
+type Server struct {
+	storePath        string
+	stopCh           chan struct{}
+	devMode          bool
+	cfg              *config.Config
+	ActiveListenAddr string
+	// factory is the composition-root dependency for creating proxy backends.
+	// Injected once at construction (NewServer) instead of ad-hoc factory.New()
+	// scattered across handlers (CTO-review M11).
+	factory ports.Factory
+}
+
+// NewServer creates a web UI server.
+// If devMode is true, static files are served from web/static/ instead of the embedded filesystem.
+// f is the composition-root factory used by all deploy/apply handlers.
+func NewServer(storePath string, devMode bool, cfg *config.Config, activeListenAddr string, f ports.Factory) *Server {
+	if devMode {
+		log.Println("[dev] Loading UI from filesystem (web/static/)")
+	} else {
+		log.Println("[prod] Loading embedded UI")
+	}
+	if f == nil {
+		f = factory.New()
+	}
+	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg, ActiveListenAddr: activeListenAddr, factory: f}
+}
+
+// staticFS returns the filesystem to use for static assets.
+func (s *Server) staticFS() (fs.FS, error) {
+	if s.devMode {
+		// Find web/static/ relative to CWD or module root
+		dirs := []string{"web/static", "../web/static", "../../web/static"}
+		for _, d := range dirs {
+			if info, err := os.Stat(d); err == nil && info.IsDir() {
+				log.Printf("[dev] Serving static files from %s", d)
+				return os.DirFS(d), nil
+			}
+		}
+		return nil, fmt.Errorf("web/static/ not found in any of %v (run from project root)", dirs)
+	}
+	// Production: use embedded filesystem
+	sub, err := fs.Sub(webassets.StaticFS, "static")
+	if err != nil {
+		return nil, fmt.Errorf("embedded static: %w", err)
+	}
+	return sub, nil
+}
+
+// StartBackgroundMetrics begins periodic metrics collection.
+// interval is in minutes. Call Stop() to halt.
+func (s *Server) StartBackgroundMetrics(intervalMinutes int) {
+	if intervalMinutes <= 0 {
+		intervalMinutes = 15 // default 15 minutes
+	}
+	// Collect immediately on startup, then periodically.
+	go func() {
+		s.collectAllMetrics()
+		ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.collectAllMetrics()
+			case <-s.stopCh:
+				return
+			}
+		}
+	}()
+}
+
+// Stop halts background collection.
+func (s *Server) Stop() {
+	select {
+	case <-s.stopCh:
+	default:
+		close(s.stopCh)
+	}
+}
+
+// collectAllMetrics checks all hosts and records their status.
+func (s *Server) collectAllMetrics() {
+	st := s.store()
+	hosts, _ := st.ListHosts()
+	f := s.factory
+	b := f.Create()
+	ctx := context.Background()
+
+	for _, h := range hosts {
+		start := time.Now()
+
+		status, err := b.GetStatus(ctx, *h)
+
+		latency := time.Since(start).Milliseconds()
+		if err != nil {
+			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false, LatencyMs: latency})
+			continue
+		}
+		st.SaveMetrics(&model.NodeMetrics{
+			HostID:    h.ID,
+			Online:    status.Running,
+			Version:   status.Version,
+			LatencyMs: latency,
+		})
+	}
+}
+
+func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
+	return BasicAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		settings, _ := s.store().GetSettings()
+		lang := settings.Language
+		if lang == "" {
+			lang = "en"
+		}
+		ctx := context.WithValue(r.Context(), i18n.LangKey, lang)
+		h(w, r.WithContext(ctx))
+	}), s.cfg)
+}
+
+func (s *Server) Register(mux *http.ServeMux) {
+	// Static files (CSS, JS, images) — from disk in dev, from embed in prod
+	staticFS, err := s.staticFS()
+	if err != nil {
+		log.Printf("WARNING: static files unavailable: %v", err)
+	} else {
+		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	}
+
+	mux.HandleFunc("GET /ui", s.auth(s.handleDashboard))
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui", http.StatusSeeOther)
+	})
+
+	// Dashboard stats partial (HTMX, used by the dashboard template).
+	mux.HandleFunc("GET /ui/dashboard/stats", s.auth(s.handleDashboardStatsHTML))
+
+	// Hosts (kept for backward compat, redirect to nodes)
+	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
+	// Hosts (kept for backward compat: status endpoint is used by node/chain tables).
+	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
+	mux.HandleFunc("GET /ui/hosts/{id}/status", s.auth(s.handleHostStatus))
+
+	// Nodes (new CRUD)
+	mux.HandleFunc("GET /ui/nodes", s.auth(s.handleNodes))
+	mux.HandleFunc("POST /ui/nodes", s.auth(s.handleCreateNode))
+	mux.HandleFunc("GET /ui/nodes/new", s.auth(s.handleNewNodeForm))
+	mux.HandleFunc("GET /ui/nodes/{id}/edit", s.auth(s.handleEditNodeForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/edit", s.auth(s.handleUpdateNode))
+	mux.HandleFunc("DELETE /ui/nodes/{id}", s.auth(s.handleDeleteNode))
+	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.auth(s.handleCaptureNode))
+	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.auth(s.handleNodeCaptureForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/trust", s.auth(s.handleTrustHostKey))
+	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
+	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
+
+	// Takeover (detect existing VPN → convert → cutover → rollback on failure)
+	mux.HandleFunc("GET /ui/nodes/{id}/detect-vpn", s.auth(s.handleDetectVPN))
+	mux.HandleFunc("POST /ui/nodes/{id}/takeover", s.auth(s.handleTakeover))
+
+	// Chains (existing)
+	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
+	mux.HandleFunc("POST /ui/chains", s.auth(s.handleCreateChain))
+	mux.HandleFunc("DELETE /ui/chains/{name}", s.auth(s.handleDeleteChain))
+	mux.HandleFunc("POST /ui/chains/{name}/apply", s.auth(s.handleApplyChain))
+	mux.HandleFunc("GET /ui/chains/new", s.auth(s.handleNewChainForm))
+	mux.HandleFunc("GET /ui/chains/{name}/edit", s.auth(s.handleEditChainForm))
+	mux.HandleFunc("POST /ui/chains/{name}/edit", s.auth(s.handleUpdateChain))
+
+	// Spider Web (visual chain editor)
+	mux.HandleFunc("GET /ui/spider", s.auth(s.handleSpiderWeb))
+	mux.HandleFunc("POST /ui/spider/links", s.auth(s.handleCreateSpiderLink))
+	mux.HandleFunc("DELETE /ui/spider/links/{id}", s.auth(s.handleDeleteSpiderLink))
+	mux.HandleFunc("POST /ui/spider/nodes/{id}/position", s.auth(s.handleSaveNodePosition))
+	mux.HandleFunc("POST /ui/spider/apply/{name}", s.auth(s.handleApplyChain))
+
+	// Users
+	mux.HandleFunc("GET /ui/users", s.auth(s.handleUsers))
+	mux.HandleFunc("POST /ui/users", s.auth(s.handleCreateUser))
+	mux.HandleFunc("GET /ui/users/new", s.auth(s.handleNewUserForm))
+	mux.HandleFunc("GET /ui/users/{id}/edit", s.auth(s.handleEditUserForm))
+	mux.HandleFunc("POST /ui/users/{id}/edit", s.auth(s.handleUpdateUser))
+	mux.HandleFunc("DELETE /ui/users/{id}", s.auth(s.handleDeleteUser))
+	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
+	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
+		mux.HandleFunc("GET /ui/qr-image", s.auth(s.handleQRImage))
+
+	// Settings
+	mux.HandleFunc("GET /ui/settings", s.auth(s.handleSettings))
+	mux.HandleFunc("POST /ui/settings", s.auth(s.handleSaveSettings))
+	// SSH Keys management
+	mux.HandleFunc("POST /ui/settings/ssh-keys", s.auth(s.handleAddSSHKey))
+	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.auth(s.handleDeleteSSHKey))
+
+	// Status
+	mux.HandleFunc("GET /ui/status", s.auth(s.handleStatus))
+
+	// Audit log
+	mux.HandleFunc("GET /ui/audit", s.auth(s.handleAudit))
+
+	// Deploy status (pending-changes)
+	mux.HandleFunc("GET /ui/deploy-status", s.auth(s.handleDeployStatus))
+
+	// Profiles + ClientAssignments
+	mux.HandleFunc("GET /ui/profiles", s.auth(s.handleProfiles))
+	mux.HandleFunc("POST /ui/profiles", s.auth(s.handleCreateProfile))
+	mux.HandleFunc("GET /ui/profiles/new", s.auth(s.handleNewProfileForm))
+	mux.HandleFunc("GET /ui/profiles/{id}/edit", s.auth(s.handleEditProfileForm))
+	mux.HandleFunc("POST /ui/profiles/{id}/edit", s.auth(s.handleUpdateProfile))
+	mux.HandleFunc("DELETE /ui/profiles/{id}", s.auth(s.handleDeleteProfile))
+	mux.HandleFunc("POST /ui/profiles/{id}/assignments", s.auth(s.handleCreateAssignment))
+	mux.HandleFunc("DELETE /ui/profiles/{id}/assignments/{aid}", s.auth(s.handleDeleteAssignment))
+
+	// Unified clients page
+	mux.HandleFunc("GET /ui/clients", s.auth(s.handleClients))
+}
+
+func (s *Server) store() *chain.Store { return chain.NewStore(s.storePath) }
+
+func isHTMXRequest(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
+
+func (s *Server) render(w http.ResponseWriter, r *http.Request, c templ.Component) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := c.Render(r.Context(), w); err != nil {
+		http.Error(w, i18n.T(r.Context(), "render error"), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) renderContent(w http.ResponseWriter, r *http.Request, title string, content templ.Component) {
+	if isHTMXRequest(r) {
+		s.render(w, r, content)
+		return
+	}
+	s.render(w, r, templates.Base(title, content))
+}
+
+func (s *Server) renderJSON(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	io.WriteString(w, jsonMarshal(data))
+}
+
+// detectSystemKeys scans ~/.ssh/ for common key files.
+func detectSystemKeys() []model.SSHKeyEntry {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	sshDir := home + "/.ssh"
+	entries, err := os.ReadDir(sshDir)
+	if err != nil {
+		return nil
+	}
+	var keys []model.SSHKeyEntry
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// Skip public keys, config, known_hosts, PuTTY keys, etc.
+		if strings.HasSuffix(name, ".pub") || strings.Contains(name, "known_hosts") ||
+			name == "config" || name == "authorized_keys" || strings.HasSuffix(name, ".swp") ||
+			strings.HasSuffix(name, ".ppk") || strings.HasSuffix(name, ".old") {
+			continue
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		keys = append(keys, model.SSHKeyEntry{
+			ID:      "system-" + name,
+			Name:    name,
+			KeyPath: sshDir + "/" + name,
+			Source:  "system",
+		})
+	}
+	return keys
+}
+
+// looksLikePrivateKey checks that the data looks like a valid PEM-encoded private key.
+// mergeSSHKeys combines stored and system keys into one list.
+func mergeSSHKeys(stored, system []model.SSHKeyEntry) []model.SSHKeyEntry {
+	all := make([]model.SSHKeyEntry, 0, len(stored)+len(system))
+	all = append(all, stored...)
+	all = append(all, system...)
+	return all
+}
+
+
+
