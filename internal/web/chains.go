@@ -193,6 +193,12 @@ func (s *Server) handleDeleteChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store().DeleteChain(name); err != nil {
+		// A missing chain is a client-side 404 (idempotent delete of something
+		// that was never there); other store errors are a 500.
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "failed: %v"), err), http.StatusNotFound)
+			return
+		}
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "failed: %v"), err), http.StatusInternalServerError)
 		return
 	}
