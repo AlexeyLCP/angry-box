@@ -128,6 +128,7 @@ func (autoNoopBackend) DeployWithOptions(context.Context, model.Host, model.Depl
 	return &model.DeployResult{Success: true}, nil
 }
 func (autoNoopBackend) InstallAWGModule(context.Context, model.Host) error { return nil }
+func (autoNoopBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error { return nil }
 func (autoNoopBackend) ApplyConfig(context.Context, model.Host, model.ConfigType, model.ConfigParams) error {
 	return nil
 }

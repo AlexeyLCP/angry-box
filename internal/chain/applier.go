@@ -275,14 +275,18 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 
 		// Install AWG kernel module only when chain uses AWG as user protocol.
 		if chain.UserProtocol == model.UserProtocolAWG {
-			if awgErr := backend.InstallAWGModule(ctx, node.Host()); awgErr != nil {
+			if awgErr := backend.InstallAWGModuleWithOptions(ctx, node.Host(), model.DeployOptions{UseSudo: nodeInfo.UseSudo}); awgErr != nil {
 				client.Close()
 				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
 				continue
 			}
 		}
 
-		if _, deployErr := backend.Deploy(ctx, node.Host()); deployErr != nil {
+		// Deploy sing-box with the node's UseSudo flag — Deploy() alone assumes
+		// root and cannot reinstall a root-owned binary on a non-root sudoer
+		// node (CTO-review follow-up to H5: the chain apply path also needs the
+		// options-aware deploy, not just the CLI).
+		if _, deployErr := backend.DeployWithOptions(ctx, node.Host(), model.DeployOptions{UseSudo: nodeInfo.UseSudo}); deployErr != nil {
 			client.Close()
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "deploy sing-box: " + deployErr.Error()})
 			continue
@@ -507,18 +511,6 @@ func BuildAWGAmnezia(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOp
 		return nil
 	}
 	return BuildAmneziaSection(awg, preset)
-}
-
-// buildTUICTLSOptions returns TLS config for a TUIC inbound.
-// sing-box 1.13+ does NOT support Reality on TUIC — uses self-signed cert instead.
-// Certificates are referenced by path; the actual files are written by pushConfig.
-func buildTUICTLSOptions(serverName string) *config.InboundTLSOptions {
-	return &config.InboundTLSOptions{
-		Enabled:    true,
-		ServerName: serverName,
-		CertificatePath: "/etc/sing-box/certs/tuic-cert.pem",
-		KeyPath:         "/etc/sing-box/certs/tuic-key.pem",
-	}
 }
 
 // safeShortID returns at most the first 4 chars of a short ID, avoiding slice bounds panic.
@@ -936,7 +928,14 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 
 // ==================== User Protocols (TUIC, AWG) ====================
 
-func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset, p *hopParams) json.RawMessage {
+// buildTUICUserInbound builds a TUIC chain user-entry inbound. uuid is the
+// user identity; password is an INDEPENDENT credential (must not equal uuid —
+// CTO-review M7). The TLS cert is embedded inline (self-signed, generated here)
+// instead of referenced by a file path, because pushConfig's
+// ensureCertForTLSInbounds only writes /etc/sing-box/cert.pem and would leave a
+// /etc/sing-box/certs/tuic-cert.pem reference dangling — which made sing-box
+// check fail on a fresh node (caught by e2e against a real VPS).
+func buildTUICUserInbound(port int, uuid, password, tag string, preset *ConnectionPreset, p *hopParams) json.RawMessage {
 	tuic := preset.TUIC
 	if tuic == nil {
 		tuic = &TUICPreset{
@@ -968,18 +967,36 @@ func buildTUICUserInbound(port int, uuid, tag string, preset *ConnectionPreset, 
 		Users: []config.TUICUser{
 			{
 				UUID:     uuid,
-				Password: uuid,
+				Password: password,
 			},
 		},
 		CongestionControl: congestion,
 		AuthTimeout:       authTimeout,
 		ZeroRTTHandshake:  true,
 		Heartbeat:         "10s",
-		TLS: buildTUICTLSOptions(serverName),
+		TLS:               buildTUICInlineTLS(serverName),
 	}
 
 	data, _ := json.Marshal(inb)
 	return data
+}
+
+// buildTUICInlineTLS returns a TLS config for a TUIC inbound with the self-signed
+// certificate embedded inline (Certificate/Key PEM), not referenced by path.
+// The path-based variant (buildTUICTLSOptions) relied on a file that
+// ensureCertForTLSInbounds never wrote for the tuic-cert.pem path, so sing-box
+// check failed on a fresh node. Inline cert mirrors the standalone TUIC path
+// (merged_config.go) and removes the dependency on remote cert generation.
+func buildTUICInlineTLS(serverName string) *config.InboundTLSOptions {
+	tls := &config.InboundTLSOptions{
+		Enabled:    true,
+		ServerName: serverName,
+	}
+	if cert, key, err := GenerateSelfSignedCert(serverName); err == nil {
+		tls.Certificate = cert
+		tls.Key = key
+	}
+	return tls
 }
 
 func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPreset, serverPrivKeyB64, clientPubKey string) ([]byte, string, error) {
@@ -1264,7 +1281,7 @@ func (a *Applier) applyMergedNodeLocked(
 	defer client.Close()
 
 	backend := a.factory.Create()
-	if _, deployErr := backend.Deploy(ctx, info.Host); deployErr != nil {
+	if _, deployErr := backend.DeployWithOptions(ctx, info.Host, model.DeployOptions{UseSudo: info.UseSudo}); deployErr != nil {
 		return nil, mergeReport, fmt.Errorf("deploy sing-box: %w", deployErr)
 	}
 

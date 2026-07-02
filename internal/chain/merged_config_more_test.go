@@ -87,28 +87,3 @@ func TestAWGClientPub_Generates(t *testing.T) {
 	}
 }
 
-// TestBuildMergedRouting verifies the (currently disabled) routing builder
-// returns a section without panicking on a minimal role set.
-func TestBuildMergedRouting(t *testing.T) {
-	roles := []chainRole{
-		{Chain: &model.Chain{Name: "c1"}, IsEntry: true},
-	}
-	info := &model.NodeInfo{Host: model.Host{ID: "n0"}}
-	sec := buildMergedRouting(roles, info)
-	if sec == nil {
-		t.Fatal("expected non-nil routing section")
-	}
-}
-
-// TestBuildMergedDNS verifies the (currently disabled) DNS builder returns a
-// config without panicking.
-func TestBuildMergedDNS(t *testing.T) {
-	roles := []chainRole{
-		{Chain: &model.Chain{Name: "c1"}, IsEntry: true},
-	}
-	info := &model.NodeInfo{Host: model.Host{ID: "n0"}}
-	d := buildMergedDNS(roles, info)
-	if d == nil {
-		t.Fatal("expected non-nil DNS config")
-	}
-}

@@ -20,7 +20,15 @@ type Backend interface {
 
 	// InstallAWGModule ensures the AmneziaWG kernel module is installed on the host.
 	// Only needed for AWG wireguard inbound support. Safe to call multiple times.
+	// Assumes the SSH user is root; for non-root sudoers use InstallAWGModuleWithOptions.
 	InstallAWGModule(ctx context.Context, host model.Host) error
+
+	// InstallAWGModuleWithOptions is the options-aware variant of
+	// InstallAWGModule: it wraps the privileged apt/modprobe/install commands in
+	// sudo when opts.UseSudo is set, so a non-root sudoer VPS can install the
+	// AmneziaWG kernel module. This is the AWG counterpart of DeployWithOptions
+	// (CTO-review H5 follow-up — the chain apply path runs as a non-root sudoer).
+	InstallAWGModuleWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) error
 
 	// ApplyConfig pushes a generated config to the remote host and restarts the proxy.
 	ApplyConfig(ctx context.Context, host model.Host, cfgType model.ConfigType, params model.ConfigParams) error

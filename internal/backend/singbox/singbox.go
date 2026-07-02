@@ -31,13 +31,13 @@ const (
 )
 
 // singBoxDownloadURLs maps Go arch → the patched tarball location. The tarballs
-// are built by scripts/build-singbox.sh and committed to deps/ (then served via
-// GitHub raw / releases). Nodes download these instead of compiling Go.
+// are published as GitHub Release assets (v0.1.0) so the download is stable
+// regardless of repo visibility (raw.githubusercontent only works on public
+// repos). Nodes download these instead of compiling Go.
 //
-// Update these URLs when the tarballs are published. Empty entries fall back to
-// the GitHub raw path under deps/.
+// Empty entries fall back to the GitHub raw path under deps/.
 var singBoxDownloadURLs = map[string]string{
-	"amd64": "",
+	"amd64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz",
 	"arm64": "",
 }
 
@@ -394,12 +394,18 @@ func verifyServiceUp(ctx context.Context, client ports.SSHClient, service string
 // sing-box only does TUN + balancer with bind_interface — sidestepping the
 // userspace gVisor AWG panic. Errors are surfaced (not silenced with 2>/dev/null).
 func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
+	return b.InstallAWGModuleWithOptions(ctx, host, model.DeployOptions{})
+}
+
+// InstallAWGModuleWithOptions installs the AmneziaWG kernel module, wrapping
+// privileged commands in sudo when opts.UseSudo is set (non-root sudoer VPS).
+func (b *Backend) InstallAWGModuleWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) error {
 	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: InstallAWGModule: %w", err)
 	}
 	defer client.Close()
-	return b.installAWGModule(ctx, client, false)
+	return b.installAWGModule(ctx, client, opts.UseSudo)
 }
 
 // installAWGModule: prefer `apt install amneziawg-tools` (provides awg/awg-quick

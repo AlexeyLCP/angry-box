@@ -16,16 +16,18 @@ import (
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
-// E2E test servers (from GCloud project-d4c6c72c-4f10-4288-902)
+// E2E test servers — three fresh Debian 12 / x86_64 VPSes with passwordless
+// sudo. Reusable for SSH/deploy/apply/chain/takeover/rollback/multi-hop tests.
+// Key is the local ~/.ssh/id_ed25519.
 var e2eServers = []struct {
 	ID      string
 	Addr    string
 	User    string
 	KeyFile string
 }{
-	{ID: "e2e-node-1", Addr: "34.40.120.7:22", User: "root", KeyFile: "google_compute_engine"},
-	{ID: "e2e-node-2", Addr: "35.198.166.183:22", User: "root", KeyFile: "id_ed25519"},
-	{ID: "e2e-node-3", Addr: "34.141.8.201:22", User: "root", KeyFile: "id_ed25519"},
+	{ID: "e2e-node-1", Addr: "34.62.128.71:22", User: "lcp", KeyFile: "id_ed25519"},
+	{ID: "e2e-node-2", Addr: "207.175.40.161:22", User: "lcp", KeyFile: "id_ed25519"},
+	{ID: "e2e-node-3", Addr: "23.251.133.38:22", User: "lcp", KeyFile: "id_ed25519"},
 }
 
 func TestMain(m *testing.M) {
@@ -43,7 +45,7 @@ func sshKeyPath(filename string) string {
 
 func newStore(t *testing.T) *chain.Store {
 	t.Helper()
-	return chain.NewStore(filepath.Join(tempDir(t), "e2e-store.json"))
+	return chain.NewStore(filepath.Join(t.TempDir(), "e2e-store.json"))
 }
 
 // ─── SSH Connection ───────────────────────────────────────────────────────────
@@ -141,12 +143,15 @@ func TestE2E_Deploy_AlreadyInstalled(t *testing.T) {
 	backend := f.Create()
 
 	host := model.Host{ID: srv.ID, Addr: srv.Addr, User: srv.User, KeyPath: sshKeyPath(srv.KeyFile)}
-	result, err := backend.Deploy(context.Background(), host)
+	// UseSudo=true because the test user is a non-root sudoer (lcp); deploy writes
+	// to /etc/sing-box and /usr/local/bin (root-owned). The plain Deploy() path
+	// assumes root, which only held on the old root@ servers.
+	result, err := backend.DeployWithOptions(context.Background(), host, model.DeployOptions{UseSudo: true})
 	if err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
 	if !result.Success {
-		t.Error("Deploy should succeed for already-installed sing-box")
+		t.Errorf("Deploy should succeed; msg=%s", result.Message)
 	}
 	t.Logf("version: %s, message: %s", result.Version, result.Message)
 }
@@ -170,11 +175,15 @@ func TestE2E_BackendStatus(t *testing.T) {
 // ─── ApplyChain — single node TUIC ────────────────────────────────────────────
 
 func TestE2E_ApplyChain_SingleNode_TUIC(t *testing.T) {
-	srv := e2eServers[1] // Ubuntu
+	srv := e2eServers[1] // Debian 12, non-root sudoer
 	store := newStore(t)
 
 	host := model.Host{ID: "e2e-tuic", Addr: srv.Addr, User: srv.User, KeyPath: sshKeyPath(srv.KeyFile)}
 	store.SaveHost(&host)
+	// The test user is a non-root sudoer, so the merged config is written to
+	// /etc/sing-box (root-owned) via sudo. UseSudo must be set on the NodeInfo
+	// that pushConfig reads.
+	store.SaveNodeInfo(&model.NodeInfo{Host: host, UseSudo: true})
 
 	c := &model.Chain{
 		Name:         "e2e-tuic-chain",
@@ -203,7 +212,7 @@ func TestE2E_ApplyChain_SingleNode_TUIC(t *testing.T) {
 	}
 	defer client.Close()
 
-	out, _ := client.Run("cat /etc/sing-box/config.json")
+	out, _ := client.Run("sudo cat /etc/sing-box/config.json")
 	if !strings.Contains(out, "tuic") {
 		t.Error("remote config missing tuic inbound")
 	}
@@ -307,7 +316,7 @@ func TestE2E_WireGuardKeypair(t *testing.T) {
 // ─── Store persistence ────────────────────────────────────────────────────────
 
 func TestE2E_StoreRealPath(t *testing.T) {
-	dir := tempDir(t)
+	dir := t.TempDir()
 	path := filepath.Join(dir, "store.json")
 
 	s1 := chain.NewStore(path)

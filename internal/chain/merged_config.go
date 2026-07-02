@@ -207,7 +207,7 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 			inbounds = append(inbounds, tunJSON)
 
 		case model.UserProtocolTUIC:
-			inb := buildTUICUserInbound(defaultUserPort, tuicUUID(c),
+			inb := buildTUICUserInbound(defaultUserPort, tuicUUID(c), tuicPassword(c),
 				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset, p)
 			inbounds = append(inbounds, inb)
 
@@ -419,116 +419,6 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoint
 	return
 }
 
-func buildMergedRouting(roles []chainRole, nodeInfo *model.NodeInfo) *config.RoutingSection {
-	var rules []config.RouteRuleEntry
-
-	for _, role := range roles {
-		cn := role.Chain.Name
-		var inTags []string
-		if role.IsEntry {
-			inTags = append(inTags, fmt.Sprintf("ch-%s-user-in", cn))
-		}
-		if role.IsTransit {
-			inTags = append(inTags, fmt.Sprintf("ch-%s-transport-in", cn))
-		}
-		if len(inTags) == 0 {
-			continue
-		}
-		stratTag := "direct-out"
-		if role.HasOutbound {
-			stratTag = fmt.Sprintf("ch-%s-strategy", cn)
-		}
-		rules = append(rules, config.RouteRuleEntry{Inbound: inTags, Outbound: stratTag})
-	}
-
-	for i, ib := range nodeInfo.Inbounds {
-		obTag := ib.OutboundTag
-		if obTag == "" {
-			obTag = "direct-out"
-		}
-		rules = append(rules, config.RouteRuleEntry{
-			Inbound:  []string{fmt.Sprintf("sa-%d-%s", i, ib.Protocol)},
-			Outbound: obTag,
-		})
-	}
-
-	domDirect := map[string]bool{}
-	for _, role := range roles {
-		routing := BuildRoutingSection(&role.Preset, "")
-		for _, r := range routing.Rules {
-			if len(r.Inbound) > 0 {
-				continue
-			}
-			for _, d := range r.DomainSuffix {
-				if r.Outbound == "direct-out" {
-					domDirect[d] = true
-				}
-			}
-		}
-	}
-	if len(domDirect) > 0 {
-		domains := make([]string, 0, len(domDirect))
-		for d := range domDirect {
-			domains = append(domains, d)
-		}
-		rules = append(rules, config.RouteRuleEntry{DomainSuffix: domains, Outbound: "direct-out"})
-	}
-
-	return &config.RoutingSection{
-		Rules:                 rules,
-		Final:                 "direct-out",
-		AutoDetectInterface:   true,
-		DefaultDomainResolver: "dns-direct",
-	}
-}
-
-func buildMergedDNS(roles []chainRole, nodeInfo *model.NodeInfo) *config.DNSConfig {
-	var servers []config.DNSServer
-
-	for _, role := range roles {
-		cn := role.Chain.Name
-		stratTag := "direct-out"
-		if role.HasOutbound {
-			stratTag = fmt.Sprintf("ch-%s-strategy", cn)
-		}
-		servers = append(servers, config.DNSServer{
-			Tag:    fmt.Sprintf("dns-ch-%s", cn),
-			Type:   "tls",
-			Server: "1.1.1.1",
-			Detour: stratTag,
-		})
-	}
-
-	servers = append(servers, config.DNSServer{
-		Tag:    "dns-direct",
-		Type:   "udp",
-		Server: "8.8.8.8",
-		Detour: "direct-out",
-	})
-
-	var dnsRules []config.DNSRule
-	domDirect := map[string]bool{}
-	for _, role := range roles {
-		routing := BuildRoutingSection(&role.Preset, "")
-		for _, r := range routing.Rules {
-			for _, d := range r.DomainSuffix {
-				if r.Outbound == "direct-out" {
-					domDirect[d] = true
-				}
-			}
-		}
-	}
-	if len(domDirect) > 0 {
-		domains := make([]string, 0, len(domDirect))
-		for d := range domDirect {
-			domains = append(domains, d)
-		}
-		dnsRules = append(dnsRules, config.DNSRule{DomainSuffix: domains, Server: "dns-direct"})
-	}
-
-	return &config.DNSConfig{Servers: servers, Rules: dnsRules, Final: "dns-direct"}
-}
-
 func addIfMissing(outbounds *[]json.RawMessage, seen map[string]bool, ob json.RawMessage) {
 	if tag := extractTag(ob); !seen[tag] {
 		seen[tag] = true
@@ -556,11 +446,19 @@ func needsBlock(roles []chainRole) bool {
 
 // tuicUUID returns the chain's TUIC entry UUID, generating a stable one if empty.
 func tuicUUID(c *model.Chain) string {
-// awgClientPub returns a valid client public key for AWG config, generating one if needed.func awgClientPub(c *model.Chain) string {	if c.AWGEntryClientPub != "" {		return c.AWGEntryClientPub	}	_, pub, _ := generateWireGuardKeypair()	return pub}
 	if c.TUICEntryUserUUID != "" {
 		return c.TUICEntryUserUUID
 	}
 	return generateStableUUID()
+}
+
+// tuicPassword returns the chain's TUIC entry password, generating an
+// INDEPENDENT one if empty (must not fall back to the UUID — CTO-review M7).
+func tuicPassword(c *model.Chain) string {
+	if c.TUICEntryUserPassword != "" {
+		return c.TUICEntryUserPassword
+	}
+	return GenerateTUICPassword()
 }
 
 func safeSNILabel(sni string) string {

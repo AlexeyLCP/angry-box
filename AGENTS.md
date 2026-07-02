@@ -179,7 +179,7 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 ## Known Issues & Workarounds
 
 1. **TUIC requires TLS cert** — auto-generated via `buildTUICTLSOptions()`, written with base64 (heredoc fails)
-2. **DNS/Route disabled** in merged config (sing-box 1.13 detour bugs) — minimal config works
+2. **DNS/Route disabled** in merged config (sing-box 1.13 detour bugs) — minimal config works. The previously-retained `buildMergedRouting`/`buildMergedDNS` dead builders were removed (CTO-review M10); re-implement against the live sing-box version when the detour bug is fixed.
 3. **Multi-node chains** need Route/DNS re-enabled when detour is fixed
 4. **No Python on test servers** — use `python3` explicitly when available
 5. **AMG amnezia field** — only works with sing-box-extended, skipped for plain sing-box

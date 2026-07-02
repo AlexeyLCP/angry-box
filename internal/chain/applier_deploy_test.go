@@ -404,6 +404,7 @@ func (noopBackend) DeployWithOptions(context.Context, model.Host, model.DeployOp
 	return &model.DeployResult{Success: true}, nil
 }
 func (noopBackend) InstallAWGModule(context.Context, model.Host) error { return nil }
+func (noopBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error { return nil }
 func (noopBackend) ApplyConfig(context.Context, model.Host, model.ConfigType, model.ConfigParams) error {
 	return nil
 }

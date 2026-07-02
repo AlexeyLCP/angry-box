@@ -27,6 +27,7 @@ func (b *stubBackend) DeployWithOptions(context.Context, model.Host, model.Deplo
 	return &model.DeployResult{Success: true}, nil
 }
 func (b *stubBackend) InstallAWGModule(context.Context, model.Host) error { return nil }
+func (b *stubBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error { return nil }
 func (b *stubBackend) ApplyConfig(context.Context, model.Host, model.ConfigType, model.ConfigParams) error {
 	return nil
 }
