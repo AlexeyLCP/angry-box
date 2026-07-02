@@ -27,7 +27,6 @@ import (
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
-	qrcode "github.com/skip2/go-qrcode"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -270,77 +269,6 @@ func (s *Server) renderContent(w http.ResponseWriter, r *http.Request, title str
 func (s *Server) renderJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	io.WriteString(w, jsonMarshal(data))
-}
-
-// ─── Dashboard ─────────────────────────────────────────────────────────────────
-
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	st := s.store()
-	hosts, _ := st.ListHosts()
-	chains, _ := st.ListChains()
-	users, _ := st.ListUsers()
-	metrics, _ := st.ListMetrics()
-	infos, _ := st.ListNodeInfos()
-
-	// Build stats
-	onlineCount := 0
-	for _, m := range metrics {
-		if m.Online {
-			onlineCount++
-		}
-	}
-
-	stats := templates.DashboardStats{
-		TotalHosts:  len(hosts),
-		OnlineHosts: onlineCount,
-		TotalChains: len(chains),
-		TotalUsers:  len(users),
-	}
-
-	s.renderContent(w, r, i18n.T(r.Context(), "Dashboard"), templates.Dashboard(stats, hosts, metrics, infos, chains))
-}
-
-func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	addr := r.FormValue("addr")
-	fingerprint := r.FormValue("fingerprint")
-
-	if addr != "" && fingerprint != "" {
-		st := s.store()
-		kh := &model.KnownHost{
-			Addr:        addr,
-			Fingerprint: fingerprint,
-			FirstSeen:   time.Now(),
-			Trusted:     true,
-		}
-		_ = st.SaveKnownHost(kh)
-	}
-
-	// Redirect back to capture form to try again. (HTMX expects HTML or redirect)
-	w.Header().Set("HX-Redirect", "/ui/nodes/"+id+"/capture")
-	http.Redirect(w, r, "/ui/nodes/"+id+"/capture", http.StatusSeeOther)
-}
-
-func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request) {
-	st := s.store()
-	hosts, _ := st.ListHosts()
-	chains, _ := st.ListChains()
-	users, _ := st.ListUsers()
-	metrics, _ := st.ListMetrics()
-
-	online := 0
-	for _, m := range metrics {
-		if m.Online {
-			online++
-		}
-	}
-	stats := templates.DashboardStats{
-		TotalHosts:  len(hosts),
-		OnlineHosts: online,
-		TotalChains: len(chains),
-		TotalUsers:  len(users),
-	}
-	s.render(w, r, templates.StatsCards(stats))
 }
 
 // ─── Nodes ─────────────────────────────────────────────────────────────────────
@@ -1466,27 +1394,6 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, templates.UserQRView(u, links))
-}
-
-// ─── QR Image ───────────────────────────────────────────────────────────────────
-
-// handleQRImage generates a QR code PNG for the given data query parameter.
-func (s *Server) handleQRImage(w http.ResponseWriter, r *http.Request) {
-	data := r.URL.Query().Get("data")
-	if data == "" {
-		http.Error(w, i18n.T(r.Context(), "missing data parameter"), http.StatusBadRequest)
-		return
-	}
-
-	png, err := qrcode.Encode(data, qrcode.Medium, 256)
-	if err != nil {
-		http.Error(w, i18n.T(r.Context(), "qr generation failed"), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Write(png)
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────────────
