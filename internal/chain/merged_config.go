@@ -123,7 +123,11 @@ func buildMergedNodeConfig(
 	if os.Getenv("AB_ROUTE_DNS") == "1" && len(roles) > 0 {
 		// Route: chain user/transport inbounds -> the chain's strategy outbound;
 		// standalone inbounds -> direct-out (their OutboundTag or direct-out).
-		cfg.Route = buildMergedRoute(roles, nodeInfo)
+		// Per-client routing: when usersByChain carries users with a ChainExit pin
+		// for this chain, emit an auth_user rule steering that user's traffic to the
+		// chosen exit's outbound (direct-out if the exit is THIS node, the
+		// inter-node outbound if it is the next hop). Requires AB_ROUTE_DNS=1.
+		cfg.Route = buildMergedRoute(roles, nodeInfo, usersByChain)
 		// DNS: a chain-detoured resolver + a direct resolver, with the chain's
 		// direct-domain rules routed direct.
 		chainOutTag := "direct-out"
@@ -149,11 +153,57 @@ func buildMergedNodeConfig(
 }
 
 // buildMergedRoute builds the route section for a node's merged config: chain
-// user-in / transport-in inbounds are routed to the chain's strategy outbound
-// (or direct-out if the node has no chain outbound), and each standalone
-// inbound is routed to its OutboundTag (default direct-out).
-func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo) *config.RoutingSection {
+// user-in / transport-in inbounds are routed to the chain's outbound (or
+// direct-out if the node has no chain outbound), and each standalone inbound is
+// routed to its OutboundTag (default direct-out).
+//
+// Per-client routing (phase B4): when usersByChain carries users with a
+// ChainExit pin for a chain, emit an auth_user rule for that chain's entry
+// inbound steering the user's traffic to the chosen exit's outbound — direct-out
+// if the pinned exit is THIS node (egress here), or the inter-node outbound if
+// the pinned exit is the next hop. Rules with auth_user must come BEFORE the
+// generic inbound->outbound rules so they take precedence. A pin to a node that
+// is neither this node nor the next hop is not expressible in a linear chain and
+// is skipped (the user falls back to the chain's default route).
+func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain map[string][]model.User) *config.RoutingSection {
 	var rules []config.RouteRuleEntry
+
+	// Per-client auth_user rules first (highest precedence for the matched user).
+	for _, role := range roles {
+		if !role.IsEntry {
+			continue
+		}
+		users := usersForChain(usersByChain, role.Chain.Name)
+		if len(users) == 0 {
+			continue
+		}
+		inTag := chainUserInboundTag(role.Chain, role.Node.ID)
+		nextID := ""
+		if role.HasOutbound {
+			nextID = role.Chain.Nodes[role.NodeIndex+1].ID
+		}
+		for _, u := range users {
+			exitID, pinned := u.ChainExit[role.Chain.Name]
+			if !pinned || exitID == "" {
+				continue
+			}
+			switch {
+			case exitID == role.Node.ID:
+				// Egress at THIS node (the user pinned to the entry itself).
+				rules = append(rules, config.RouteRuleEntry{
+					Inbound: []string{inTag}, AuthUser: []string{u.Name}, Outbound: "direct-out",
+				})
+			case role.HasOutbound && exitID == nextID:
+				// Egress one hop down: forward to the next node.
+				rules = append(rules, config.RouteRuleEntry{
+					Inbound: []string{inTag}, AuthUser: []string{u.Name}, Outbound: chainInterNodeOutboundTag(&role),
+				})
+			}
+			// Other pins are not expressible in a linear chain; skipped.
+		}
+	}
+
+	// Generic inbound -> outbound rules (fallback for unpinned users and transit).
 	for _, role := range roles {
 		var inTags []string
 		if role.IsEntry {

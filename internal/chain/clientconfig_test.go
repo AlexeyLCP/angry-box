@@ -340,3 +340,96 @@ func TestBuildTUICInboundWithUsers_EmitsUsersArray(t *testing.T) {
 		t.Errorf("users order/uuids wrong: %+v", inb.Users)
 	}
 }
+
+// TestBuildMergedRoute_PerClientChainExit verifies that a user pinned via
+// ChainExit to the entry node (egress here) gets a direct-out auth_user rule,
+// and a user pinned to the next hop gets the inter-node outbound auth_user rule,
+// both emitted BEFORE the generic inbound->outbound fallback rule.
+func TestBuildMergedRoute_PerClientChainExit(t *testing.T) {
+	// Chain: entry -> middle -> exit. Entry node is the one we render for.
+	c := &model.Chain{
+		Name:         "pc",
+		UserProtocol: model.UserProtocolTUIC,
+		Nodes: []model.ChainNode{
+			{ID: "entry", Addr: "entry.example.test:22"},
+			{ID: "middle", Addr: "middle.example.test:22"},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	roles := resolveChainRoles("entry", []*model.Chain{c})
+	if len(roles) != 1 {
+		t.Fatalf("want 1 role, got %d", len(roles))
+	}
+	usersByChain := map[string][]model.User{
+		"pc": {
+			{Name: "alice", Active: true, ChainExit: map[string]string{"pc": "entry"}}, // egress at entry
+			{Name: "bob", Active: true, ChainExit: map[string]string{"pc": "middle"}},  // egress one hop down
+			{Name: "carol", Active: true},                                               // no pin -> default route
+		},
+	}
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain)
+	if rt == nil {
+		t.Fatal("nil route")
+	}
+	var aliceRule, bobRule *config.RouteRuleEntry
+	for i := range rt.Rules {
+		r := &rt.Rules[i]
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "alice" {
+			aliceRule = r
+		}
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "bob" {
+			bobRule = r
+		}
+	}
+	if aliceRule == nil {
+		t.Fatal("no auth_user rule for alice (pinned to entry)")
+	}
+	if aliceRule.Outbound != "direct-out" {
+		t.Errorf("alice (exit=entry) outbound=%s, want direct-out", aliceRule.Outbound)
+	}
+	if bobRule == nil {
+		t.Fatal("no auth_user rule for bob (pinned to middle)")
+	}
+	wantOut := chainInterNodeOutboundTag(&roles[0])
+	if bobRule.Outbound != wantOut {
+		t.Errorf("bob (exit=middle) outbound=%s, want %s", bobRule.Outbound, wantOut)
+	}
+	// carol has no pin -> only the generic inbound rule exists (no auth_user).
+	for _, r := range rt.Rules {
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "carol" {
+			t.Error("carol (no pin) must not get an auth_user rule")
+		}
+	}
+	// auth_user rules must precede the generic entry inbound rule.
+	aliceIdx, entryIdx := -1, -1
+	for i, r := range rt.Rules {
+		if len(r.AuthUser) == 1 && r.AuthUser[0] == "alice" {
+			aliceIdx = i
+		}
+		if len(r.Inbound) == 1 && r.Inbound[0] == "ch-pc-user-in" {
+			entryIdx = i
+		}
+	}
+	if aliceIdx >= 0 && entryIdx >= 0 && aliceIdx > entryIdx {
+		t.Errorf("alice auth_user rule (idx %d) must precede generic entry rule (idx %d)", aliceIdx, entryIdx)
+	}
+}
+
+func TestBuildMergedRoute_NoUsers_NoAuthUserRules(t *testing.T) {
+	// Without usersByChain, no auth_user rules are emitted (legacy behavior).
+	c := &model.Chain{
+		Name:         "nu",
+		UserProtocol: model.UserProtocolTUIC,
+		Nodes: []model.ChainNode{
+			{ID: "entry", Addr: "entry.example.test:22"},
+			{ID: "exit", Addr: "exit.example.test:22"},
+		},
+	}
+	roles := resolveChainRoles("entry", []*model.Chain{c})
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, nil)
+	for _, r := range rt.Rules {
+		if len(r.AuthUser) > 0 {
+			t.Errorf("no users should yield no auth_user rules, got %+v", r)
+		}
+	}
+}
