@@ -38,21 +38,20 @@ type ClientConfigParams struct {
 }
 
 // RenderClientConfig produces the sing-box client config JSON for the chain's
-// user entry. Returns the pretty-printed JSON.
+// user entry/entries. Returns the pretty-printed JSON.
 func RenderClientConfig(params ClientConfigParams) (string, error) {
 	c := params.Chain
 	if c == nil || len(c.Nodes) == 0 {
 		return "", fmt.Errorf("client config: chain has no nodes")
 	}
-	entry := c.Nodes[0]
-	entryHost := extractHost(entry.Addr)
-	if params.EntryHostOverride != "" {
-		entryHost = params.EntryHostOverride
+
+	// Resolve the entry node(s). Multi-entry: build one outbound per entry and a
+	// strategy wrapper (urltest/selector/failover) over them per Chain.Strategy.
+	// Single-entry: a single "tuic-out" outbound with no wrapper (legacy behavior).
+	entries := chainEntryNodes(c)
+	if len(entries) == 0 {
+		return "", fmt.Errorf("client config: chain %q has no entry node", c.Name)
 	}
-	if entryHost == "" {
-		return "", fmt.Errorf("client config: cannot parse entry addr %q", entry.Addr)
-	}
-	entryPort := chainUserPort(c)
 
 	listen := params.LocalProxyAddr
 	if listen == "" {
@@ -62,6 +61,7 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 
 	var outbounds []json.RawMessage
 	var inbounds []json.RawMessage
+	chainOutTag := "tuic-out" // single-entry default; replaced by strategy tag when multi-entry
 
 	switch c.UserProtocol {
 	case model.UserProtocolTUIC:
@@ -77,28 +77,65 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 		if p := resolveChainPreset(c); p.Reality != nil && len(p.Reality.ServerNames) > 0 {
 			serverName = p.Reality.ServerNames[0]
 		}
-		// TUIC uses a self-signed cert on the server; the client must skip
-		// verification (the cert is generated per-node and not CA-signed).
-		outb := config.TUICOutbound{
-			Type:              "tuic",
-			Tag:               "tuic-out",
-			Server:            entryHost,
-			ServerPort:        entryPort,
-			UUID:              uuid,
-			Password:          password,
-			CongestionControl: "bbr",
-			UDPRelayMode:      "native",
-			ZeroRTTHandshake:  true,
-			Heartbeat:         "10s",
-			TLS: &config.OutboundTLSOptions{
-				Enabled:          true,
-				ServerName:       serverName,
-				ALPN:             []string{"h3"},
-				Insecure:         true, // self-signed cert; see comment above
-			},
+
+		var entryTags []string
+		for _, n := range entries {
+			host := extractHost(n.Addr)
+			if params.EntryHostOverride != "" {
+				host = params.EntryHostOverride
+			}
+			if host == "" {
+				return "", fmt.Errorf("client config: cannot parse entry addr %q", n.Addr)
+			}
+			// Single-entry chains use the legacy "tuic-out" tag (no suffix, no
+			// strategy wrapper) so existing e2e helpers and configs keep working.
+			// Multi-entry chains suffix the node ID for unique addressability.
+			tag := "tuic-out"
+			if len(entries) > 1 {
+				tag = fmt.Sprintf("tuic-out-%s", n.ID)
+			}
+			entryTags = append(entryTags, tag)
+			// TUIC uses a self-signed cert on the server; the client must skip
+			// verification (the cert is generated per-node and not CA-signed).
+			outb := config.TUICOutbound{
+				Type:              "tuic",
+				Tag:               tag,
+				Server:            host,
+				ServerPort:        chainEntryPort(c, n.ID),
+				UUID:              uuid,
+				Password:          password,
+				CongestionControl: "bbr",
+				UDPRelayMode:      "native",
+				ZeroRTTHandshake:  true,
+				Heartbeat:         "10s",
+				TLS: &config.OutboundTLSOptions{
+					Enabled:    true,
+					ServerName: serverName,
+					ALPN:       []string{"h3"},
+					Insecure:   true, // self-signed cert; see comment above
+				},
+			}
+			ob, _ := json.Marshal(outb)
+			outbounds = append(outbounds, ob)
 		}
-		ob, _ := json.Marshal(outb)
-		outbounds = append(outbounds, ob)
+
+		// Multi-entry: wrap the per-entry outbounds in a strategy outbound so the
+		// client load-balances (urltest auto-selects the healthiest; selector uses
+		// the default; failover tries in order). Route/DNS detour through the
+		// strategy tag instead of a single tuic-out.
+		if len(entryTags) > 1 {
+			strat := BuildStrategyOutbound(string(c.Strategy), entryTags)
+			if strat == nil {
+				// Unknown strategy or none set: fall back to urltest so multi-entry
+				// is always usable. This revives the previously-dead
+				// BuildStrategyOutbound and the previously-ignored Chain.Strategy.
+				strat = BuildStrategyOutbound(string(model.StrategyURLTest), entryTags)
+			}
+			strat.Tag = "chain-lb"
+			chainOutTag = "chain-lb"
+			sb, _ := json.Marshal(strat)
+			outbounds = append(outbounds, sb)
+		}
 
 	default:
 		return "", fmt.Errorf("client config: unsupported user protocol %q (TUIC is implemented)", c.UserProtocol)
@@ -123,9 +160,9 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 	// Route everything through the chain outbound; direct is the final fallback.
 	route := &config.RoutingSection{
 		Rules: []config.RouteRuleEntry{
-			{Outbound: "tuic-out"},
+			{Outbound: chainOutTag},
 		},
-		Final:                 "tuic-out",
+		Final:                 chainOutTag,
 		AutoDetectInterface:   true,
 		DefaultDomainResolver: "dns-direct",
 	}
@@ -138,7 +175,7 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 	// Mirrors the server-side fix in buildMergedNodeConfig (CTO-review H1).
 	dns := &config.DNSConfig{
 		Servers: []config.DNSServer{
-			{Tag: "dns-remote", Type: "tls", Server: "1.1.1.1", Detour: "tuic-out"},
+			{Tag: "dns-remote", Type: "tls", Server: "1.1.1.1", Detour: chainOutTag},
 			{Tag: "dns-direct", Type: "udp", Server: "8.8.8.8", Detour: "direct-out"},
 		},
 		Final: "dns-direct",

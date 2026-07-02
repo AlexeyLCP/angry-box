@@ -143,13 +143,12 @@ func buildMergedNodeConfig(
 func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo) *config.RoutingSection {
 	var rules []config.RouteRuleEntry
 	for _, role := range roles {
-		cn := role.Chain.Name
 		var inTags []string
 		if role.IsEntry {
-			inTags = append(inTags, fmt.Sprintf("ch-%s-user-in", cn))
+			inTags = append(inTags, chainUserInboundTag(role.Chain, role.Node.ID))
 		}
 		if role.IsTransit {
-			inTags = append(inTags, fmt.Sprintf("ch-%s-transport-in", cn))
+			inTags = append(inTags, fmt.Sprintf("ch-%s-transport-in", role.Chain.Name))
 		}
 		if len(inTags) == 0 {
 			continue
@@ -178,6 +177,14 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo) *config.Routi
 	}
 }
 
+// resolveChainRoles maps a nodeID to its role(s) across all chains that
+// contain it. A node appears once per chain. The role is determined by the
+// explicit ChainNode.Role field when set, otherwise by position (index 0 =
+// entry, the rest transit) for backward compatibility with pre-multi-entry
+// store.json. Multi-entry: several nodes may carry Role=entry and each
+// becomes a user-facing entry for the chain. HasOutbound is positional — a
+// node has an inter-node outbound unless it is the last node in the chain
+// (an entry in the middle still forwards to the next hop).
 func resolveChainRoles(nodeID string, chains []*model.Chain) []chainRole {
 	var roles []chainRole
 	for _, c := range chains {
@@ -186,9 +193,11 @@ func resolveChainRoles(nodeID string, chains []*model.Chain) []chainRole {
 			if n.ID != nodeID {
 				continue
 			}
+			isEntry := n.Role == model.NodeRoleEntry || (n.Role == "" && i == 0)
+			isTransit := n.Role == model.NodeRoleTransit || (n.Role == "" && i > 0)
 			roles = append(roles, chainRole{
 				Chain: c, NodeIndex: i, Node: n,
-				IsEntry: i == 0, IsTransit: i > 0,
+				IsEntry: isEntry, IsTransit: isTransit,
 				HasOutbound: i < len(c.Nodes)-1,
 				Preset: resolveChainPreset(c),
 			})
@@ -219,7 +228,7 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *Me
 		port := r.Node.Port
 		if port == 0 {
 			if r.IsEntry {
-				port = chainUserPort(r.Chain)
+				port = chainEntryPort(r.Chain, r.Node.ID)
 			} else {
 				port = defaultTransportPort
 			}
@@ -261,11 +270,12 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 	p := ensureHopParams(role)
 
 	if role.IsEntry {
-		userPort := chainUserPort(c)
+		userPort := chainEntryPort(c, role.Node.ID)
+		inTag := chainUserInboundTag(c, role.Node.ID)
 		switch c.UserProtocol {
 		case model.UserProtocolAWG:
 			ep, _, err := buildAWGUserInbound(userPort, p.UUID,
-				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset,
+				inTag, &role.Preset,
 				c.AWGEntryServerPriv, awgClientPub(c))
 			if err == nil {
 				endpoints = append(endpoints, ep)
@@ -281,12 +291,11 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 
 		case model.UserProtocolTUIC:
 			inb := buildTUICUserInbound(userPort, tuicUUID(c), tuicPassword(c),
-				fmt.Sprintf("ch-%s-user-in", cn), &role.Preset, p)
+				inTag, &role.Preset, p)
 			inbounds = append(inbounds, inb)
 
 		default:
-			inb := buildUserInbound(userPort, p.UUID,
-				fmt.Sprintf("ch-%s-user-in", cn))
+			inb := buildUserInbound(userPort, p.UUID, inTag)
 			inbounds = append(inbounds, inb)
 		}
 	}
@@ -545,6 +554,56 @@ func chainUserPort(c *model.Chain) int {
 		return c.UserEntryPort
 	}
 	return defaultUserPort
+}
+
+// chainEntryNodes returns the chain's entry nodes — those with an explicit
+// Role=entry, falling back to index 0 when no node carries an explicit role
+// (backward compat: a legacy chain has one entry at index 0).
+func chainEntryNodes(c *model.Chain) []*model.ChainNode {
+	var entries []*model.ChainNode
+	for i := range c.Nodes {
+		n := &c.Nodes[i]
+		if n.Role == model.NodeRoleEntry {
+			entries = append(entries, n)
+		}
+	}
+	if len(entries) == 0 && len(c.Nodes) > 0 {
+		entries = []*model.ChainNode{&c.Nodes[0]}
+	}
+	return entries
+}
+
+// chainEntryIndex is the 0-based ordinal of nodeID among the chain's entry
+// nodes (0 for the first entry). Used to assign distinct ports when a chain
+// has multiple entry nodes: the Nth entry listens on chainUserPort(c)+N so
+// the entries don't collide. Returns 0 for a single-entry chain.
+func chainEntryIndex(c *model.Chain, nodeID string) int {
+	entries := chainEntryNodes(c)
+	for i, n := range entries {
+		if n.ID == nodeID {
+			return i
+		}
+	}
+	return 0
+}
+
+// chainEntryPort returns the listen port for a specific entry node. The first
+// entry uses the chain's base user-entry port; subsequent entries increment by
+// one to avoid port collisions on the same host (only relevant when multiple
+// entry nodes happen to share a host, which detectPortConflicts still flags).
+func chainEntryPort(c *model.Chain, nodeID string) int {
+	return chainUserPort(c) + chainEntryIndex(c, nodeID)
+}
+
+// chainUserInboundTag is the inbound tag for a chain's user-entry inbound on a
+// given node. Single-entry chains keep the legacy tag "ch-<chain>-user-in" so
+// existing route rules and tests continue to match; multi-entry chains suffix
+// the node ID so each entry's inbound is uniquely addressable for routing.
+func chainUserInboundTag(c *model.Chain, nodeID string) string {
+	if len(chainEntryNodes(c)) > 1 {
+		return fmt.Sprintf("ch-%s-user-in-%s", c.Name, nodeID)
+	}
+	return fmt.Sprintf("ch-%s-user-in", c.Name)
 }
 
 // chainInterNodeOutboundTag is the vless/xhttp outbound tag for the next hop in

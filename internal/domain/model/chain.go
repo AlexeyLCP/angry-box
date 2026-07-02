@@ -10,6 +10,18 @@ const (
 	StrategyBond     Strategy = "bond"
 )
 
+// ChainNodeRole explicitly designates a node's role in a chain. Empty means
+// "auto": the entry (user-facing) node is index 0, all others are transit.
+// Setting Role=entry on several nodes enables multi-entry load balancing
+// (several user-facing entries sharing one chain). Backward compatible —
+// existing store.json with empty roles behaves as before.
+type ChainNodeRole string
+
+const (
+	NodeRoleEntry   ChainNodeRole = "entry"
+	NodeRoleTransit ChainNodeRole = "transit"
+)
+
 // ChainNode is a single hop in a proxy chain.
 type ChainNode struct {
 	ID      string `json:"id"`      // user-provided name for this node
@@ -17,6 +29,7 @@ type ChainNode struct {
 	User    string `json:"user"`    // SSH user
 	KeyPath string `json:"keyPath"` // path to SSH private key
 	Port    int    `json:"port"`    // inbound port for transport on this node
+	Role    ChainNodeRole `json:"role,omitempty"` // explicit entry/transit designation; empty = auto
 
 	TransitPrivKey string        `json:"transit_priv_key,omitempty"` // For Reality
 	TransitShortID string        `json:"transit_short_id,omitempty"` // For Reality
