@@ -3,6 +3,8 @@
 package chain_test
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -305,6 +307,101 @@ func TestE2E_Heavy_ClientConnectivity_3Hop(t *testing.T) {
 }
 
 // ─── Load Balancing & Failover ────────────────────────────────────────────────
+
+// TestE2E_Heavy_Balancer_MultiEntry verifies the ORCHESTRATOR (not a raw
+// config) generates a multi-entry chain: two nodes flagged Role=entry in one
+// chain, the client config carries a urltest 'chain-lb' wrapper over both
+// per-entry outbounds, and end-to-end traffic egresses through the exit VPS.
+// Distinct from the raw-config URLTestInChain/Failover tests above, which
+// deploy hand-written balancer configs — this one drives ApplyChain +
+// RenderClientConfig and asserts the generated config actually balances.
+func TestE2E_Heavy_Balancer_MultiEntry(t *testing.T) {
+	e2eHeavy(t)
+	if os.Getenv("AB_ROUTE_DNS") != "1" {
+		t.Skip("set AB_ROUTE_DNS=1 to verify multi-entry client routing")
+	}
+	store := newStore(t)
+	// Two explicit entries (entry + middle), exit is the leaf. Both entries are
+	// user-facing (Role=entry); the second is also transit toward the exit.
+	nodes := buildChainNodes(e2eRoleEntry, e2eRoleMiddle, e2eRoleExit)
+	nodes[0].Role = model.NodeRoleEntry
+	nodes[1].Role = model.NodeRoleEntry
+	registerChainNodes(t, store, nodes, true)
+	c := baseChain("e2e-multientry", nodes)
+	deployChain(t, store, c, deployChainOpts{})
+
+	// The deployed exit node config must have TWO chain user-in inbounds (one
+	// per entry) — proving the orchestrator rendered multi-entry on the server.
+	exitCfg := fetchRemoteConfig(t, e2eRoleExit)
+	// The entry-side nodes each carry their own user-in; check the second entry
+	// (middle, which is both entry and transit) carries its user-in inbound.
+	middleCfg := fetchRemoteConfig(t, e2eRoleMiddle)
+	assertConfigContains(t, middleCfg, fmt.Sprintf("ch-%s-user-in-", c.Name))
+
+	// Client config must carry the multi-entry urltest wrapper over two
+	// per-entry outbounds (tuic-out-<entryID> and tuic-out-<middleID>).
+	cfgJSON, err := chain.RenderClientConfig(chain.ClientConfigParams{
+		Chain:          c,
+		LocalProxyAddr: "127.0.0.1:11080",
+		// No EntryHostOverride: the client (on the exit VPS) reaches both entries
+		// at their real public IPs, so urltest actually has two distinct targets.
+	})
+	if err != nil {
+		t.Fatalf("RenderClientConfig: %v", err)
+	}
+	assertConfigContains(t, cfgJSON,
+		`"type": "urltest"`, `"tag": "chain-lb"`,
+		fmt.Sprintf(`"tag": "tuic-out-%s"`, nodes[0].ID),
+		fmt.Sprintf(`"tag": "tuic-out-%s"`, nodes[1].ID))
+
+	// Run the client on the exit VPS and verify egress == exit IP (traffic
+	// traversed one of the entries and the chain to the exit, then out).
+	client := e2eConnect(t, e2eRoleExit)
+	ctx := e2eContext(t, 2*time.Minute)
+	remoteCfg := "/tmp/e2e-multientry-client.json"
+	remoteLog := remoteCfg + ".log"
+	if err := client.UploadText(ctx, cfgJSON, remoteCfg, 0o600); err != nil {
+		t.Fatalf("upload client config: %v", err)
+	}
+	defer func() { _, _ = client.Run("rm -f " + remoteCfg + " " + remoteLog) }()
+
+	if out, err := client.Run(fmt.Sprintf("/usr/local/bin/sing-box check -c %s", remoteCfg)); err != nil {
+		t.Fatalf("multi-entry client check: %v\n%s", err, out)
+	}
+
+	runScript := fmt.Sprintf(`CFG=%q
+LOG=%q
+pkill -f "sing-box run -c $CFG" 2>/dev/null || true
+/usr/local/bin/sing-box run -c "$CFG" >"$LOG" 2>&1 &
+BPID=$!
+sleep 12
+IP=$(curl -s --max-time 30 -x socks5h://127.0.0.1:11080 https://ifconfig.me || true)
+kill "$BPID" 2>/dev/null || true
+wait "$BPID" 2>/dev/null || true
+echo EGRESS:$IP
+echo ---LOG---
+tail -40 "$LOG" 2>/dev/null || true
+`, remoteCfg, remoteLog)
+	out, _, _, err := client.RunWithOutput(ctx, runScript, 2*time.Minute)
+	if err != nil && !strings.Contains(out, "EGRESS:") {
+		t.Fatalf("multi-entry client run: %v\n%s", err, out)
+	}
+	t.Logf("multi-entry remote client output:\n%s", out)
+
+	gotIP := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "EGRESS:") {
+			gotIP = strings.TrimSpace(strings.TrimPrefix(line, "EGRESS:"))
+		}
+	}
+	_, expectAddr, _, _ := e2eServer(e2eRoleExit)
+	expectIP := strings.TrimSpace(expectAddr[:strings.LastIndexByte(expectAddr, ':')])
+	t.Logf("multi-entry egress IP=%s expect exit=%s", gotIP, expectIP)
+	if gotIP != expectIP {
+		t.Errorf("multi-entry egress=%s, want exit IP %s", gotIP, expectIP)
+	}
+	_ = exitCfg
+}
 
 // TestE2E_Heavy_Balancer_URLTestInChain verifies a real urltest balancer
 // generated as a raw config (not the orchestrator's linear-chain config):
