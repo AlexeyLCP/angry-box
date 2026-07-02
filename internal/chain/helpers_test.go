@@ -69,6 +69,28 @@ func TestGenerateHopParams_DeterministicServerName(t *testing.T) {
 	}
 }
 
+// ─── clampRealityPrivateKeyB64 ────────────────────────────────────────────────
+
+func TestClampRealityPrivateKeyB64_Idempotent(t *testing.T) {
+	raw := base64.RawURLEncoding.EncodeToString([]byte{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	})
+	once, err := clampRealityPrivateKeyB64(raw)
+	if err != nil {
+		t.Fatalf("clamp: %v", err)
+	}
+	twice, err := clampRealityPrivateKeyB64(once)
+	if err != nil {
+		t.Fatalf("clamp again: %v", err)
+	}
+	if once != twice {
+		t.Errorf("clamp not idempotent: %q vs %q", once, twice)
+	}
+}
+
 // ─── publicKeyB64 ─────────────────────────────────────────────────────────────
 
 func TestPublicKeyB64(t *testing.T) {
@@ -600,7 +622,7 @@ func TestResolveServerName(t *testing.T) {
 		{"reality", ConnectionPreset{Reality: &RealityPreset{ServerNames: []string{"reality.com"}}}, "reality.com"},
 		{"xhttp", ConnectionPreset{XHTTP: &XHTTPPreset{Hosts: []string{"xhttp.com"}}}, "xhttp.com"},
 		{"both", ConnectionPreset{Reality: &RealityPreset{ServerNames: []string{"r.com"}}, XHTTP: &XHTTPPreset{Hosts: []string{"x.com"}}}, "r.com"},
-		{"none", ConnectionPreset{}, "www.microsoft.com"},
+		{"none", ConnectionPreset{}, DefaultRealitySNI},
 	}
 	for _, tt := range tests {
 		got := ResolveServerName(&tt.preset)

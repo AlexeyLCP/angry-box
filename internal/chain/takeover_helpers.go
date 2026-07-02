@@ -9,11 +9,19 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
 )
+
+// HostLock returns the per-host deploy mutex for nodeID. Tests use this to
+// verify that all deploy entry points share the same lock instance; production
+// code must acquire it only via pushConfig/withHostLock (not reentrant).
+func HostLock(nodeID string) *sync.Mutex {
+	return hostLock(nodeID)
+}
 
 // PushConfig is the exported wrapper around pushConfig: writes cfgContent to
 // /etc/sing-box/config.json with the reliable deploy sequence (backup → cert →

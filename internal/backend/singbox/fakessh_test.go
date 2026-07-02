@@ -16,10 +16,13 @@ import (
 )
 
 // fakeRule: if substring is in the command, return out/err. First match wins;
-// empty substring = catch-all.
+// empty substring = catch-all. When outs is non-empty, each match returns the
+// next element (last element repeats once exhausted) — useful for repeated
+// probes like lsmod before/after install.
 type fakeRule struct {
 	substring string
 	out       string
+	outs      []string
 	err       error
 }
 
@@ -27,6 +30,7 @@ type fakeRule struct {
 type fakeSSH struct {
 	mu       sync.Mutex
 	rules    []fakeRule
+	seq      map[int]int
 	commands []string
 	uploads  []fakeUpload
 }
@@ -42,11 +46,8 @@ func (f *fakeSSH) Run(cmd string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.commands = append(f.commands, cmd)
-	r := f.matchLocked(cmd)
-	if r == nil {
-		return "", nil
-	}
-	return r.out, r.err
+	out, err := f.matchLocked(cmd)
+	return out, err
 }
 
 func (f *fakeSSH) RunWithOutput(ctx context.Context, cmd string, timeout time.Duration) (string, string, int, error) {
@@ -55,20 +56,33 @@ func (f *fakeSSH) RunWithOutput(ctx context.Context, cmd string, timeout time.Du
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.commands = append(f.commands, cmd)
-	r := f.matchLocked(cmd)
-	if r == nil {
-		return "", "", 0, nil
-	}
-	return r.out, "", 0, r.err
+	out, err := f.matchLocked(cmd)
+	return out, "", 0, err
 }
 
-func (f *fakeSSH) matchLocked(cmd string) *fakeRule {
+func (f *fakeSSH) matchLocked(cmd string) (out string, err error) {
 	for i := range f.rules {
-		if f.rules[i].substring == "" || strings.Contains(cmd, f.rules[i].substring) {
-			return &f.rules[i]
+		r := &f.rules[i]
+		if r.substring != "" && !strings.Contains(cmd, r.substring) {
+			continue
 		}
+		if len(r.outs) > 0 {
+			if f.seq == nil {
+				f.seq = make(map[int]int)
+			}
+			idx := f.seq[i]
+			if idx >= len(r.outs) {
+				idx = len(r.outs) - 1
+			}
+			f.seq[i]++
+			return r.outs[idx], r.err
+		}
+		if r.substring == "" {
+			return r.out, r.err
+		}
+		return r.out, r.err
 	}
-	return nil
+	return "", nil
 }
 
 func (f *fakeSSH) UploadText(ctx context.Context, content, remotePath string, mode os.FileMode) error {
@@ -76,11 +90,8 @@ func (f *fakeSSH) UploadText(ctx context.Context, content, remotePath string, mo
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uploads = append(f.uploads, fakeUpload{Path: remotePath, Content: content})
-	r := f.matchLocked("upload:" + remotePath)
-	if r != nil {
-		return r.err
-	}
-	return nil
+	_, err := f.matchLocked("upload:" + remotePath)
+	return err
 }
 
 func (f *fakeSSH) Close() error { return nil }

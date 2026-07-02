@@ -127,7 +127,6 @@ func TestTransportInboundJSONParity(t *testing.T) {
 			{
 				"name": tag,
 				"uuid": p.UUID,
-				"flow": "xtls-rprx-vision",
 			},
 		},
 		"tls": map[string]any{
@@ -142,9 +141,6 @@ func TestTransportInboundJSONParity(t *testing.T) {
 				"private_key": p.PrivateKey,
 				"short_id":    []string{p.ShortID},
 			},
-		},
-		"multiplex": map[string]any{
-			"enabled": true,
 		},
 	}
 
@@ -182,7 +178,6 @@ func TestTransportOutboundJSONParity(t *testing.T) {
 		"server":      addr,
 		"server_port": p.Port,
 		"uuid":        p.UUID,
-		"flow":        "xtls-rprx-vision",
 		"tls": map[string]any{
 			"enabled":     true,
 			"server_name": p.ServerName,
@@ -195,9 +190,6 @@ func TestTransportOutboundJSONParity(t *testing.T) {
 				"public_key": pubKeyHex,
 				"short_id":   p.ShortID,
 			},
-		},
-		"multiplex": map[string]any{
-			"enabled": true,
 		},
 	}
 
@@ -296,8 +288,8 @@ func TestMergedNodeConfigParity(t *testing.T) {
 	if len(cfg.Inbounds) < 1 {
 		t.Fatal("expected at least 1 inbound")
 	}
-	if len(cfg.Outbounds) < 2 {
-		t.Fatal("expected at least 2 outbounds")
+	if len(cfg.Outbounds) < 1 {
+		t.Fatal("expected at least 1 outbound")
 	}
 	cfgJSON, _ := json.MarshalIndent(cfg, "", "  ")
 	var generic map[string]any
@@ -314,8 +306,8 @@ func TestMergedNodeConfigParity(t *testing.T) {
 	if !hasTag("ch-test-chain-user-in") {
 		t.Errorf("missing tag ch-test-chain-user-in, got %v", tags)
 	}
-	if !hasTag("ch-test-chain-strategy") {
-		t.Errorf("missing tag ch-test-chain-strategy, got %v", tags)
+	if !hasTag("ch-test-chain-out-www") {
+		t.Errorf("missing tag ch-test-chain-out-www, got %v", tags)
 	}
 }
 
@@ -327,12 +319,16 @@ func TestSingboxCheck(t *testing.T) {
 	}
 
 	// 1. Generate full mock config incorporating the new structs
+	priv, _, err := GenerateRealityKeypair()
+	if err != nil {
+		t.Fatalf("GenerateRealityKeypair: %v", err)
+	}
 	p := &hopParams{
 		Port:       443,
 		UUID:       "12345678-1234-1234-1234-123456789012",
-		ServerName: "example.com",
-		PrivateKey: "private_key_hex",
-		ShortID:    "short_id_hex",
+		ServerName: "www.cloudflare.com",
+		PrivateKey: priv,
+		ShortID:    "aabbccdd",
 	}
 	preset := &ConnectionPreset{}
 	

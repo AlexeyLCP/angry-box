@@ -38,7 +38,7 @@ const (
 
 // RealitySNI is the default REALITY handshake target. TLS 1.3 + H2, popular,
 // not DPI-blocked. Overridable via ProxyNodeParams.SNIDomain.
-const defaultRealitySNI = "www.microsoft.com"
+const defaultRealitySNI = "www.cloudflare.com"
 
 // ─── ProxyNode ─────────────────────────────────────────────────────────────
 

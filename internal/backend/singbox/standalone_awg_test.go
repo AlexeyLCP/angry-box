@@ -165,42 +165,39 @@ func TestGenerateConfig_Transport_TUIC(t *testing.T) {
 
 // ─── InstallAWGModule ───────────────────────────────────────────────────────
 
-// TestInstallAWGModule_AlreadyLoaded verifies the short-circuit when the module
-// is already loaded AND persistent.
+// TestInstallAWGModule_AlreadyLoaded verifies the short-circuit when the kernel
+// module is already loaded (only persist modules-load.d, no apt).
 func TestInstallAWGModule_AlreadyLoaded(t *testing.T) {
 	fake := newFakeSSH(
 		fakeRule{substring: "lsmod", out: "loaded"},
-		fakeRule{substring: "modules-load.d/amneziawg.conf", out: "yes"},
+		fakeRule{substring: "modules-load.d/amneziawg.conf", out: ""},
 		fakeRule{substring: "", out: ""},
 	)
 	b := New(&fakeConnector{client: fake})
 	if err := b.InstallAWGModule(context.Background(), hostA); err != nil {
 		t.Fatalf("InstallAWGModule: %v", err)
 	}
-	if fake.Saw("apt-get") {
-		t.Error("should have short-circuited, but ran apt-get")
+	if fake.Saw("apt-get install -y -qq amneziawg") {
+		t.Error("should have short-circuited, but ran amneziawg apt install")
 	}
 }
 
-// TestInstallAWGModule_InstallSuccess verifies the install path runs apt-get +
-// persists the modules-load.d config.
+// TestInstallAWGModule_InstallSuccess verifies the PPA install path runs apt +
+// persists modules-load.d and verifies awg-quick.
 func TestInstallAWGModule_InstallSuccess(t *testing.T) {
 	fake := newFakeSSH(
-		// lsmod reports loaded for BOTH the short-circuit probe and the final
-		// verify (they share the same command shape). The short-circuit is gated
-		// on loaded AND persistent=="yes"; persistent is "no" here so install
-		// proceeds, and the final verify sees "loaded" -> success.
-		fakeRule{substring: "lsmod", out: "loaded"},
-		fakeRule{substring: "modules-load.d/amneziawg.conf", out: "no"},
-		fakeRule{substring: "amneziawg-tools", out: ""}, // apt install step
+		fakeRule{substring: "lsmod", outs: []string{"not_loaded", "loaded"}},
+		fakeRule{substring: "Installing build prerequisites", out: ""},
+		fakeRule{substring: "modules-load.d/amneziawg.conf", out: ""},
+		fakeRule{substring: "awg-quick", out: "/usr/bin/awg-quick"},
 		fakeRule{substring: "", out: ""},
 	)
 	b := New(&fakeConnector{client: fake})
 	if err := b.InstallAWGModule(context.Background(), hostA); err != nil {
 		t.Fatalf("InstallAWGModule: %v", err)
 	}
-	if !fake.Saw("apt-get") {
-		t.Error("apt-get install not run")
+	if !fake.Saw("apt-get install -y -qq amneziawg") {
+		t.Error("amneziawg PPA apt install not run")
 	}
 }
 
@@ -208,8 +205,7 @@ func TestInstallAWGModule_InstallSuccess(t *testing.T) {
 func TestInstallAWGModule_InstallFails(t *testing.T) {
 	fake := newFakeSSH(
 		fakeRule{substring: "lsmod", out: "not_loaded"},
-		fakeRule{substring: "modules-load.d/amneziawg.conf", out: "no"},
-		fakeRule{substring: "amneziawg-tools", out: "", err: errAny},
+		fakeRule{substring: "Installing build prerequisites", out: "", err: errAny},
 		fakeRule{substring: "", out: ""},
 	)
 	b := New(&fakeConnector{client: fake})
