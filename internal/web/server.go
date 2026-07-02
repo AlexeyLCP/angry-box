@@ -172,9 +172,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// Dashboard stats partial (HTMX, used by the dashboard template).
 	mux.HandleFunc("GET /ui/dashboard/stats", s.auth(s.handleDashboardStatsHTML))
 
-	// Hosts (kept for backward compat, redirect to nodes)
-	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
-	// Hosts (kept for backward compat: status endpoint is used by node/chain tables).
+	// Hosts (kept for backward compat, redirect to nodes). The status endpoint
+	// is used by node/chain tables to poll per-host liveness.
 	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
 	mux.HandleFunc("GET /ui/hosts/{id}/status", s.auth(s.handleHostStatus))
 
