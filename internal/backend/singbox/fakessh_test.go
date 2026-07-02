@@ -127,8 +127,12 @@ func (c *fakeConnector) Connect(addr, user, keyPath string) (ports.SSHClient, er
 // - verifyServiceUp waits for "UP" (from `is-active --quiet ... && echo UP`)
 // - journalctl returns empty
 func deployRules() []fakeRule {
+	// The version string must carry one of the extended build tags
+	// (with_mtproxy/with_trusttunnel/with_sudoku) that isPatchedExtended
+	// detects — a real binary built without version ldflags reports
+	// "sing-box version unknown" plus its Tags: line, so mirror that.
 	return []fakeRule{
-		{substring: "version", out: "sing-box 1.13.14-extended-2.5.0-patched"},
+		{substring: "version", out: "sing-box version unknown\nTags: with_gvisor,with_quic,with_wireguard,with_utls,with_mtproxy,with_trusttunnel,with_sudoku"},
 		{substring: "mkdir -p", out: ""},
 		{substring: "openssl", out: ""}, // ensureSelfSignedCert best-effort
 		{substring: "cat > ", out: ""},  // systemd unit write via UploadText path

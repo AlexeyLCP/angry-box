@@ -228,18 +228,31 @@ func installedVersion(ctx context.Context, client ports.SSHClient, useSudo bool)
 // isPatchedExtended returns true if the binary at installPath is already our
 // patched extended build and does not need re-downloading.
 //
-// The trustworthy signal is the "extended" substring: stock sing-box NEVER
-// reports it, our patched build ALWAYS does (even when built without version
-// ldflags and reporting "sing-box version unknown"). Matching on "unknown"
-// alone (the previous heuristic) was a false positive: a stock sing-box built
-// without ldflags also reports "unknown", so isPatchedExtended returned true
-// and installPatchedBinary was skipped — leaving the node on an un-patched
-// binary while Deploy reported success.
+// Detection strategy: our build always carries the extended build tags
+// with_mtproxy, with_trusttunnel and with_sudoku (see scripts/build-singbox.sh),
+// which stock sing-box does NOT compile in. Those tags appear in `sing-box
+// version` output's "Tags:" line regardless of whether version ldflags were
+// set — so a binary built without ldflags (reporting "sing-box version unknown")
+// is still recognized. Matching on "unknown" alone (the old heuristic) was a
+// false positive: stock sing-box built without ldflags also reports "unknown",
+// so installPatchedBinary was skipped and the node ran an un-patched binary
+// while Deploy reported success. Matching on "extended" alone (an intermediate
+// fix) was a false negative: our real build reports "version unknown" with no
+// "extended" substring, so it would be re-downloaded on every ApplyChain —
+// which also fails for non-root SSH users when the prior sudo install left a
+// root-owned binary.
 func isPatchedExtended(ver string) bool {
 	if ver == "" || strings.Contains(ver, "NOT_INSTALLED") {
 		return false
 	}
-	return strings.Contains(strings.ToLower(ver), "extended")
+	lower := strings.ToLower(ver)
+	// Our extended build tags — absent in stock sing-box. Any one is sufficient
+	// (they ship together, but checking a unique one avoids fragility if the tag
+	// list is ever reordered). with_trusttunnel and with_sudoku are the most
+	// distinctive to our patched fork.
+	return strings.Contains(lower, "with_mtproxy") ||
+		strings.Contains(lower, "with_trusttunnel") ||
+		strings.Contains(lower, "with_sudoku")
 }
 
 // checksumForArch returns the expected sha256 of the patched sing-box tarball
