@@ -42,16 +42,27 @@ type chainRole struct {
 // RenderMergedNodeConfig is the exported variant of buildMergedNodeConfig for
 // callers that need to preview/dry-run a node's merged config without pushing
 // it (e.g. the Deploy Status hash comparison and config preview endpoint).
+// It does not know about users, so chain entry inbounds fall back to the
+// chain-wide shared credentials (single-user), matching the pre-per-user
+// behavior. Use buildMergedNodeConfig with a usersByChain map to emit
+// multi-user inbounds.
 func RenderMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
 ) (*config.SingboxConfig, *MergeReport, error) {
-	return buildMergedNodeConfig(nodeInfo, nodeChains)
+	return buildMergedNodeConfig(nodeInfo, nodeChains, nil)
 }
 
+// buildMergedNodeConfig renders a node's merged sing-box config from its
+// standalone inbounds plus every chain that includes it. usersByChain, when
+// non-nil, maps chain name -> users assigned to that chain (via User.ChainNames);
+// the chain's user-entry inbound is then rendered multi-user (one Users[] entry
+// per user with their per-user creds). When nil/empty for a chain, the entry
+// inbound falls back to the chain-wide shared credentials (single-user, legacy).
 func buildMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
+	usersByChain map[string][]model.User,
 ) (*config.SingboxConfig, *MergeReport, error) {
 
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
@@ -68,7 +79,8 @@ func buildMergedNodeConfig(
 
 	for i := range roles {
 		role := &roles[i]
-		ins, outs, eps := buildChainRoleInOut(role)
+		users := usersForChain(usersByChain, role.Chain.Name)
+		ins, outs, eps := buildChainRoleInOut(role, users)
 		inbounds = append(inbounds, ins...)
 		endpoints = append(endpoints, eps...)
 		for _, ob := range outs {
@@ -264,7 +276,16 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *Me
 	return nil
 }
 
-func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json.RawMessage) {
+// usersForChain returns the users assigned to a chain from the usersByChain
+// map, or nil when the map has no entry for that chain (single-user fallback).
+func usersForChain(usersByChain map[string][]model.User, chainName string) []model.User {
+	if usersByChain == nil {
+		return nil
+	}
+	return usersByChain[chainName]
+}
+
+func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outbounds, endpoints []json.RawMessage) {
 	c := role.Chain
 	cn := c.Name
 	p := ensureHopParams(role)
@@ -290,8 +311,8 @@ func buildChainRoleInOut(role *chainRole) (inbounds, outbounds, endpoints []json
 			inbounds = append(inbounds, tunJSON)
 
 		case model.UserProtocolTUIC:
-			inb := buildTUICUserInbound(userPort, tuicUUID(c), tuicPassword(c),
-				inTag, &role.Preset, p)
+			tuicUsers := chainTUICUsers(c, users)
+			inb := buildTUICInboundWithUsers(userPort, tuicUsers, inTag, &role.Preset, p)
 			inbounds = append(inbounds, inb)
 
 		default:

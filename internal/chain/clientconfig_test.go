@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 // baseChainForClient builds a chain with the given node IDs as separate hosts
@@ -267,5 +269,74 @@ func TestChainUserInboundTag_SingleVsMultiEntry(t *testing.T) {
 	}
 	if got := chainUserInboundTag(c2, "b"); got != "ch-m-user-in-b" {
 		t.Errorf("multi entry[b] tag = %q, want ch-m-user-in-b", got)
+	}
+}
+// TestChainTUICUsers_MultiUser verifies that assigned users with per-user TUIC
+// creds produce one TUICUser each (multi-user inbound), ordered deterministically
+// by the input slice, and that expired/inactive users are skipped.
+func TestChainTUICUsers_MultiUser(t *testing.T) {
+	c := &model.Chain{
+		Name:             "mc",
+		UserProtocol:     model.UserProtocolTUIC,
+		TUICEntryUserUUID: "chain-uuid",
+		TUICEntryUserPassword: "chain-pass",
+	}
+	users := []model.User{
+		{ID: "u1", Name: "alice", Active: true, TUICUUID: "alice-uuid", TUICPassword: "alice-pass"},
+		{ID: "u2", Name: "bob", Active: true, TUICUUID: "bob-uuid", TUICPassword: "bob-pass"},
+		{ID: "u3", Name: "expired", Active: true, ExpiresAt: time.Now().Add(-time.Hour), TUICUUID: "x-uuid", TUICPassword: "x-pass"},
+		{ID: "u4", Name: "inactive", Active: false, TUICUUID: "i-uuid", TUICPassword: "i-pass"},
+		{ID: "u5", Name: "nofallback", Active: true}, // no per-user creds -> uses chain-wide
+	}
+	got := chainTUICUsers(c, users)
+	if len(got) != 3 {
+		t.Fatalf("want 3 active non-expired users, got %d (%+v)", len(got), got)
+	}
+	wantUUIDs := map[string]bool{"alice-uuid": false, "bob-uuid": false, "chain-uuid": false}
+	for _, u := range got {
+		if _, ok := wantUUIDs[u.UUID]; ok {
+			wantUUIDs[u.UUID] = true
+		}
+	}
+	for uuid, found := range wantUUIDs {
+		if !found {
+			t.Errorf("missing TUIC user with uuid %q in %v", uuid, got)
+		}
+	}
+}
+
+func TestChainTUICUsers_NoUsers_FallsBackToChainCreds(t *testing.T) {
+	c := &model.Chain{
+		Name:                  "sc",
+		UserProtocol:          model.UserProtocolTUIC,
+		TUICEntryUserUUID:     "chain-uuid",
+		TUICEntryUserPassword: "chain-pass",
+	}
+	got := chainTUICUsers(c, nil)
+	if len(got) != 1 {
+		t.Fatalf("want single fallback user, got %d", len(got))
+	}
+	if got[0].UUID != "chain-uuid" || got[0].Password != "chain-pass" {
+		t.Errorf("fallback user = %+v, want chain-wide creds", got[0])
+	}
+}
+
+func TestBuildTUICInboundWithUsers_EmitsUsersArray(t *testing.T) {
+	preset := GetDefaultPreset()
+	hp := &hopParams{PrivateKey: "", ShortID: "deadbeef", ServerName: "www.cloudflare.com", Port: 443}
+	users := []config.TUICUser{
+		{UUID: "u1", Password: "p1"},
+		{UUID: "u2", Password: "p2"},
+	}
+	raw := buildTUICInboundWithUsers(443, users, "in-tag", &preset, hp)
+	var inb config.TUICInbound
+	if err := json.Unmarshal(raw, &inb); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(inb.Users) != 2 {
+		t.Fatalf("want 2 users in inbound, got %d", len(inb.Users))
+	}
+	if inb.Users[0].UUID != "u1" || inb.Users[1].UUID != "u2" {
+		t.Errorf("users order/uuids wrong: %+v", inb.Users)
 	}
 }

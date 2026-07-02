@@ -275,7 +275,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			nodeChains = append(nodeChains, chain)
 		}
 
-		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains)
+		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains))
 		if buildErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "build config: " + buildErr.Error()})
 			continue
@@ -960,6 +960,42 @@ func buildXHTTPTransportOutbound(next *hopParams, serverAddr, tag string, preset
 // /etc/sing-box/certs/tuic-cert.pem reference dangling — which made sing-box
 // check fail on a fresh node (caught by e2e against a real VPS).
 func buildTUICUserInbound(port int, uuid, password, tag string, preset *ConnectionPreset, p *hopParams) json.RawMessage {
+	return buildTUICInboundWithUsers(port, []config.TUICUser{{UUID: uuid, Password: password}}, tag, preset, p)
+}
+
+// chainTUICUsers builds the TUIC users array for a chain entry. When the chain
+// has assigned users with per-user TUIC credentials, emit one entry per user
+// (multi-user inbound — the basis for per-client auth_user routing). When no
+// per-user creds are available, fall back to the chain-wide shared creds as a
+// single user (legacy behavior). The user Name becomes the auth_user identity
+// used by route rules.
+func chainTUICUsers(c *model.Chain, users []model.User) []config.TUICUser {
+	var out []config.TUICUser
+	for _, u := range users {
+		if !u.Active || u.IsExpired() {
+			continue
+		}
+		uuid := u.TUICUUID
+		password := u.TUICPassword
+		if uuid == "" {
+			uuid = tuicUUID(c)
+		}
+		if password == "" {
+			password = tuicPassword(c)
+		}
+		out = append(out, config.TUICUser{UUID: uuid, Password: password})
+	}
+	if len(out) == 0 {
+		// No per-user creds -> legacy single-user with chain-wide creds.
+		return []config.TUICUser{{UUID: tuicUUID(c), Password: tuicPassword(c)}}
+	}
+	return out
+}
+
+// buildTUICInboundWithUsers renders a TUIC inbound with an explicit users
+// array (multi-user when >1, single-user otherwise). TLS/congestion/auth
+// options match buildTUICUserInbound.
+func buildTUICInboundWithUsers(port int, users []config.TUICUser, tag string, preset *ConnectionPreset, p *hopParams) json.RawMessage {
 	tuic := preset.TUIC
 	if tuic == nil {
 		tuic = &TUICPreset{
@@ -988,12 +1024,7 @@ func buildTUICUserInbound(port int, uuid, password, tag string, preset *Connecti
 		Tag:               tag,
 		Listen:            "0.0.0.0",
 		ListenPort:        port,
-		Users: []config.TUICUser{
-			{
-				UUID:     uuid,
-				Password: password,
-			},
-		},
+		Users:             users,
 		CongestionControl: congestion,
 		AuthTimeout:       authTimeout,
 		ZeroRTTHandshake:  true,
@@ -1215,6 +1246,40 @@ func generateStableUUID() string {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
+// usersByChainMap builds a chain-name -> users map for the given chains by
+// loading all users from the store and filtering to those whose ChainNames
+// include each chain. Only active, non-expired users are included. Used by
+// buildMergedNodeConfig to render multi-user entry inbounds (per-client
+// routing). Returns nil when the store has no users, so single-user chains
+// keep the legacy fallback behavior.
+func usersByChainMap(store *Store, chains []*model.Chain) map[string][]model.User {
+	if store == nil || len(chains) == 0 {
+		return nil
+	}
+	all, err := store.ListUsers()
+	if err != nil || len(all) == 0 {
+		return nil
+	}
+	out := map[string][]model.User{}
+	for _, c := range chains {
+		for _, u := range all {
+			if !u.Active || u.IsExpired() {
+				continue
+			}
+			for _, cn := range u.ChainNames {
+				if cn == c.Name {
+					out[c.Name] = append(out[c.Name], *u)
+					break
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // ApplyMergedNode reads all chains from the store that contain this node,
 // merges them with standalone inbounds into a single sing-box config,
 // and pushes it to the remote node via SSH.
@@ -1291,7 +1356,7 @@ func (a *Applier) applyMergedNodeLocked(
 		}
 	}
 
-	cfg, mergeReport, err := buildMergedNodeConfig(info, chains)
+	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains))
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("build merged config: %w", err)
 	}
