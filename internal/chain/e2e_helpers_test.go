@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,6 +102,17 @@ func e2eHeavy(t *testing.T) {
 func e2eServer(role int) (id, addr, user, key string) {
 	s := e2eServers[role]
 	return s.ID, s.Addr, s.User, sshKeyPath(s.KeyFile)
+}
+
+// e2eServerIP returns the bare IP (no :22 port) of a VPS by role. Used to
+// assert which backend a selector/urltest routed traffic through (egress IP).
+func e2eServerIP(role int) string {
+	_, addr, _, _ := e2eServer(role)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
 }
 
 func e2eHost(role int) model.Host {
@@ -594,6 +606,57 @@ func deployURLTestBalancer(t *testing.T, entryRole int, nodeID string, backendRo
 	client := e2eConnect(t, entryRole)
 	if _, err := chain.PushConfig(client, nodeID, string(b), true); err != nil {
 		t.Fatalf("deploy urltest balancer: %v", err)
+	}
+}
+
+// deploySelectorBalancer pushes a selector across SOCKS outbounds to live
+// backends. Unlike urltest, the selector does no health probing: it routes all
+// traffic to the configured default backend until the selector's default is
+// changed. defaultIdx picks which backend index is the initial default.
+// Returns the entry-node ID so the caller can re-deploy with a new default.
+func deploySelectorBalancer(t *testing.T, entryRole int, nodeID string, defaultIdx int, backendRoles ...int) {
+	t.Helper()
+	if len(backendRoles) < 2 {
+		t.Fatal("need at least 2 backends for selector")
+	}
+	if defaultIdx < 0 || defaultIdx >= len(backendRoles) {
+		t.Fatalf("defaultIdx %d out of range [0,%d)", defaultIdx, len(backendRoles))
+	}
+	var outbounds []map[string]any
+	var tags []string
+	for i, r := range backendRoles {
+		_, addr, _, _ := e2eServer(r)
+		host := addr[:strings.LastIndexByte(addr, ':')]
+		tag := fmt.Sprintf("backend-%d", i)
+		tags = append(tags, tag)
+		outbounds = append(outbounds, map[string]any{
+			"type":        "socks",
+			"tag":         tag,
+			"server":      host,
+			"server_port": e2eBackendSocksPort,
+			"version":     "5",
+		})
+	}
+	outbounds = append(outbounds, map[string]any{
+		"type":      "selector",
+		"tag":       "lb-selector",
+		"outbounds": tags,
+		"default":   tags[defaultIdx],
+	})
+	outbounds = append(outbounds, map[string]any{"type": "direct", "tag": "direct"})
+	cfg := map[string]any{
+		"log":       map[string]any{"level": "info"},
+		"inbounds":  []map[string]any{{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 11081}},
+		"outbounds": outbounds,
+		"route": map[string]any{
+			"rules": []map[string]any{{"inbound": []string{"mixed-in"}, "outbound": "lb-selector"}},
+			"final": "direct",
+		},
+	}
+	b, _ := json.MarshalIndent(cfg, "", "  ")
+	client := e2eConnect(t, entryRole)
+	if _, err := chain.PushConfig(client, nodeID, string(b), true); err != nil {
+		t.Fatalf("deploy selector balancer: %v", err)
 	}
 }
 

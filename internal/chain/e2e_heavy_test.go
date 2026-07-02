@@ -306,17 +306,37 @@ func TestE2E_Heavy_ClientConnectivity_3Hop(t *testing.T) {
 
 // ─── Load Balancing & Failover ────────────────────────────────────────────────
 
+// TestE2E_Heavy_Balancer_URLTestInChain verifies a real urltest balancer
+// generated as a raw config (not the orchestrator's linear-chain config):
+// two SOCKS backends on middle/exit, a urltest outbound on entry selecting
+// between them, and traffic reaching generate_204. The previous version
+// asserted `"type": "urltest"` in a 2-hop LINEAR chain config, but the
+// orchestrator intentionally no longer wraps a single inter-node outbound in
+// urltest — that broke the detour and masked transit failures
+// (see merged_config.go). Real load balancing needs multiple backends, so
+// this test exercises that directly.
 func TestE2E_Heavy_Balancer_URLTestInChain(t *testing.T) {
 	e2eHeavy(t)
-	store := newStore(t)
-	nodes := buildChainNodes(e2eRoleEntry, e2eRoleExit)
-	registerChainNodes(t, store, nodes, true)
-	c := baseChain("e2e-urltest", nodes)
-	c.Strategy = model.StrategyURLTest
-	c.Transport = model.TransportReality
-	deployChain(t, store, c, deployChainOpts{})
+	entryHost := e2eHost(e2eRoleEntry)
+	entryHost.ID = "lb-urltest-entry"
+	deploySocksBackend(t, e2eRoleMiddle, "lb-urltest-middle")
+	deploySocksBackend(t, e2eRoleExit, "lb-urltest-exit")
+	deployURLTestBalancer(t, e2eRoleEntry, entryHost.ID, e2eRoleMiddle, e2eRoleExit)
+	assertNodeHealthy(t, e2eRoleEntry, 0)
+
+	// The deployed config must actually contain a urltest outbound.
 	cfg := fetchRemoteConfig(t, e2eRoleEntry)
-	assertConfigContains(t, cfg, `"type": "urltest"`, `"ch-e2e-urltest-strategy"`)
+	assertConfigContains(t, cfg, `"type": "urltest"`, `"lb-urltest"`)
+
+	// Traffic through the urltest balancer must reach generate_204.
+	client := e2eConnect(t, e2eRoleEntry)
+	out, err := client.Run(`curl -s --max-time 20 -x http://127.0.0.1:11081 http://www.gstatic.com/generate_204 -o /dev/null -w '%{http_code}'`)
+	if err != nil {
+		t.Fatalf("curl via urltest: %v", err)
+	}
+	if code := strings.TrimSpace(out); code != "204" && code != "200" {
+		t.Errorf("expected 204/200 through urltest, got %s", code)
+	}
 }
 
 func TestE2E_Heavy_Balancer_Failover(t *testing.T) {
@@ -547,18 +567,50 @@ func TestE2E_Heavy_HostLock_Identity(t *testing.T) {
 	}
 }
 
-// TestE2E_Heavy_SelectorStrategy verifies selector outbound is written for chains.
+// TestE2E_Heavy_SelectorStrategy verifies a real selector balancer as a raw
+// config: a selector outbound whose default backend can be switched, with
+// traffic egress following the selected backend's IP. The previous version
+// asserted `"type": "selector"` in a 2-hop LINEAR chain config, but the
+// orchestrator no longer wraps a single inter-node outbound in a strategy
+// (that broke the detour). Real per-client routing needs a selectable group,
+// exercised here directly. This is the seed for the upcoming multi-entry /
+// per-client routing feature.
 func TestE2E_Heavy_SelectorStrategy(t *testing.T) {
 	e2eHeavy(t)
-	store := newStore(t)
-	nodes := buildChainNodes(e2eRoleEntry, e2eRoleExit)
-	registerChainNodes(t, store, nodes, true)
-	c := baseChain("e2e-selector", nodes)
-	c.Strategy = model.StrategySelector
-	c.Transport = model.TransportReality
-	deployChain(t, store, c, deployChainOpts{})
+	entryHost := e2eHost(e2eRoleEntry)
+	entryHost.ID = "lb-selector-entry"
+	deploySocksBackend(t, e2eRoleMiddle, "lb-selector-middle")
+	deploySocksBackend(t, e2eRoleExit, "lb-selector-exit")
+
+	// Start with default = middle (index 0). Egress should be the middle VPS IP.
+	deploySelectorBalancer(t, e2eRoleEntry, entryHost.ID, 0, e2eRoleMiddle, e2eRoleExit)
+	assertNodeHealthy(t, e2eRoleEntry, 0)
 	cfg := fetchRemoteConfig(t, e2eRoleEntry)
-	assertConfigContains(t, cfg, `"type": "selector"`)
+	assertConfigContains(t, cfg, `"type": "selector"`, `"lb-selector"`, `"default": "backend-0"`)
+
+	client := e2eConnect(t, e2eRoleEntry)
+	egressIP := func() string {
+		out, err := client.Run(`curl -s --max-time 20 -x http://127.0.0.1:11081 https://ifconfig.me`)
+		if err != nil {
+			t.Fatalf("curl egress via selector: %v", err)
+		}
+		return strings.TrimSpace(out)
+	}
+
+	middleIP := e2eServerIP(e2eRoleMiddle)
+	exitIP := e2eServerIP(e2eRoleExit)
+	t.Logf("selector default=backend-0 (middle=%s) egress=%s", middleIP, egressIP())
+
+	// Switch the selector default to exit (index 1) and re-deploy; egress must
+	// now be the exit VPS IP. This proves the selector routes traffic to the
+	// chosen backend, not just that the outbound exists in the config.
+	deploySelectorBalancer(t, e2eRoleEntry, entryHost.ID, 1, e2eRoleMiddle, e2eRoleExit)
+	assertNodeHealthy(t, e2eRoleEntry, 0)
+	got := egressIP()
+	t.Logf("selector default=backend-1 (exit=%s) egress=%s", exitIP, got)
+	if got != exitIP {
+		t.Errorf("after switching selector default to exit, egress=%s, want %s", got, exitIP)
+	}
 }
 
 // TestE2E_Heavy_Takeover_DetectNone on clean entry after documenting state.
