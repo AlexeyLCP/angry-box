@@ -224,12 +224,20 @@ func installedVersion(ctx context.Context, client ports.SSHClient, useSudo bool)
 	return strings.TrimSpace(out), nil
 }
 
-// isPatchedExtended returns true if the version string looks like the patched
-// extended build (contains "extended" and our singBoxVersion). We can't detect
-// the patches from the version alone, but combined with always-restart this is
-// sufficient: a re-deploy over a non-patched binary re-installs and restarts.
+// isPatchedExtended returns true if the binary at installPath is already our
+// patched extended build and does not need re-downloading. The patched tarball
+// is sometimes built without version ldflags and reports "sing-box version
+// unknown" — treat a present binary with that string as installed to avoid
+// re-installing on every ApplyChain (which fails for non-root SSH users when
+// the prior sudo install left a root-owned binary).
 func isPatchedExtended(ver string) bool {
-	return strings.Contains(ver, "extended") && strings.Contains(ver, singBoxVersion)
+	if ver == "" || strings.Contains(ver, "NOT_INSTALLED") {
+		return false
+	}
+	if strings.Contains(ver, "extended") && strings.Contains(ver, singBoxVersion) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(ver), "unknown")
 }
 
 // checksumForArch returns the expected sha256 of the patched sing-box tarball
@@ -408,34 +416,83 @@ func (b *Backend) InstallAWGModuleWithOptions(ctx context.Context, host model.Ho
 	return b.installAWGModule(ctx, client, opts.UseSudo)
 }
 
-// installAWGModule: prefer `apt install amneziawg-tools` (provides awg/awg-quick
-// + kernel module on Debian/Ubuntu), fall back to the upstream kernel-module
-// install.sh. Then persist the dependency modules in modules-load.d so they
-// survive reboot. Stderr is preserved for diagnosis.
+// awgKernelModuleLoaded reports whether the amneziawg kernel module is loaded.
+func awgKernelModuleLoaded(ctx context.Context, client ports.SSHClient, useSudo bool) bool {
+	out, _, _, _ := client.RunWithOutput(ctx,
+		sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"),
+		30*time.Second)
+	return strings.TrimSpace(out) == "loaded"
+}
+
+// installAWGModule installs the AmneziaWG kernel module + awg/awg-quick on
+// Debian/Ubuntu hosts. Strategy:
+//  1. Amnezia PPA (official path for Debian 12 / Ubuntu — package "amneziawg")
+//  2. DKMS build from bundled tarball (ANGRY_AWG_TARBALL_URL or GitHub release)
+//
+// The old amneziawg-tools apt name and upstream install.sh URL are obsolete
+// (package missing on Debian 12; install.sh returns 404 as of 2026).
 func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, useSudo bool) error {
-	// Already loaded + persistent? Short-circuit.
-	out, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"), 30*time.Second)
-	persistent, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no"), 30*time.Second)
-	if strings.TrimSpace(out) == "loaded" && strings.TrimSpace(persistent) == "yes" {
-		return nil
+	if awgKernelModuleLoaded(ctx, client, useSudo) {
+		return b.persistAWGModules(ctx, client, useSudo)
 	}
 
-	// Try amneziawg-tools first (Debian/Ubuntu package), fall back to upstream.
-	// NOT silencing stderr — we need the real error when headers/tools are
-	// missing. apt + curl can take minutes on a slow VPS, hence 10m timeout.
-	cmd := sudoBash(useSudo, `set -e
+	awgTarballURL := os.Getenv("ANGRY_AWG_TARBALL_URL")
+	if awgTarballURL == "" {
+		awgTarballURL = "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/amneziawg-src.tar.gz"
+	}
+
+	// Amnezia PPA first (builds DKMS module against running kernel), then bundled
+	// source tarball. apt + DKMS can take several minutes on a slow VPS.
+	cmd := sudoBash(useSudo, fmt.Sprintf(`set -e
 export DEBIAN_FRONTEND=noninteractive
-echo "[awg] Installing amneziawg-tools..."
-apt-get update -qq && apt-get install -y -qq amneziawg-tools || {
-  echo "[awg] amneziawg-tools unavailable, falling back to upstream kernel-module install.sh..."
-  curl -fsSL https://raw.githubusercontent.com/amnezia-vpn/amneziawg-linux-kernel-module/master/install.sh | bash
-}
-`)
-	if _, stderr, exit, err := client.RunWithOutput(ctx, cmd, 10*time.Minute); err != nil {
+echo "[awg] Installing build prerequisites..."
+apt-get update -qq
+apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 curl
+
+if ! apt-cache show amneziawg 2>/dev/null | grep -q ^Package; then
+  echo "[awg] Adding Amnezia PPA..."
+  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 57290828 2>/dev/null || true
+  echo "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" > /etc/apt/sources.list.d/amnezia-ppa.list
+  apt-get update -qq
+fi
+
+echo "[awg] Installing amneziawg from PPA..."
+if apt-get install -y -qq amneziawg; then
+  echo "[awg] PPA install OK"
+else
+  echo "[awg] PPA install failed, building from bundled DKMS source..."
+  rm -rf /tmp/awg-src && mkdir -p /tmp/awg-src
+  curl -fsSL '%s' -o /tmp/awg-src.tar.gz
+  tar -xzf /tmp/awg-src.tar.gz -C /tmp/awg-src --strip-components=1
+  rm -rf /usr/src/amneziawg-1.0.0
+  cp -r /tmp/awg-src /usr/src/amneziawg-1.0.0
+  dkms add -m amneziawg -v 1.0.0 || true
+  dkms build -m amneziawg -v 1.0.0
+  dkms install -m amneziawg -v 1.0.0
+  modprobe amneziawg
+  rm -rf /tmp/awg-src /tmp/awg-src.tar.gz
+fi
+`, awgTarballURL))
+	if _, stderr, exit, err := client.RunWithOutput(ctx, cmd, 15*time.Minute); err != nil {
 		return fmt.Errorf("amneziawg install failed (exit %d): %s %s", exit, err, stderr)
 	}
 
-	// Persist dependency modules so AWG works after reboot.
+	if err := b.persistAWGModules(ctx, client, useSudo); err != nil {
+		return err
+	}
+
+	if !awgKernelModuleLoaded(ctx, client, useSudo) {
+		return fmt.Errorf("amneziawg module not loaded after install (check kernel headers / dkms log)")
+	}
+	awgQuick, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "command -v awg-quick 2>/dev/null || echo missing"), 30*time.Second)
+	if strings.TrimSpace(awgQuick) == "missing" {
+		return fmt.Errorf("awg-quick not found after amneziawg install")
+	}
+	return nil
+}
+
+// persistAWGModules writes modules-load.d entries and modprobes dependencies.
+func (b *Backend) persistAWGModules(ctx context.Context, client ports.SSHClient, useSudo bool) error {
 	persist := sudoBash(useSudo, `echo amneziawg > /etc/modules-load.d/amneziawg.conf
 cat > /etc/modules-load.d/awg-deps.conf << 'EOF'
 udp_tunnel
@@ -451,12 +508,6 @@ modprobe amneziawg 2>/dev/null || true
 `)
 	if _, _, _, err := client.RunWithOutput(ctx, persist, 60*time.Second); err != nil {
 		return fmt.Errorf("persist awg modules: %w", err)
-	}
-
-	// Verify.
-	verify, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo failed"), 30*time.Second)
-	if strings.TrimSpace(verify) != "loaded" {
-		return fmt.Errorf("amneziawg module not loaded after install (check kernel headers / reboot)")
 	}
 	return nil
 }
