@@ -65,11 +65,21 @@ type testServer struct {
 // factory, a fake SSH connector, auth disabled. It registers all routes on a
 // fresh ServeMux. Cleanup is automatic via t.Cleanup.
 func newTestServer(t *testing.T) *testServer {
+	return newTestServerWithConnector(t, nil)
+}
+
+// newTestServerWithConnector is like newTestServer but injects an SSH connector
+// (for apply-chain / takeover tests that need a fake SSH). nil falls back to the
+// production default.
+func newTestServerWithConnector(t *testing.T, connector ports.SSHConnector) *testServer {
 	t.Helper()
 	dir := t.TempDir()
 	storePath := dir + "/store.json"
 	cfg := &config.Config{StoreFile: storePath, AuthEnabled: false}
 	srv := NewServer(storePath, true, cfg, "127.0.0.1:9080", noopFactory{})
+	if connector != nil {
+		srv.connector = connector
+	}
 	mux := http.NewServeMux()
 	srv.Register(mux)
 	ts := &testServer{srv: srv, mux: mux, storePath: storePath, t: t}
