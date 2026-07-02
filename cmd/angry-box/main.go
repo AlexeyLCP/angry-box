@@ -752,13 +752,17 @@ func serveCmd() {
 
 	mux := http.NewServeMux()
 
-	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI)
-	ui := web.NewServer(storePath, *devMode, cfg, *listen)
+	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI).
+	// Composition root: create the factory once here and inject it into the UI
+	// server (and the auto-apply background), so handlers don't call factory.New()
+	// ad-hoc (CTO-review M11).
+	orchFactory := factory.New()
+	ui := web.NewServer(storePath, *devMode, cfg, *listen, orchFactory)
 	ui.Register(mux)
 
 	// Wire background auto-apply (hybrid deploy mode) with the same factory the
 	// CLI uses, so per-user mutations can trigger SSH deploys in the background.
-	chain.InitAutoApply(factory.New(), storePath)
+	chain.InitAutoApply(orchFactory, storePath)
 
 	// Start background metrics collection based on panel settings
 	settings, _ := chain.NewStore(storePath).GetSettings()

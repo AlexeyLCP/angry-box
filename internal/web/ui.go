@@ -21,6 +21,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	"github.com/alexeylcp/angry-box/internal/i18n"
 	"github.com/alexeylcp/angry-box/internal/takeover"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
@@ -37,17 +38,25 @@ type Server struct {
 	devMode          bool
 	cfg              *config.Config
 	ActiveListenAddr string
+	// factory is the composition-root dependency for creating proxy backends.
+	// Injected once at construction (NewServer) instead of ad-hoc factory.New()
+	// scattered across handlers (CTO-review M11).
+	factory ports.Factory
 }
 
 // NewServer creates a web UI server.
 // If devMode is true, static files are served from web/static/ instead of the embedded filesystem.
-func NewServer(storePath string, devMode bool, cfg *config.Config, activeListenAddr string) *Server {
+// f is the composition-root factory used by all deploy/apply handlers.
+func NewServer(storePath string, devMode bool, cfg *config.Config, activeListenAddr string, f ports.Factory) *Server {
 	if devMode {
 		log.Println("[dev] Loading UI from filesystem (web/static/)")
 	} else {
 		log.Println("[prod] Loading embedded UI")
 	}
-	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg, ActiveListenAddr: activeListenAddr}
+	if f == nil {
+		f = factory.New()
+	}
+	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg, ActiveListenAddr: activeListenAddr, factory: f}
 }
 
 // staticFS returns the filesystem to use for static assets.
@@ -106,7 +115,7 @@ func (s *Server) Stop() {
 func (s *Server) collectAllMetrics() {
 	st := s.store()
 	hosts, _ := st.ListHosts()
-	f := factory.New()
+	f := s.factory
 	b := f.Create()
 	ctx := context.Background()
 
@@ -532,7 +541,7 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	hostCopy.KeyPath = authMethod
 
 	// Try SSH connection
-	f := factory.New()
+	f := s.factory
 	b := f.Create()
 	ctx := context.Background()
 	status, sshErr := b.GetStatus(ctx, hostCopy)
@@ -1782,7 +1791,7 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, &simpleHTML{html: `<span class="text-error text-xs">` + i18n.T(r.Context(), "Host not found") + `</span>`})
 		return
 	}
-	f := factory.New()
+	f := s.factory
 	b := f.Create()
 	ctx := context.Background()
 
@@ -2004,8 +2013,7 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 
 	c.Nodes = resolved
 
-	f := factory.New()
-	applier := chain.NewApplier(f)
+	applier := chain.NewApplier(s.factory)
 	ctx := context.Background()
 	report, err := applier.ApplyChain(ctx, st, c, "")
 	if err != nil {
@@ -2036,8 +2044,7 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f := factory.New()
-	applier := chain.NewApplier(f)
+	applier := chain.NewApplier(s.factory)
 	ctx := context.Background()
 
 	report, mergeReport, err := applier.ApplyMergedNode(ctx, st, info)
@@ -2269,7 +2276,7 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Detect failed: %s")+`</div>`, escHTML(err.Error()))})
 		return
 	}
-	res, err := takeover.Takeover(r.Context(), st, factory.New(), info.Host, info.UseSudo, det)
+	res, err := takeover.Takeover(r.Context(), st, s.factory, info.Host, info.UseSudo, det)
 
 	// Render the result.
 	var b strings.Builder

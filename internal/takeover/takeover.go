@@ -15,10 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexeylcp/angry-box/internal/backend/factory"
-	"github.com/alexeylcp/angry-box/internal/backend/singbox"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
@@ -36,7 +35,7 @@ type TakeoverResult struct {
 // Takeover executes the full takeover flow against a node given a prior
 // Detection. store persists the NodeInfo (+ TakeoverState); factory creates the
 // sing-box backend for install + config generation.
-func Takeover(ctx context.Context, store *chain.Store, f *factory.Factory, host model.Host, useSudo bool, det *Detection) (*TakeoverResult, error) {
+func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host model.Host, useSudo bool, det *Detection) (*TakeoverResult, error) {
 	if det == nil || det.Type == DetectedNone {
 		return &TakeoverResult{Status: "nothing", Message: "no existing VPN detected to take over"}, nil
 	}
@@ -80,9 +79,10 @@ func Takeover(ctx context.Context, store *chain.Store, f *factory.Factory, host 
 	}
 
 	// 4. Install sing-box (binary + unit + minimal config). Does NOT touch the
-	// old VPN service.
-	backend := singbox.New()
-	if _, derr := backend.DeployOpts(ctx, host, singbox.DeployOptions{UseSudo: useSudo}); derr != nil {
+	// old VPN service. Uses the injected factory so takeover does not hard-code
+	// a concrete backend (mirrors the H5 fix for the CLI).
+	backend := f.Create()
+	if _, derr := backend.DeployWithOptions(ctx, host, model.DeployOptions{UseSudo: useSudo}); derr != nil {
 		return &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "sing-box install failed: " + derr.Error()}, derr
 	}
 
@@ -149,7 +149,7 @@ func Takeover(ctx context.Context, store *chain.Store, f *factory.Factory, host 
 // Backend.GenerateConfig (ConfigStandaloneNode). For protocols with extra raw
 // JSON (vmess/trojan/ss/mtproto) it post-processes the rendered config to
 // append them to Inbounds[].
-func renderTakeoverConfig(f *factory.Factory, inbounds []model.NodeInbound, extra []json.RawMessage) (string, error) {
+func renderTakeoverConfig(f ports.Factory, inbounds []model.NodeInbound, extra []json.RawMessage) (string, error) {
 	b := f.Create()
 	cfg, err := b.GenerateConfig(model.ConfigStandaloneNode, model.ConfigParams{
 		Extra: map[string]any{"inbounds": inbounds},
