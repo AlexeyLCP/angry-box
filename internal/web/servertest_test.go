@@ -186,5 +186,23 @@ func (ts *testServer) profileID(name string) string {
 	return ""
 }
 
+// assignmentID looks up the auto-generated ID of a client assignment by its
+// (profileID, clientType, clientID) tuple. SaveAssignment assigns a random ID.
+func (ts *testServer) assignmentID(profileID, clientType, clientID string) string {
+	ts.t.Helper()
+	st := chain.NewStore(ts.storePath)
+	assignments, err := st.ListAssignments()
+	if err != nil {
+		ts.t.Fatalf("ListAssignments: %v", err)
+	}
+	for _, a := range assignments {
+		if a.ProfileID == profileID && a.ClientType == clientType && a.ClientID == clientID {
+			return a.ID
+		}
+	}
+	ts.t.Fatalf("assignment (%s,%s,%s) not found in store", profileID, clientType, clientID)
+	return ""
+}
+
 // keep bytes imported (used in rawBody below).
 var _ = bytes.MinRead
