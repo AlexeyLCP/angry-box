@@ -220,7 +220,7 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 
 	c.Nodes = resolved
 
-	applier := chain.NewApplier(s.factory)
+	applier := chain.NewApplier(s.factory, s.SSHConnector())
 	ctx := context.Background()
 	report, err := applier.ApplyChain(ctx, st, c, "")
 	if err != nil {
@@ -251,7 +251,7 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	applier := chain.NewApplier(s.factory)
+	applier := chain.NewApplier(s.factory, s.SSHConnector())
 	ctx := context.Background()
 
 	report, mergeReport, err := applier.ApplyMergedNode(ctx, st, info)

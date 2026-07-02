@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
 )
 
 // defaultRunTimeout is the per-command deadline for Run when no context is
@@ -326,3 +328,25 @@ func GenerateSSHKeypair() (string, string, error) {
 
 	return string(privPEM), string(pubBytes), nil
 }
+
+// Compile-time check: the concrete Client satisfies the port so the adapter
+// needs no wrapper methods — it is a zero-cost implementation of ports.SSHClient.
+var _ ports.SSHClient = (*Client)(nil)
+
+// realConnector is the production SSHConnector backed by Connect above.
+// It is the default used by the composition root; tests inject a fake.
+type realConnector struct{}
+
+// Connect returns a real SSH connection as a ports.SSHClient.
+func (realConnector) Connect(addr, user, keyPath string) (ports.SSHClient, error) {
+	c, err := Connect(addr, user, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// DefaultConnector is the production SSHConnector. Callers that want the real
+// network behaviour pass this (or NewApplier/factory default to it); tests pass
+// a fake instead.
+var DefaultConnector ports.SSHConnector = realConnector{}

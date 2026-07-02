@@ -51,11 +51,24 @@ var singBoxChecksums = map[string]string{
 
 var _ ports.Backend = (*Backend)(nil)
 
-// Backend manages sing-box proxy instances on remote hosts.
-type Backend struct{}
+// DefaultConnector returns the production SSH connector. Exposed so the factory
+// (which must not import the ssh package directly to avoid an import cycle)
+// can fall back to it when no connector is injected.
+func DefaultConnector() ports.SSHConnector { return sshclient.DefaultConnector }
 
-// New creates a new sing-box Backend.
-func New() *Backend { return &Backend{} }
+// Backend manages sing-box proxy instances on remote hosts.
+type Backend struct {
+	connector ports.SSHConnector
+}
+
+// New creates a new sing-box Backend. If connector is nil, the production SSH
+// connector (ssh.DefaultConnector) is used; tests inject a fake.
+func New(connector ports.SSHConnector) *Backend {
+	if connector == nil {
+		connector = sshclient.DefaultConnector
+	}
+	return &Backend{connector: connector}
+}
 
 // priv wraps a command for privilege escalation. When useSudo is true (non-root
 // SSH user with passwordless sudo configured), the command is prefixed with
@@ -107,7 +120,7 @@ func (b *Backend) DeployWithOptions(ctx context.Context, host model.Host, opts m
 
 // DeployOpts is the options-aware variant of Deploy.
 func (b *Backend) DeployOpts(ctx context.Context, host model.Host, opts DeployOptions) (*model.DeployResult, error) {
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("singbox: deploy: %w", err)
 	}
@@ -202,7 +215,7 @@ func (b *Backend) DeployOpts(ctx context.Context, host model.Host, opts DeployOp
 // installedVersion returns the version string reported by the binary at
 // installPath (explicit, NOT PATH lookup) so a stale sing-box elsewhere on PATH
 // cannot fool us.
-func installedVersion(ctx context.Context, client *sshclient.Client, useSudo bool) (string, error) {
+func installedVersion(ctx context.Context, client ports.SSHClient, useSudo bool) (string, error) {
 	cmd := priv(useSudo, installPath+" version 2>/dev/null || echo NOT_INSTALLED")
 	out, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second)
 	if err != nil {
@@ -234,7 +247,7 @@ func checksumForArch(goArch string) (string, error) {
 
 // installPatchedBinary downloads our patched tarball, verifies its sha256,
 // extracts the binary and installs it at installPath.
-func installPatchedBinary(ctx context.Context, client *sshclient.Client, useSudo bool) error {
+func installPatchedBinary(ctx context.Context, client ports.SSHClient, useSudo bool) error {
 	archOut, _, _, err := client.RunWithOutput(ctx, "uname -m", 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("detect arch: %w", err)
@@ -290,7 +303,7 @@ rm -rf /tmp/sing-box-install
 // needed for TUN + privileged-port binding. No ExecReload (we use restart);
 // RestartPreventExitStatus=23 stops the config-changed-restart sentinel from
 // triggering a restart loop.
-func writeSystemdUnit(ctx context.Context, client *sshclient.Client, useSudo bool) error {
+func writeSystemdUnit(ctx context.Context, client ports.SSHClient, useSudo bool) error {
 	unit := fmt.Sprintf(`[Unit]
 Description=sing-box-extended proxy service
 Documentation=https://sing-box.sagernet.org
@@ -337,7 +350,7 @@ WantedBy=multi-user.target
 // TLS-based inbounds (TUIC/Hysteria2/VLESS/Trojan), if not already present.
 // Best-effort: openssl may be absent or the dir not writable; callers tolerate
 // failure and let `sing-box check` surface a missing cert only when needed.
-func ensureSelfSignedCert(ctx context.Context, client *sshclient.Client, sshHost string, useSudo bool) error {
+func ensureSelfSignedCert(ctx context.Context, client ports.SSHClient, sshHost string, useSudo bool) error {
 	certCmd := fmt.Sprintf(`test -f %s/cert.pem || (which openssl >/dev/null 2>&1 && \
 openssl req -x509 -newkey rsa:2048 -keyout %s/key.pem \
 -out %s/cert.pem -days 3650 -nodes -subj "/CN=%s" 2>/dev/null && \
@@ -354,7 +367,7 @@ chmod 644 %s/cert.pem %s/key.pem) \
 
 // verifyServiceUp waits up to ~8s for the unit to become active and captures
 // journalctl output on failure so the operator sees WHY it didn't start.
-func verifyServiceUp(ctx context.Context, client *sshclient.Client, service string, useSudo bool) error {
+func verifyServiceUp(ctx context.Context, client ports.SSHClient, service string, useSudo bool) error {
 	// `systemctl is-active` may briefly be "activating" right after restart; a
 	// short retry loop handles that without false-positives.
 	check := sudoBash(useSudo, "sleep 3 && systemctl is-active --quiet "+service+" && echo UP || echo DOWN")
@@ -381,7 +394,7 @@ func verifyServiceUp(ctx context.Context, client *sshclient.Client, service stri
 // sing-box only does TUN + balancer with bind_interface — sidestepping the
 // userspace gVisor AWG panic. Errors are surfaced (not silenced with 2>/dev/null).
 func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: InstallAWGModule: %w", err)
 	}
@@ -393,7 +406,7 @@ func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
 // + kernel module on Debian/Ubuntu), fall back to the upstream kernel-module
 // install.sh. Then persist the dependency modules in modules-load.d so they
 // survive reboot. Stderr is preserved for diagnosis.
-func (b *Backend) installAWGModule(ctx context.Context, client *sshclient.Client, useSudo bool) error {
+func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, useSudo bool) error {
 	// Already loaded + persistent? Short-circuit.
 	out, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"), 30*time.Second)
 	persistent, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "test -f /etc/modules-load.d/amneziawg.conf && echo yes || echo no"), 30*time.Second)
@@ -446,7 +459,7 @@ modprobe amneziawg 2>/dev/null || true
 // its own correct copy). Kept for the Backend.ApplyConfig path. ───────────────
 
 // createBackup makes a timestamped backup of the current config.
-func createBackup(client *sshclient.Client, file string) (string, error) {
+func createBackup(client ports.SSHClient, file string) (string, error) {
 	uniqueID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), randInt())
 	out, err := client.Run(fmt.Sprintf(`if [ -f %s ]; then
 		bak="%s.bak.%s"
@@ -464,7 +477,7 @@ func randInt() int {
 
 // performRollback restores the backup via cp (NOT mv) so the backup is
 // preserved for a second recovery attempt, then restarts the service.
-func performRollback(client *sshclient.Client, file, backupPath, serviceName string) error {
+func performRollback(client ports.SSHClient, file, backupPath, serviceName string) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path provided")
 	}
@@ -478,7 +491,7 @@ func performRollback(client *sshclient.Client, file, backupPath, serviceName str
 }
 
 // cleanupBackups keeps only the last 5 backups.
-func cleanupBackups(client *sshclient.Client, file string) {
+func cleanupBackups(client ports.SSHClient, file string) {
 	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
 }
 
@@ -491,7 +504,7 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		return fmt.Errorf("singbox: applyConfig: %w", err)
 	}
 
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: applyConfig: %w", err)
 	}
@@ -551,7 +564,7 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 
 // Remove stops the service and removes all installed files from the remote host.
 func (b *Backend) Remove(ctx context.Context, host model.Host) error {
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: remove: %w", err)
 	}
@@ -576,7 +589,7 @@ find /etc/sing-box -name 'config.json.bak.*' -mtime +3 -delete 2>/dev/null || tr
 
 // GetStatus retrieves the sing-box process status from the remote host.
 func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status, error) {
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("singbox: getStatus: %w", err)
 	}
@@ -613,7 +626,7 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 // Reload sends a graceful reload signal to sing-box on the remote host.
 // Validates config first (refuses reload if invalid).
 func (b *Backend) Reload(ctx context.Context, host model.Host) error {
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: reload: %w", err)
 	}

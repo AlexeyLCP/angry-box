@@ -459,8 +459,8 @@ func applyChainCmd() {
 	}
 	fmt.Printf("effective obfuscation profile: %s\n", effProfile)
 
-	f := factory.New()
-	applier := chain.NewApplier(f)
+	f := factory.New(nil)
+	applier := chain.NewApplier(f, nil)
 	sshclient.SetHostKeyManager(s)
 	sshclient.SetKeyResolver(s)
 
@@ -584,7 +584,7 @@ func nodeCmd(cmd string) {
 	sshclient.SetHostKeyManager(s)
 	sshclient.SetKeyResolver(s)
 
-	f := factory.New()
+	f := factory.New(nil)
 	b := f.Create()
 
 	ctx := context.Background()
@@ -756,13 +756,13 @@ func serveCmd() {
 	// Composition root: create the factory once here and inject it into the UI
 	// server (and the auto-apply background), so handlers don't call factory.New()
 	// ad-hoc (CTO-review M11).
-	orchFactory := factory.New()
+	orchFactory := factory.New(nil)
 	ui := web.NewServer(storePath, *devMode, cfg, *listen, orchFactory)
 	ui.Register(mux)
 
 	// Wire background auto-apply (hybrid deploy mode) with the same factory the
 	// CLI uses, so per-user mutations can trigger SSH deploys in the background.
-	chain.InitAutoApply(orchFactory, storePath)
+	chain.InitAutoApply(orchFactory, nil, storePath)
 
 	// Start background metrics collection based on panel settings
 	settings, _ := chain.NewStore(storePath).GetSettings()

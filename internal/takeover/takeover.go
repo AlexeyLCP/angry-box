@@ -35,7 +35,7 @@ type TakeoverResult struct {
 // Takeover executes the full takeover flow against a node given a prior
 // Detection. store persists the NodeInfo (+ TakeoverState); factory creates the
 // sing-box backend for install + config generation.
-func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host model.Host, useSudo bool, det *Detection) (*TakeoverResult, error) {
+func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host model.Host, useSudo bool, det *Detection, connector ...ports.SSHConnector) (*TakeoverResult, error) {
 	if det == nil || det.Type == DetectedNone {
 		return &TakeoverResult{Status: "nothing", Message: "no existing VPN detected to take over"}, nil
 	}
@@ -63,7 +63,11 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	}
 
 	// 2. Connect (kept open for the whole cutover so backup/disable/push share it).
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	conn := sshclient.DefaultConnector
+	if len(connector) > 0 && connector[0] != nil {
+		conn = connector[0]
+	}
+	client, err := conn.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("takeover: ssh connect: %w", err)
 	}
@@ -207,7 +211,7 @@ func buildMinimalConfigWithExtra(extra []json.RawMessage) (string, error) {
 // rollbackToOldVPN re-enables + restarts the old VPN service and restores its
 // config from the backup. Returns an error if the old VPN could not be brought
 // back (the caller marks the result "failed-both").
-func rollbackToOldVPN(ctx context.Context, client *sshclient.Client, det *Detection, state *model.TakeoverState, useSudo bool) error {
+func rollbackToOldVPN(ctx context.Context, client ports.SSHClient, det *Detection, state *model.TakeoverState, useSudo bool) error {
 	if det.Type == DetectedAWG {
 		// AWG kernel path never disabled awg-quick — nothing to roll back.
 		return nil

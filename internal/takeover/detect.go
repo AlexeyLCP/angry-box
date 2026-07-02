@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
@@ -89,8 +90,12 @@ type svcHit struct {
 // file present) plus any other VPNs found in Detection.Other. A non-nil error
 // means SSH itself failed; a successful probe with nothing found returns
 // Detection{Type: DetectedNone} and nil error.
-func DetectVPN(ctx context.Context, host model.Host, useSudo bool) (*Detection, error) {
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+func DetectVPN(ctx context.Context, host model.Host, useSudo bool, connector ...ports.SSHConnector) (*Detection, error) {
+	conn := sshclient.DefaultConnector
+	if len(connector) > 0 && connector[0] != nil {
+		conn = connector[0]
+	}
+	client, err := conn.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("takeover: detect: ssh connect: %w", err)
 	}

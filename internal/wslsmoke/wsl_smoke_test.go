@@ -101,7 +101,7 @@ func TestWSL_SSHConnect(t *testing.T) {
 func TestWSL_DeployPatchedBinary(t *testing.T) {
 	restore := singbox.SetDownloadURLForTest("amd64", localTarballURL)
 	defer restore()
-	b := singbox.New()
+	b := singbox.New(nil)
 	res, err := b.DeployOpts(context.Background(), wslHost(t), singbox.DeployOptions{UseSudo: true})
 	if err != nil {
 		t.Fatalf("Deploy: %v (result=%+v)", err, res)
@@ -190,7 +190,7 @@ func TestWSL_FirstDeployNoRollback(t *testing.T) {
 // Microsoft kernel may not insmod the module — logged as a note, not a hard
 // failure.
 func TestWSL_AWGKernelInstall(t *testing.T) {
-	b := singbox.New()
+	b := singbox.New(nil)
 	err := b.InstallAWGModule(context.Background(), wslHost(t))
 	if err != nil {
 		t.Logf("AWG kernel install failed in WSL (expected — Microsoft kernel): %v", err)

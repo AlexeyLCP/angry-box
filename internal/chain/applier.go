@@ -32,12 +32,18 @@ const (
 
 // Applier generates and pushes proxy configs to all nodes in a chain.
 type Applier struct {
-	factory ports.Factory
+	factory   ports.Factory
+	connector ports.SSHConnector
 }
 
-// NewApplier creates a chain applier.
-func NewApplier(factory ports.Factory) *Applier {
-	return &Applier{factory: factory}
+// NewApplier creates a chain applier. If connector is nil, the production SSH
+// connector (ssh.DefaultConnector) is used; tests inject a fake to avoid real
+// network connections.
+func NewApplier(factory ports.Factory, connector ports.SSHConnector) *Applier {
+	if connector == nil {
+		connector = sshclient.DefaultConnector
+	}
+	return &Applier{factory: factory, connector: connector}
 }
 
 // hopParams holds the generated Reality parameters for a transport inbound.
@@ -128,14 +134,14 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		chain.UserProtocol = model.UserProtocolAWG
 	}
 
-	// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
-	for _, node := range chain.Nodes {
-		client, err := sshclient.Connect(node.Addr, node.User, node.KeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("pre-flight check failed: cannot connect to node %q (%s): %w", node.ID, node.Addr, err)
+		// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
+		for _, node := range chain.Nodes {
+			client, err := a.connector.Connect(node.Addr, node.User, node.KeyPath)
+			if err != nil {
+				return nil, fmt.Errorf("pre-flight check failed: cannot connect to node %q (%s): %w", node.ID, node.Addr, err)
+			}
+			client.Close()
 		}
-		client.Close()
-	}
 
 	n := len(chain.Nodes)
 
@@ -259,7 +265,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// single chokepoint (CTO-review C2). Pre-flight Connect/Deploy/InstallAWG
 		// run without the lock: they are idempotent and do not touch the rollback
 		// chain, so holding the lock across them would only block other nodes.
-		client, connErr := sshclient.Connect(node.Addr, node.User, node.KeyPath)
+		client, connErr := a.connector.Connect(node.Addr, node.User, node.KeyPath)
 		if connErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "ssh connect: " + connErr.Error()})
 			continue
@@ -542,7 +548,7 @@ func extractHost(addr string) string {
 // PRESERVED (never destroyed by rollback) so a second recovery attempt is
 // always possible. Returns ("", nil) when there is no existing config (first
 // deploy); callers must tolerate that (rollback becomes a no-op restore).
-func createBackup(client *sshclient.Client, file string) (string, error) {
+func createBackup(client ports.SSHClient, file string) (string, error) {
 	cmd := `set -e
 HOME_DIR="${HOME:-/tmp}"
 BAK_DIR="$HOME_DIR/sing-box-orch-backup-$(date +%Y%m%d-%H%M%S)"
@@ -562,7 +568,7 @@ fi`
 // performRollback restores the backup via cp (NOT mv — the backup is preserved
 // for a second attempt), then restarts the service. If the backup file does not
 // exist (first deploy with no prior config) this is a no-op restore.
-func performRollback(client *sshclient.Client, file, backupPath, serviceName string, useSudo bool) error {
+func performRollback(client ports.SSHClient, file, backupPath, serviceName string, useSudo bool) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path provided")
 	}
@@ -583,7 +589,7 @@ func performRollback(client *sshclient.Client, file, backupPath, serviceName str
 }
 
 // cleanupBackups keeps only the last 5 backups.
-func cleanupBackups(client *sshclient.Client, file string) {
+func cleanupBackups(client ports.SSHClient, file string) {
 	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
 }
 
@@ -602,7 +608,7 @@ func cleanupBackups(client *sshclient.Client, file string) {
 // SINGLE serialization chokepoint — callers must NOT wrap pushConfig in another
 // withHostLock(nodeID) (sync.Mutex is not reentrant → deadlock). An empty
 // nodeID skips locking (only acceptable for throwaway test hosts).
-func pushConfig(client *sshclient.Client, nodeID, cfgContent string, useSudo bool) (string, error) {
+func pushConfig(client ports.SSHClient, nodeID, cfgContent string, useSudo bool) (string, error) {
 	if nodeID == "" {
 		return pushConfigLocked(client, cfgContent, useSudo)
 	}
@@ -619,7 +625,7 @@ func pushConfig(client *sshclient.Client, nodeID, cfgContent string, useSudo boo
 
 // pushConfigLocked performs the actual deploy sequence. The caller is
 // responsible for holding the per-host lock (via pushConfig/withHostLock).
-func pushConfigLocked(client *sshclient.Client, cfgContent string, useSudo bool) (string, error) {
+func pushConfigLocked(client ports.SSHClient, cfgContent string, useSudo bool) (string, error) {
 
 	// sudo wraps a single command; sudoBash wraps a pipeline.
 	sudo := func(cmd string) string {
@@ -722,7 +728,7 @@ func pushConfigLocked(client *sshclient.Client, cfgContent string, useSudo bool)
 // returns the last 30 journalctl lines so the operator sees why sing-box didn't
 // start (the old implementation reported success as long as `systemctl restart`
 // returned 0, which is NOT the same as the service staying up).
-func probeServiceUp(client *sshclient.Client, service string, useSudo bool) error {
+func probeServiceUp(client ports.SSHClient, service string, useSudo bool) error {
 	sudoB := func(cmd string) string {
 		if !useSudo {
 			return cmd
@@ -750,7 +756,7 @@ func probeServiceUp(client *sshclient.Client, service string, useSudo bool) erro
 // config has TLS-based inbounds that reference /etc/sing-box/cert.pem. This
 // replaces the old writeTUICCert/base64 path, which only covered TUIC and used
 // a hardcoded CN. Here we cover all TLS inbounds and use the host's address.
-func ensureCertForTLSInbounds(client *sshclient.Client, cfgContent string) {
+func ensureCertForTLSInbounds(client ports.SSHClient, cfgContent string) {
 	needsCert := strings.Contains(cfgContent, `"type":"tuic"`) ||
 		strings.Contains(cfgContent, `"type": "tuic"`) ||
 		strings.Contains(cfgContent, `"type":"hysteria2"`) ||
@@ -1246,7 +1252,7 @@ func (a *Applier) applyMergedNodeLocked(
 		return nil, mergeReport, fmt.Errorf("marshal merged config: %w", err)
 	}
 
-	client, err := sshclient.Connect(info.Addr, info.User, info.KeyPath)
+	client, err := a.connector.Connect(info.Addr, info.User, info.KeyPath)
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("ssh connect: %w", err)
 	}

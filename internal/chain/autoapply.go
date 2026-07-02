@@ -21,6 +21,7 @@ import (
 // autoApplyContext bundles the immutable deps a background deploy needs.
 type autoApplyContext struct {
 	factory   ports.Factory
+	connector ports.SSHConnector
 	storePath string
 }
 
@@ -30,9 +31,10 @@ var (
 )
 
 // InitAutoApply wires the factory + store path used by background deploys. Call
-// once at startup (serveCmd).
-func InitAutoApply(f ports.Factory, storePath string) {
-	autoApplyCtx = autoApplyContext{factory: f, storePath: storePath}
+// once at startup (serveCmd). If connector is nil, the production SSH connector
+// is used; tests inject a fake.
+func InitAutoApply(f ports.Factory, connector ports.SSHConnector, storePath string) {
+	autoApplyCtx = autoApplyContext{factory: f, connector: connector, storePath: storePath}
 }
 
 // ScheduleAutoApply fires-and-forgets a background SSH deploy to nodeID. It
@@ -68,7 +70,7 @@ func runAutoDeploy(nodeID, reason string) {
 	}
 	slog.Info("auto-apply: starting background deploy",
 		"node", nodeID, "reason", reason)
-	applier := NewApplier(autoApplyCtx.factory)
+	applier := NewApplier(autoApplyCtx.factory, autoApplyCtx.connector)
 	_, _, err = applier.ApplyMergedNode(context.Background(), st, info)
 	if err != nil {
 		slog.Warn("auto-apply: deploy failed",

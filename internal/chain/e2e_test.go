@@ -137,7 +137,7 @@ func TestE2E_KnownHosts_Normalization(t *testing.T) {
 
 func TestE2E_Deploy_AlreadyInstalled(t *testing.T) {
 	srv := e2eServers[1]
-	f := factory.New()
+	f := factory.New(nil)
 	backend := f.Create()
 
 	host := model.Host{ID: srv.ID, Addr: srv.Addr, User: srv.User, KeyPath: sshKeyPath(srv.KeyFile)}
@@ -153,7 +153,7 @@ func TestE2E_Deploy_AlreadyInstalled(t *testing.T) {
 
 func TestE2E_BackendStatus(t *testing.T) {
 	srv := e2eServers[1]
-	f := factory.New()
+	f := factory.New(nil)
 	backend := f.Create()
 
 	host := model.Host{ID: srv.ID, Addr: srv.Addr, User: srv.User, KeyPath: sshKeyPath(srv.KeyFile)}
@@ -184,8 +184,8 @@ func TestE2E_ApplyChain_SingleNode_TUIC(t *testing.T) {
 		UserProtocol: model.UserProtocolTUIC,
 	}
 
-	f := factory.New()
-	applier := chain.NewApplier(f)
+	f := factory.New(nil)
+	applier := chain.NewApplier(f, nil)
 
 	report, err := applier.ApplyChain(context.Background(), store, c, "")
 	if err != nil {

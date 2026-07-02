@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
@@ -77,10 +78,19 @@ type ImportResult struct {
 // them, and back-fills placeholder fields on the node's inbounds. useSudo wraps
 // privileged cat commands. Returns the import result + error on SSH/parse
 // failure (placeholder back-fill is best-effort and recorded in DBUpdated).
-func ImportAWGConfigs(host model.Host, useSudo bool, info *model.NodeInfo) (*ImportResult, error) {
+//
+// The optional connector argument lets tests inject a fake SSH connector; when
+// omitted the production connector (ssh.DefaultConnector) is used, preserving
+// the original call shape for existing callers.
+func ImportAWGConfigs(host model.Host, useSudo bool, info *model.NodeInfo, connector ...ports.SSHConnector) (*ImportResult, error) {
 	res := &ImportResult{Imported: map[string]bool{}}
 
-	client, err := sshclient.Connect(host.Addr, host.User, host.KeyPath)
+	conn := sshclient.DefaultConnector
+	if len(connector) > 0 && connector[0] != nil {
+		conn = connector[0]
+	}
+
+	client, err := conn.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return res, fmt.Errorf("awg import: ssh connect: %w", err)
 	}

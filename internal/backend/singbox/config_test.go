@@ -20,7 +20,7 @@ func resetDefaultProfile(t *testing.T) {
 // configs.
 func TestGenerateConfig_Transport_DefaultIsRealityXHTTP(t *testing.T) {
 	resetDefaultProfile(t)
-	b := New()
+	b := New(nil)
 	cfg, err := b.GenerateConfig(model.ConfigTransport, model.ConfigParams{Port: 443})
 	if err != nil {
 		t.Fatalf("GenerateConfig transport: %v", err)
@@ -47,7 +47,7 @@ func TestGenerateConfig_Transport_DefaultIsRealityXHTTP(t *testing.T) {
 // server config. This is the bug the refactor fixed.
 func TestGenerateConfig_User_AWG(t *testing.T) {
 	resetDefaultProfile(t)
-	b := New()
+	b := New(nil)
 	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{
 		Port: 8443, Protocol: "awg",
 	})
@@ -72,7 +72,7 @@ func TestGenerateConfig_User_AWG(t *testing.T) {
 // a REAL TUIC inbound (not a wireguard/AWG endpoint as it did before the fix).
 func TestGenerateConfig_User_TUIC(t *testing.T) {
 	resetDefaultProfile(t)
-	b := New()
+	b := New(nil)
 	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{
 		Port: 8443, Protocol: "tuic",
 	})
@@ -102,7 +102,7 @@ func TestGenerateConfig_User_TUIC(t *testing.T) {
 // the user config falls back to VLESS REALITY+XHTTP (not AWG as before).
 func TestGenerateConfig_User_DefaultIsRealityXHTTP(t *testing.T) {
 	resetDefaultProfile(t)
-	b := New()
+	b := New(nil)
 	cfg, err := b.GenerateConfig(model.ConfigUser, model.ConfigParams{Port: 8443})
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestGenerateConfig_User_DefaultIsRealityXHTTP(t *testing.T) {
 // yields valid JSON through the new role renderer.
 func TestGenerateConfig_AllProfilesProduceValidJSON(t *testing.T) {
 	resetDefaultProfile(t)
-	b := New()
+	b := New(nil)
 	for _, prof := range []string{"russia_2026", "iran_2026", "china_2026", "maximum_stealth_2026"} {
 		chain.SetDefaultProfile(prof)
 		cfg, err := b.GenerateConfig(model.ConfigTransport, model.ConfigParams{Port: 443})

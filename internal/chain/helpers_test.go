@@ -560,7 +560,7 @@ func TestHopParams_Clamping(t *testing.T) {
 // ─── NewApplier ───────────────────────────────────────────────────────────────
 
 func TestNewApplier(t *testing.T) {
-	a := NewApplier(nil)
+	a := NewApplier(nil, nil)
 	if a == nil {
 		t.Fatal("NewApplier returned nil")
 	}

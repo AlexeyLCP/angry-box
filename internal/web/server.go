@@ -18,6 +18,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	"github.com/alexeylcp/angry-box/internal/i18n"
+	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 	webassets "github.com/alexeylcp/angry-box/web"
 	"github.com/alexeylcp/angry-box/web/templates"
 )
@@ -33,6 +34,19 @@ type Server struct {
 	// Injected once at construction (NewServer) instead of ad-hoc factory.New()
 	// scattered across handlers (CTO-review M11).
 	factory ports.Factory
+	// connector is the SSH connector shared by all deploy/apply handlers.
+	// nil means "use the production connector"; tests inject a fake to avoid
+	// real network connections (CTO-review C3).
+	connector ports.SSHConnector
+}
+
+// SSHConnector returns the connector used by deploy/apply handlers. Exposed so
+// handler tests can build an Applier that talks to a fake SSH client.
+func (s *Server) SSHConnector() ports.SSHConnector {
+	if s.connector == nil {
+		return sshclient.DefaultConnector
+	}
+	return s.connector
 }
 
 // NewServer creates a web UI server.
@@ -45,7 +59,7 @@ func NewServer(storePath string, devMode bool, cfg *config.Config, activeListenA
 		log.Println("[prod] Loading embedded UI")
 	}
 	if f == nil {
-		f = factory.New()
+		f = factory.New(nil)
 	}
 	return &Server{storePath: storePath, stopCh: make(chan struct{}), devMode: devMode, cfg: cfg, ActiveListenAddr: activeListenAddr, factory: f}
 }

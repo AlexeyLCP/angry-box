@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
-	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
 )
 
 // PushConfig is the exported wrapper around pushConfig: writes cfgContent to
@@ -20,14 +20,14 @@ import (
 // upload → check → restart → health-probe → rollback on failure). useSudo wraps
 // privileged commands for non-root SSH users. nodeID drives per-host
 // serialization of the critical section (CTO-review C2).
-func PushConfig(client *sshclient.Client, nodeID, cfgContent string, useSudo bool) (string, error) {
+func PushConfig(client ports.SSHClient, nodeID, cfgContent string, useSudo bool) (string, error) {
 	return pushConfig(client, nodeID, cfgContent, useSudo)
 }
 
 // CreateBackup is the exported wrapper around createBackup: copies file to a
 // timestamped $HOME/sing-box-orch-backup-<ts>/ dir and returns the backup path.
 // Preserved (never destroyed by rollback). Returns ("", nil) if file is absent.
-func CreateBackup(client *sshclient.Client, file string) (string, error) {
+func CreateBackup(client ports.SSHClient, file string) (string, error) {
 	return createBackup(client, file)
 }
 
@@ -39,14 +39,14 @@ func RecordDeploySuccess(store *Store, nodeID, cfgJSON string) {
 
 // ProbeServiceUp is the exported wrapper around probeServiceUp: waits ~7s for
 // the unit to become active, returns journalctl tail on failure.
-func ProbeServiceUp(client *sshclient.Client, service string, useSudo bool) error {
+func ProbeServiceUp(client ports.SSHClient, service string, useSudo bool) error {
 	return probeServiceUp(client, service, useSudo)
 }
 
 // DisableService stops + disables a systemd unit WITHOUT deleting its unit file
 // or config (contrast with Backend.Remove which deletes). Used by takeover to
 // disable the old VPN while keeping it recoverable. useSudo via sudoBash.
-func DisableService(client *sshclient.Client, service string, useSudo bool) error {
+func DisableService(client ports.SSHClient, service string, useSudo bool) error {
 	cmd := "systemctl stop " + service + " && systemctl disable " + service
 	if useSudo {
 		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
@@ -60,7 +60,7 @@ func DisableService(client *sshclient.Client, service string, useSudo bool) erro
 
 // EnableService enables + starts a systemd unit (rollback path: re-enable the
 // old VPN). useSudo via sudoBash.
-func EnableService(client *sshclient.Client, service string, useSudo bool) error {
+func EnableService(client ports.SSHClient, service string, useSudo bool) error {
 	cmd := "systemctl enable " + service + " && systemctl start " + service
 	if useSudo {
 		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
@@ -73,7 +73,7 @@ func EnableService(client *sshclient.Client, service string, useSudo bool) error
 }
 
 // RestoreFile copies a backed-up file back to its original path (rollback).
-func RestoreFile(client *sshclient.Client, backupPath, destPath string, useSudo bool) error {
+func RestoreFile(client ports.SSHClient, backupPath, destPath string, useSudo bool) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path")
 	}

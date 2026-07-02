@@ -112,7 +112,7 @@ func TestWSL_Takeover_SingBox(t *testing.T) {
 		t.Fatalf("expected singbox detection, got %q", det.Type)
 	}
 
-	res, err := takeover.Takeover(context.Background(), st, factory.New(), host, true, det)
+	res, err := takeover.Takeover(context.Background(), st, factory.New(nil), host, true, det)
 	t.Logf("takeover result: %+v err=%v", res, err)
 	if err != nil {
 		t.Fatalf("Takeover: %v", err)
