@@ -24,6 +24,25 @@ type User struct {
 	// Chain assignments — which chains this user has access to.
 	ChainNames []string `json:"chain_names,omitempty"`
 
+	// Per-user protocol credentials (generated once at user-create, persisted,
+	// stable across applies; rotated only explicitly). These let each user
+	// authenticate to a multi-user inbound with their own identity, which is the
+	// basis for per-client (auth_user) routing. Empty fields = legacy behavior
+	// (the user falls back to the chain-wide / inbound-shared credentials).
+	VLESSUUID    string `json:"vless_uuid,omitempty"`
+	TUICUUID     string `json:"tuic_uuid,omitempty"`
+	TUICPassword string `json:"tuic_password,omitempty"`
+	// Hysteria2Password is the per-user Hysteria2 password (the inbound's users
+	// array carries password-based auth, no separate UUID).
+	Hysteria2Password string `json:"hysteria2_password,omitempty"`
+
+	// ChainExit optionally pins a user to a specific exit node per chain. The
+	// map key is the chain name; the value is the ChainNode.ID of the exit.
+	// When set and the chain's route section is enabled (AB_ROUTE_DNS=1), a
+	// per-user auth_user route rule steers that user's traffic to the chosen
+	// exit's outbound. Empty map = use the chain's default exit (last node).
+	ChainExit map[string]string `json:"chain_exit,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 

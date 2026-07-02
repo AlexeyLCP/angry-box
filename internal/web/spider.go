@@ -88,7 +88,12 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	// material) when the node was already part of this chain — otherwise a
 	// spider edge creation would drop entry designations and force a key
 	// regeneration on the next ApplyChain, breaking connected clients.
+	// existing is nil when this is the first edge for the chain (nothing to
+	// preserve); guard against nil deref.
 	preserveNodeState := func(n *model.ChainNode) {
+		if existing == nil {
+			return
+		}
 		for _, old := range existing.Nodes {
 			if old.ID == n.ID {
 				n.Role = old.Role

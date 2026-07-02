@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -161,4 +162,43 @@ func GenerateProxyPassword() string {
 		out[i] = alphabet[idx.Int64()]
 	}
 	return string(out)
+}
+
+// EnsureUserCreds fills in any missing per-user protocol credentials on a User
+// based on its Protocols list. It only generates what is empty — existing creds
+// are preserved (stable across applies; rotated only explicitly via the UI).
+// This is the basis for per-client routing: a multi-user inbound emits one
+// Users[] entry per user carrying these per-user creds, and an auth_user route
+// rule steers that user to a chosen exit. Empty Protocols leaves creds empty
+// (legacy behavior — the user falls back to chain-wide / shared inbound creds).
+//
+// VLESS/TUIC/Hysteria2 are covered here; AWG needs a per-user WireGuard keypair
+// (handled separately via ImportedSecret / generateWireGuardKeypair at assign
+// time, since each peer needs its own pubkey + AllowedIPs on the server).
+func EnsureUserCreds(u *model.User) {
+	if u == nil {
+		return
+	}
+	has := func(p string) bool {
+		for _, proto := range u.Protocols {
+			if proto == p {
+				return true
+			}
+		}
+		return false
+	}
+	if has("vless-reality") && u.VLESSUUID == "" {
+		u.VLESSUUID = generateStableUUID()
+	}
+	if has("tuic") {
+		if u.TUICUUID == "" {
+			u.TUICUUID = GenerateTUICUUID()
+		}
+		if u.TUICPassword == "" {
+			u.TUICPassword = GenerateTUICPassword()
+		}
+	}
+	if has("hysteria2") && u.Hysteria2Password == "" {
+		u.Hysteria2Password = GenerateHysteria2Password()
+	}
 }

@@ -85,6 +85,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		u.Protocols = []string{"awg"}
 	}
 
+	// Generate per-user credentials for the selected protocols so this user
+	// can authenticate to a multi-user inbound with its own identity (the basis
+	// for per-client auth_user routing). Existing creds are preserved.
+	chain.EnsureUserCreds(u)
+
 	st := s.store()
 	if err := st.SaveUser(u); err != nil {
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
@@ -136,6 +141,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if len(u.Protocols) == 0 {
 		u.Protocols = []string{"awg"}
 	}
+
+	// Fill any per-user credentials that are now missing because a new protocol
+	// was added to this user's Protocols list. Existing creds are preserved.
+	chain.EnsureUserCreds(u)
 
 	st.SaveUser(u)
 	chain.WriteAudit(st, "update", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")

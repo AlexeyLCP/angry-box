@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
 // TestGenerateWGPresharedKey verifies a 32-byte base64 preshared key.
@@ -102,5 +104,59 @@ func TestGenerateSSPassword_Legacy(t *testing.T) {
 	p := GenerateSSPassword("aes-256-gcm")
 	if p == "" {
 		t.Fatal("expected non-empty password")
+	}
+}
+// TestEnsureUserCreds_GeneratesPerProtocol verifies EnsureUserCreds fills the
+// per-user credentials for each selected protocol and leaves existing creds
+// untouched (stable across applies).
+func TestEnsureUserCreds_GeneratesPerProtocol(t *testing.T) {
+	u := &model.User{ID: "u1", Name: "alice", Protocols: []string{"tuic", "hysteria2", "vless-reality"}}
+	EnsureUserCreds(u)
+	if u.TUICUUID == "" {
+		t.Error("TUICUUID not generated")
+	}
+	if u.TUICPassword == "" {
+		t.Error("TUICPassword not generated")
+	}
+	if u.TUICUUID == u.TUICPassword {
+		t.Error("TUICUUID must differ from TUICPassword (independent secrets)")
+	}
+	if u.Hysteria2Password == "" {
+		t.Error("Hysteria2Password not generated")
+	}
+	if u.VLESSUUID == "" {
+		t.Error("VLESSUUID not generated")
+	}
+}
+
+func TestEnsureUserCreds_PreservesExisting(t *testing.T) {
+	// Existing creds must be preserved (not regenerated) on re-apply.
+	u := &model.User{
+		ID:              "u2",
+		Name:            "bob",
+		Protocols:       []string{"tuic"},
+		TUICUUID:        "fixed-uuid",
+		TUICPassword:    "fixed-password",
+		Hysteria2Password: "existing-hy2",
+	}
+	EnsureUserCreds(u)
+	if u.TUICUUID != "fixed-uuid" {
+		t.Errorf("TUICUUID overwritten: got %q want fixed-uuid", u.TUICUUID)
+	}
+	if u.TUICPassword != "fixed-password" {
+		t.Errorf("TUICPassword overwritten: got %q want fixed-password", u.TUICPassword)
+	}
+	// Hysteria2 not in Protocols -> must NOT be generated/touched.
+	if u.Hysteria2Password != "existing-hy2" {
+		t.Errorf("Hysteria2Password touched despite hysteria2 not in Protocols: got %q", u.Hysteria2Password)
+	}
+}
+
+func TestEnsureUserCreds_NilSafeAndEmptyProtocols(t *testing.T) {
+	EnsureUserCreds(nil) // must not panic
+	u := &model.User{ID: "u3", Name: "empty", Protocols: nil}
+	EnsureUserCreds(u)
+	if u.TUICUUID != "" || u.VLESSUUID != "" || u.Hysteria2Password != "" {
+		t.Error("empty Protocols must not generate any creds")
 	}
 }
