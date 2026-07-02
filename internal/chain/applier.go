@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"strings"
@@ -572,8 +573,12 @@ func performRollback(client *sshclient.Client, file, backupPath, serviceName str
 	}
 	_, err := client.Run(cmd)
 	if err != nil {
+		slog.Error("deploy: rollback FAILED",
+			"file", file, "backup", backupPath, "service", serviceName, "err", err)
 		return fmt.Errorf("rollback failed: %w", err)
 	}
+	slog.Warn("deploy: rollback applied (restored previous config)",
+		"file", file, "backup", backupPath, "service", serviceName)
 	return nil
 }
 
@@ -696,8 +701,13 @@ func pushConfigLocked(client *sshclient.Client, cfgContent string, useSudo bool)
 	// 6. Real health-probe: is-active with a short retry (handles the brief
 	// "activating" window), and capture journalctl on failure for diagnosis.
 	if err := probeServiceUp(client, "sing-box", useSudo); err != nil {
+		slog.Error("deploy: service not active after restart — rolling back",
+			"err", err)
 		if backupPath != "" {
-			_ = performRollback(client, configFile, backupPath, "sing-box", useSudo)
+			if rbErr := performRollback(client, configFile, backupPath, "sing-box", useSudo); rbErr != nil {
+				slog.Error("deploy: health-probe rollback also failed",
+					"file", configFile, "backup", backupPath, "err", rbErr)
+			}
 		}
 		return "", fmt.Errorf("service not active after restart: %v", err)
 	}
@@ -755,7 +765,13 @@ openssl req -x509 -newkey rsa:2048 -keyout /etc/sing-box/key.pem \
 -out /etc/sing-box/cert.pem -days 3650 -nodes -subj "/CN=sing-box" 2>/dev/null && \
 chmod 644 /etc/sing-box/cert.pem /etc/sing-box/key.pem) \
 || echo 'cert-gen skipped'`
-	_, _, _, _ = client.RunWithOutput(context.Background(), certCmd, 60*time.Second)
+	stdout, stderr, exitCode, runErr := client.RunWithOutput(context.Background(), certCmd, 60*time.Second)
+	if runErr != nil {
+		slog.Warn("deploy: self-signed cert generation command failed",
+			"stdout", strings.TrimSpace(stdout), "stderr", strings.TrimSpace(stderr), "exit_code", exitCode, "err", runErr)
+	} else if strings.Contains(stdout, "cert-gen skipped") {
+		slog.Info("deploy: self-signed cert generation skipped (openssl missing or cert already present)")
+	}
 }
 
 // ==================== XHTTP Transport Support ====================

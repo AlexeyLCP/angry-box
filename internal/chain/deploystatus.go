@@ -7,6 +7,7 @@ package chain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -34,8 +35,11 @@ func recordDeploySuccess(store *Store, nodeID, cfgJSON string) {
 	info.ID = nodeID
 	info.LastDeployedHash = ConfigHash([]byte(cfgJSON))
 	info.LastDeployedAt = time.Now()
+	slog.Info("deploy: applied successfully",
+		"node", nodeID, "hash", info.LastDeployedHash)
 	if err := store.SaveNodeInfo(info); err != nil {
 		// best-effort; logged but not fatal
-		_ = err
+		slog.Warn("deploy: failed to persist deploy hash",
+			"node", nodeID, "err", err)
 	}
 }

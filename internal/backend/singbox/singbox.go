@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -343,7 +344,11 @@ openssl req -x509 -newkey rsa:2048 -keyout %s/key.pem \
 chmod 644 %s/cert.pem %s/key.pem) \
 || echo 'cert-gen skipped'`,
 		configDir, configDir, configDir, sshHost, configDir, configDir)
-	_, _, _, _ = client.RunWithOutput(ctx, sudoBash(useSudo, certCmd), 60*time.Second)
+	stdout, stderr, exitCode, runErr := client.RunWithOutput(ctx, sudoBash(useSudo, certCmd), 60*time.Second)
+	if runErr != nil {
+		slog.Warn("singbox: self-signed cert generation command failed",
+			"host", sshHost, "stdout", strings.TrimSpace(stdout), "stderr", strings.TrimSpace(stderr), "exit_code", exitCode, "err", runErr)
+	}
 	return nil
 }
 

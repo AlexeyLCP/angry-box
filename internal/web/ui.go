@@ -2141,7 +2141,7 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 			last = row.LastDeployedAt.Format("2006-01-02 15:04:05")
 		}
 		b.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/50\">%s</td></tr>",
-			row.Name, row.Role, status, last, truncForDisplay(row.LastDeployedHash, 12)))
+			escHTML(row.Name), escHTML(row.Role), status, last, escHTML(truncForDisplay(row.LastDeployedHash, 12))))
 	}
 	b.WriteString(`</tbody></table></div></div></div>`)
 	s.renderContent(w, r, i18n.T(r.Context(), "Deploy Status"), &simpleHTML{html: b.String()})
@@ -2493,7 +2493,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 		if node == "" {
 			node = "—"
 		}
-		b.WriteString(fmt.Sprintf(`<tr><td><span class="badge badge-sm">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>`, row.ClientType, row.Name, node, en))
+		b.WriteString(fmt.Sprintf(`<tr><td><span class="badge badge-sm">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>`, escHTML(row.ClientType), escHTML(row.Name), escHTML(node), en))
 	}
 	b.WriteString(`</tbody></table></div></div>`)
 	s.renderContent(w, r, i18n.T(r.Context(), "Clients"), &simpleHTML{html: b.String()})

@@ -12,7 +12,7 @@ package chain
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
@@ -59,20 +59,25 @@ func runAutoDeploy(nodeID, reason string) {
 	st := NewStore(autoApplyCtx.storePath)
 	info, err := st.GetNodeInfo(nodeID)
 	if err != nil {
-		log.Printf("auto-apply: node %s not found: %v", nodeID, err)
+		slog.Warn("auto-apply: node not found",
+			"node", nodeID, "err", err)
 		return
 	}
 	if !info.AutoApply {
 		return // node-level switch off — skip
 	}
+	slog.Info("auto-apply: starting background deploy",
+		"node", nodeID, "reason", reason)
 	applier := NewApplier(autoApplyCtx.factory)
 	_, _, err = applier.ApplyMergedNode(context.Background(), st, info)
 	if err != nil {
-		log.Printf("auto-apply: deploy %s (%s) failed: %v", nodeID, reason, err)
+		slog.Warn("auto-apply: deploy failed",
+			"node", nodeID, "reason", reason, "err", err)
 		WriteAudit(st, "deploy", "node", nodeID, AuditPayload{"mode": "auto", "reason": reason, "error": err.Error()}, "operator")
 		return
 	}
-	log.Printf("auto-apply: deploy %s (%s) ok", nodeID, reason)
+	slog.Info("auto-apply: deploy ok",
+		"node", nodeID, "reason", reason)
 }
 
 // WaitAutoApply blocks until all in-flight background deploys finish (for
