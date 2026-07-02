@@ -107,10 +107,16 @@ func GenerateHysteria2ObfsPassword() string { return GenerateHysteria2Password()
 // GenerateTUICUUID returns a v4 UUID string.
 func GenerateTUICUUID() string { return generateStableUUID() }
 
-// GenerateTUICPassword returns a url-safe base64 of 16 random bytes.
+// GenerateTUICPassword returns a url-safe base64 of 16 random bytes. It is an
+// INDEPENDENT secret from GenerateTUICUUID: a TUIC link exposes both identity
+// and credential, so they must not share a value (CTO-review M7).
 func GenerateTUICPassword() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand should not fail in practice; if it does, refuse to emit a
+		// predictable/empty password rather than degrade silently.
+		panic("cryptogen: crypto/rand failed for TUIC password: " + err.Error())
+	}
 	return base64.URLEncoding.EncodeToString(b)
 }
 

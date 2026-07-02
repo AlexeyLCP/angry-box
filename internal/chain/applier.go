@@ -1150,10 +1150,15 @@ func generateWireGuardKeypair() (privateKeyB64, publicKeyB64 string, err error) 
 	return GenerateWireGuardKeypair()
 }
 
-// GenerateStableTUICUserCreds generates stable UUID + password for a TUIC user entry at chain creation time.
+// GenerateStableTUICUserCreds generates stable UUID + an INDEPENDENT password
+// for a TUIC user entry at chain creation time. The password must not equal the
+// UUID: a TUIC link exposes both in its userinfo, so a shared secret would mean
+// leaking the UUID also leaks the password (and vice versa). The password is a
+// 16-byte url-safe base64 secret independent of the identity (CTO-review M7).
 func GenerateStableTUICUserCreds() (uuid, password string) {
 	uuid = generateStableUUID()
-	return uuid, uuid
+	password = GenerateTUICPassword()
+	return uuid, password
 }
 
 // generateStableUUID is a small helper for creation-time stable user creds.

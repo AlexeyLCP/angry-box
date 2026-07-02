@@ -98,9 +98,9 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if userProto == model.UserProtocol("tuic") {
-		uuid, _ := chain.GenerateStableTUICUserCreds()
+		uuid, password := chain.GenerateStableTUICUserCreds()
 		c.TUICEntryUserUUID = uuid
-		c.TUICEntryUserPassword = uuid
+		c.TUICEntryUserPassword = password
 	}
 
 	if err := st.SaveChain(c); err != nil {

@@ -310,8 +310,11 @@ func TestGenerateStableTUICUserCreds(t *testing.T) {
 	if uuid == "" || password == "" {
 		t.Fatal("empty creds")
 	}
-	if uuid != password {
-		t.Error("TUIC UUID should equal password")
+	// The password MUST NOT equal the UUID: a TUIC link exposes both in its
+	// userinfo, so a shared secret would mean leaking the UUID also leaks the
+	// password (CTO-review M7).
+	if uuid == password {
+		t.Error("TUIC password must be independent of the UUID, got identical values")
 	}
 	if len(uuid) != 36 {
 		t.Errorf("UUID length = %d", len(uuid))
