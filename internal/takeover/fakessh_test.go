@@ -1,0 +1,116 @@
+package takeover
+
+// fakessh_test.go — a ports.SSHClient/SSHConnector fake for takeover-package
+// tests (DetectVPN + Takeover SSH under the hood). CTO-review C3 phase 4.
+
+import (
+	"context"
+	"errors"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/alexeylcp/angry-box/internal/domain/ports"
+)
+
+// fakeRule: if substring is in the command, return out/err. First match wins;
+// empty substring = catch-all.
+type fakeRule struct {
+	substring string
+	out       string
+	err       error
+}
+
+// fakeSSH is a ports.SSHClient.
+type fakeSSH struct {
+	mu       sync.Mutex
+	rules    []fakeRule
+	commands []string
+	uploads  []fakeUpload
+}
+
+type fakeUpload struct {
+	Path    string
+	Content string
+}
+
+func newFakeSSH(rules ...fakeRule) *fakeSSH { return &fakeSSH{rules: rules} }
+
+func (f *fakeSSH) Run(cmd string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commands = append(f.commands, cmd)
+	r := f.matchLocked(cmd)
+	if r == nil {
+		return "", nil
+	}
+	return r.out, r.err
+}
+
+func (f *fakeSSH) RunWithOutput(ctx context.Context, cmd string, timeout time.Duration) (string, string, int, error) {
+	_ = ctx
+	_ = timeout
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commands = append(f.commands, cmd)
+	r := f.matchLocked(cmd)
+	if r == nil {
+		return "", "", 0, nil
+	}
+	return r.out, "", 0, r.err
+}
+
+func (f *fakeSSH) matchLocked(cmd string) *fakeRule {
+	for i := range f.rules {
+		if f.rules[i].substring == "" || strings.Contains(cmd, f.rules[i].substring) {
+			return &f.rules[i]
+		}
+	}
+	return nil
+}
+
+func (f *fakeSSH) UploadText(ctx context.Context, content, remotePath string, mode os.FileMode) error {
+	_ = ctx
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploads = append(f.uploads, fakeUpload{Path: remotePath, Content: content})
+	r := f.matchLocked("upload:" + remotePath)
+	if r != nil {
+		return r.err
+	}
+	return nil
+}
+
+func (f *fakeSSH) Close() error { return nil }
+
+// Saw reports whether a command containing needle was run.
+func (f *fakeSSH) Saw(needle string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.commands {
+		if strings.Contains(c, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// fakeConnector wraps a fakeSSH as a ports.SSHConnector.
+type fakeConnector struct {
+	client *fakeSSH
+	err    error
+}
+
+func (c *fakeConnector) Connect(addr, user, keyPath string) (ports.SSHClient, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c.client, nil
+}
+
+var _ ports.SSHClient = (*fakeSSH)(nil)
+var _ ports.SSHConnector = (*fakeConnector)(nil)
+
+// errAny is a generic scripted failure.
+var errAny = errors.New("scripted ssh failure")
