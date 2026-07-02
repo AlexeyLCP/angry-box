@@ -83,40 +83,127 @@ go build ./...             # compile check
 
 ## 2. E2E tests (real VPS over SSH)
 
-Existing e2e suite: `internal/chain/e2e_test.go` (14 tests, `//go:build e2e`). Run:
+Build tag: `e2e`. Suite lives in `internal/chain/`:
+
+| File | Purpose |
+|---|---|
+| `e2e_test.go` | Read-only / parallel-safe tests (SSH, store, presets) |
+| `e2e_helpers_test.go` | Shared helpers (`deployChain`, `verifyClientConnectivity`, `performRollbackTest`, …) |
+| `e2e_heavy_test.go` | State-mutating orchestration tests (serialized via `e2eHeavy` mutex) |
+
+Compile check:
 
 ```bash
-go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 300s
+go vet -tags e2e ./internal/chain/
 ```
 
-### Test servers (from AGENTS.md)
-- GCloud project: `project-d4c6c72c-4f10-4288-902`
-- `vps-de-test-1` — 34.40.120.7 (Debian 12, key: `google_compute_engine`)
-- `vps-de-test-2` — 35.198.166.183 (Ubuntu 24.04, key: `id_ed25519`)
-- `vps-de-test-3` — 35.198.100.1 (Ubuntu 24.04, key: `id_ed25519`)
-- Auth: `gcloud auth login lucipoher@gmail.com`
+### Test servers (prepare once)
 
-### Existing E2E tests (verify they pass against v0.1.0)
-- TestE2E_SSHConnect, TestE2E_SSHCommand, TestE2E_KnownHostsRoundTrip, TestE2E_KnownHosts_Normalization
-- TestE2E_Deploy_AlreadyInstalled, TestE2E_BackendStatus
-- TestE2E_ApplyChain_SingleNode_TUIC, TestE2E_ApplyChain_SingleNode_AWG
-- TestE2E_MultiNodeChain, TestE2E_Rollback
-- TestE2E_MergedConfigRoundTrip, TestE2E_WireGuardKeypair, TestE2E_StoreRealPath
+Three Debian 12 x86_64 VPSes, SSH user `lcp`, passwordless sudo, key `~/.ssh/id_ed25519`:
 
-**Action needed**: the existing suite was written for the pre-refactor API. It compiles (verified: `go vet -tags e2e ./internal/chain/` passes), but must be re-run against the live test VPS to confirm the new deploy path (backup→cert→upload→check→rollback→restart→health-probe) and the patched binary actually work end-to-end.
+| Role | Host | SSH |
+|---|---|---|
+| **entry** | test-server-1 | `lcp@34.62.128.71` |
+| **middle** | test-server-2 | `lcp@207.175.40.161` |
+| **exit** | test-server-3 | `lcp@23.251.133.38` |
 
-### Planned E2E tests (new, for v0.1.0 features)
+**Server prep checklist**
 
-- [ ] **E2E_Deploy_PatchedBinary**: deploy to a fresh VPS, verify `sing-box version` reports extended + the round-robin fallback works (4 exit nodes → ~25% each).
-- [ ] **E2E_AWGKernelInstall**: `InstallAWGModule` on `vps-de-test-1`, verify `lsmod | grep amneziawg` and persistence files exist.
-- [ ] **E2E_AWGHop_Userspace**: multi-hop chain with AWG as inter-node transport (userspace amnezia endpoint) — verifies the wireguard-go overlap patch actually fixes the panic on real traffic (was the original bug).
-- [ ] **E2E_AWGBalancer_Kernel**: awg_balancer role — TUN + bind_interface to kernel awg-exit-* interfaces, confirm traffic egresses.
-- [ ] **E2E_DeployStatus_Hash**: apply a config, verify `NodeInfo.LastDeployedHash` is set; mutate an inbound; verify `has_pending_changes=true` via `/ui/api/deploy-status`.
-- [ ] **E2E_ImportAWG**: SSH-import from `vps-de-test-1` (after seeding an awg0.conf), verify placeholder back-fill.
-- [ ] **E2E_QUICCapture**: `CaptureQUICSignature("www.cloudflare.com")` returns `ok=true, source="quic"` with 5 packets.
-- [ ] **E2E_Spider_LinkSync**: create an edge via the spider API, verify both `ConnectionLink` persisted and `Chain.Nodes` ordered correctly (toNode after fromNode); delete the last edge of a node, verify it's removed from `Chain.Nodes`.
-- [ ] **E2E_MTProxy**: deploy a node with mtproxy inbound, connect a Telegram client, verify handshake.
-- [ ] **E2E_Rollback_FirstDeploy**: fresh node + invalid config → verify rollback is a no-op restore (no prior config) and the error is surfaced (not a panic).
+1. Debian 12 amd64, `lcp` in `sudo` group (`NOPASSWD` recommended for CI).
+2. `~/.ssh/authorized_keys` contains the ed25519 public key used locally.
+3. Outbound UDP/443 open (for `TestE2E_Heavy_QUICCapture_AWGConfig`; skips if blocked).
+4. Inbound TCP **443** open on all nodes (TUIC / REALITY entry ports).
+5. AWG kernel: orchestrator installs `amneziawg` via Amnezia PPA (DKMS fallback from `ANGRY_AWG_TARBALL_URL`). `TestE2E_Heavy_Protocol_AWG_*` **fail** if install breaks — not skipped.
+6. For client routing tests: set `AB_ROUTE_DNS=1`. By default the client runs **on the entry VPS** (TUIC/QUIC from WSL is unreliable). Set `E2E_CLIENT_LOCAL=1` to run the client on the test workstation (`deps/sing-box.exe` on Windows).
+
+Quick SSH smoke from your workstation:
+
+```bash
+for h in 34.62.128.71 207.175.40.161 23.251.133.38; do
+  ssh -i ~/.ssh/id_ed25519 lcp@$h 'hostname && sing-box version | head -1'
+done
+```
+
+### How to run
+
+**Fast read-only suite** (~1 min, safe to parallelize):
+
+```bash
+go test -tags e2e ./internal/chain/ -run 'TestE2E_SSH|TestE2E_Known|TestE2E_Wire|TestE2E_Store|TestE2E_Presets|TestE2E_ImportAWG_No|TestE2E_Takeover_Detect' -v -timeout 120s
+```
+
+**Full heavy suite** (~30–60 min, mutates all three VPSes — run before releases):
+
+```bash
+go test -tags e2e ./internal/chain/ -run TestE2E_Heavy -v -timeout 3600s
+```
+
+**Skip heavy tests** (read-only only):
+
+```bash
+E2E_SKIP_HEAVY=1 go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 120s
+```
+
+**Targeted groups**
+
+```bash
+# Deployment, takeover, rollback
+go test -tags e2e ./internal/chain/ -run 'TestE2E_Heavy_Deploy|TestE2E_Heavy_Takeover|TestE2E_Heavy_Rollback' -v -timeout 900s
+
+# Protocol matrix (VLESS+XHTTP, TUIC, AWG kernel/userspace)
+go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_Protocol -v -timeout 1800s
+
+# Multi-hop chains + topology change
+go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_Chain -v -timeout 1800s
+
+# Client egress proof (needs AB_ROUTE_DNS=1 + deps/sing-box.exe)
+AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_ClientConnectivity -v -timeout 1200s
+
+# QUIC capture + AWG CPS, AWG import, idempotency, locking
+go test -tags e2e ./internal/chain/ -run 'TestE2E_Heavy_QUIC|TestE2E_Heavy_Import|TestE2E_Heavy_Idempotency|TestE2E_Heavy_Concurrent|TestE2E_Heavy_PostDeploy' -v -timeout 1800s
+```
+
+### Heavy test inventory
+
+| Test | Coverage |
+|---|---|
+| `TestE2E_Heavy_Deploy_FreshNode` | Clean sing-box-extended install on entry |
+| `TestE2E_Heavy_Takeover_SingBox_FullFlow` | Detect → convert → cutover existing sing-box |
+| `TestE2E_Heavy_Rollback_OnBadConfig` | Real `PushConfig` rollback after invalid JSON |
+| `TestE2E_Heavy_Protocol_VLESSRealityXHTTP_Advanced` | `xhttp_max_stealth_2026` profile on node |
+| `TestE2E_Heavy_Protocol_TUIC` | TUIC v5 + ALPN h3 |
+| `TestE2E_Heavy_Protocol_AWG_Kernel` | Orchestrator installs AmneziaWG kernel + `awg-quick`, deploys amnezia endpoint |
+| `TestE2E_Heavy_Protocol_AWG_Userspace` | Userspace wireguard endpoint (`system: false`) on exit node |
+| `TestE2E_Heavy_Chain_SingleNode` / `_2Hop` / `_3Hop` | 1/2/3-hop deploy + health |
+| `TestE2E_Heavy_Chain_TopologyChange` | 2-hop → 3-hop → 2-hop |
+| `TestE2E_Heavy_ClientConnectivity_*` | Local sing-box client + curl egress via exit IP |
+| `TestE2E_Heavy_Balancer_URLTestInChain` | `urltest` outbound in merged chain config |
+| `TestE2E_Heavy_Balancer_Failover` | urltest across two backends; stop one, traffic continues |
+| `TestE2E_Heavy_QUICCapture_AWGConfig` | Live QUIC capture + pro_2026 AWG CPS fields |
+| `TestE2E_Heavy_ImportAWG_PreservesPeers` | Import must not delete existing `awg0-peers.list` entries |
+| `TestE2E_Heavy_Idempotency_DoubleApply` | Same chain twice → stable config hash |
+| `TestE2E_Heavy_ConcurrentDeploy_Serialized` | Parallel `PushConfig` on same node — no corruption |
+| `TestE2E_Heavy_PostDeploy_HashAndHealth` | `LastDeployedHash` + `GetStatus` + listen check |
+
+### Tests to run manually before tagging
+
+These are included in `TestE2E_Heavy` but are the highest signal / longest:
+
+1. `TestE2E_Heavy_Chain_3Hop` + `TestE2E_Heavy_ClientConnectivity_3Hop` (with `AB_ROUTE_DNS=1`)
+2. `TestE2E_Heavy_Protocol_AWG_Kernel` (kernel headers required)
+3. `TestE2E_Heavy_QUICCapture_AWGConfig` (UDP/443 to Cloudflare)
+4. `TestE2E_Heavy_Balancer_Failover`
+
+### Diagnostics on failure
+
+Heavy tests log on failure: apply report, chain spec, and `journalctl -u sing-box` tail from affected nodes. Helpers: `fetchRemoteConfig`, `fetchSingBoxLogs`, `logDeployFailure`.
+
+### Planned E2E (not yet implemented)
+
+- [ ] **E2E_MTProxy**: Telegram MTProxy handshake on a live node
+- [ ] **E2E_Spider_LinkSync**: spider edge → `Chain.Nodes` order persistence
+- [ ] **E2E_AWGBalancer_Kernel**: `awg_balancer` role with kernel TUN + bind_interface
+- [ ] **E2E_Takeover_Xray/AWG**: full takeover of non-sing-box VPN installs
 
 ---
 
@@ -145,6 +232,8 @@ go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 300s
 
 ## Run order before tagging the next release
 1. `go build ./... && go vet ./... && go test ./...` — all green.
-2. `go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 600s` against test VPS.
-3. Manual smoke test (section 4).
-4. Only then bump version + tag.
+2. `go vet -tags e2e ./internal/chain/` — e2e compile check.
+3. `go test -tags e2e ./internal/chain/ -run TestE2E_Heavy -v -timeout 3600s` against the three test VPS.
+4. `AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_ClientConnectivity -v -timeout 1200s`.
+5. Manual smoke test (section 4).
+6. Only then bump version + tag.

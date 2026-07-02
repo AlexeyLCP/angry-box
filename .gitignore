@@ -73,3 +73,7 @@ store-Huawei-Alexey.json
 client.json
 entry-config.json
 test_concurrency.ps1
+
+# E2E run artifacts — contain live test creds (TUIC UUID/password, REALITY
+# private keys) and SSH host fingerprints. Keep local for diagnosis; never push.
+test-artifacts/
