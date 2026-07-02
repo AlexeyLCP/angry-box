@@ -20,12 +20,15 @@ import (
 )
 
 // ClientConfigParams carries what the generator needs: the chain (for entry
-// protocol + creds + entry node address) and the user the config is for.
+// protocol + creds + entry node address) and the local proxy listen address.
+//
+// The TUIC user entry is single-user: it uses the chain-wide entry creds
+// (TUICEntryUserUUID/Password). There is intentionally no per-user cred field
+// here — model.User has no TUIC UUID/password, and adding a User field that is
+// silently ignored would mislead callers (CodeRabbit H2). Per-user routing is
+// a future feature that will require per-user inbounds on the server first.
 type ClientConfigParams struct {
 	Chain *model.Chain
-	// User is optional; reserved for per-user creds when they diverge from the
-	// chain entry creds (currently the chain entry creds are used directly).
-	User *model.User
 	// LocalProxyAddr is the SOCKS/HTTP listen address for the client's inbound
 	// (e.g. "127.0.0.1:1080"). Defaults to 127.0.0.1:1080 (SOCKS) + mixed.
 	LocalProxyAddr string
@@ -124,16 +127,21 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 		},
 		Final:                 "tuic-out",
 		AutoDetectInterface:   true,
-		DefaultDomainResolver: "dns-remote",
+		DefaultDomainResolver: "dns-direct",
 	}
 
-	// DNS: a remote resolver through the chain + a direct for local/direct.
+	// DNS: a remote resolver through the chain + a direct for bootstrap.
+	// Final is dns-direct (NOT dns-remote): resolving the chain target's name
+	// through the chain outbound is a bootstrap loop — the tunnel needs the
+	// target IP before it can carry the DNS query that would learn that IP.
+	// dns-remote is still available for post-establish lookups via route rules.
+	// Mirrors the server-side fix in buildMergedNodeConfig (CTO-review H1).
 	dns := &config.DNSConfig{
 		Servers: []config.DNSServer{
 			{Tag: "dns-remote", Type: "tls", Server: "1.1.1.1", Detour: "tuic-out"},
 			{Tag: "dns-direct", Type: "udp", Server: "8.8.8.8", Detour: "direct-out"},
 		},
-		Final: "dns-remote",
+		Final: "dns-direct",
 	}
 
 	cfg := &config.SingboxConfig{

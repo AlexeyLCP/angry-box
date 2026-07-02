@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -225,19 +226,20 @@ func installedVersion(ctx context.Context, client ports.SSHClient, useSudo bool)
 }
 
 // isPatchedExtended returns true if the binary at installPath is already our
-// patched extended build and does not need re-downloading. The patched tarball
-// is sometimes built without version ldflags and reports "sing-box version
-// unknown" — treat a present binary with that string as installed to avoid
-// re-installing on every ApplyChain (which fails for non-root SSH users when
-// the prior sudo install left a root-owned binary).
+// patched extended build and does not need re-downloading.
+//
+// The trustworthy signal is the "extended" substring: stock sing-box NEVER
+// reports it, our patched build ALWAYS does (even when built without version
+// ldflags and reporting "sing-box version unknown"). Matching on "unknown"
+// alone (the previous heuristic) was a false positive: a stock sing-box built
+// without ldflags also reports "unknown", so isPatchedExtended returned true
+// and installPatchedBinary was skipped — leaving the node on an un-patched
+// binary while Deploy reported success.
 func isPatchedExtended(ver string) bool {
 	if ver == "" || strings.Contains(ver, "NOT_INSTALLED") {
 		return false
 	}
-	if strings.Contains(ver, "extended") && strings.Contains(ver, singBoxVersion) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(ver), "unknown")
+	return strings.Contains(strings.ToLower(ver), "extended")
 }
 
 // checksumForArch returns the expected sha256 of the patched sing-box tarball
@@ -424,6 +426,27 @@ func awgKernelModuleLoaded(ctx context.Context, client ports.SSHClient, useSudo 
 	return strings.TrimSpace(out) == "loaded"
 }
 
+// validateTarballURL rejects anything that is not a clean http(s) URL and that
+// contains a single quote (the shell-escape character that would break out of
+// the curl argument in installAWGModule). Defense against operator-supplied
+// ANGRY_AWG_TARBALL_URL being used for SSH command injection (CodeRabbit M1).
+func validateTarballURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid ANGRY_AWG_TARBALL_URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("ANGRY_AWG_TARBALL_URL must be http(s), got scheme %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("ANGRY_AWG_TARBALL_URL has no host")
+	}
+	if strings.ContainsAny(raw, "'`\\$") {
+		return fmt.Errorf("ANGRY_AWG_TARBALL_URL must not contain shell metacharacters (' ` \\ $)")
+	}
+	return nil
+}
+
 // installAWGModule installs the AmneziaWG kernel module + awg/awg-quick on
 // Debian/Ubuntu hosts. Strategy:
 //  1. Amnezia PPA (official path for Debian 12 / Ubuntu — package "amneziawg")
@@ -440,10 +463,23 @@ func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, 
 	if awgTarballURL == "" {
 		awgTarballURL = "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/amneziawg-src.tar.gz"
 	}
+	// Validate the URL before it reaches a root shell. The previous code
+	// interpolated awgTarballURL into `sudo bash -c '... curl ... %s ...'`, so a
+	// value containing a single quote (e.g. https://x'; rm -rf / ;') broke out
+	// of the curl argument and ran arbitrary commands as root (CodeRabbit M1).
+	// Reject anything that is not a clean http(s) URL with no single quote.
+	if err := validateTarballURL(awgTarballURL); err != nil {
+		return fmt.Errorf("amneziawg install: %w", err)
+	}
 
-	// Amnezia PPA first (builds DKMS module against running kernel), then bundled
-	// source tarball. apt + DKMS can take several minutes on a slow VPS.
+	// Pass the URL to the remote shell via an exported env var inside the
+	// script instead of string interpolation into a curl argument. The URL has
+	// been validated by validateTarballURL (no single quotes / shell
+	// metacharacters), so interpolating it into a single-quoted bash string is
+	// safe here. This avoids the previous `curl '... %s ...'` pattern where a
+	// crafted URL could break out of the quotes (CodeRabbit M1).
 	cmd := sudoBash(useSudo, fmt.Sprintf(`set -e
+export AB_AWG_URL='%s'
 export DEBIAN_FRONTEND=noninteractive
 echo "[awg] Installing build prerequisites..."
 apt-get update -qq
@@ -462,7 +498,7 @@ if apt-get install -y -qq amneziawg; then
 else
   echo "[awg] PPA install failed, building from bundled DKMS source..."
   rm -rf /tmp/awg-src && mkdir -p /tmp/awg-src
-  curl -fsSL '%s' -o /tmp/awg-src.tar.gz
+  curl -fsSL "$AB_AWG_URL" -o /tmp/awg-src.tar.gz
   tar -xzf /tmp/awg-src.tar.gz -C /tmp/awg-src --strip-components=1
   rm -rf /usr/src/amneziawg-1.0.0
   cp -r /tmp/awg-src /usr/src/amneziawg-1.0.0
