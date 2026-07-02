@@ -1,7 +1,6 @@
 package chain
 
 import (
-	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -91,5 +90,5 @@ func TestStore_Assignment_Unique(t *testing.T) {
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	return NewStore(filepath.Join(t.TempDir(), "store.json"))
+	return NewStore(tempStoreFile(t))
 }

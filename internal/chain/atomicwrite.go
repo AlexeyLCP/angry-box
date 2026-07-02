@@ -45,6 +45,14 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("store: write temp: %w", err)
 	}
+	// fsync the temp file so the durable rename is not just a metadata change
+	// over an unflushed buffer; on Windows this also helps the OS release the
+	// file handle promptly (otherwise t.TempDir cleanup can race with a
+	// just-closed handle and fail RemoveAll).
+	if err := tmp.Sync(); err != nil {
+		// Sync failure is not fatal to correctness on most filesystems; keep going
+		// so a best-effort fsync error does not abort a valid write.
+	}
 	if err := tmp.Chmod(perm); err != nil {
 		return fmt.Errorf("store: chmod temp: %w", err)
 	}

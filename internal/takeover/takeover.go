@@ -109,7 +109,7 @@ func Takeover(ctx context.Context, store *chain.Store, f *factory.Factory, host 
 
 	// 7. Push the sing-box config (backup → check → restart → health-probe, with
 	// its own rollback to the previous /etc/sing-box/config.json on failure).
-	if _, perr := chain.PushConfig(client, cfgContent, useSudo); perr != nil {
+	if _, perr := chain.PushConfig(client, host.ID, cfgContent, useSudo); perr != nil {
 		// sing-box did NOT come up. Auto-rollback to the old VPN.
 		res.RollbackOccurred = true
 		if rbErr := rollbackToOldVPN(ctx, client, det, info.Takeover, useSudo); rbErr != nil {

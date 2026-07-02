@@ -464,8 +464,13 @@ func TestExtractHost(t *testing.T) {
 		{"1.2.3.4:22", "1.2.3.4"},
 		{"example.com:2222", "example.com"},
 		{"192.168.1.1", "192.168.1.1"},
-		{"host:port:extra", "host:port"},
 		{"no-port", "no-port"},
+		// Bracketed IPv6 with port: brackets must be stripped.
+		{"[2001:db8::1]:22", "2001:db8::1"},
+		{"[::1]:22", "::1"},
+		// Bare IPv6 without a port must round-trip whole (not split at last ':').
+		{"2001:db8::1", "2001:db8::1"},
+		{"::1", "::1"},
 	}
 	for _, tt := range tests {
 		got := extractHost(tt.input)

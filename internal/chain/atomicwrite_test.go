@@ -15,7 +15,7 @@ import (
 )
 
 func TestAtomicWriteFile_ReplacesContent(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "store.json")
 	if err := os.WriteFile(path, []byte(`{"old":1}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestAtomicWriteFile_ReplacesContent(t *testing.T) {
 }
 
 func TestAtomicWriteFile_LeavesNoTempArtifacts(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "store.json")
 	if err := atomicWriteFile(path, []byte(`{}`), 0o600); err != nil {
 		t.Fatalf("atomicWriteFile: %v", err)
@@ -55,7 +55,7 @@ func TestAtomicWriteFile_PreservesPermissionsOnUnix(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "store.json")
 	if err := atomicWriteFile(path, []byte(`{}`), 0o600); err != nil {
 		t.Fatalf("atomicWriteFile: %v", err)
@@ -70,7 +70,7 @@ func TestAtomicWriteFile_PreservesPermissionsOnUnix(t *testing.T) {
 }
 
 func TestAtomicWriteFile_CreatesParentDir(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "nested", "deep", "store.json")
 	if err := atomicWriteFile(path, []byte(`{}`), 0o600); err != nil {
 		t.Fatalf("atomicWriteFile should create parent dirs, got: %v", err)

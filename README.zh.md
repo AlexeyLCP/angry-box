@@ -6,7 +6,7 @@
 
 Angry-BOX 是从零开始编写的原创产品，不是 3x-ui、LucX-UI、x-ui 或任何其他面板的 fork。
 
-所有管理均通过 SSH 完成，目标节点上只运行 **sing-box-extended**（可选 xray）内核 + 最小配置，无任何 agent。
+所有管理均通过 SSH 完成，目标节点上只运行 **sing-box-extended** 内核 + 最小配置，无任何 agent。
 
 ## 概览
 
@@ -27,7 +27,6 @@ Angry-BOX 是从零开始编写的原创产品，不是 3x-ui、LucX-UI、x-ui �
 - **现代 Web UI：** 蛛网拓扑编辑器（图边、持久化节点位置、原生 SVG 平移/缩放）、部署状态（待处理变更徽章）、审计日志、配置文件/服务、统一客户端、路由规则 — 基于 HTMX + TailwindCSS + DaisyUI + templ 构建。
 - **后台自动应用：** 用户/inbound 变更触发后台 SSH 部署（混合模式）；per-host lock 序列化。
 - **100% 独立：** Angry-BOX 附带自己的**修补版 sing-box-extended** 二进制文件（deps/），因此弱 VPS 无需编译 Go — 直接下载。
-- **双内核 — sing-box-extended + Xray：** `deploy`/`apply`/`remove`/`reload` 对两个内核都有效。AmneziaWG（内核 + 用户态）需要 sing-box-extended；当 Xray 的 XHTTP/REALITY 实现更合适时使用 Xray。
 - **零占用：** 节点服务器仅运行裸 `sing-box` 核心；编排器完全位于你的控制机上。
 
 ## 截图

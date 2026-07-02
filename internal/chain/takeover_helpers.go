@@ -18,9 +18,10 @@ import (
 // PushConfig is the exported wrapper around pushConfig: writes cfgContent to
 // /etc/sing-box/config.json with the reliable deploy sequence (backup → cert →
 // upload → check → restart → health-probe → rollback on failure). useSudo wraps
-// privileged commands for non-root SSH users.
-func PushConfig(client *sshclient.Client, cfgContent string, useSudo bool) (string, error) {
-	return pushConfig(client, cfgContent, useSudo)
+// privileged commands for non-root SSH users. nodeID drives per-host
+// serialization of the critical section (CTO-review C2).
+func PushConfig(client *sshclient.Client, nodeID, cfgContent string, useSudo bool) (string, error) {
+	return pushConfig(client, nodeID, cfgContent, useSudo)
 }
 
 // CreateBackup is the exported wrapper around createBackup: copies file to a

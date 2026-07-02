@@ -15,7 +15,7 @@ import (
 
 func tempStore(t *testing.T) *Store {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	return NewStore(filepath.Join(dir, "store.json"))
 }
 
@@ -717,7 +717,7 @@ func TestStore_ReadNonExistentFile(t *testing.T) {
 }
 
 func TestStore_PersistenceAcrossInstances(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "store.json")
 
 	s1 := NewStore(path)

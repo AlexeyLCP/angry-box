@@ -17,9 +17,10 @@ import (
 )
 
 // PushConfigForTest wraps the unexported pushConfig for the WSL smoke tests.
-// useSudo mirrors NodeInfo.UseSudo (true for non-root SSH users).
-func PushConfigForTest(client *sshclient.Client, cfgContent string, useSudo bool) (string, error) {
-	return pushConfig(client, cfgContent, useSudo)
+// nodeID drives per-host serialization; pass "" to skip locking for throwaway
+// test hosts. useSudo mirrors NodeInfo.UseSudo (true for non-root SSH users).
+func PushConfigForTest(client *sshclient.Client, nodeID, cfgContent string, useSudo bool) (string, error) {
+	return pushConfig(client, nodeID, cfgContent, useSudo)
 }
 
 // RecordDeploySuccessForTest wraps recordDeploySuccess for the smoke tests.

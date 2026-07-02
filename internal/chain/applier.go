@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -253,48 +253,52 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			continue
 		}
 
-		// Serialize the SSH deploy section for this node against all other apply
-		// entry points (CLI, web, background auto-apply) so concurrent applies
-		// cannot interleave backup->write->restart and corrupt the rollback
-		// chain (CTO-review C2). The config build above is pure (no SSH) and
-		// stays outside the lock.
-		result := withHostLock(node.ID, func() NodeResult {
-			client, connErr := sshclient.Connect(node.Addr, node.User, node.KeyPath)
-			if connErr != nil {
-				return NodeResult{ID: node.ID, Success: false, Error: "ssh connect: " + connErr.Error()}
+		// Deploy this node. Serialization of the critical backup→write→restart
+		// section is handled INSIDE pushConfig via withHostLock(node.ID) — the
+		// single chokepoint (CTO-review C2). Pre-flight Connect/Deploy/InstallAWG
+		// run without the lock: they are idempotent and do not touch the rollback
+		// chain, so holding the lock across them would only block other nodes.
+		client, connErr := sshclient.Connect(node.Addr, node.User, node.KeyPath)
+		if connErr != nil {
+			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "ssh connect: " + connErr.Error()})
+			continue
+		}
+
+		backend := a.factory.Create()
+
+		// Install AWG kernel module only when chain uses AWG as user protocol.
+		if chain.UserProtocol == model.UserProtocolAWG {
+			if awgErr := backend.InstallAWGModule(ctx, node.Host()); awgErr != nil {
+				client.Close()
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
+				continue
 			}
-			defer client.Close()
+		}
 
-			backend := a.factory.Create()
+		if _, deployErr := backend.Deploy(ctx, node.Host()); deployErr != nil {
+			client.Close()
+			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "deploy sing-box: " + deployErr.Error()})
+			continue
+		}
 
-			// Install AWG kernel module only when chain uses AWG as user protocol.
-			if chain.UserProtocol == model.UserProtocolAWG {
-				if awgErr := backend.InstallAWGModule(ctx, node.Host()); awgErr != nil {
-					return NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()}
+		_, pushErr := pushConfig(client, node.ID, string(cfgJSON), nodeInfo.UseSudo)
+		client.Close()
+		if pushErr != nil {
+			if strings.Contains(pushErr.Error(), "rollback successful") {
+				errMsg := "ROLLBACK APPLIED: " + pushErr.Error()
+				if i > 0 {
+					errMsg = "WARNING: Chain state is out of sync. Rollback occurred on node " + node.Addr + ". " + errMsg
 				}
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: errMsg})
+			} else {
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "push config: " + pushErr.Error()})
 			}
+			continue
+		}
 
-			if _, deployErr := backend.Deploy(ctx, node.Host()); deployErr != nil {
-				return NodeResult{ID: node.ID, Success: false, Error: "deploy sing-box: " + deployErr.Error()}
-			}
-
-			_, pushErr := pushConfig(client, string(cfgJSON), nodeInfo.UseSudo)
-			if pushErr != nil {
-				if strings.Contains(pushErr.Error(), "rollback successful") {
-					errMsg := "ROLLBACK APPLIED: " + pushErr.Error()
-					if i > 0 {
-						errMsg = "WARNING: Chain state is out of sync. Rollback occurred on node " + node.Addr + ". " + errMsg
-					}
-					return NodeResult{ID: node.ID, Success: false, Error: errMsg}
-				}
-				return NodeResult{ID: node.ID, Success: false, Error: "push config: " + pushErr.Error()}
-			}
-
-			recordDeploySuccess(store, node.ID, string(cfgJSON))
-			WriteAudit(store, "deploy", "node", node.ID, AuditPayload{"chain": chain.Name, "transport": string(chain.Transport), "user_protocol": string(chain.UserProtocol)}, "operator")
-			return NodeResult{ID: node.ID, Success: true}
-		})
-		results = append(results, result)
+		recordDeploySuccess(store, node.ID, string(cfgJSON))
+		WriteAudit(store, "deploy", "node", node.ID, AuditPayload{"chain": chain.Name, "transport": string(chain.Transport), "user_protocol": string(chain.UserProtocol)}, "operator")
+		results = append(results, NodeResult{ID: node.ID, Success: true})
 	}
 
 	if awgMaterial != nil && chain.AWGEntryServerPub != "" {
@@ -519,13 +523,17 @@ func safeShortID(s string) string {
 }
 
 // extractHost strips the port from an address like "1.2.3.4:22" or returns the string as-is.
+// extractHost strips the port from an address like "1.2.3.4:22" or returns the
+// string as-is when there is no port. Uses net.SplitHostPort so bracketed IPv6
+// literals ([2001:db8::1]:22) and bare IPv6 addresses (2001:db8::1) are handled
+// correctly instead of being mis-split at the last ':' (sibling of CTO-review
+// H8 — extractHost had the same bug as the splitters).
 func extractHost(addr string) string {
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr // no port: whole input is the host (covers bare IPv6)
 	}
-	return addr
+	return host
 }
 
 // createBackup makes a timestamped backup of the current config under $HOME
@@ -574,15 +582,6 @@ func cleanupBackups(client *sshclient.Client, file string) {
 	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
 }
 
-// deployMu is a process-wide mutex that serializes the pushConfig sequence
-// (backup → write → check → restart → probe → rollback). It is defense-in-depth
-// on top of the per-host withHostLock that wraps each apply entry point: it
-// also covers callers that reach pushConfig without an outer per-host lock
-// (e.g. takeover helpers). Per-host serialization of the full apply (including
-// backend.Deploy / InstallAWGModule, which run outside pushConfig) is provided
-// by withHostLock — see ApplyChain / ApplyStandaloneNode / ApplyMergedNode.
-var deployMu sync.Mutex
-
 // pushConfig writes the config to the remote host with the reliable deploy
 // sequence: backup (cp, before write) → self-signed cert (if TLS inbounds) →
 // upload via stdin cat (no heredoc) → sing-box check (stdout+stderr captured) →
@@ -590,9 +589,32 @@ var deployMu sync.Mutex
 // health-probe (is-active with retry, journalctl on failure) → rollback on
 // inactive. useSudo wraps privileged commands for non-root SSH users. Returns
 // a human-readable result string and an error on failure.
-func pushConfig(client *sshclient.Client, cfgContent string, useSudo bool) (string, error) {
-	deployMu.Lock()
-	defer deployMu.Unlock()
+//
+// nodeID drives the per-host serialization: the whole backup→write→restart→
+// rollback sequence runs under withHostLock(nodeID), so concurrent applies
+// (CLI, web, background auto-apply, takeover) targeting the same node cannot
+// interleave and corrupt the rollback chain (CTO-review C2). This is the
+// SINGLE serialization chokepoint — callers must NOT wrap pushConfig in another
+// withHostLock(nodeID) (sync.Mutex is not reentrant → deadlock). An empty
+// nodeID skips locking (only acceptable for throwaway test hosts).
+func pushConfig(client *sshclient.Client, nodeID, cfgContent string, useSudo bool) (string, error) {
+	if nodeID == "" {
+		return pushConfigLocked(client, cfgContent, useSudo)
+	}
+	type pushResult struct {
+		out string
+		err error
+	}
+	r := withHostLock(nodeID, func() pushResult {
+		out, err := pushConfigLocked(client, cfgContent, useSudo)
+		return pushResult{out: out, err: err}
+	})
+	return r.out, r.err
+}
+
+// pushConfigLocked performs the actual deploy sequence. The caller is
+// responsible for holding the per-host lock (via pushConfig/withHostLock).
+func pushConfigLocked(client *sshclient.Client, cfgContent string, useSudo bool) (string, error) {
 
 	// sudo wraps a single command; sudoBash wraps a pipeline.
 	sudo := func(cmd string) string {
@@ -1125,31 +1147,25 @@ func generateStableUUID() string {
 // ApplyMergedNode reads all chains from the store that contain this node,
 // merges them with standalone inbounds into a single sing-box config,
 // and pushes it to the remote node via SSH.
+//
+// Per-host serialization of the critical backup→write→restart section is done
+// inside pushConfig via withHostLock(info.ID) — the single chokepoint. This
+// method itself does NOT take the lock, so the config build / SSH connect /
+// backend.Deploy stay unconstrained and other nodes are not blocked (CTO-review
+// C2 redesign: a previous version wrapped the whole method in withHostLock AND
+// pushConfig in a global mutex, which deadlocked-adjacent and serialized all
+// nodes).
 func (a *Applier) ApplyMergedNode(
 	ctx context.Context,
 	store *Store,
 	info *model.NodeInfo,
 ) (*ApplyReport, *MergeReport, error) {
-	// Serialize all deploys to this node through a single per-host mutex so that
-	// concurrent applies (CLI, web, background auto-apply) cannot interleave
-	// their SSH backup->write->restart sequences and corrupt the rollback chain
-	// (CTO-review C2). The lock is process-wide; cross-process safety is not
-	// provided (single-daemon deployment model).
-	type mergedResult struct {
-		report      *ApplyReport
-		mergeReport *MergeReport
-		err         error
-	}
-	res := withHostLock(info.ID, func() mergedResult {
-		r := mergedResult{}
-		r.report, r.mergeReport, r.err = a.applyMergedNodeLocked(ctx, store, info)
-		return r
-	})
-	return res.report, res.mergeReport, res.err
+	return a.applyMergedNodeLocked(ctx, store, info)
 }
 
-// applyMergedNodeLocked contains the real merged-deploy logic and expects the
-// caller to already hold the per-host lock (via withHostLock).
+// applyMergedNodeLocked contains the real merged-deploy logic. The per-host
+// lock is acquired inside pushConfig (the deploy chokepoint); this function
+// must NOT wrap the whole body in withHostLock(info.ID).
 func (a *Applier) applyMergedNodeLocked(
 	ctx context.Context,
 	store *Store,
@@ -1229,7 +1245,7 @@ func (a *Applier) applyMergedNodeLocked(
 	oldCfgBytes, _ := client.Run("cat /etc/sing-box/config.json 2>/dev/null")
 	oldCfg := string(oldCfgBytes)
 
-	_, pushErr := pushConfig(client, string(cfgJSON), info.UseSudo)
+	_, pushErr := pushConfig(client, info.ID, string(cfgJSON), info.UseSudo)
 	if pushErr != nil {
 		if strings.Contains(pushErr.Error(), "rollback successful") {
 			return nil, mergeReport, fmt.Errorf("ROLLBACK APPLIED: %w", pushErr)

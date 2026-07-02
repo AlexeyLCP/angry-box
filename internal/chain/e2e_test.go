@@ -43,7 +43,7 @@ func sshKeyPath(filename string) string {
 
 func newStore(t *testing.T) *chain.Store {
 	t.Helper()
-	return chain.NewStore(filepath.Join(t.TempDir(), "e2e-store.json"))
+	return chain.NewStore(filepath.Join(tempDir(t), "e2e-store.json"))
 }
 
 // ─── SSH Connection ───────────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ func TestE2E_WireGuardKeypair(t *testing.T) {
 // ─── Store persistence ────────────────────────────────────────────────────────
 
 func TestE2E_StoreRealPath(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "store.json")
 
 	s1 := chain.NewStore(path)

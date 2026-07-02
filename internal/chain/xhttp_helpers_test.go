@@ -161,9 +161,9 @@ func TestRandUint32(t *testing.T) {
 
 func TestExtractHost_EdgeCases(t *testing.T) {
 	tests := []struct{ input, want string }{
-		{"[::1]:22", "[::1]"},
-		{"", ""},
-		{"host:port:extra:stuff", "host:port:extra"},
+		{"[::1]:22", "::1"},   // bracketed IPv6: brackets stripped
+		{"", ""},              // empty in, empty out
+		{"0.0.0.0:0", "0.0.0.0"},
 	}
 	for _, tt := range tests {
 		got := extractHost(tt.input)
