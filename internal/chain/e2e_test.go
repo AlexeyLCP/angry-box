@@ -224,13 +224,84 @@ func TestE2E_ApplyChain_SingleNode_TUIC(t *testing.T) {
 // ─── ApplyChain — single node AWG ─────────────────────────────────────────────
 
 func TestE2E_ApplyChain_SingleNode_AWG(t *testing.T) {
-	t.Skip("AWG requires sing-box-extended with amnezia support; servers run official sing-box 1.13")
+	// AWG as a user-entry protocol needs the AmneziaWG kernel module + awg-quick
+	// on the entry node (installAWGModule). Sing-box-extended + the kernel module
+	// are installable on these Debian 12 nodes; kept as a separate, heavier test
+	// below (TestE2E_ApplyChain_SingleNode_AWG_Full) so a missing kernel-headers
+	// VPS doesn't block the rest of the suite.
+	t.Skip("see TestE2E_ApplyChain_SingleNode_AWG_Full for the kernel-module path")
 }
 
 // ─── Multi-node chain ─────────────────────────────────────────────────────────
 
+// TestE2E_MultiNodeChain builds a 2-hop chain: entry (TUIC user-in) -> exit
+// (VLESS-REALITY transport-in + direct outbound). Both nodes deploy via the
+// orchestrator, sing-box must come up active on both and listen on the chain
+// ports. This is the flagship feature the CTO review flagged as
+// "claimed-but-not-routing" (route/dns disabled) — this test pins the baseline
+// (services up) before route/dns is re-enabled.
 func TestE2E_MultiNodeChain(t *testing.T) {
-	t.Skip("3-node chain — sing-box restart issue on Debian (amneziawg). Fix later.")
+	entrySrv := e2eServers[1]
+	exitSrv := e2eServers[2]
+	store := newStore(t)
+
+	entryHost := model.Host{ID: "multi-entry", Addr: entrySrv.Addr, User: entrySrv.User, KeyPath: sshKeyPath(entrySrv.KeyFile)}
+	exitHost := model.Host{ID: "multi-exit", Addr: exitSrv.Addr, User: exitSrv.User, KeyPath: sshKeyPath(exitSrv.KeyFile)}
+	store.SaveHost(&entryHost)
+	store.SaveHost(&exitHost)
+	store.SaveNodeInfo(&model.NodeInfo{Host: entryHost, UseSudo: true})
+	store.SaveNodeInfo(&model.NodeInfo{Host: exitHost, UseSudo: true})
+
+	c := &model.Chain{
+		Name:         "e2e-multi",
+		Strategy:     model.StrategyURLTest,
+		Transport:    model.TransportReality,
+		UserProtocol: model.UserProtocolTUIC,
+		Nodes: []model.ChainNode{
+			{ID: entryHost.ID, Addr: entryHost.Addr, User: entryHost.User, KeyPath: entryHost.KeyPath},
+			{ID: exitHost.ID, Addr: exitHost.Addr, User: exitHost.User, KeyPath: exitHost.KeyPath},
+		},
+	}
+
+	f := factory.New(nil)
+	applier := chain.NewApplier(f, nil)
+	report, err := applier.ApplyChain(context.Background(), store, c, "")
+	if err != nil {
+		t.Fatalf("ApplyChain multi: %v", err)
+	}
+	for _, n := range report.Nodes {
+		if !n.Success {
+			t.Errorf("node %s failed: %s", n.ID, n.Error)
+		}
+	}
+	t.Logf("multi-hop apply OK: %d nodes, profile=%s", len(report.Nodes), report.Profile)
+
+	// Both nodes: sing-box active + listening on the chain ports.
+	// Entry listens TUIC on 8443 (defaultUserPort); exit listens transport on
+	// 443 (defaultTransportPort).
+	for _, srv := range []struct {
+		id   string
+		addr string
+		port int
+	}{
+		{entryHost.ID, entryHost.Addr, 8443},
+		{exitHost.ID, exitHost.Addr, 443},
+	} {
+		client, err := sshclient.Connect(srv.addr, entryHost.User, sshKeyPath(entrySrv.KeyFile))
+		if err != nil {
+			t.Fatalf("connect %s: %v", srv.id, err)
+		}
+		active, _ := client.Run("sudo systemctl is-active sing-box 2>/dev/null")
+		if strings.TrimSpace(active) != "active" {
+			t.Errorf("%s: sing-box not active: %q", srv.id, strings.TrimSpace(active))
+		}
+		listening, _ := client.Run(fmt.Sprintf("sudo ss -lntu 'sport = :%d' 2>/dev/null | grep -q ':%d' && echo yes || echo no", srv.port, srv.port))
+		t.Logf("%s: active=%s listening-on-%d=%s", srv.id, strings.TrimSpace(active), srv.port, strings.TrimSpace(listening))
+		if strings.TrimSpace(listening) != "yes" {
+			t.Errorf("%s: expected sing-box listening on port %d", srv.id, srv.port)
+		}
+		client.Close()
+	}
 }
 
 // ─── Rollback ─────────────────────────────────────────────────────────────────

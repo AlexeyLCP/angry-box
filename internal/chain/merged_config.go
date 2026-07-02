@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -96,14 +97,80 @@ func buildMergedNodeConfig(
 		Log:          &config.LogOptions{Level: "info"},
 		Inbounds:     inbounds,
 		Outbounds:    outbounds,
-		// Route/DNS disabled for sing-box 1.13 compat
+		// Route/DNS disabled by default for sing-box 1.13 detour compat (the
+		// minimal inbounds+outbounds config works; route+detour crashed 1.13).
+		// AB_ROUTE_DNS=1 opts back in so e2e can verify whether the patched
+		// extended build (1.13.14-extended-2.5.0-patched) now handles route/dns
+		// — this is the CTO-review M10 follow-up, verified against a real VPS
+		// rather than enabled blindly.
 		Experimental: &config.ExperimentalOptions{CacheFile: &config.CacheFileOptions{Enabled: true}},
 	}
 	if len(endpoints) > 0 {
 		cfg.Endpoints = endpoints
 	}
+	if os.Getenv("AB_ROUTE_DNS") == "1" && len(roles) > 0 {
+		// Route: chain user/transport inbounds -> the chain's strategy outbound;
+		// standalone inbounds -> direct-out (their OutboundTag or direct-out).
+		cfg.Route = buildMergedRoute(roles, nodeInfo)
+		// DNS: a chain-detoured resolver + a direct resolver, with the chain's
+		// direct-domain rules routed direct.
+		chainOutTag := "direct-out"
+		for _, r := range roles {
+			if r.HasOutbound {
+				chainOutTag = fmt.Sprintf("ch-%s-strategy", r.Chain.Name)
+				break
+			}
+		}
+		var directDomains []string
+		if p := resolveChainPreset(roles[0].Chain); p.Routing.DirectDomains != nil {
+			directDomains = p.Routing.DirectDomains
+		}
+		cfg.DNS = BuildDNSWithDetour(chainOutTag, directDomains)
+	}
 
 	return cfg, report, nil
+}
+
+// buildMergedRoute builds the route section for a node's merged config: chain
+// user-in / transport-in inbounds are routed to the chain's strategy outbound
+// (or direct-out if the node has no chain outbound), and each standalone
+// inbound is routed to its OutboundTag (default direct-out).
+func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo) *config.RoutingSection {
+	var rules []config.RouteRuleEntry
+	for _, role := range roles {
+		cn := role.Chain.Name
+		var inTags []string
+		if role.IsEntry {
+			inTags = append(inTags, fmt.Sprintf("ch-%s-user-in", cn))
+		}
+		if role.IsTransit {
+			inTags = append(inTags, fmt.Sprintf("ch-%s-transport-in", cn))
+		}
+		if len(inTags) == 0 {
+			continue
+		}
+		stratTag := "direct-out"
+		if role.HasOutbound {
+			stratTag = fmt.Sprintf("ch-%s-strategy", cn)
+		}
+		rules = append(rules, config.RouteRuleEntry{Inbound: inTags, Outbound: stratTag})
+	}
+	for i, ib := range nodeInfo.Inbounds {
+		obTag := ib.OutboundTag
+		if obTag == "" {
+			obTag = "direct-out"
+		}
+		rules = append(rules, config.RouteRuleEntry{
+			Inbound:  []string{fmt.Sprintf("sa-%d-%s", i, ib.Protocol)},
+			Outbound: obTag,
+		})
+	}
+	return &config.RoutingSection{
+		Rules:                 rules,
+		Final:                 "direct-out",
+		AutoDetectInterface:   true,
+		DefaultDomainResolver: "dns-direct",
+	}
 }
 
 func resolveChainRoles(nodeID string, chains []*model.Chain) []chainRole {
