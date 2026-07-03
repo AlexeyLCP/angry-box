@@ -515,16 +515,26 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 
 	script := fmt.Sprintf(`CONF=%q
 IFACE=%q
+EP=%q
 sudo awg-quick down "$IFACE" 2>/dev/null || true
+# Add an explicit host route to the endpoint via the VPS's real gateway, so the
+# tunnel does not loop back into itself (awg-quick's fwmark policy usually
+# handles this, but be explicit for the test).
 sudo awg-quick up "$CONF" 2>&1 || { echo AWG_UP_FAILED; sudo awg-quick down "$IFACE" 2>/dev/null || true; exit 1; }
+GW=$(ip route show default | awk "/default/ {print \$3; exit}")
+sudo ip route add "$EP" via "$GW" dev ens4 2>/dev/null || true
 sleep 5
 echo "---AWG SHOW---"
 sudo awg show "$IFACE" 2>&1
+echo "---ROUTES AFTER UP---"
+ip route 2>&1 | head -10
 echo "---CURL VIA TUNNEL---"
-IP=$(curl -s --max-time 30 --interface "$IFACE" https://ifconfig.me 2>/dev/null || true)
+IP=$(curl -s --max-time 20 --interface "$IFACE" https://ifconfig.me 2>/dev/null || true)
+echo "---SINGBOX TRACE (last 60s, 30 lines)---"
+sudo journalctl -u sing-box --since "60 seconds ago" --no-pager 2>/dev/null | grep -v unknown | tail -30
 sudo awg-quick down "$IFACE" 2>/dev/null || true
 echo EGRESS:$IP
-`, remoteConf, iface)
+`, remoteConf, iface, entryIP)
 	out, _, _, err := client.RunWithOutput(ctx, script, 2*time.Minute)
 	if err != nil && !strings.Contains(out, "EGRESS:") {
 		t.Fatalf("awg-quick run: %v\n%s", err, out)

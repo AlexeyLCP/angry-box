@@ -594,3 +594,62 @@ func extractConfField(conf, prefix string) string {
 	}
 	return ""
 }
+
+// TestAWGAmnezia_S3S4ITime verifies the S3/S4/ITime amnezia fields are carried
+// from the preset → BuildAmneziaSection (server JSON) → client .conf. Before the
+// fix S3/S4 were always 0 and ITime was never emitted — weakening obfuscation.
+func TestAWGAmnezia_S3S4ITime(t *testing.T) {
+	preset := GetDefaultPreset()
+	if preset.AWG == nil || preset.AWG.S3 == 0 {
+		t.Skip("default preset has no S3 — pick a preset with S3/S4/ITime")
+	}
+	// Find a preset with S3/ITime set (the 2026 presets carry s3/s4/itime).
+	var p ConnectionPreset
+	for _, name := range ListPresets() {
+		if pp, ok := GetPreset(name); ok && pp.AWG != nil && pp.AWG.S3 > 0 && pp.AWG.ITime > 0 {
+			p = pp
+			break
+		}
+	}
+	if p.Name == "" {
+		t.Skip("no preset with S3>0 and ITime>0 found")
+	}
+	amn := BuildAWGAmnezia(p.AWG, &p, nil)
+	if amn == nil {
+		t.Fatal("BuildAWGAmnezia nil despite CPS")
+	}
+	if amn.S3 != p.AWG.S3 {
+		t.Errorf("server S3=%d, want preset S3=%d", amn.S3, p.AWG.S3)
+	}
+	if amn.S4 != p.AWG.S4 {
+		t.Errorf("server S4=%d, want preset S4=%d", amn.S4, p.AWG.S4)
+	}
+	if amn.ITime != p.AWG.ITime {
+		t.Errorf("server ITime=%d, want preset ITime=%d", amn.ITime, p.AWG.ITime)
+	}
+
+	// Client .conf must carry the same S3/S4/Itime.
+	c := &model.Chain{
+		Name:              "awg-s3",
+		UserProtocol:      model.UserProtocolAWG,
+		Transport:         model.TransportXHTTP,
+		ObfuscationProfile: p.Name,
+		Nodes:             []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+	}
+	EnsureChainAWGMaterial(c, p)
+	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{
+		Name: "alice", Active: true, AWGPrivateKey: awgServerPriv, AWGAddress: "10.8.0.2/32",
+	}})
+	if err != nil {
+		t.Fatalf("RenderClientAWGConf: %v", err)
+	}
+	if got := extractConfField(conf, "S3 = "); got != fmt.Sprintf("%d", p.AWG.S3) {
+		t.Errorf("client .conf S3=%q, want %d", got, p.AWG.S3)
+	}
+	if got := extractConfField(conf, "S4 = "); got != fmt.Sprintf("%d", p.AWG.S4) {
+		t.Errorf("client .conf S4=%q, want %d", got, p.AWG.S4)
+	}
+	if got := extractConfField(conf, "Itime = "); got != fmt.Sprintf("%d", p.AWG.ITime) {
+		t.Errorf("client .conf Itime=%q, want %d", got, p.AWG.ITime)
+	}
+}

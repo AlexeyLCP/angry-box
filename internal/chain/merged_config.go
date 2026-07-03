@@ -105,8 +105,12 @@ func buildMergedNodeConfig(
 		addIfMissing(&outbounds, seenOB, blockJSON)
 	}
 
+	logLevel := "info"
+	if v := os.Getenv("AB_LOG_LEVEL"); v != "" {
+		logLevel = v
+	}
 	cfg := &config.SingboxConfig{
-		Log:          &config.LogOptions{Level: "info"},
+		Log:          &config.LogOptions{Level: logLevel},
 		Inbounds:     inbounds,
 		Outbounds:    outbounds,
 		// Route/DNS disabled by default for sing-box 1.13 detour compat (the

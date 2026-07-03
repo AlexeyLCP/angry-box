@@ -311,6 +311,8 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset, material *AWG
 	if level > 0 && mimicry != "none" {
 		section.S1 = awg.S1
 		section.S2 = awg.S2
+		section.S3 = awg.S3
+		section.S4 = awg.S4
 		// AmneziaOptions.H1-H4 are "lo-hi" range strings (matching
 		// awg_presets.to_singbox_amnezia). The legacy AWGPreset stores single
 		// ints, so emit them as a degenerate "lo-hi" range. Block F (awg presets
@@ -319,6 +321,9 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset, material *AWG
 		section.H2 = fmt.Sprintf("%d-%d", awg.H2, awg.H2)
 		section.H3 = fmt.Sprintf("%d-%d", awg.H3, awg.H3)
 		section.H4 = fmt.Sprintf("%d-%d", awg.H4, awg.H4)
+		// ITime: concealment-packet lifetime. 0 = unset (legacy/older presets);
+		// copy through so server and client agree when the preset specifies it.
+		section.ITime = awg.ITime
 
 		mat := AWGObfsMaterial{}
 		if material != nil {

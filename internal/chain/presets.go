@@ -58,10 +58,17 @@ type AWGPreset struct {
 	JMAX int `json:"jmax"`
 	S1   int `json:"s1"`
 	S2   int `json:"s2"`
+	S3   int `json:"s3,omitempty"` // cookie-junk count (0 = unset/legacy)
+	S4   int `json:"s4,omitempty"` // transport-junk count (0 = unset/legacy)
 	H1   int `json:"h1"`
 	H2   int `json:"h2"`
 	H3   int `json:"h3"`
 	H4   int `json:"h4"`
+
+	// ITime: I1-I5 concealment-packet lifetime in seconds (0 = unset/legacy).
+	// Controls how long the AWG peer caches a sent I-packet to recognize its
+	// echo; mismatched ITime server↔client can drop concealment replay.
+	ITime int `json:"itime,omitempty"`
 
 	// 2026 advanced CPS / I1-I5 support (from pumbaX/awg2.sh best practices)
 	CPSLevel int    `json:"cps_level,omitempty"`
