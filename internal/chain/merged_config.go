@@ -434,19 +434,17 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			// Multi-peer: one WireGuard peer per user (AWGPublicKey +
 			// AWGAddress). Per-client routing keys on the peer's inner source
 			// IP (source_ip_cidr), not auth_user — see buildMergedRoute.
+			// Userspace endpoint (System: false, wireguard-go) manages its own
+			// interface — NO TUN inbound here. A TUN with AutoRoute would hijack
+			// the host's default route and break the VPS's own networking
+			// (verified on a real VPS: curl timed out while tun0 was up). TUN is
+			// only needed for kernel-mode AWG (System: true + bind_interface),
+			// which the chain user-entry does not use.
 			ep, _, err := buildAWGUserInboundMulti(userPort, inTag, &role.Preset,
 				c.AWGEntryServerPriv, users, ChainAWGObfsMaterial(c))
 			if err == nil {
 				endpoints = append(endpoints, ep)
 			}
-			tun := config.TUNInbound{
-				Type:      "tun",
-				Tag:       fmt.Sprintf("ch-%s-tun-in", cn),
-				Address:   []string{"172.16.250.1/30"},
-				AutoRoute: true,
-			}
-			tunJSON, _ := json.Marshal(tun)
-			inbounds = append(inbounds, tunJSON)
 
 		case model.UserProtocolTUIC:
 			tuicUsers := chainTUICUsers(c, users)

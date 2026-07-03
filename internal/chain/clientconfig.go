@@ -340,18 +340,15 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 	b.WriteString("[Interface]\n")
 	b.WriteString(fmt.Sprintf("Address = %s\n", address))
 	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", clientPriv))
-	b.WriteString("MTU = 1420\n\n")
-	b.WriteString("[Peer]\n")
-	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
-	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
-	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
-	b.WriteString("PersistentKeepalive = 25\n")
-	// Amnezia params from the chain's preset + persisted CPS material (must
-	// match the server endpoint's amnezia block or the handshake fails).
+	b.WriteString("MTU = 1420\n")
+	// Amnezia obfuscation params belong in [Interface] (BEFORE [Peer]). awg-quick
+	// passes the stripped config to `awg setconf`, which parses amnezia fields
+	// only within [Interface]; emitting them after [Peer] makes setconf fail
+	// with "Line unrecognized: Jc=...". The values must match the server
+	// endpoint's amnezia block (chain preset + persisted CPS material).
 	if preset != nil && preset.AWG != nil {
 		amn := BuildAWGAmnezia(preset.AWG, preset, material)
 		if amn != nil {
-			b.WriteString("\n")
 			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))
 			b.WriteString(fmt.Sprintf("Jmin = %d\n", amn.JMIN))
 			b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
@@ -372,5 +369,10 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 			}
 		}
 	}
+	b.WriteString("\n[Peer]\n")
+	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
+	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
+	b.WriteString("PersistentKeepalive = 25\n")
 	return b.String()
 }

@@ -383,17 +383,13 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 	b.WriteString("[Interface]\n")
 	b.WriteString(fmt.Sprintf("Address = %s\n", address))
 	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", clientPriv))
-	b.WriteString("MTU = 1420\n\n")
-	b.WriteString("[Peer]\n")
-	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
-	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
-	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
-	b.WriteString("PersistentKeepalive = 25\n")
-	// Amnezia params from the active preset's AWG section.
+	b.WriteString("MTU = 1420\n")
+	// Amnezia params belong in [Interface] (BEFORE [Peer]) — awg-quick passes
+	// the stripped config to `awg setconf`, which parses amnezia fields only
+	// within [Interface]; after [Peer] setconf fails with "Line unrecognized".
 	if preset := chain.GetDefaultPreset(); preset.AWG != nil {
 		amn := chain.BuildAWGAmnezia(preset.AWG, &preset, nil)
 		if amn != nil {
-			b.WriteString("\n")
 			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))
 			b.WriteString(fmt.Sprintf("Jmin = %d\n", amn.JMIN))
 			b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
@@ -414,6 +410,11 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 			}
 		}
 	}
+	b.WriteString("\n[Peer]\n")
+	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
+	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
+	b.WriteString("PersistentKeepalive = 25\n")
 	_ = clientPub
 	return b.String()
 }
