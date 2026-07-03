@@ -83,8 +83,6 @@ type ImportResult struct {
 // omitted the production connector (ssh.DefaultConnector) is used, preserving
 // the original call shape for existing callers.
 func ImportAWGConfigs(host model.Host, useSudo bool, info *model.NodeInfo, connector ...ports.SSHConnector) (*ImportResult, error) {
-	res := &ImportResult{Imported: map[string]bool{}}
-
 	conn := sshclient.DefaultConnector
 	if len(connector) > 0 && connector[0] != nil {
 		conn = connector[0]
@@ -92,10 +90,24 @@ func ImportAWGConfigs(host model.Host, useSudo bool, info *model.NodeInfo, conne
 
 	client, err := conn.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
-		return res, fmt.Errorf("awg import: ssh connect: %w", err)
+		return &ImportResult{Imported: map[string]bool{}}, fmt.Errorf("awg import: ssh connect: %w", err)
 	}
 	defer client.Close()
+	return importAWGConfigsViaClient(client, useSudo, info)
+}
 
+// ImportAWGConfigsViaClient runs the AWG import using an already-open SSH
+// client (used by takeover, which keeps one client open for the whole cutover).
+// Mirrors ImportAWGConfigs' parse logic; info may be nil to skip backfill.
+func ImportAWGConfigsViaClient(client ports.SSHClient, useSudo bool, info *model.NodeInfo) (*ImportResult, error) {
+	return importAWGConfigsViaClient(client, useSudo, info)
+}
+
+// importAWGConfigsViaClient runs the AWG import using an already-open SSH
+// client (used by takeover, which keeps one client open for the whole cutover).
+// Mirrors ImportAWGConfigs' parse logic; info may be nil to skip backfill.
+func importAWGConfigsViaClient(client ports.SSHClient, useSudo bool, info *model.NodeInfo) (*ImportResult, error) {
+	res := &ImportResult{Imported: map[string]bool{}}
 	ctx := context.Background()
 	priv := func(cmd string) string { if useSudo { return "sudo " + cmd }; return cmd }
 

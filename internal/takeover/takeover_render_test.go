@@ -145,16 +145,33 @@ func TestBuildMinimalConfigWithExtra(t *testing.T) {
 	}
 }
 
-// TestRollbackToOldVPN_AWG verifies AWG detection is a no-op rollback (returns nil
-// without touching SSH).
+// TestRollbackToOldVPN_AWG verifies AWG rollback now re-enables awg-quick
+// (the takeover disables it to free the port for the userspace endpoint; the
+// old "kernel balancer, nothing to roll back" model no longer applies).
 func TestRollbackToOldVPN_AWG(t *testing.T) {
-	fake := newFakeSSH()
-	err := rollbackToOldVPN(context.Background(), fake, &Detection{Type: DetectedAWG}, &model.TakeoverState{}, false)
+	fake := newFakeSSH(
+		fakeRule{substring: "is-active", out: "UP"}, // ProbeServiceUp success
+		fakeRule{substring: "", out: ""},
+	)
+	err := rollbackToOldVPN(context.Background(), fake,
+		&Detection{Type: DetectedAWG, ServiceName: "awg-quick@awg0"},
+		&model.TakeoverState{OldEnabled: true}, false)
 	if err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
-	if len(fake.commands) != 0 {
-		t.Errorf("AWG rollback should be a no-op, got commands: %v", fake.commands)
+	// Re-enable must have been issued (EnableService runs systemctl enable+start).
+	if len(fake.commands) == 0 {
+		t.Errorf("AWG rollback should re-enable awg-quick, got no commands")
+	}
+}
+
+// TestRollbackToOldVPN_AWG_NoServiceName verifies an AWG detection without a
+// service name is rejected (was previously a silent no-op).
+func TestRollbackToOldVPN_AWG_NoServiceName(t *testing.T) {
+	fake := newFakeSSH()
+	err := rollbackToOldVPN(context.Background(), fake, &Detection{Type: DetectedAWG}, &model.TakeoverState{}, false)
+	if err == nil {
+		t.Fatal("expected no-service-name error for AWG rollback without ServiceName")
 	}
 }
 

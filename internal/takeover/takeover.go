@@ -90,8 +90,21 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 		return &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "sing-box install failed: " + derr.Error()}, derr
 	}
 
-	// 5. Render the sing-box config from the converted inbounds.
-	cfgContent, err := renderTakeoverConfig(f, inbounds, extra)
+	// 5. Render the sing-box config. AWG uses a dedicated renderer that
+	// preserves the imported server keypair + amnezia + peer list (the generic
+	// path pulls amnezia from a preset and hardcodes one peer, which would break
+	// existing AWG clients). Other types go through renderTakeoverConfig.
+	var cfgContent string
+	if det.Type == DetectedAWG {
+		imp, ierr := chain.ImportAWGConfigsViaClient(client, useSudo, nil)
+		if ierr != nil || imp == nil || imp.ServerConfig == nil {
+			res := &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "awg import failed: " + errString(ierr)}
+			return res, fmt.Errorf("takeover: awg import: %v", ierr)
+		}
+		cfgContent, err = renderAWGTakeoverConfig(imp.ServerConfig, imp.Peers)
+	} else {
+		cfgContent, err = renderTakeoverConfig(f, inbounds, extra)
+	}
 	if err != nil {
 		// Render failed — nothing pushed yet; old VPN untouched. Surface error.
 		return &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "render failed: " + err.Error()}, err
@@ -100,9 +113,12 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	// 6. Cutover: disable old VPN, then push the sing-box config.
 	res := &TakeoverResult{FromType: string(det.Type), OldService: det.ServiceName, OldConfigBackup: info.Takeover.OldConfigBackup, ConvertedInbounds: len(inbounds) + len(extra)}
 
-	// AWG kernel path: do NOT disable awg-quick (it owns the AWG obfuscation;
-	// sing-box runs as a balancer/TUN on top). Only disable for singbox/xray/mtproxy.
-	if det.Type != DetectedAWG && det.ServiceName != "" {
+	// Disable the old VPN service to free its port(s). For AWG this is now
+	// REQUIRED (the takeover renders a userspace wireguard endpoint that binds
+	// the same listen_port — leaving awg-quick@awg0 running would conflict).
+	// The old "kernel balancer on top of awg0" model does not apply to the
+	// userspace endpoint we push.
+	if det.ServiceName != "" {
 		if err := chain.DisableService(client, det.ServiceName, useSudo); err != nil {
 			// Couldn't disable old — abort before pushing (leave old running).
 			res.Status = "rolled-back"
@@ -141,11 +157,20 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	chain.WriteTakeoverAudit(store, host.ID, string(det.Type), "taken", res.ConvertedInbounds)
 	res.Status = "taken"
 	oldMsg := ""
-	if det.ServiceName != "" && det.Type != DetectedAWG {
+	if det.ServiceName != "" {
 		oldMsg = fmt.Sprintf(" Old VPN %s disabled (config backed up at %s).", det.ServiceName, info.Takeover.OldConfigBackup)
 	}
 	res.Message = fmt.Sprintf("Taken over from %s → sing-box. %d inbound(s) converted.%s", det.Type, res.ConvertedInbounds, oldMsg)
 	return res, nil
+}
+
+// errString returns the error's message, or "" for nil — used in AWG import
+// failure reporting where the error may be nil but the result still unusable.
+func errString(err error) string {
+	if err == nil {
+		return "no server config parsed"
+	}
+	return err.Error()
 }
 
 // renderTakeoverConfig produces the sing-box config JSON from the converted
@@ -210,12 +235,11 @@ func buildMinimalConfigWithExtra(extra []json.RawMessage) (string, error) {
 
 // rollbackToOldVPN re-enables + restarts the old VPN service and restores its
 // config from the backup. Returns an error if the old VPN could not be brought
-// back (the caller marks the result "failed-both").
+// back (the caller marks the result "failed-both"). For AWG this now re-enables
+// awg-quick@awg0 (the takeover disables it to free the port for the userspace
+// endpoint); the old "kernel balancer, nothing to roll back" model no longer
+// applies.
 func rollbackToOldVPN(ctx context.Context, client ports.SSHClient, det *Detection, state *model.TakeoverState, useSudo bool) error {
-	if det.Type == DetectedAWG {
-		// AWG kernel path never disabled awg-quick — nothing to roll back.
-		return nil
-	}
 	if det.ServiceName == "" {
 		return fmt.Errorf("no old service name to roll back to")
 	}
