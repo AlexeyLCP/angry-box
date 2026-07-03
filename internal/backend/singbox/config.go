@@ -79,7 +79,7 @@ func (b *Backend) renderStandaloneFromParams(params model.ConfigParams) (*model.
 		// CLI standalone AWG: single peer allowed_ips 0.0.0.0/0, no endpoint
 		// (it's a server-side endpoint). clientPub is unused server-side.
 		dp := chain.GetDefaultPreset()
-		amnezia := chain.BuildAWGAmnezia(dp.AWG, &dp)
+		amnezia := chain.BuildAWGAmnezia(dp.AWG, &dp, nil)
 		content, err := RenderAWGHop(AWGHopParams{
 			Tag:         "awg-in",
 			ListenPort:  port,
@@ -219,7 +219,7 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		Amnezia: chain.BuildAWGAmnezia(awg, preset),
+		Amnezia: chain.BuildAWGAmnezia(awg, preset, nil),
 	}
 
 	epJSON, _ := json.Marshal(endpoint)

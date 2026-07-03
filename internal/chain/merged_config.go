@@ -435,7 +435,7 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			// AWGAddress). Per-client routing keys on the peer's inner source
 			// IP (source_ip_cidr), not auth_user — see buildMergedRoute.
 			ep, _, err := buildAWGUserInboundMulti(userPort, inTag, &role.Preset,
-				c.AWGEntryServerPriv, users)
+				c.AWGEntryServerPriv, users, ChainAWGObfsMaterial(c))
 			if err == nil {
 				endpoints = append(endpoints, ep)
 			}
@@ -472,7 +472,7 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			if role.NodeIndex > 0 {
 				prev = &c.Nodes[role.NodeIndex-1]
 			}
-			endpoints = append(endpoints, buildAWGTransportInbound(role.Node, prev, tag, &role.Preset))
+			endpoints = append(endpoints, buildAWGTransportInbound(role.Node, prev, tag, &role.Preset, ChainAWGObfsMaterial(c)))
 		default: // Reality
 			inbounds = append(inbounds, buildTransportInbound(p, tag))
 		}
@@ -508,7 +508,7 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			// no wireguard outbound), so it goes into endpoints[], not
 			// outbounds[] — route rules still reference it by tag.
 			outTag = fmt.Sprintf("ch-%s-out-awg-%s", cn, safeSNILabel(next.ID))
-			outb, err = buildAWGTransportOutbound(role.Node, &next, extractHost(next.Addr), outTag, &role.Preset)
+			outb, err = buildAWGTransportOutbound(role.Node, &next, extractHost(next.Addr), outTag, &role.Preset, ChainAWGObfsMaterial(c))
 			isAWGOut = true
 		default: // Reality
 			outTag = fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))

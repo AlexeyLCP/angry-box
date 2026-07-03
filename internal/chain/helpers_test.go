@@ -417,7 +417,7 @@ func TestBuildAmneziaSection(t *testing.T) {
 		CPSLevel:   2,
 		AWGMimicry: "quic",
 	}
-	section := BuildAmneziaSection(awg, &preset)
+	section := BuildAmneziaSection(awg, &preset, nil)
 	if section == nil {
 		t.Fatal("section is nil")
 	}
@@ -433,7 +433,7 @@ func TestBuildAmneziaSection(t *testing.T) {
 func TestBuildAmneziaSection_NoCPS(t *testing.T) {
 	awg := &AWGPreset{JC: 4, JMIN: 40, JMAX: 70}
 	var preset ConnectionPreset // no CPS
-	section := BuildAmneziaSection(awg, &preset)
+	section := BuildAmneziaSection(awg, &preset, nil)
 	if section.I1 != "" {
 		t.Error("I1 should be empty for CPS level 0")
 	}
@@ -441,7 +441,7 @@ func TestBuildAmneziaSection_NoCPS(t *testing.T) {
 
 func TestBuildAmneziaSection_NilPreset(t *testing.T) {
 	awg := &AWGPreset{JC: 4, JMIN: 40, JMAX: 70}
-	section := BuildAmneziaSection(awg, nil)
+	section := BuildAmneziaSection(awg, nil, nil)
 	if section == nil {
 		t.Fatal("section is nil")
 	}

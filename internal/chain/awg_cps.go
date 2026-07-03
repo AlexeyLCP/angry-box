@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
@@ -283,7 +284,11 @@ func BuildAWGClientMaterialFromPreset(p ConnectionPreset, serverHost string) AWG
 // BuildAmneziaSection is the exported version of the amnezia map builder used by
 // both the chain applier and the standalone sing-box config generator.
 // It is the single place that applies CPS/I1-I5 for the 2026 stealth presets.
-func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOptions {
+// material, when non-nil, supplies the persisted I1-I5 so server and client
+// render identical CPS packets (the handshake requires this). nil = generate
+// fresh I1-I5 on the fly (legacy/standalone — mismatched across peers, do not
+// use for chain paths).
+func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset, material *AWGObfsMaterial) *config.AmneziaOptions {
 	level := 0
 	mimicry := "none"
 
@@ -315,7 +320,14 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) *config.Amnez
 		section.H3 = fmt.Sprintf("%d-%d", awg.H3, awg.H3)
 		section.H4 = fmt.Sprintf("%d-%d", awg.H4, awg.H4)
 
-		mat := GenerateAWGObfsMaterial(level, mimicry)
+		mat := AWGObfsMaterial{}
+		if material != nil {
+			// Use the persisted material so server and client render identical
+			// I1-I5. The CPS handshake breaks if the two sides diverge.
+			mat = *material
+		} else {
+			mat = GenerateAWGObfsMaterial(level, mimicry)
+		}
 		// I1-I5 use the AWG CPS string format "<b 0x{hex}>" (not base64) — this
 		// is what sing-box-extended's wireguard-go and kernel awg-quick both
 		// expect. CPSMaterialString also pads odd-length hex to even, fixing the
@@ -328,6 +340,106 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset) *config.Amnez
 		section.I5 = strs[4]
 	}
 	return section
+}
+
+// EnsureChainAWGMaterial populates c.AWGCPSI1..I5 (and level/mimicry) once,
+// deriving the level/mimicry from the chain's effective preset and generating
+// the I1-I5 bytes via GenerateAWGObfsMaterial. It is idempotent — existing
+// material is preserved (stable across redeploys so client configs don't
+// break). Call after the chain's preset is resolved and before any server
+// endpoint / client .conf is rendered. No-op when the preset has no CPS.
+func EnsureChainAWGMaterial(c *model.Chain, preset ConnectionPreset) {
+	level := 0
+	mimicry := "none"
+	if preset.CPSLevel > 0 {
+		level = preset.CPSLevel
+		mimicry = preset.AWGMimicry
+	} else if preset.AWG != nil && preset.AWG.CPSLevel > 0 {
+		level = preset.AWG.CPSLevel
+		mimicry = preset.AWG.Mimicry
+	}
+	if level <= 0 {
+		return
+	}
+	// Already persisted (and the level/mimicry still match) -> keep it.
+	if c.AWGCPSI1 != "" && c.AWGCPSLevel == level && c.AWGCPSMimicry == mimicry {
+		return
+	}
+	mat := GenerateAWGObfsMaterial(level, mimicry)
+	strs := CPSMaterialStrings(mat)
+	c.AWGCPSLevel = level
+	c.AWGCPSMimicry = mimicry
+	c.AWGCPSI1 = strs[0]
+	c.AWGCPSI2 = strs[1]
+	c.AWGCPSI3 = strs[2]
+	c.AWGCPSI4 = strs[3]
+	c.AWGCPSI5 = strs[4]
+}
+
+// ChainAWGObfsMaterial reconstructs the persisted AWGObfsMaterial from a chain.
+// Returns nil when the chain has no CPS material (level 0 / not populated), so
+// callers can pass nil to BuildAWGAmnezia and get the no-CPS path.
+func ChainAWGObfsMaterial(c *model.Chain) *AWGObfsMaterial {
+	if c == nil || c.AWGCPSLevel <= 0 || c.AWGCPSI1 == "" {
+		return nil
+	}
+	return &AWGObfsMaterial{
+		CPSLevel:       c.AWGCPSLevel,
+		MimicryProfile: c.AWGCPSMimicry,
+		I1:             cpsStringToBytes(c.AWGCPSI1),
+		I2:             cpsStringToBytes(c.AWGCPSI2),
+		I3:             cpsStringToBytes(c.AWGCPSI3),
+		I4:             cpsStringToBytes(c.AWGCPSI4),
+		I5:             cpsStringToBytes(c.AWGCPSI5),
+	}
+}
+
+// cpsStringToBytes decodes a stored CPS string ("<b 0x{hex}>") back to its raw
+// packet bytes, so ChainAWGObfsMaterial can feed BuildAmneziaSection which
+// re-encodes via CPSMaterialStrings. Round-trips cleanly for the "<b 0x...>"
+// form produced by CPSMaterialString.
+func cpsStringToBytes(s string) []byte {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "<b ") || !strings.HasSuffix(s, ">") {
+		return nil
+	}
+	hexBody := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(s, "<b "), ">"))
+	hexBody = strings.TrimPrefix(hexBody, "0x")
+	b, err := hexDecodeEven(hexBody)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// hexDecodeEven decodes a hex string, left-padding to an even length first (the
+// CPS format pads odd-length hex, so this is defensive).
+func hexDecodeEven(h string) ([]byte, error) {
+	if len(h)%2 == 1 {
+		h = "0" + h
+	}
+	out := make([]byte, len(h)/2)
+	for i := 0; i < len(out); i++ {
+		hi, ok1 := hexNibble(h[i*2])
+		lo, ok2 := hexNibble(h[i*2+1])
+		if !ok1 || !ok2 {
+			return nil, fmt.Errorf("bad hex byte at %d", i*2)
+		}
+		out[i] = hi<<4 | lo
+	}
+	return out, nil
+}
+
+func hexNibble(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
 }
 
 // --- helpers ---

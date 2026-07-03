@@ -312,14 +312,21 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 	if host == "" {
 		host = strings.Split(entry.Addr, ":")[0]
 	}
-	return renderAWGQuickConf(host, port, clientPriv, serverPub, address), nil
+	// Use the chain's effective preset + persisted CPS material so the client
+	// .conf carries the SAME amnezia block (Jc/S1/S2/H1-H4/I1-I5) as the server
+	// endpoint — a mismatch breaks the AWG handshake. Previously this hardcoded
+	// GetDefaultPreset(), which diverged whenever the chain used a non-default
+	// ObfuscationProfile.
+	preset := resolveChainPreset(c)
+	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, ChainAWGObfsMaterial(c)), nil
 }
 
-// renderAWGQuickConf builds the awg-quick .conf text with Amnezia obfuscation
-// params from the default preset. clientPriv/address empty -> legacy fallback
-// (placeholder key + 10.8.0.2/24); the caller should have real per-user creds
-// for production, but the .conf is still structurally valid.
-func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string) string {
+// renderAWGQuickConf builds the awg-quick .conf text. preset + material supply
+// the Amnezia obfuscation params — they MUST match the server endpoint's
+// amnezia block or the handshake fails (chain callers pass the chain's preset
+// + persisted AWGObfsMaterial). clientPriv/address empty -> legacy fallback
+// (placeholder key + 10.8.0.2/24); the .conf is still structurally valid.
+func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string, preset *ConnectionPreset, material *AWGObfsMaterial) string {
 	if address == "" {
 		address = "10.8.0.2/24"
 	}
@@ -339,10 +346,10 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
 	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
 	b.WriteString("PersistentKeepalive = 25\n")
-	// Amnezia params from the default preset's AWG section (must match the
-	// server endpoint's amnezia block or the handshake fails).
-	if preset := GetDefaultPreset(); preset.AWG != nil {
-		amn := BuildAWGAmnezia(preset.AWG, &preset)
+	// Amnezia params from the chain's preset + persisted CPS material (must
+	// match the server endpoint's amnezia block or the handshake fails).
+	if preset != nil && preset.AWG != nil {
+		amn := BuildAWGAmnezia(preset.AWG, preset, material)
 		if amn != nil {
 			b.WriteString("\n")
 			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))

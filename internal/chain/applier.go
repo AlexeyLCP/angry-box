@@ -170,6 +170,12 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		preset = GetEffectivePreset(chain)
 	}
 
+	// Persist the AWG CPS obfuscation material (I1-I5) once on the chain so the
+	// server endpoint and every client .conf render identical I1-I5. Without
+	// this the CPS handshake breaks (each render generates fresh random I1-I5).
+	// Idempotent: existing material is preserved across redeploys.
+	EnsureChainAWGMaterial(chain, preset)
+
 	profileName := GetDefaultPresetName()
 	if chain.ObfuscationProfile != "" {
 		if _, ok := GetPreset(chain.ObfuscationProfile); ok {
@@ -551,7 +557,7 @@ func buildTransportOutbound(next *hopParams, serverAddr, tag string) (json.RawMe
 // route rules can match traffic arriving from it by source_ip_cidr). The tag
 // is the chain's transport-in tag so generic route rules steer decrypted
 // traffic down the chain. preset supplies the Amnezia obfuscation params.
-func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag string, preset *ConnectionPreset) json.RawMessage {
+func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag string, preset *ConnectionPreset, material *AWGObfsMaterial) json.RawMessage {
 	awg := preset.AWG
 	if awg == nil {
 		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
@@ -579,7 +585,7 @@ func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag 
 		PrivateKey: node.TransitAWGServerPriv,
 		ListenPort: port,
 		Peers:      []config.WireGuardPeer{peer},
-		Amnezia:    BuildAWGAmnezia(awg, preset),
+		Amnezia:    BuildAWGAmnezia(awg, preset, material),
 	}
 	data, _ := json.Marshal(ep)
 	return data
@@ -597,7 +603,7 @@ func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag 
 // The tag is the chain's inter-node outbound tag so route rules steer traffic
 // into this endpoint. preset supplies the Amnezia params (must match the
 // server endpoint's amnezia block or the handshake fails).
-func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag string, preset *ConnectionPreset) (json.RawMessage, error) {
+func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag string, preset *ConnectionPreset, material *AWGObfsMaterial) (json.RawMessage, error) {
 	awg := preset.AWG
 	if awg == nil {
 		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
@@ -626,7 +632,7 @@ func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag 
 				AllowedIPs:                 []string{"0.0.0.0/0", "::/0"},
 			},
 		},
-		Amnezia: BuildAWGAmnezia(awg, preset),
+		Amnezia: BuildAWGAmnezia(awg, preset, material),
 	}
 	data, _ := json.Marshal(ep)
 	return data, nil
@@ -643,7 +649,11 @@ func buildDirectOutbound(tag string) json.RawMessage {
 
 // BuildAWGAmnezia returns amnezia options only when CPS level > 0, otherwise nil.
 // Official sing-box 1.13+ does not support the "amnezia" field — only sing-box-extended does.
-func BuildAWGAmnezia(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOptions {
+// material, when non-nil, supplies the persisted I1-I5 so the server endpoint and
+// every client .conf render the SAME I1-I5 (without it, each call generates fresh
+// random I1-I5 and the CPS handshake breaks server↔client). Chain paths pass the
+// chain's persisted material; standalone/legacy paths pass nil (on-the-fly gen).
+func BuildAWGAmnezia(awg *AWGPreset, preset *ConnectionPreset, material *AWGObfsMaterial) *config.AmneziaOptions {
 	level := 0
 	if preset != nil && preset.CPSLevel > 0 {
 		level = preset.CPSLevel
@@ -653,7 +663,7 @@ func BuildAWGAmnezia(awg *AWGPreset, preset *ConnectionPreset) *config.AmneziaOp
 	if level <= 0 {
 		return nil
 	}
-	return BuildAmneziaSection(awg, preset)
+	return BuildAmneziaSection(awg, preset, material)
 }
 
 // safeShortID returns at most the first 4 chars of a short ID, avoiding slice bounds panic.
@@ -1230,7 +1240,7 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		Amnezia: BuildAWGAmnezia(awg, preset),
+		Amnezia: BuildAWGAmnezia(awg, preset, nil), // standalone single-peer: no persisted material
 	}
 
 	epJSON, _ := json.Marshal(ep)
@@ -1249,7 +1259,7 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 //
 // Returns the endpoint JSON and the server's public key (derived from
 // serverPrivKeyB64, or generated when empty — caller persists the latter).
-func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User) ([]byte, string, error) {
+func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User, material *AWGObfsMaterial) ([]byte, string, error) {
 	awg := preset.AWG
 	if awg == nil {
 		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
@@ -1300,7 +1310,7 @@ func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, se
 		PrivateKey: privKeyB64,
 		ListenPort: port,
 		Peers:      peers,
-		Amnezia:    BuildAWGAmnezia(awg, preset),
+		Amnezia:    BuildAWGAmnezia(awg, preset, material),
 	}
 
 	epJSON, _ := json.Marshal(ep)

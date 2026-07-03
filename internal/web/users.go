@@ -391,7 +391,7 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 	b.WriteString("PersistentKeepalive = 25\n")
 	// Amnezia params from the active preset's AWG section.
 	if preset := chain.GetDefaultPreset(); preset.AWG != nil {
-		amn := chain.BuildAWGAmnezia(preset.AWG, &preset)
+		amn := chain.BuildAWGAmnezia(preset.AWG, &preset, nil)
 		if amn != nil {
 			b.WriteString("\n")
 			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))

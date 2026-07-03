@@ -394,7 +394,7 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	}
 
 	// Inbound on middle, peer = entry's client.
-	inbJSON := buildAWGTransportInbound(&middle, &entry, "ch-t-in", &preset)
+	inbJSON := buildAWGTransportInbound(&middle, &entry, "ch-t-in", &preset, nil)
 	var ep config.WireGuardEndpoint
 	if err := json.Unmarshal(inbJSON, &ep); err != nil {
 		t.Fatalf("unmarshal inbound: %v\n%s", err, inbJSON)
@@ -418,7 +418,7 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	// Outbound (client endpoint) on entry, dialing middle. sing-box-extended
 	// 1.13 has no wireguard outbound, so the client side is a WireGuard endpoint
 	// with a peer that dials the next node.
-	outJSON, err := buildAWGTransportOutbound(&entry, &middle, "middle.example.test", "ch-t-out", &preset)
+	outJSON, err := buildAWGTransportOutbound(&entry, &middle, "middle.example.test", "ch-t-out", &preset, nil)
 	if err != nil {
 		t.Fatalf("buildAWGTransportOutbound: %v", err)
 	}
@@ -483,4 +483,114 @@ func TestAWGTransport_OutboundTagMatchesRoute(t *testing.T) {
 	if !strings.Contains(string(cfgJSON), fmt.Sprintf(`"tag": %q`, wantTag)) {
 		t.Errorf("config missing outbound tag %q (route rules would miss it)\n%s", wantTag, cfgJSON)
 	}
+}
+
+// TestAWGCPSMaterial_PersistedAndConsistent verifies the P0 #1 fix: the chain's
+// AWG CPS material (I1-I5) is generated once and the server endpoint + client
+// .conf render the SAME I1-I5. Before the fix each call generated fresh random
+// I1-I5 and the CPS handshake broke server↔client.
+func TestAWGCPSMaterial_PersistedAndConsistent(t *testing.T) {
+	c := &model.Chain{
+		Name:         "awg-cps",
+		UserProtocol: model.UserProtocolAWG,
+		Transport:    model.TransportXHTTP,
+		Nodes:        []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+	}
+	preset := resolveChainPreset(c)
+	EnsureChainAWGMaterial(c, preset)
+	if c.AWGCPSLevel <= 0 {
+		t.Skipf("preset %q has no CPS — material not populated", preset.Name)
+	}
+	if c.AWGCPSI1 == "" {
+		t.Fatal("EnsureChainAWGMaterial did not populate I1")
+	}
+	// Idempotent: a second call must NOT overwrite (stable across redeploys).
+	i1, i2, i3, i4, i5 := c.AWGCPSI1, c.AWGCPSI2, c.AWGCPSI3, c.AWGCPSI4, c.AWGCPSI5
+	EnsureChainAWGMaterial(c, preset)
+	if c.AWGCPSI1 != i1 || c.AWGCPSI2 != i2 || c.AWGCPSI3 != i3 || c.AWGCPSI4 != i4 || c.AWGCPSI5 != i5 {
+		t.Fatal("EnsureChainAWGMaterial overwrote existing I1-I5 (must be idempotent)")
+	}
+
+	// Server endpoint amnezia uses the persisted material.
+	mat := ChainAWGObfsMaterial(c)
+	serverAmn := BuildAWGAmnezia(preset.AWG, &preset, mat)
+	if serverAmn == nil {
+		t.Fatal("server amnezia nil despite CPS level > 0")
+	}
+	// Client .conf amnezia uses the SAME material.
+	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{
+		Name: "alice", Active: true, AWGPrivateKey: awgServerPriv, AWGAddress: "10.8.0.2/32",
+	}})
+	if err != nil {
+		t.Fatalf("RenderClientAWGConf: %v", err)
+	}
+	// The I1-I5 strings must appear identically in both the server JSON and
+	// the client .conf. Compare the I1 string.
+	if !strings.Contains(conf, "I1 = ") {
+		t.Skip("client .conf has no I1 line (CPS off for this preset)")
+	}
+	// Extract I1 value from the client .conf.
+	clientI1 := extractConfField(conf, "I1 = ")
+	if clientI1 == "" {
+		t.Fatal("could not extract I1 from client .conf")
+	}
+	if serverAmn.I1 != clientI1 {
+		t.Errorf("I1 mismatch: server=%q client=%q (handshake would break)", serverAmn.I1, clientI1)
+	}
+}
+
+// TestAWGClientConf_UsesChainPreset verifies the P0 #2 fix: the client .conf
+// uses the chain's ObfuscationProfile preset, not the global default. Before the
+// fix RenderClientAWGConf hardcoded GetDefaultPreset() and diverged whenever a
+// chain used a non-default profile.
+func TestAWGClientConf_UsesChainPreset(t *testing.T) {
+	defaultPreset := GetDefaultPreset()
+	// Find a preset whose AWG S1 differs from the default, to detect divergence.
+	var altName string
+	var altPreset ConnectionPreset
+	for _, name := range ListPresets() {
+		p, _ := GetPreset(name)
+		if p.AWG != nil && defaultPreset.AWG != nil && p.AWG.S1 != defaultPreset.AWG.S1 {
+			altName = name
+			altPreset = p
+			break
+		}
+	}
+	if altName == "" {
+		t.Skip("no preset with a distinct AWG S1 found to test profile divergence")
+	}
+	c := &model.Chain{
+		Name:               "awg-profile",
+		UserProtocol:       model.UserProtocolAWG,
+		Transport:          model.TransportXHTTP,
+		ObfuscationProfile: altName,
+		Nodes:              []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+	}
+	EnsureChainAWGMaterial(c, altPreset)
+	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{
+		Name: "alice", Active: true, AWGPrivateKey: awgServerPriv, AWGAddress: "10.8.0.2/32",
+	}})
+	if err != nil {
+		t.Fatalf("RenderClientAWGConf: %v", err)
+	}
+	// The client .conf must carry the chain preset's S1, not the default's.
+	wantS1 := fmt.Sprintf("S1 = %d", altPreset.AWG.S1)
+	if !strings.Contains(conf, wantS1) {
+		t.Errorf("client .conf missing chain preset S1 %q (uses default %d instead?):\n%s",
+			wantS1, defaultPreset.AWG.S1, conf)
+	}
+	if altPreset.AWG.S1 != defaultPreset.AWG.S1 && strings.Contains(conf, fmt.Sprintf("S1 = %d", defaultPreset.AWG.S1)) {
+		t.Errorf("client .conf uses the DEFAULT preset S1 (%d), not the chain preset (%d)",
+			defaultPreset.AWG.S1, altPreset.AWG.S1)
+	}
+}
+
+// extractConfField pulls the value of "Field = value\n" from an awg-quick .conf.
+func extractConfField(conf, prefix string) string {
+	for _, line := range strings.Split(conf, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
 }

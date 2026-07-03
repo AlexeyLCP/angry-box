@@ -243,7 +243,7 @@ func TestBuildAmneziaSection_WithCPSInPreset(t *testing.T) {
 	}
 	// CPS from top-level preset, not awg sub-field
 	preset := ConnectionPreset{CPSLevel: 2, AWGMimicry: "quic"}
-	section := BuildAmneziaSection(awg, &preset)
+	section := BuildAmneziaSection(awg, &preset, nil)
 	if section.I1 == "" {
 		t.Error("I1 should be set when CPS is in preset")
 	}
@@ -257,7 +257,7 @@ func TestBuildAmneziaSection_WithCPSInAWG(t *testing.T) {
 	}
 	// CPS from awg sub-field, no top-level CPS
 	preset := ConnectionPreset{}
-	section := BuildAmneziaSection(awg, &preset)
+	section := BuildAmneziaSection(awg, &preset, nil)
 	if section.I1 == "" {
 		t.Error("I1 should be set when CPS is in AWG preset")
 	}

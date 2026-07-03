@@ -619,7 +619,7 @@ func TestBuildAWGUserInboundMulti_Peers(t *testing.T) {
 		{Name: "dave", Active: true, AWGPublicKey: "", AWGAddress: "10.8.0.5/32"},            // no pub -> skip
 		{Name: "eve", Active: true, AWGPublicKey: "pub-eve", AWGAddress: ""},                  // no addr -> skip
 	}
-	epJSON, _, err := buildAWGUserInboundMulti(8443, "ch-x-user-in", &preset, "", users)
+	epJSON, _, err := buildAWGUserInboundMulti(8443, "ch-x-user-in", &preset, "", users, nil)
 	if err != nil {
 		t.Fatalf("buildAWGUserInboundMulti: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestBuildAWGUserInboundMulti_Peers(t *testing.T) {
 func TestBuildAWGUserInboundMulti_NoQualifiedUsers_Placeholder(t *testing.T) {
 	preset := GetDefaultPreset()
 	users := []model.User{{Name: "alice", Active: true}} // no AWG creds
-	epJSON, _, err := buildAWGUserInboundMulti(8443, "ch-x-user-in", &preset, "", users)
+	epJSON, _, err := buildAWGUserInboundMulti(8443, "ch-x-user-in", &preset, "", users, nil)
 	if err != nil {
 		t.Fatalf("buildAWGUserInboundMulti: %v", err)
 	}

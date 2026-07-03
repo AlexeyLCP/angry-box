@@ -69,6 +69,20 @@ type Chain struct {
 	AWGEntryServerPub  string `json:"awg_entry_server_pub,omitempty"`
 	AWGEntryClientPub  string `json:"awg_entry_client_pub,omitempty"`
 
+	// AWG CPS obfuscation material (I1-I5), generated ONCE and persisted so the
+	// server endpoint and every client .conf render the SAME I1-I5. Without this
+	// the CPS handshake breaks — the server and client would each get random,
+	// mismatched I1-I5 (the AWGObfsMaterial type existed but was never wired).
+	// CPSLevel/Mimicry are derived from the chain's preset; the I1-I5 strings are
+	// the "<b 0x...>" form sing-box-extended / awg-quick expect. Empty = no CPS.
+	AWGCPSLevel   int    `json:"awg_cps_level,omitempty"`
+	AWGCPSMimicry string `json:"awg_cps_mimicry,omitempty"`
+	AWGCPSI1      string `json:"awg_cps_i1,omitempty"`
+	AWGCPSI2      string `json:"awg_cps_i2,omitempty"`
+	AWGCPSI3      string `json:"awg_cps_i3,omitempty"`
+	AWGCPSI4      string `json:"awg_cps_i4,omitempty"`
+	AWGCPSI5      string `json:"awg_cps_i5,omitempty"`
+
 	TUICEntryUserUUID     string `json:"tuic_entry_user_uuid,omitempty"`
 	TUICEntryUserPassword string `json:"tuic_entry_user_password,omitempty"`
 }
