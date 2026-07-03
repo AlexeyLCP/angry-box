@@ -83,6 +83,17 @@ type Chain struct {
 	AWGCPSI4      string `json:"awg_cps_i4,omitempty"`
 	AWGCPSI5      string `json:"awg_cps_i5,omitempty"`
 
+	// AWG H1-H4 obfuscation header-junk ranges, generated ONCE (proper quadrant
+	// ranges per the AmneziaWG manual: 4 non-overlapping ranges in [5, 2^31-1],
+	// width >= 1000) and persisted so server and client render identical H
+	// ranges. Without this the preset's single-int H1-H4 get emitted as
+	// degenerate zero-width "N-N" ranges — header-junk randomization is off,
+	// a stealth regression. Empty = fall back to the preset's degenerate ranges.
+	AWGH1 string `json:"awg_h1,omitempty"`
+	AWGH2 string `json:"awg_h2,omitempty"`
+	AWGH3 string `json:"awg_h3,omitempty"`
+	AWGH4 string `json:"awg_h4,omitempty"`
+
 	TUICEntryUserUUID     string `json:"tuic_entry_user_uuid,omitempty"`
 	TUICEntryUserPassword string `json:"tuic_entry_user_password,omitempty"`
 }

@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -652,4 +653,79 @@ func TestAWGAmnezia_S3S4ITime(t *testing.T) {
 	if got := extractConfField(conf, "Itime = "); got != fmt.Sprintf("%d", p.AWG.ITime) {
 		t.Errorf("client .conf Itime=%q, want %d", got, p.AWG.ITime)
 	}
+}
+
+// TestAWGAmnezia_H1H4_QuadrantRanges verifies H1-H4 are proper quadrant ranges
+// (width >= 1000, "lo-hi" with lo != hi), NOT degenerate zero-width "N-N", and
+// that server and client .conf carry the SAME persisted H ranges. Before the
+// fix the preset's single-int H1-H4 were emitted as "1984-1984" — header-junk
+// randomization was effectively off (a stealth regression).
+func TestAWGAmnezia_H1H4_QuadrantRanges(t *testing.T) {
+	preset := GetDefaultPreset()
+	c := &model.Chain{
+		Name:         "awg-h",
+		UserProtocol: model.UserProtocolAWG,
+		Transport:    model.TransportXHTTP,
+		Nodes:        []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+	}
+	EnsureChainAWGMaterial(c, preset)
+	if c.AWGCPSLevel <= 0 {
+		t.Skip("default preset has no CPS — H1-H4 not generated")
+	}
+	mat := ChainAWGObfsMaterial(c)
+	if mat == nil || mat.H1 == "" {
+		t.Fatal("chain has no persisted H1-H4 material")
+	}
+	// Each H must be a "lo-hi" range with lo < hi (width >= 1000 per GenAWGParams).
+	for _, h := range []struct{ name, val string }{
+		{"H1", mat.H1}, {"H2", mat.H2}, {"H3", mat.H3}, {"H4", mat.H4},
+	} {
+		lo, hi, ok := parseRange(h.val)
+		if !ok {
+			t.Errorf("%s = %q is not a 'lo-hi' range", h.name, h.val)
+			continue
+		}
+		if lo >= hi {
+			t.Errorf("%s = %q is degenerate (lo>=hi), want a real range", h.name, h.val)
+		}
+		if hi-lo < 1000 {
+			t.Errorf("%s = %q width=%d < 1000 (manual requires >= 1000)", h.name, h.val, hi-lo)
+		}
+	}
+
+	// Server endpoint amnezia uses the persisted material; client .conf must
+	// carry the same H1-H4.
+	amn := BuildAWGAmnezia(preset.AWG, &preset, mat)
+	if amn.H1 != mat.H1 || amn.H2 != mat.H2 || amn.H3 != mat.H3 || amn.H4 != mat.H4 {
+		t.Errorf("server H1-H4 = %q/%q/%q/%q, want material %q/%q/%q/%q",
+			amn.H1, amn.H2, amn.H3, amn.H4, mat.H1, mat.H2, mat.H3, mat.H4)
+	}
+	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{
+		Name: "alice", Active: true, AWGPrivateKey: awgServerPriv, AWGAddress: "10.8.0.2/32",
+	}})
+	if err != nil {
+		t.Fatalf("RenderClientAWGConf: %v", err)
+	}
+	for _, h := range []struct{ name, val string }{
+		{"H1", mat.H1}, {"H2", mat.H2}, {"H3", mat.H3}, {"H4", mat.H4},
+	} {
+		want := fmt.Sprintf("%s = %s", h.name, h.val)
+		if !strings.Contains(conf, want) {
+			t.Errorf("client .conf missing %q", want)
+		}
+	}
+}
+
+// parseRange parses a "lo-hi" string into two ints.
+func parseRange(s string) (int, int, bool) {
+	parts := strings.SplitN(s, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	lo, err1 := strconv.Atoi(parts[0])
+	hi, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return lo, hi, true
 }

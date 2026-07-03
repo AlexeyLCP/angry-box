@@ -20,16 +20,22 @@ import (
 )
 
 // AWGObfsMaterial holds the stable obfuscation material for one AWG chain entry.
-// These values (especially I1-I5 + server keypair) are generated ONCE on chain
-// creation and never rotated on re-apply (critical for client config stability).
+// These values (especially I1-I5 + H1-H4 + server keypair) are generated ONCE
+// on chain creation and never rotated on re-apply (critical for client config
+// stability — server and client must render identical obfuscation params).
 type AWGObfsMaterial struct {
-	I1              []byte
-	I2              []byte
-	I3              []byte
-	I4              []byte
-	I5              []byte
-	MimicryProfile  string // "quic" | "sip" | "dns" | "none"
-	CPSLevel        int
+	I1 []byte
+	I2 []byte
+	I3 []byte
+	I4 []byte
+	I5 []byte
+	// H1-H4: header-junk "lo-hi" ranges (proper quadrant ranges, not degenerate).
+	H1             string
+	H2             string
+	H3             string
+	H4             string
+	MimicryProfile string // "quic" | "sip" | "dns" | "none"
+	CPSLevel       int
 }
 
 // GenerateAWGObfsMaterial is the main entry point used by applier and config command.
@@ -44,6 +50,15 @@ func GenerateAWGObfsMaterial(level int, mimicry string) AWGObfsMaterial {
 	if level <= 0 || mimicry == "none" {
 		return m
 	}
+
+	// H1-H4: proper quadrant ranges per the AmneziaWG manual (4 non-overlapping
+	// ranges in [5, 2^31-1], width >= 1000). Profile scales with CPS level.
+	profile := AWGProfileStandard
+	if level >= 3 {
+		profile = AWGProfilePro
+	}
+	params := GenAWGParams(profile)
+	m.H1, m.H2, m.H3, m.H4 = params.H1, params.H2, params.H3, params.H4
 
 	switch mimicry {
 	case "quic":
@@ -313,14 +328,20 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset, material *AWG
 		section.S2 = awg.S2
 		section.S3 = awg.S3
 		section.S4 = awg.S4
-		// AmneziaOptions.H1-H4 are "lo-hi" range strings (matching
-		// awg_presets.to_singbox_amnezia). The legacy AWGPreset stores single
-		// ints, so emit them as a degenerate "lo-hi" range. Block F (awg presets
-		// parity) replaces this with proper quadrant ranges.
-		section.H1 = fmt.Sprintf("%d-%d", awg.H1, awg.H1)
-		section.H2 = fmt.Sprintf("%d-%d", awg.H2, awg.H2)
-		section.H3 = fmt.Sprintf("%d-%d", awg.H3, awg.H3)
-		section.H4 = fmt.Sprintf("%d-%d", awg.H4, awg.H4)
+		// H1-H4: prefer the material's proper quadrant ranges (persisted on the
+		// chain, identical server↔client); fall back to the preset's degenerate
+		// "lo-hi" range when no material is supplied (standalone/legacy).
+		if material != nil && material.H1 != "" {
+			section.H1 = material.H1
+			section.H2 = material.H2
+			section.H3 = material.H3
+			section.H4 = material.H4
+		} else {
+			section.H1 = fmt.Sprintf("%d-%d", awg.H1, awg.H1)
+			section.H2 = fmt.Sprintf("%d-%d", awg.H2, awg.H2)
+			section.H3 = fmt.Sprintf("%d-%d", awg.H3, awg.H3)
+			section.H4 = fmt.Sprintf("%d-%d", awg.H4, awg.H4)
+		}
 		// ITime: concealment-packet lifetime. 0 = unset (legacy/older presets);
 		// copy through so server and client agree when the preset specifies it.
 		section.ITime = awg.ITime
@@ -379,6 +400,12 @@ func EnsureChainAWGMaterial(c *model.Chain, preset ConnectionPreset) {
 	c.AWGCPSI3 = strs[2]
 	c.AWGCPSI4 = strs[3]
 	c.AWGCPSI5 = strs[4]
+	// H1-H4 quadrant ranges (proper, non-degenerate) — persisted so server and
+	// client render identical header-junk ranges.
+	c.AWGH1 = mat.H1
+	c.AWGH2 = mat.H2
+	c.AWGH3 = mat.H3
+	c.AWGH4 = mat.H4
 }
 
 // ChainAWGObfsMaterial reconstructs the persisted AWGObfsMaterial from a chain.
@@ -396,6 +423,10 @@ func ChainAWGObfsMaterial(c *model.Chain) *AWGObfsMaterial {
 		I3:             cpsStringToBytes(c.AWGCPSI3),
 		I4:             cpsStringToBytes(c.AWGCPSI4),
 		I5:             cpsStringToBytes(c.AWGCPSI5),
+		H1:             c.AWGH1,
+		H2:             c.AWGH2,
+		H3:             c.AWGH3,
+		H4:             c.AWGH4,
 	}
 }
 
