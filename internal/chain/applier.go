@@ -272,6 +272,15 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			if i < n-1 && node.TransitAWGAddress == "" {
 				node.TransitAWGAddress = allocateAWGTransitIP(transitAddresses(chain))
 			}
+			// Fixed source port for the AWG transport client endpoint. Without
+			// it sing-box binds a random ephemeral port, which breaks on NAT'd
+			// VPSes (GCloud): handshake responses map to a port that's gone after
+			// a re-handshake. 51820 + nodeIndex + 1 keeps it out of the user-entry
+			// range (user-entry listens on UserEntryPort, default 51820) and is
+			// deterministic per node.
+			if i < n-1 && node.TransitAWGClientPort == 0 {
+				node.TransitAWGClientPort = 51820 + i + 1
+			}
 		}
 	}
 
@@ -575,6 +584,19 @@ func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag 
 		if prev.TransitAWGAddress != "" {
 			peer.AllowedIPs = []string{prev.TransitAWGAddress}
 		}
+		// Explicit peer endpoint (prev's public IP + AWG client port). WireGuard
+		// server peers normally learn the endpoint from incoming packets, but
+		// sing-box-extended's userspace endpoint does not populate it for
+		// amnezia-obfuscated handshake initiations reliably — so the server
+		// never sends a response (the handshake initiation is accepted but the
+		// response has nowhere to go). Setting the endpoint explicitly makes the
+		// response reach the previous node. prev.Addr is the SSH addr (IP:22);
+		// strip the port to get the bare IP.
+		peer.Address = extractHost(prev.Addr)
+		peer.Port = prev.TransitAWGClientPort
+		if peer.Port == 0 {
+			peer.Port = 51821 // deterministic fallback (matches ApplyChain's 51820+i+1 for node index 0)
+		}
 	}
 	ep := config.WireGuardEndpoint{
 		Type:       "wireguard",
@@ -623,6 +645,7 @@ func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag 
 		MTU:        1420,
 		Address:    []string{localAddr},
 		PrivateKey: thisNode.TransitAWGClientPriv,
+		ListenPort: thisNode.TransitAWGClientPort, // fixed source port — NAT'd VPSes need a stable mapping or handshake responses never return (the peer replies to a port that's gone after a re-handshake retry)
 		Peers: []config.WireGuardPeer{
 			{
 				PublicKey:                  next.TransitAWGServerPub,

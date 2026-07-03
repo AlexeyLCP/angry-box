@@ -45,6 +45,12 @@ type ChainNode struct {
 	TransitAWGClientPriv string `json:"transit_awg_client_priv,omitempty"` // this node's WG client priv (outbound to next hop)
 	TransitAWGClientPub  string `json:"transit_awg_client_pub,omitempty"`  // derived/persisted client pub
 	TransitAWGAddress    string `json:"transit_awg_address,omitempty"`     // this node's client inner tunnel IP, 10.9.0.X/32
+	// TransitAWGClientPort is the FIXED source port this node's AWG transport
+	// CLIENT endpoint binds. Without it sing-box picks a random ephemeral port,
+	// which breaks on NAT'd VPSes (GCloud): the peer's handshake response is sent
+	// to a port that no longer maps to this endpoint after a re-handshake retry.
+	// 0 = assign a deterministic port in ApplyChain (51820 + nodeIndex + 1).
+	TransitAWGClientPort int `json:"transit_awg_client_port,omitempty"`
 
 	Inbounds []NodeInbound `json:"inbounds,omitempty"` // Standalone inbounds configured for this node
 }

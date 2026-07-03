@@ -385,9 +385,10 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	_, entryClientPub := deriveClientPub(entryClientPriv, t)
 	middleServerPriv, middleServerPub := genAWGKeypair(t)
 	entry := model.ChainNode{
-		ID: "entry", Port: 443,
+		ID: "entry", Port: 443, Addr: "entry.example.test:22",
 		TransitAWGClientPriv: entryClientPriv, TransitAWGClientPub: entryClientPub,
-		TransitAWGAddress: "10.9.0.2/32",
+		TransitAWGAddress:    "10.9.0.2/32",
+		TransitAWGClientPort: 51821,
 	}
 	middle := model.ChainNode{
 		ID: "middle", Port: 443,
@@ -411,6 +412,15 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	}
 	if len(ep.Peers[0].AllowedIPs) != 1 || ep.Peers[0].AllowedIPs[0] != "10.9.0.2/32" {
 		t.Errorf("inbound peer allowed_ips=%v, want [10.9.0.2/32]", ep.Peers[0].AllowedIPs)
+	}
+	// Explicit peer endpoint: entry's public IP + AWG client port. Without it
+	// sing-box-extended userspace endpoint does not send the handshake response
+	// (it logs "sending handshake response" but the packet never leaves the VPS).
+	if ep.Peers[0].Address != "entry.example.test" {
+		t.Errorf("inbound peer address=%q, want entry.example.test", ep.Peers[0].Address)
+	}
+	if ep.Peers[0].Port != 51821 {
+		t.Errorf("inbound peer port=%d, want 51821", ep.Peers[0].Port)
 	}
 	if ep.System {
 		t.Error("inbound system=true, want false (userspace)")
@@ -442,6 +452,11 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	}
 	if p.Address != "middle.example.test" || p.Port != 443 {
 		t.Errorf("outbound peer address=%s port=%d, want middle.example.test:443", p.Address, p.Port)
+	}
+	// Fixed source port (NAT-traversal: random ephemeral port breaks on GCloud —
+	// handshake responses map to a port that's gone after a re-handshake retry).
+	if out.ListenPort != 51821 {
+		t.Errorf("outbound listen_port=%d, want 51821 (fixed, from entry.TransitAWGClientPort)", out.ListenPort)
 	}
 	if out.System {
 		t.Error("outbound system=true, want false (userspace)")
