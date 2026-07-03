@@ -389,7 +389,14 @@ type AmneziaOptions struct {
 	I3    string `json:"i3,omitempty"`
 	I4    string `json:"i4,omitempty"`
 	I5    string `json:"i5,omitempty"`
-	ITime int    `json:"itime,omitempty"`
+	// ITime is NOT emitted to the sing-box endpoint JSON — sing-box-extended's
+	// wireguard-go rejects "itime" at runtime ("IPC error -22: invalid UAPI
+	// device key: itime") even though `sing-box check` accepts it. It is kept
+	// here only as a holder so the client awg-quick .conf can render "Itime = N"
+	// (awg-quick DOES support it). BuildAmneziaSection must NOT copy it into the
+	// section that gets marshaled to the endpoint; renderAWGQuickConf reads it
+	// from the preset directly.
+	ITime int `json:"-"`
 }
 
 // TUNInbound represents a sing-box TUN inbound.

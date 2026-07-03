@@ -625,11 +625,14 @@ func TestAWGAmnezia_S3S4ITime(t *testing.T) {
 	if amn.S4 != p.AWG.S4 {
 		t.Errorf("server S4=%d, want preset S4=%d", amn.S4, p.AWG.S4)
 	}
+	// ITime is held on the AmneziaOptions (for future use) but NOT emitted to
+	// the endpoint JSON (sing-box-extended rejects "itime" at runtime) nor to
+	// the client .conf (awg setconf rejects "Itime"). Just check it's read.
 	if amn.ITime != p.AWG.ITime {
 		t.Errorf("server ITime=%d, want preset ITime=%d", amn.ITime, p.AWG.ITime)
 	}
 
-	// Client .conf must carry the same S3/S4/Itime.
+	// Client .conf must carry S3/S4. Itime is intentionally NOT written.
 	c := &model.Chain{
 		Name:              "awg-s3",
 		UserProtocol:      model.UserProtocolAWG,
@@ -650,8 +653,8 @@ func TestAWGAmnezia_S3S4ITime(t *testing.T) {
 	if got := extractConfField(conf, "S4 = "); got != fmt.Sprintf("%d", p.AWG.S4) {
 		t.Errorf("client .conf S4=%q, want %d", got, p.AWG.S4)
 	}
-	if got := extractConfField(conf, "Itime = "); got != fmt.Sprintf("%d", p.AWG.ITime) {
-		t.Errorf("client .conf Itime=%q, want %d", got, p.AWG.ITime)
+	if got := extractConfField(conf, "Itime = "); got != "" {
+		t.Errorf("client .conf should NOT carry Itime (awg setconf rejects it), got %q", got)
 	}
 }
 

@@ -419,9 +419,8 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 				b.WriteString(fmt.Sprintf("I4 = %s\n", amn.I4))
 				b.WriteString(fmt.Sprintf("I5 = %s\n", amn.I5))
 			}
-			if amn.ITime > 0 {
-				b.WriteString(fmt.Sprintf("Itime = %d\n", amn.ITime))
-			}
+			// Itime intentionally omitted — awg setconf and sing-box-extended
+			// endpoint both reject it; the default cache lifetime works.
 		}
 	}
 	b.WriteString("\n[Peer]\n")

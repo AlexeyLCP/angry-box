@@ -367,9 +367,11 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 				b.WriteString(fmt.Sprintf("I4 = %s\n", amn.I4))
 				b.WriteString(fmt.Sprintf("I5 = %s\n", amn.I5))
 			}
-			if amn.ITime > 0 {
-				b.WriteString(fmt.Sprintf("Itime = %d\n", amn.ITime))
-			}
+			// NOTE: Itime is intentionally NOT written — awg-quick passes the
+			// .conf to `awg setconf`, which rejects "Itime" ("Line unrecognized:
+			// Itime=..."); sing-box-extended's endpoint JSON also rejects it at
+			// runtime. ITime is a concealment-packet cache lifetime with a sane
+			// default, so omitting it does not break the handshake.
 		}
 	}
 	b.WriteString("\n[Peer]\n")

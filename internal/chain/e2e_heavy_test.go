@@ -428,14 +428,16 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 	defer os.Unsetenv("AB_ROUTE_DNS")
 
 	store := newStore(t)
-	// 2-hop chain: entry (AWG user-entry) -> exit (egress). XHTTP transport so
-	// exit does not need the AWG kernel module; only entry needs it (user-entry
-	// AWG endpoint, userspace — module installed by the orchestrator anyway).
+	// 2-hop chain: entry (AWG user-entry) -> exit (egress), AWG as BOTH the
+	// user-entry protocol AND the inter-node transport — fully AWG end-to-end,
+	// no Reality/XHTTP in the path (Reality-transit is a separate open bug;
+	// AWG end-to-end avoids it and is the AWG-first product path). Both nodes
+	// need the AWG kernel module (the orchestrator installs it on Transport==AWG).
 	nodes := buildChainNodes(e2eRoleEntry, e2eRoleExit)
 	registerChainNodes(t, store, nodes, true)
 	c := baseChain("e2e-awg-perclient", nodes)
 	c.UserProtocol = model.UserProtocolAWG
-	c.Transport = model.TransportXHTTP
+	c.Transport = model.TransportAWG
 	c.UserEntryPort = 51820
 
 	// One user with per-user AWG creds. EnsureUserCreds generates the keypair;
