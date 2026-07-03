@@ -308,7 +308,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			nodeChains = append(nodeChains, chain)
 		}
 
-		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains))
+		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains), usersByInboundMap(store, nodeInfo.Inbounds))
 		if buildErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "build config: " + buildErr.Error()})
 			continue
@@ -1491,6 +1491,44 @@ func usersByChainMap(store *Store, chains []*model.Chain) map[string][]model.Use
 	return out
 }
 
+// usersByInboundMap builds a map keyed by standalone-inbound Tag → users
+// assigned to that inbound (via ForUsers), mirroring usersByChainMap. Only
+// active, non-expired users with a matching ID are included. Used to render
+// multi-peer standalone AWG endpoints (one WireGuard peer per user). Returns
+// nil when store is nil, no inbounds, or no assignments. Inbounds without a
+// stable Tag are skipped (they fall back to the legacy single-peer render).
+func usersByInboundMap(store *Store, inbounds []model.NodeInbound) map[string][]model.User {
+	if store == nil || len(inbounds) == 0 {
+		return nil
+	}
+	all, err := store.ListUsers()
+	if err != nil || len(all) == 0 {
+		return nil
+	}
+	// index users by ID for O(users) lookup
+	byID := make(map[string]*model.User, len(all))
+	for _, u := range all {
+		byID[u.ID] = u
+	}
+	out := map[string][]model.User{}
+	for _, ib := range inbounds {
+		if ib.Tag == "" || len(ib.ForUsers) == 0 {
+			continue
+		}
+		for _, uid := range ib.ForUsers {
+			u, ok := byID[uid]
+			if !ok || !u.Active || u.IsExpired() {
+				continue
+			}
+			out[ib.Tag] = append(out[ib.Tag], *u)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // ApplyMergedNode reads all chains from the store that contain this node,
 // merges them with standalone inbounds into a single sing-box config,
 // and pushes it to the remote node via SSH.
@@ -1567,7 +1605,7 @@ func (a *Applier) applyMergedNodeLocked(
 		}
 	}
 
-	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains))
+	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains), usersByInboundMap(store, info.Inbounds))
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("build merged config: %w", err)
 	}

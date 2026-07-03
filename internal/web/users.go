@@ -202,6 +202,17 @@ func (s *Server) scheduleAutoApplyForUser(st *chain.Store, u *model.User, reason
 			chain.ScheduleAutoApply(n.ID, reason+":"+chainName)
 		}
 	}
+	// Standalone inbounds: any node whose inbound ForUsers lists this user gets
+	// re-deployed too (e.g. multi-peer standalone AWG picks up the user's creds).
+	nodes, _ := st.ListNodeInfos()
+	for _, node := range nodes {
+		for _, ib := range node.Inbounds {
+			if contains(ib.ForUsers, u.ID) {
+				chain.ScheduleAutoApply(node.ID, reason+":standalone")
+				break // one schedule per node is enough
+			}
+		}
+	}
 }
 
 // takenAWGAddresses returns the AWG tunnel IPs already claimed by other users

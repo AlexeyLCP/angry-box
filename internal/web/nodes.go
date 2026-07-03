@@ -448,8 +448,14 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 				newIb.AWGClientPub = oldIb.AWGClientPub
 				newIb.AWGClientPriv = oldIb.AWGClientPriv
 				newIb.ObfsPassword = oldIb.ObfsPassword
+				newIb.Tag = oldIb.Tag
 				break
 			}
+		}
+		// Stable inbound tag (used as the sing-box inbound/endpoint tag + the
+		// users-by-inbound map key). Generated once, preserved across re-saves.
+		if newIb.Tag == "" {
+			newIb.Tag = chain.GenerateInboundTag(newIb.Protocol)
 		}
 
 		// Hysteria2: generate a per-node obfs password once and persist it, so

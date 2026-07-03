@@ -109,7 +109,7 @@ func TestAWGMergedConfig_SingBoxCheck_EntryOnly(t *testing.T) {
 		{Name: "alice", Active: true, AWGPublicKey: genAWGPub(t), AWGAddress: "10.8.0.2/32"},
 		{Name: "bob", Active: true, AWGPublicKey: genAWGPub(t), AWGAddress: "10.8.0.3/32"},
 	}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-check": users})
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-check": users}, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestAWGMergedConfig_SingBoxCheck_MultiHopWithRoute(t *testing.T) {
 	os.Setenv("AB_ROUTE_DNS", "1")
 	defer os.Unsetenv("AB_ROUTE_DNS")
 
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-mh": users})
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-mh": users}, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -285,7 +285,7 @@ func deriveClientPub(priv string, t *testing.T) (string, string) {
 func TestAWGTransport_MergedConfig_SingBoxCheck(t *testing.T) {
 	c := awgTransportChain(t)
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "entry"}}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestAWGTransport_MergedConfig_SingBoxCheck(t *testing.T) {
 func TestAWGTransport_MiddleNode_HasTransitEndpoint(t *testing.T) {
 	c := awgTransportChain(t)
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "middle"}}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestAWGTransport_MiddleNode_HasTransitEndpoint(t *testing.T) {
 func TestAWGTransport_NotRealityFallback(t *testing.T) {
 	c := awgTransportChain(t)
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "middle"}}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestAWGTransport_OutboundTagMatchesRoute(t *testing.T) {
 		t.Fatalf("want 1 role, got %d", len(roles))
 	}
 	// Render entry config and extract the actual outbound tag.
-	cfg, _, err := buildMergedNodeConfig(&model.NodeInfo{Host: model.Host{ID: "entry"}}, []*model.Chain{c}, nil)
+	cfg, _, err := buildMergedNodeConfig(&model.NodeInfo{Host: model.Host{ID: "entry"}}, []*model.Chain{c}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}

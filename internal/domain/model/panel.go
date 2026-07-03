@@ -169,10 +169,15 @@ type TakeoverState struct {
 type NodeInbound struct {
 	Protocol    string   `json:"protocol"`              // "awg", "tuic", "vless-reality"
 	Port        int      `json:"port"`
-	Obfuscation string   `json:"obfuscation,omitempty"` // extra obfuscation notes
+	Obfuscation string   `json:"obfuscation,omitempty"` // extra obfuscation notes (preset name for AWG)
 	ForUsers    []string `json:"for_users,omitempty"`    // user IDs this inbound serves
 	OutboundTag string   `json:"outbound_tag,omitempty"` // target outbound tag; empty = "direct-out"
 	Source      string   `json:"source,omitempty"`       // "standalone" or "chain:<chain_name>"
+	// Tag is a stable identifier for this inbound. The merged-config render
+	// derives the sing-box inbound/endpoint tag from it (and keys the
+	// users-by-inbound map by it). Empty -> the legacy index-based "sa-<i>-<proto>"
+	// tag is used (backward compat for inbounds created before Tag existed).
+	Tag string `json:"tag,omitempty"`
 
 	// Persisted server-side credentials
 	UUID          string `json:"uuid,omitempty"`

@@ -50,7 +50,7 @@ func RenderMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
 ) (*config.SingboxConfig, *MergeReport, error) {
-	return buildMergedNodeConfig(nodeInfo, nodeChains, nil)
+	return buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil)
 }
 
 // buildMergedNodeConfig renders a node's merged sing-box config from its
@@ -63,6 +63,7 @@ func buildMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
 	usersByChain map[string][]model.User,
+	usersByInbound map[string][]model.User,
 ) (*config.SingboxConfig, *MergeReport, error) {
 
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
@@ -93,7 +94,11 @@ func buildMergedNodeConfig(
 	}
 
 	for i, ib := range nodeInfo.Inbounds {
-		ins, eps := buildStandaloneInOut(&ib, fmt.Sprintf("sa-%d-%s", i, ib.Protocol))
+		tag := ib.Tag
+		if tag == "" {
+			tag = fmt.Sprintf("sa-%d-%s", i, ib.Protocol) // legacy index-based tag (backward compat)
+		}
+		ins, eps := buildStandaloneInOut(&ib, tag, usersByInbound)
 		inbounds = append(inbounds, ins...)
 		endpoints = append(endpoints, eps...)
 	}
@@ -390,6 +395,18 @@ func usersForChain(usersByChain map[string][]model.User, chainName string) []mod
 	return usersByChain[chainName]
 }
 
+// hasAWGPeerUsers reports whether at least one user in the slice is active and
+// carries per-user AWG creds (AWGPublicKey + AWGAddress) — i.e. can become a
+// WireGuard peer. Used to decide multi-peer vs legacy single-peer standalone AWG.
+func hasAWGPeerUsers(users []model.User) bool {
+	for _, u := range users {
+		if u.Active && u.AWGPublicKey != "" && u.AWGAddress != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // nodeIsAtOrBefore reports whether the pinned exit node (exitID) sits strictly
 // downstream of role's node in the chain — i.e. role's node is BEFORE the
 // pinned exit and must forward traffic down the chain to reach it. Used by AWG
@@ -582,7 +599,7 @@ func ResolveServerName(preset *ConnectionPreset) string {
 	return DefaultRealitySNI
 }
 
-func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoints []json.RawMessage) {
+func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User) (inbounds, endpoints []json.RawMessage) {
 	preset := GetDefaultPreset()
 	if ib.Obfuscation != "" {
 		if p, ok := GetPreset(ib.Obfuscation); ok {
@@ -608,9 +625,20 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string) (inbounds, endpoint
 		inbounds = append(inbounds, data)
 
 	case "awg":
-		ep, _, err := buildAWGUserInbound(ib.Port, ib.UUID, tag, &preset, ib.ServerPrivKey, "")
-		if err == nil {
-			endpoints = append(endpoints, ep)
+		// Multi-peer when the inbound has assigned users with AWG creds (one
+		// WireGuard peer per user, mirroring the chain user-entry path). Falls
+		// back to the single-peer legacy builder when no users qualify.
+		users := usersByInbound[tag]
+		if hasAWGPeerUsers(users) {
+			ep, _, err := buildAWGUserInboundMulti(ib.Port, tag, &preset, ib.ServerPrivKey, users, nil)
+			if err == nil {
+				endpoints = append(endpoints, ep)
+			}
+		} else {
+			ep, _, err := buildAWGUserInbound(ib.Port, ib.UUID, tag, &preset, ib.ServerPrivKey, ib.AWGClientPub)
+			if err == nil {
+				endpoints = append(endpoints, ep)
+			}
 		}
 
 	case "tuic":

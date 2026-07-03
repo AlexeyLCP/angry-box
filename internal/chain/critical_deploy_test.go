@@ -154,7 +154,7 @@ func TestBuildStandaloneInOut_AllProtocols(t *testing.T) {
 			// base64 here would make deriveWireGuardPublicFromPrivate fail and
 			// drop the endpoint, which is not the behaviour we're testing).
 			ib := &model.NodeInbound{Protocol: tc.proto, Port: tc.port, UUID: tc.uuid, ShortID: "sid", ObfsPassword: "obfs"}
-			inbounds, endpoints := buildStandaloneInOut(ib, "tag-"+tc.proto)
+			inbounds, endpoints := buildStandaloneInOut(ib, "tag-"+tc.proto, nil)
 			// Each protocol must produce at least one inbound OR endpoint, and
 			// any inbound produced must be valid JSON with the right type.
 			if len(inbounds) == 0 && len(endpoints) == 0 {
@@ -180,7 +180,7 @@ func TestBuildStandaloneInOut_PresetOverride(t *testing.T) {
 	// Use a known built-in preset name if any exists; else skip the lookup but
 	// assert it doesn't panic on an unknown name (falls back to default).
 	ib := &model.NodeInbound{Protocol: "vless", Port: 8443, UUID: "u", Obfuscation: "no-such-preset"}
-	inbounds, _ := buildStandaloneInOut(ib, "tag")
+	inbounds, _ := buildStandaloneInOut(ib, "tag", nil)
 	if len(inbounds) == 0 {
 		t.Fatal("expected at least one inbound (fallback to default preset)")
 	}

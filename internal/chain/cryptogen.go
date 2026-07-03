@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"golang.org/x/crypto/curve25519"
@@ -107,6 +108,27 @@ func GenerateHysteria2ObfsPassword() string { return GenerateHysteria2Password()
 
 // GenerateTUICUUID returns a v4 UUID string.
 func GenerateTUICUUID() string { return generateStableUUID() }
+
+// GenerateInboundTag returns a stable, short, lowercase tag for a standalone
+// inbound (e.g. "sa-awg-a1b2c3d4"). Used as the sing-box inbound/endpoint tag
+// and as the users-by-inbound map key — stable across inbound reorders, unlike
+// the legacy index-based "sa-<i>-<proto>". proto is sanitized to alphanumerics.
+func GenerateInboundTag(proto string) string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic("cryptogen: crypto/rand failed for inbound tag: " + err.Error())
+	}
+	safe := []byte{}
+	for _, c := range strings.ToLower(proto) {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			safe = append(safe, byte(c))
+		}
+	}
+	if len(safe) == 0 {
+		safe = []byte("in")
+	}
+	return fmt.Sprintf("sa-%s-%x", safe, b)
+}
 
 // GenerateTUICPassword returns a url-safe base64 of 16 random bytes. It is an
 // INDEPENDENT secret from GenerateTUICUUID: a TUIC link exposes both identity
