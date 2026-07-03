@@ -237,7 +237,7 @@ func RenderAWGHop(p AWGHopParams) ([]byte, error) {
 		"type":        "wireguard",
 		"tag":         p.Tag,
 		"system":      false,
-		"mtu":         1280,
+		"mtu":         1420, // match all other AWG endpoints (buildAWGUserInbound*, buildAWGTransport*, generateAWGUser); MTU must match on both ends of a WireGuard pair or large packets fragment/drop.
 		"address":     p.Address,
 		"private_key": p.PrivateKey,
 		"peers":       []map[string]any{peer},

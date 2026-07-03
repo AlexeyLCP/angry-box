@@ -139,6 +139,11 @@ func TestRenderAWGHop_UserspaceAmnezia(t *testing.T) {
 	if ep["private_key"] != "priv" {
 		t.Errorf("private_key not reused: got %v", ep["private_key"])
 	}
+	// MTU must be 1420 (match all other AWG endpoints — a WireGuard pair needs
+	// identical MTU on both ends or large packets fragment/drop). Was 1280.
+	if mtu, _ := ep["mtu"].(float64); int(mtu) != 1420 {
+		t.Errorf("endpoint mtu: got %v, want 1420 (was 1280, mismatched buildAWGUserInbound*/buildAWGTransport*)", ep["mtu"])
+	}
 }
 
 // helpers
