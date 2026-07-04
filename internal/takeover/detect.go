@@ -95,6 +95,12 @@ func DetectVPN(ctx context.Context, host model.Host, useSudo bool, connector ...
 	if len(connector) > 0 && connector[0] != nil {
 		conn = connector[0]
 	}
+	// TODO(ssh-keys): wire resolveHostKey once store ref available — DetectVPN
+	// currently takes no *chain.Store, so the panel default-key fallback is not
+	// applied here. Callers in web/takeover.go pass info.Host directly; the
+	// detect step is read-only (no deploy), so the impact is limited to nodes
+	// that rely solely on the default key. Adding a store param would require
+	// updating the DetectVPN signature + all callers (web + e2e) — deferred.
 	client, err := conn.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("takeover: detect: ssh connect: %w", err)

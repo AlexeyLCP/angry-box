@@ -67,7 +67,8 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	if len(connector) > 0 && connector[0] != nil {
 		conn = connector[0]
 	}
-	client, err := conn.Connect(host.Addr, host.User, host.KeyPath)
+	resolved := chain.ResolveHostKey(store, &host)
+	client, err := conn.Connect(resolved.Addr, resolved.User, resolved.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("takeover: ssh connect: %w", err)
 	}

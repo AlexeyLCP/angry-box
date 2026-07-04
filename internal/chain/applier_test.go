@@ -422,3 +422,43 @@ func TestSerializationSymmetry(t *testing.T) {
 		t.Fatalf("Symmetry broken!\nExpected:\n%s\n\nActual:\n%s", origPretty, newPretty)
 	}
 }
+
+func TestResolveHostKey_DefaultFallback(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.SaveSettings(&model.PanelSettings{DefaultSSHKeyID: "key-default"}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	host := &model.Host{ID: "n1", Addr: "1.1.1.1:22"}
+	resolved := resolveHostKey(st, host)
+	if resolved.KeyPath != "key-default" {
+		t.Errorf("expected default key, got %q", resolved.KeyPath)
+	}
+	// caller's host NOT mutated
+	if host.KeyPath != "" {
+		t.Errorf("caller host mutated: %q", host.KeyPath)
+	}
+}
+
+func TestResolveHostKey_PreservesExplicitKey(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.SaveSettings(&model.PanelSettings{DefaultSSHKeyID: "key-default"}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	host := &model.Host{ID: "n1", KeyPath: "key-explicit"}
+	resolved := resolveHostKey(st, host)
+	if resolved.KeyPath != "key-explicit" {
+		t.Errorf("expected explicit key preserved, got %q", resolved.KeyPath)
+	}
+}
+
+func TestResolveHostKey_PasswordMarkerNotOverridden(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.SaveSettings(&model.PanelSettings{DefaultSSHKeyID: "key-default"}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	host := &model.Host{ID: "n1", KeyPath: "password:"}
+	resolved := resolveHostKey(st, host)
+	if resolved.KeyPath != "password:" {
+		t.Errorf("password marker should NOT trigger fallback, got %q", resolved.KeyPath)
+	}
+}

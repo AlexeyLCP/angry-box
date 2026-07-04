@@ -47,6 +47,28 @@ func NewApplier(factory ports.Factory, connector ports.SSHConnector) *Applier {
 	return &Applier{factory: factory, connector: connector}
 }
 
+// ResolveHostKey returns a copy of host with KeyPath resolved against the
+// panel default SSH key when KeyPath is empty. It NEVER mutates the caller's
+// Host — the stored Host.KeyPath is not rewritten by this helper (the
+// fallback is a deploy-time resolution, not a persisted rewrite). "password:"
+// (empty-password marker) is treated as a real auth intent and does NOT
+// trigger the default fallback; only a truly empty KeyPath does.
+//
+// Exported so the takeover package (which holds a *chain.Store) can share the
+// same default-key fallback chokepoint as the applier.
+func ResolveHostKey(st *Store, host *model.Host) *model.Host {
+	h := *host
+	if h.KeyPath == "" {
+		if settings, err := st.GetSettings(); err == nil && settings.DefaultSSHKeyID != "" {
+			h.KeyPath = settings.DefaultSSHKeyID
+		}
+	}
+	return &h
+}
+
+// resolveHostKey is the package-internal alias used by applier call sites.
+func resolveHostKey(st *Store, host *model.Host) *model.Host { return ResolveHostKey(st, host) }
+
 // hopParams holds the generated Reality parameters for a transport inbound.
 // The previous hop needs these to build its outbound.
 type hopParams struct {
@@ -151,7 +173,11 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 
 	// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
 	for _, node := range chain.Nodes {
-		client, err := a.connector.Connect(node.Addr, node.User, node.KeyPath)
+		resolved := resolveHostKey(store, &model.Host{ID: node.ID, Addr: node.Addr, User: node.User, KeyPath: node.KeyPath})
+		if resolved.KeyPath == "" {
+			log.Printf("ssh: no key configured for node %s and no default key set", node.ID)
+		}
+		client, err := a.connector.Connect(resolved.Addr, resolved.User, resolved.KeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("pre-flight check failed: cannot connect to node %q (%s): %w", node.ID, node.Addr, err)
 		}
@@ -342,7 +368,11 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// single chokepoint (CTO-review C2). Pre-flight Connect/Deploy/InstallAWG
 		// run without the lock: they are idempotent and do not touch the rollback
 		// chain, so holding the lock across them would only block other nodes.
-		client, connErr := a.connector.Connect(node.Addr, node.User, node.KeyPath)
+		resolved := resolveHostKey(store, &model.Host{ID: node.ID, Addr: node.Addr, User: node.User, KeyPath: node.KeyPath})
+		if resolved.KeyPath == "" {
+			log.Printf("ssh: no key configured for node %s and no default key set", node.ID)
+		}
+		client, connErr := a.connector.Connect(resolved.Addr, resolved.User, resolved.KeyPath)
 		if connErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "ssh connect: " + connErr.Error()})
 			continue
@@ -1812,7 +1842,11 @@ func (a *Applier) applyMergedNodeLocked(
 		return nil, mergeReport, fmt.Errorf("marshal merged config: %w", err)
 	}
 
-	client, err := a.connector.Connect(info.Addr, info.User, info.KeyPath)
+	resolved := resolveHostKey(store, &info.Host)
+	if resolved.KeyPath == "" {
+		log.Printf("ssh: no key configured for node %s and no default key set", info.ID)
+	}
+	client, err := a.connector.Connect(resolved.Addr, resolved.User, resolved.KeyPath)
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("ssh connect: %w", err)
 	}
