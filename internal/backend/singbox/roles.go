@@ -213,6 +213,14 @@ func RenderAWGBalancer(p AWGBalancerParams) ([]byte, error) {
 		p.BalancerTag = "balancer"
 	}
 
+	// include_interface MUST list awg0 AND every awg-exit-nX the balancer
+	// owns. awg0 captures user/client traffic; awg-exit-nX captures the
+	// RESPONSE traffic for sing-box direct outbounds that use
+	// bind_interface: awg-exit-nX (without it the kernel delivers the
+	// SYN-ACK to a dead local socket and the dial times out — egress through
+	// the balancer silently fails). Live-verified 2026-07-04.
+	includeIfaces := []string{"awg0"}
+	includeIfaces = append(includeIfaces, p.ExitInterfaces...)
 	tun := config.TUNInbound{
 		Type:             "tun",
 		Tag:              "tun-in",
@@ -221,7 +229,7 @@ func RenderAWGBalancer(p AWGBalancerParams) ([]byte, error) {
 		MTU:              1200,
 		Stack:            "mixed", // kernel TCP + gVisor UDP so QUIC through-traffic works
 		AutoRoute:        true,
-		IncludeInterface: []string{"awg0"}, // awg0 only — exit ifaces are outbound-side (bind_interface)
+		IncludeInterface: includeIfaces,
 		StrictRoute:      false,
 	}
 	tunJSON := mustMarshal(tun)

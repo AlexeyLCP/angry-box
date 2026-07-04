@@ -99,10 +99,18 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	// tunnel silently fails. Mirrors the dns.idoctor.mom reference awg0.conf
 	// PostUp/PostDown. Also sets ip_forward=1 (belt-and-braces — the deploy flow
 	// sets it via sysctl too, but awg-quick restarting without it would break).
+	// Also disables rp_filter on awg0 — the kernel's strict reverse-path check
+	// drops tunneled packets whose source IP (10.8.0.x) would route back via a
+	// different interface than the one they arrived on, silently breaking
+	// egress through the TUN overlay (live-verified 2026-07-04: with rp_filter=1
+	// on awg0, return traffic from sing-box-tun to the client was dropped).
+	// awg-quick recreates the interface on every restart, so the sysctl must be
+	// re-applied in PostUp (a one-shot sysctl at install time is not enough).
 	if p.TUNInterface != "" {
 		tun := p.TUNInterface
 		b.WriteString(fmt.Sprintf(
 			"PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward; "+
+				"sysctl -w net.ipv4.conf.awg0.rp_filter=0 2>/dev/null; "+
 				"iptables -C FORWARD -i awg0 -o %s -j ACCEPT 2>/dev/null || iptables -A FORWARD -i awg0 -o %s -j ACCEPT; "+
 				"iptables -C FORWARD -i %s -o awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %s -o awg0 -j ACCEPT\n",
 			tun, tun, tun, tun))
@@ -233,6 +241,20 @@ func RenderExitAWGConf(p ExitClientConfParams) string {
 	if p.Amnezia != nil {
 		writeAmneziaConfLines(&b, p.Amnezia)
 	}
+	// rp_filter=0 on the exit-client interface is CRITICAL for balancer egress
+	// (live-verified 2026-07-04). sing-box direct outbounds use bind_interface:
+	// awg-exit-nX to dial through this kernel tunnel (source = the balancer's
+	// inner IP 10.10.0.X). The SYN-ACK arrives on awg-exit-nX with dst=10.10.0.X;
+	// with rp_filter=1 the kernel's strict reverse-path check drops it (10.10.0.X
+	// routes to `local`, but the packet arrived on awg-exit-nX, not lo), so
+	// sing-box never sees the response and the dial times out — egress through
+	// the balancer silently fails. awg-quick recreates the interface on every
+	// restart, so the sysctl must be re-applied in PostUp.
+	iface := p.InterfaceName
+	if iface == "" {
+		iface = "awg-exit-n0"
+	}
+	b.WriteString(fmt.Sprintf("PostUp = sysctl -w net.ipv4.conf.%s.rp_filter=0 2>/dev/null\n", iface))
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", p.ExitPublicKey))
 	host, port := splitHostPort(p.ExitEndpoint)
@@ -267,13 +289,28 @@ type ExitServerConfParams struct {
 	// Amnezia, when non-nil, enables amnezia obfuscation (must match the
 	// balancer's ExitClientConfParams.Amnezia for the handshake to succeed).
 	Amnezia *config.AmneziaOptions
-	// MASQUERADENetwork, when non-empty (e.g. "10.8.0.0/24"), emits PostUp/
-	// PostDown lines with iptables MASQUERADE for that subnet — NATs tunneled
-	// user traffic to the exit's public IP so the internet routes responses
-	// back. Without this, the exit sends packets to the internet with the
-	// user's private inner IP (10.8.0.x) as source — the internet can't route
-	// the response back, so egress silently fails (data out, nothing back).
-	// Mirrors the real exit server (n1) PostUp:
+	// MASQUERADENetwork, when non-empty, emits PostUp/PostDown lines with
+	// iptables MASQUERADE for each listed subnet — NATs tunneled traffic to
+	// the exit's public IP so the internet routes responses back. Without
+	// this, the exit sends packets to the internet with the private inner IP
+	// as source — the internet can't route the response back, so egress
+	// silently fails (data out, nothing back).
+	//
+	// CRITICAL (verified live 2026-07-04): an exit serving a balancer must
+	// NAT BOTH subnets that can arrive on awg0:
+	//   - the user subnet (10.8.0.0/24) — direct user→exit (linear chain)
+	//   - the balancer-link subnet (10.10.0.0/24) — balancer awg-exit-nX
+	//     inner IP (AWGExitLink.Address), used when a client reaches the exit
+	//     THROUGH a balancer (entry tun-in → n1-direct bind_interface
+	//     awg-exit-n1 → exit awg0). The balancer does not SNAT the client's
+	//     source, so packets arrive at the exit with source 10.10.0.2 — a
+	//     MASQUERADE covering only 10.8.0.0/24 leaves 10.10.0.0/24 un-NAT'd,
+	//     the internet can't route responses back to 10.10.0.2, and egress
+	//     through the balancer silently times out (data out, nothing back).
+	//
+	// Accepts a comma- or space-separated list (e.g. "10.8.0.0/24,10.10.0.0/24");
+	// each entry gets its own MASQUERADE rule. Mirrors the real exit server
+	// (n1) PostUp:
 	//   iptables -t nat -A POSTROUTING -s <network> -o <wan> -j MASQUERADE
 	// Also adds FORWARD ACCEPT for awg0 (so the kernel forwards tunneled→wan).
 	// Empty = no MASQUERADE (exit used only for balancer, not direct internet).
@@ -324,19 +361,38 @@ func RenderExitServerAWGConf(p ExitServerConfParams) string {
 			// extracts IFACE. This runs on the remote VPS, not the orchestrator.
 			wan = "$(ip -o route show default 0.0.0.0/0 2>/dev/null | awk '{print $5}' | head -1)"
 		}
+		// Parse the subnet list (comma- or space-separated) and emit one
+		// MASQUERADE add/del per subnet. A single subnet keeps the old shape
+		// (one rule); two subnets (user + balancer-link) get two rules. Each
+		// is idempotent via -C ... || -A so re-applying is safe.
+		nets := strings.FieldsFunc(p.MASQUERADENetwork, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '\t'
+		})
+		var masqUp, masqDown strings.Builder
+		for _, n := range nets {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			masqUp.WriteString(fmt.Sprintf(
+				"iptables -t nat -C POSTROUTING -s %s -o $WAN -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s %s -o $WAN -j MASQUERADE; ",
+				n, n))
+			masqDown.WriteString(fmt.Sprintf(
+				"iptables -t nat -D POSTROUTING -s %s -o $WAN -j MASQUERADE 2>/dev/null || true; ",
+				n))
+		}
 		b.WriteString(fmt.Sprintf(
 			"PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward; "+
-				"WAN=%s; "+
-				"iptables -t nat -C POSTROUTING -s %s -o $WAN -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s %s -o $WAN -j MASQUERADE; "+
+				"sysctl -w net.ipv4.conf.awg0.rp_filter=0 2>/dev/null; "+
+				"WAN=%s; %s"+
 				"iptables -C FORWARD -i awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i awg0 -j ACCEPT; "+
 				"iptables -C FORWARD -o awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -o awg0 -j ACCEPT\n",
-			wan, p.MASQUERADENetwork, p.MASQUERADENetwork))
+			wan, masqUp.String()))
 		b.WriteString(fmt.Sprintf(
-			"PostDown = WAN=%s; "+
-				"iptables -t nat -D POSTROUTING -s %s -o $WAN -j MASQUERADE 2>/dev/null || true; "+
+			"PostDown = WAN=%s; %s"+
 				"iptables -D FORWARD -i awg0 -j ACCEPT 2>/dev/null || true; "+
 				"iptables -D FORWARD -o awg0 -j ACCEPT 2>/dev/null || true\n",
-			wan, p.MASQUERADENetwork))
+			wan, masqDown.String()))
 	}
 	if p.BalancerPublicKey != "" {
 		b.WriteString("\n[Peer]\n")

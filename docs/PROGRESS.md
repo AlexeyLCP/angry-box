@@ -2,7 +2,7 @@
 
 > Единый источник правды: что сделано, что нужно, откуда берём. Обновлять при каждом изменении. Не удалять — накапливать.
 
-Последнее обновление: 2026-07-04 (Hysteria2 frozen everywhere + edit-guard fix + E2E re-confirmed)
+Последнее обновление: 2026-07-04 (real e2e egress verified + 3 routing bugs found & fixed — §11)
 
 ---
 
@@ -239,7 +239,7 @@
 | Kernel AWG handshake (entry) | **Да** | `TestE2E_Heavy_Protocol_AWG_Kernel` PASS (23.83s) — awg0.conf pushed (3624B), `awg-quick@awg0` active, awg0 10.8.0.1/24, 0 userspace WG endpoints, systemd `After=awg-quick@awg0.service` |
 | AWG handshake (per-client/balancer) | **Да** | `TestE2E_Heavy_PerClientRouting` PASS (76.97s) — `latest handshake: 5 seconds ago`, transfer 92B rx/64.49KiB tx, jc/jmin/jmax/s1-s4/h1-h4/i1-i5 all matching |
 | Balancer deploy (entry + exit) | **Да** | E2E PASS, awg0 + awg-exit-n1 + MASQUERADE (`-A POSTROUTING -s 10.8.0.0/24 -o ens4 -j MASQUERADE` live на server-3) + Table=off (default route intact) |
-| Client → internet egress (полный путь) | **Не проверен в e2e** | Test artifact: client tunnel awge2e (10.8.0.2) + server awg0 route 10.8.0.0/24 на одном VPS → routing conflict (responses идут к awg0, не к awge2e). В production клиент на отдельном устройстве — конфликта нет. Нужен отдельный клиент для финального verify. |
+| Client → internet egress (полный путь) | **Да — VERIFIED 2026-07-04 (§11)** | server-2 (kernel AWG client, 10.8.0.99) → entry → exit → internet. `curl --interface awg0 ifconfig.me → 23.251.133.38` (exit's public IP). 3 routing bugs найдены и исправлены (exit MASQUERADE 10.10.0.0/24, include_interface awg-exit-nX, rp_filter=0 PostUp). |
 | Linear AWG inter-node transport | **Частично** | Handshake OK, data plane под amnezia нестабилен → amnezia отключена на transit. Balancer architecture (kernel exit tunnels) — рабочий путь. |
 | TUIC / Hysteria2 | **На паузе** | Не в скоупе product focus (базовый минимум: AWG, Reality+XHTTP, MTProxy). Frozen enforcement в `internal/chain/frozen.go` + UI edit-guard. |
 
@@ -420,3 +420,68 @@ UI dropdowns рендерят frozen options как `<option ... selected disabl
 - **Legacy CLI `Backend.ApplyConfig` standalone-AWG** (`cmd/angry-box/main.go:673` via `RenderAWGHop`) — ещё userspace, known follow-up.
 - **Per-client `source_ip_cidr` под TUN-overlay** — real-VPS verify (unit-тесты покрывают логику).
 - **GCloud UDP 443 firewall на exit VPS** — инфраструктурный, не код.
+
+---
+
+## 11. Real end-to-end egress verified + 3 bugs found & fixed (2026-07-04)
+
+После §10 пользователь попросил реально проверить egress на отдельном клиенте. Использовал server-2 (middle, чистый) как KERNEL AWG client → entry (server-1) → exit (server-3) → internet. Оркестратор поставил amneziawg kernel module на чистый server-2 (`InstallAWGModuleWithOptions`, PPA path, ~4 мин). Полный путь заработал **только после исправления 3 багов**, найденных через live tcpdump/trace.
+
+### 11.1. E2E egress — ДОКАЗАНО
+
+```
+server-2 (kernel AWG client, 10.8.0.99, Table=off, rp_filter=0)
+  → entry awg0 (server-1, kernel, 10.8.0.1/24)
+  → sing-box tun-in (include_interface: [awg0, awg-exit-n1])
+  → n1-direct (bind_interface: awg-exit-n1)
+  → exit awg0 (server-3, kernel, MASQUERADE 10.8+10.10)
+  → internet
+curl --interface awg0 ifconfig.me → 23.251.133.38  (exit's public IP!)
+ipinfo.io: Brussels, BE, Google LLC
+control (default route) → 207.175.40.161  (server-2 own IP)
+```
+
+**Вывод:** egress IP = exit public IP = `23.251.133.38`. Трафик реально проходит по нодам end-to-end. Архитектура balancer (kernel awg0 + awg-exit-nX + TUN-overlay + bind_interface) РАБОЧАЯ.
+
+### 11.2. Bug #1 — exit MASQUERADE покрывала только user subnet (10.8.0.0/24), не balancer-link (10.10.0.0/24)
+
+**Симптом:** `n1-direct: dial tcp 34.160.111.145:443: i/o timeout`. Exit awg0 видит SYN от `10.10.0.2` (balancer inner IP) и SYN-ACK от ifconfig.me к `10.10.0.2`, но **conntrack пустой** — MASQUERADE не срабатывала.
+
+**Root cause:** `renderExitServerConf` (awg_deploy.go) ставил `MASQUERADENetwork: "10.8.0.0/24"` — только user subnet. Но balancer exit-link inner subnet = `10.10.0.0/24` (`AWGExitLink.Address`, applier.go:815). Пакеты с source `10.10.0.2` приходили на exit, форвардились в ens4, но MASQUERADE не покрывала → exit отправлял в internet с private source `10.10.0.2` → internet не мог вернуть response → timeout.
+
+**Fix:** `RenderExitServerAWGConf.MASQUERADENetwork` теперь принимает список subnet (comma/space-separated) — `renderExitServerConf` передаёт `"10.8.0.0/24,10.10.0.0/24"`. Каждый subnet → свой MASQUERADE rule. Regression: `TestRenderExitServerAWGConf_MASQUERADEMultiSubnet`, `TestRenderExitServerAWGConf_MASQUERADESingleSubnet`, `TestRenderNodeAWGConfs_ExitServer` (оба subnet asserted).
+
+### 11.3. Bug #2 — entry TUN `include_interface` = `[awg0]` только, не awg-exit-nX
+
+**Симптом (после fix #1):** тот же `n1-direct: dial timeout`. SYN уходит через awg-exit-n1 (exit видит), SYN-ACK возвращается на entry awg-exit-n1 (tcpdump подтверждает), но **sing-box не видит response** → dial timeout.
+
+**Root cause:** `tunIncludeInterfaces` (awg_tun_overlay.go) хардкодил `["awg0"]`. Комментарий утверждал «awg-exit-nX must NOT be in include_interface, or TUN would re-capture egress traffic and loop» — **это было неверное предположение**. `include_interface` катчит INCOMING traffic (responses) на интерфейсах, не outgoing egress (который идёт через bind_interface sockets). Без awg-exit-n1 в include_interface SYN-ACK приходит на kernel awg-exit-n1 (dst=10.10.0.2 = local address), kernel доставляет в dead local socket, sing-box userspace его не получает.
+
+**Fix:** `tunIncludeInterfaces(node)` теперь возвращает `awg0` + все `awg-exit-nX` (из `exitInterfacesForNode`). `RenderAWGBalancer` (roles.go) — то же (был хардкод `["awg0"]`). Regression: `TestTunIncludeInterfaces_BalancerIncludesExitIfaces`, обновлён `TestRenderAWGBalancer_MultiExit`.
+
+### 11.4. Bug #3 — deploy flow не выставлял rp_filter=0 на awg0/awg-exit-nX
+
+**Симптом (после fix #2, при redeploy):** `n1-direct: dial timeout` вернулся. `rp_filter awg-exit-n1 = 1` (redeploy пересоздал интерфейс → rp_filter сбросился в default).
+
+**Root cause:** awg-quick пересоздаёт интерфейс при каждом `awg-quick up`, и `rp_filter` сбрасывается в default (`1` = strict). С rp_filter=1 kernel дропает return traffic: reverse-path check для пакета с dst=10.10.0.2 (пришёл на awg-exit-n1) не матчит — 10.10.0.2 routes to `local`, не через awg-exit-n1 → martian → drop. Deploy-флоу ставил `ip_forward=1` но не `rp_filter=0`.
+
+**Fix:** `RenderServerAWGConf` (user-entry awg0), `RenderExitAWGConf` (balancer client awg-exit-nX), `RenderExitServerAWGConf` (exit awg0) — все три PostUp теперь эмитят `sysctl -w net.ipv4.conf.<iface>.rp_filter=0`. awg-quick применяет PostUp при каждом `up` → rp_filter стабильно 0. Regression: `TestRenderServerAWGConf_PostUpPostDown`, `TestRenderExitAWGConf`, `TestRenderExitServerAWGConf_MASQUERADENetwork` (rp_filter asserted в каждом).
+
+### 11.5. Bug #4 (client-side, test artifact) — client awg0.conf тоже нуждается в rp_filter=0
+
+**Симптом:** после fix #1-3 egress работал только если вручную выставить `rp_filter=0` на client awg0 (server-2). Client conf не имеет PostUp rp_filter.
+
+**Контекст:** это **test artifact** — на реальном клиенте (телефон/ноутбук) нет multi-homing, rp_filter не проблема. Но при использовании VPS как клиента (как server-2 в тесте) awg-quick пересоздаёт awg0 → rp_filter=1 → дропает SYN-ACK от exit (dst=10.8.0.99, пришёл на awg0, reverse-path не матчит). `RenderClientAWGConf` должен эмитить PostUp rp_filter=0 — follow-up (не блокер для production клиентов, где rp_filter обычно 0 или non-strict).
+
+### 11.6. Оркестратор ставит ядро на голый сервер — проверено
+
+`InstallAWGModuleWithOptions` на server-2 (чистый Debian 12, без модуля): PPA path (`apt-get install amneziawg`), 237.3s (~4 мин), модуль загружен (`lsmod: amneziawg 118784 0` + deps), `awg`/`awg-quick` present. DKMS fallback не потребовался (PPA покрыл Debian 12). `persistAWGModules` пишет `/etc/modules-load.d/` → модуль грузится после ребута.
+
+### 11.7. Test baseline
+
+`go build ./...` + `go vet ./...` + полный non-e2e `go test` зелёные. E2E `TestE2E_Heavy_PerClientRouting` PASS (redeploy с 3 фиксами в коде). Live egress verify: `curl --interface awg0 → 23.251.133.38`. Серверы после cleanup: server-1 ✓ active (sing-box + awg0 + awg-exit-n1), server-3 ✓ active (sing-box + awg0 + MASQUERADE), server-2 cleaned (awg0 down, conf removed, модуль установлен для будущих тестов).
+
+### 11.8. Открыто
+
+- **Client-side rp_filter** (#4) — `RenderClientAWGConf` PostUp rp_filter=0. Не блокер (production клиенты не страдают).
+- **ip rule `10.8.0.0/24 → table 2022` на entry** — в live-тесте добавлял вручную (`ip rule add from 10.8.0.0/24 lookup 2022`). На balancer-конфиге ip rules от sing-box auto_route имеют `9000: from all iif awg0 goto 9002 → nop`, что НЕ направляет в table 2022. Нужно проверить: должен ли deploy-флоу добавлять этот ip rule, или sing-box `include_interface: awg0` должен сам перехватывать (через TUN) без ip rule. Follow-up — возможно ещё один баг routing между awg0 и sing-box-tun.

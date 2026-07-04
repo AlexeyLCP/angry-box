@@ -184,6 +184,13 @@ func TestRenderServerAWGConf_PostUpPostDown(t *testing.T) {
 	if !strings.Contains(out, "ip_forward") {
 		t.Error("PostUp should set ip_forward=1")
 	}
+	// PostUp disables rp_filter on awg0 — the kernel's strict reverse-path
+	// check drops tunneled return traffic (live-verified 2026-07-04). awg-quick
+	// recreates the interface on every restart, so the sysctl must be re-applied
+	// in PostUp (a one-shot sysctl at install time is not enough).
+	if !strings.Contains(out, "net.ipv4.conf.awg0.rp_filter=0") {
+		t.Error("PostUp should set rp_filter=0 on awg0 (return traffic would be dropped)")
+	}
 	// PostUp/PostDown must sit BEFORE [Peer] (awg-quick passes [Interface]
 	// fields to awg setconf which parses PostUp there; after [Peer] it fails).
 	peerIdx := strings.Index(out, "[Peer]")
@@ -269,6 +276,16 @@ func TestRenderExitAWGConf(t *testing.T) {
 	peerIdx := strings.Index(out, "[Peer]")
 	if peerIdx < 0 {
 		t.Fatal("missing [Peer]")
+	}
+	// rp_filter=0 PostUp is CRITICAL for balancer egress (live-verified
+	// 2026-07-04): sing-box direct outbounds bind_interface: awg-exit-nX; the
+	// SYN-ACK arrives on the kernel awg-exit-nX with dst=10.10.0.X, and with
+	// rp_filter=1 the kernel drops it (reverse-path check fails — 10.10.0.X is
+	// local but the packet arrived on awg-exit-nX, not lo). sing-box never sees
+	// the response and the dial times out. awg-quick recreates the interface on
+	// every restart, so the sysctl must be re-applied in PostUp.
+	if !strings.Contains(out, "PostUp = sysctl -w net.ipv4.conf.awg-exit-n1.rp_filter=0") {
+		t.Errorf("missing PostUp rp_filter=0 for awg-exit-n1 (balancer egress would time out):\n%s", out)
 	}
 }
 

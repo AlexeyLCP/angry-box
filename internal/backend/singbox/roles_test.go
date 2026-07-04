@@ -217,8 +217,12 @@ func TestRenderAWGBalancer_MultiExit(t *testing.T) {
 		t.Errorf("kernel-AWG balancer must have NO userspace endpoints, got %d", len(endpoints))
 	}
 
-	// One TUN inbound capturing awg0 only (not the exit ifaces — those are
-	// outbound-side via bind_interface and must not be re-captured).
+	// One TUN inbound capturing awg0 AND every awg-exit-nX. awg0 captures
+	// user/client traffic; awg-exit-nX captures the RESPONSE traffic for
+	// sing-box direct outbounds that bind_interface: awg-exit-nX — without
+	// it the kernel delivers the SYN-ACK to a dead local socket and the
+	// dial times out (egress through the balancer silently fails).
+	// Live-verified 2026-07-04.
 	inbounds, _ := top["inbounds"].([]any)
 	if len(inbounds) != 1 {
 		t.Fatalf("expected 1 inbound (TUN), got %d", len(inbounds))
@@ -234,8 +238,15 @@ func TestRenderAWGBalancer_MultiExit(t *testing.T) {
 		t.Errorf("auto_route: got %v, want true", tun["auto_route"])
 	}
 	inc, _ := tun["include_interface"].([]any)
-	if len(inc) != 1 || inc[0] != "awg0" {
-		t.Errorf("include_interface: got %v, want [awg0] only (exit ifaces are outbound-side)", inc)
+	wantIfaces := map[string]bool{"awg0": true, "awg-exit-n1": true, "awg-exit-n2": true, "awg-exit-n3": true, "awg-exit-n4": true}
+	if len(inc) != len(wantIfaces) {
+		t.Errorf("include_interface: got %v, want %d entries (awg0 + all awg-exit-nX)", inc, len(wantIfaces))
+	}
+	for _, v := range inc {
+		s, _ := v.(string)
+		if !wantIfaces[s] {
+			t.Errorf("include_interface: unexpected entry %q", s)
+		}
 	}
 
 	// One direct outbound per exit interface, bound to it.

@@ -199,8 +199,15 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 			MTU:                1420,
 			BalancerPublicKey:  link.ClientPub,
 			BalancerAllowedIPs: link.Address,
-			MASQUERADENetwork:  "10.8.0.0/24",
-			Amnezia:            amnezia,
+			// NAT BOTH subnets that can arrive on awg0: the user subnet (direct
+			// user→exit, 10.8.0.0/24) AND the balancer-link subnet (balancer
+			// awg-exit-nX inner IP, 10.10.0.0/24 — clients reaching the exit
+			// THROUGH a balancer arrive with source 10.10.0.2). Without the
+			// 10.10.0.0/24 rule, balancer-routed egress silently times out
+			// (exit sends packets with private 10.10.0.2 source, internet can't
+			// route responses back). Verified live 2026-07-04.
+			MASQUERADENetwork: "10.8.0.0/24,10.10.0.0/24",
+			Amnezia:           amnezia,
 		}),
 	}, true
 }

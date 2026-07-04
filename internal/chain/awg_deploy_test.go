@@ -156,6 +156,82 @@ func TestRenderNodeAWGConfs_ExitServer(t *testing.T) {
 	if !strings.Contains(f.Content, "Jc = ") {
 		t.Error("exit server missing amnezia block (Jc=) — handshake will mismatch the balancer client side")
 	}
+	// Regression guard (live-verified 2026-07-04): the exit must MASQUERADE
+	// BOTH the user subnet (10.8.0.0/24) AND the balancer-link subnet
+	// (10.10.0.0/24). A balancer-routed client arrives at the exit with
+	// source 10.10.0.2 (AWGExitLink.Address); MASQUERADE covering only
+	// 10.8.0.0/24 leaves 10.10.0.0/24 un-NAT'd → internet can't route
+	// responses back → egress through the balancer silently times out.
+	if !strings.Contains(f.Content, "-s 10.8.0.0/24 -o $WAN -j MASQUERADE") {
+		t.Error("exit server missing MASQUERADE for user subnet 10.8.0.0/24")
+	}
+	if !strings.Contains(f.Content, "-s 10.10.0.0/24 -o $WAN -j MASQUERADE") {
+		t.Error("exit server missing MASQUERADE for balancer-link subnet 10.10.0.0/24 (balancer egress would time out)")
+	}
+}
+
+// TestRenderExitServerAWGConf_MASQUERADEMultiSubnet verifies the MASQUERADE
+// PostUp/PostDown handles a comma-separated subnet list — one iptables rule
+// per subnet, both idempotent (-C || -A). Regression for the balancer-egress
+// bug (live 2026-07-04): a single-subnet MASQUERADENetwork left balancer-link
+// traffic (10.10.0.0/24) un-NAT'd, so egress through a balancer timed out.
+func TestRenderExitServerAWGConf_MASQUERADEMultiSubnet(t *testing.T) {
+	out := RenderExitServerAWGConf(ExitServerConfParams{
+		ServerPrivateKey:  "P",
+		ListenPort:        52000,
+		MASQUERADENetwork: "10.8.0.0/24,10.10.0.0/24",
+	})
+	// Count actual MASQUERADE *adds* (-A POSTROUTING), not the -C check or -D del.
+	adds := strings.Count(out, "iptables -t nat -A POSTROUTING -s 10.8.0.0/24")
+	adds += strings.Count(out, "iptables -t nat -A POSTROUTING -s 10.10.0.0/24")
+	if adds != 2 {
+		t.Errorf("PostUp should emit 2 MASQUERADE -A rules (user + balancer-link), got %d in:\n%s", adds, out)
+	}
+	if !strings.Contains(out, "-s 10.8.0.0/24 -o $WAN -j MASQUERADE") {
+		t.Error("missing user-subnet MASQUERADE")
+	}
+	if !strings.Contains(out, "-s 10.10.0.0/24 -o $WAN -j MASQUERADE") {
+		t.Error("missing balancer-link subnet MASQUERADE")
+	}
+	// rp_filter=0 on exit awg0 — same invariant as the balancer client side
+	// (live-verified 2026-07-04: return traffic to 10.10.0.2 / 10.8.0.x is
+	// dropped by rp_filter=1 after awg-quick recreates the interface).
+	if !strings.Contains(out, "net.ipv4.conf.awg0.rp_filter=0") {
+		t.Error("exit server PostUp should set rp_filter=0 on awg0 (return traffic would be dropped)")
+	}
+	// PostDown must del both (idempotent `|| true`).
+	if !strings.Contains(out, "iptables -t nat -D POSTROUTING -s 10.10.0.0/24 -o $WAN -j MASQUERADE 2>/dev/null || true") {
+		t.Error("missing PostDown del for 10.10.0.0/24")
+	}
+	// Whitespace-tolerant: a space-separated list must parse the same way.
+	outSpace := RenderExitServerAWGConf(ExitServerConfParams{
+		ServerPrivateKey:  "P",
+		ListenPort:        52000,
+		MASQUERADENetwork: "10.8.0.0/24 10.10.0.0/24",
+	})
+	if !strings.Contains(outSpace, "-s 10.10.0.0/24 -o $WAN -j MASQUERADE") {
+		t.Error("space-separated subnet list not parsed")
+	}
+}
+
+// TestRenderExitServerAWGConf_MASQUERADESingleSubnet verifies a single subnet
+// still emits exactly one MASQUERADE -A rule (back-compat with the pre-multi-
+// subnet shape — non-balancer exits that only NAT the user subnet).
+func TestRenderExitServerAWGConf_MASQUERADESingleSubnet(t *testing.T) {
+	out := RenderExitServerAWGConf(ExitServerConfParams{
+		ServerPrivateKey:  "P",
+		ListenPort:        52000,
+		MASQUERADENetwork: "10.8.0.0/24",
+	})
+	if got := strings.Count(out, "iptables -t nat -A POSTROUTING -s 10.8.0.0/24"); got != 1 {
+		t.Errorf("single subnet should emit 1 MASQUERADE -A rule, got %d in:\n%s", got, out)
+	}
+	if !strings.Contains(out, "-s 10.8.0.0/24 -o $WAN -j MASQUERADE") {
+		t.Error("missing user-subnet MASQUERADE")
+	}
+	if strings.Contains(out, "10.10.0.0/24") {
+		t.Error("single-subnet render leaked 10.10.0.0/24 into the conf")
+	}
 }
 
 // TestRenderNodeAWGConfs_Standalone renders a standalone AWG inbound (no chain)

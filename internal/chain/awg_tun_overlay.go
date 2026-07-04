@@ -191,13 +191,33 @@ func exitInterfacesForNode(node *model.ChainNode) []string {
 }
 
 // tunIncludeInterfaces lists the kernel AWG interfaces the TUN must capture
-// from. Per the dns.idoctor.mom reference (awg_balancer.json.j2) this is ONLY
-// awg0 — the interface where user/client traffic arrives. The awg-exit-nX
-// client interfaces are outbound-side (bind_interface on direct outbounds) and
-// must NOT be in include_interface, or the TUN would re-capture egress traffic
-// and loop.
+// from. This is ALWAYS awg0 (the user-entry interface where client traffic
+// arrives) PLUS every awg-exit-nX client interface the balancer owns.
+//
+// CRITICAL (live-verified 2026-07-04): the awg-exit-nX interfaces MUST be in
+// include_interface. sing-box direct outbounds use bind_interface: awg-exit-nX
+// to dial through the kernel exit tunnel (source = the balancer's inner IP
+// 10.10.0.X). The response comes back on the kernel awg-exit-nX interface
+// (dst = 10.10.0.X, which is the interface's own address). Without
+// include_interface listing awg-exit-nX, sing-box's TUN does not capture that
+// response, the kernel delivers it to a local socket that nothing is listening
+// on, and the dial times out — so egress through the balancer silently fails
+// (SYN goes out via awg-exit-nX, SYN-ACK arrives on awg-exit-nX but never
+// reaches sing-box). With awg-exit-nX in include_interface, sing-box captures
+// the response and the connection completes. Verified on live VPSes:
+// server-2 (kernel AWG client 10.8.0.99) → entry awg0 → tun-in → n1-direct
+// (bind_interface awg-exit-n1) → exit awg0 → MASQUERADE → internet, egress IP
+// = exit's public IP. Before the fix, `curl --interface awg0` timed out with
+// sing-box logging `dial tcp ... i/o timeout`; after, it returns the exit IP.
+//
+// The earlier comment ("must NOT be in include_interface, or the TUN would
+// re-capture egress traffic and loop") was WRONG — include_interface captures
+// INCOMING traffic on those interfaces (responses), not the outgoing egress
+// (which goes via bind_interface sockets, not the TUN). No loop occurs.
 func tunIncludeInterfaces(node *model.ChainNode) []string {
-	return []string{"awg0"}
+	ifaces := []string{"awg0"}
+	ifaces = append(ifaces, exitInterfacesForNode(node)...)
+	return ifaces
 }
 
 // balancerTagForNode returns the fallback balancer tag for a node, or "" when

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
@@ -299,5 +300,40 @@ func TestBuildAWGTUNOverlay_IncludeInterfaceIsArray(t *testing.T) {
 	raw, _ := json.Marshal(tun)
 	if !strings.Contains(string(raw), `"include_interface":["awg0"]`) {
 		t.Errorf("include_interface must render as a JSON array; got %s", string(raw))
+	}
+}
+
+// TestTunIncludeInterfaces_BalancerIncludesExitIfaces verifies the helper used
+// by buildMergedNodeConfig returns awg0 PLUS every awg-exit-nX the balancer
+// owns. Regression (live-verified 2026-07-04): without awg-exit-nX in
+// include_interface, sing-box direct outbounds that bind_interface: awg-exit-nX
+// time out on dial — the SYN-ACK arrives on the kernel awg-exit-nX but sing-box
+// never captures it, so egress through the balancer silently fails. With the
+// exit ifaces listed, sing-box captures the response and the connection
+// completes (verified: curl through the tunnel returns the exit's public IP).
+func TestTunIncludeInterfaces_BalancerIncludesExitIfaces(t *testing.T) {
+	node := &model.ChainNode{
+		ExitAWGLinks: []model.AWGExitLink{
+			{TargetID: "exit1", InterfaceName: "awg-exit-n1"},
+			{TargetID: "exit2", InterfaceName: "awg-exit-n2"},
+		},
+	}
+	got := tunIncludeInterfaces(node)
+	want := map[string]bool{"awg0": true, "awg-exit-n1": true, "awg-exit-n2": true}
+	if len(got) != len(want) {
+		t.Fatalf("tunIncludeInterfaces = %v, want %d entries (awg0 + 2 exit ifaces)", got, len(want))
+	}
+	for _, iface := range got {
+		if !want[iface] {
+			t.Errorf("tunIncludeInterfaces: unexpected iface %q (want awg0 + awg-exit-n1/n2)", iface)
+		}
+	}
+	// Non-balancer node (no ExitAWGLinks) → just awg0.
+	if got := tunIncludeInterfaces(&model.ChainNode{}); len(got) != 1 || got[0] != "awg0" {
+		t.Errorf("non-balancer tunIncludeInterfaces = %v, want [awg0]", got)
+	}
+	// nil node → just awg0 (no panic).
+	if got := tunIncludeInterfaces(nil); len(got) != 1 || got[0] != "awg0" {
+		t.Errorf("nil-node tunIncludeInterfaces = %v, want [awg0]", got)
 	}
 }
