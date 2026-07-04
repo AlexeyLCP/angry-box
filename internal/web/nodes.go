@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -40,58 +41,6 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.renderContent(w, r, i18n.T(r.Context(), "Nodes"), templates.Nodes(hosts, infos, metrics, activeChains))
-}
-
-func (s *Server) handleNewNodeForm(w http.ResponseWriter, r *http.Request) {
-	settings, _ := s.store().GetSettings()
-	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
-	s.render(w, r, templates.NodeForm(nil, settings, allKeys))
-}
-
-func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
-		return
-	}
-	id := strings.TrimSpace(r.FormValue("id"))
-	addr := strings.TrimSpace(r.FormValue("addr"))
-	user := strings.TrimSpace(r.FormValue("user"))
-	if user == "" {
-		user = "root"
-	}
-	keyPath := strings.TrimSpace(r.FormValue("keyPath"))
-	country := strings.TrimSpace(r.FormValue("country"))
-	bandwidth := strings.TrimSpace(r.FormValue("bandwidth"))
-
-	if id == "" || addr == "" {
-		http.Error(w, i18n.T(r.Context(), "id and addr are required"), http.StatusBadRequest)
-		return
-	}
-
-	st := s.store()
-	if err := st.SaveHost(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}); err != nil {
-		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
-		return
-	}
-	st.SaveNodeInfo(&model.NodeInfo{
-		Host:      model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath},
-		Country:   country,
-		Bandwidth: bandwidth,
-		Source:    "ssh_key",
-	})
-
-	chains, _ := st.ListChains()
-	chainName := ""
-	for _, c := range chains {
-		for _, n := range c.Nodes {
-			if n.ID == id {
-				chainName = c.Name
-			}
-		}
-	}
-
-	s.render(w, r, templates.NodeRow(&model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath},
-		&model.NodeInfo{Country: country, Bandwidth: bandwidth, Source: "ssh_key"}, nil, chainName))
 }
 
 func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
@@ -172,42 +121,79 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.store()
-	host, err := st.GetHost(id)
-	if err != nil {
-		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
-		return
-	}
 
-	selectedKey := strings.TrimSpace(r.FormValue("ssh_key"))
+	// Read the unified wizard form fields.
+	addr := strings.TrimSpace(r.FormValue("addr"))
+	sshKeyID := strings.TrimSpace(r.FormValue("ssh_key_id"))
 	loginUser := strings.TrimSpace(r.FormValue("login_user"))
 	loginPass := strings.TrimSpace(r.FormValue("login_pass"))
 	autoInstallKey := r.FormValue("auto_install_key") == "on"
 	manualKeyData := strings.TrimSpace(r.FormValue("ssh_key_manual"))
+	country := strings.TrimSpace(r.FormValue("country"))
+	bandwidth := strings.TrimSpace(r.FormValue("bandwidth"))
+	if loginUser == "" {
+		loginUser = "root"
+	}
 
-	// If the user pasted a manual key, save it persistently to the database
-	if selectedKey == "manual" && manualKeyData != "" {
-		settings, _ := st.GetSettings()
+	// ─── Validation (the deploy-bug root cause) ────────────────────────────
+	// A node must not be savable with an empty KeyPath. Require either a key,
+	// a manual paste, or a password. Without this, the applier later hits
+	// os.ReadFile("") and the deploy fails with an opaque SSH error.
+	if sshKeyID == "" && loginPass == "" && manualKeyData == "" {
+		http.Error(w, i18n.T(r.Context(), "Choose a key or enter password"), http.StatusBadRequest)
+		return
+	}
+	if addr == "" {
+		http.Error(w, i18n.T(r.Context(), "Address is required"), http.StatusBadRequest)
+		return
+	}
+	// Key-existence validation: a stale ssh_key_id (deleted key, typo) must
+	// not silently fall through to a password/empty path. "manual" and
+	// "password:"-prefixed values are auth intents, not registry IDs.
+	if sshKeyID != "" && sshKeyID != "manual" && !strings.HasPrefix(sshKeyID, "password:") {
+		if _, ok := st.ResolveKey(sshKeyID); !ok {
+			http.Error(w, i18n.T(r.Context(), "Selected key not found in registry"), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Resolve new vs existing host. New nodes are built in-memory and only
+	// saved on success (so a failed probe leaves no orphan record).
+	host, err := st.GetHost(id)
+	if err != nil {
+		host = &model.Host{ID: id}
+	}
+	host.Addr = addr
+	host.User = loginUser
+
+	// Manual paste: persist the PEM as a registry entry so future deploys
+	// resolve it via ResolveKey (no raw PEM in Host.KeyPath).
+	if sshKeyID == "manual" && manualKeyData != "" {
 		keyName := fmt.Sprintf("manual-%s", host.Addr)
 		if strings.Contains(host.Addr, ":") {
 			keyName = fmt.Sprintf("manual-%s", strings.Split(host.Addr, ":")[0])
 		}
 		keyID := fmt.Sprintf("key-manual-%d", time.Now().Unix())
-
+		fp, fpErr := chain.DeriveKeyFingerprint(manualKeyData)
+		if fpErr != nil {
+			http.Error(w, i18n.T(r.Context(), "Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY)."), http.StatusBadRequest)
+			return
+		}
+		settings, _ := st.GetSettings()
 		settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
-			ID:      keyID,
-			Name:    keyName,
-			KeyData: manualKeyData,
+			ID:          keyID,
+			Name:        keyName,
+			KeyData:     manualKeyData,
+			Source:      model.SourceManual,
+			Fingerprint: fp,
 		})
 		st.SaveSettings(settings)
-		selectedKey = keyID
+		sshKeyID = keyID
 	}
 
-	authMethod := selectedKey
-
-	if loginUser != "" {
-		host.User = loginUser
-	}
-
+	// Determine the auth material for the probe. loginPass wins (we need it
+	// for auto-install anyway); otherwise use the selected key id.
+	authMethod := sshKeyID
 	if loginPass != "" {
 		authMethod = "password:" + loginPass
 	}
@@ -215,7 +201,8 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	hostCopy := *host
 	hostCopy.KeyPath = authMethod
 
-	// Try SSH connection
+	// Probe the remote (this is the SSH connection that can surface a
+	// host-key mismatch → HostKeyWarning).
 	f := s.factory
 	b := f.Create()
 	ctx := context.Background()
@@ -233,82 +220,168 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Connection successful. Handle SSH key auto-install.
+	// Connection successful. Handle SSH key auto-install (only meaningful when
+	// the user authenticated with a password and asked for a key to be
+	// installed for passwordless future deploys).
 	installMsg := ""
 	if autoInstallKey && loginPass != "" {
-		if selectedKey == "" || strings.HasPrefix(selectedKey, "system-") {
-			// Auto-generate a new keypair
+		if sshKeyID == "" || strings.HasPrefix(sshKeyID, "system-") {
+			// Auto-generate a new keypair and install it.
 			privPEM, _, err := sshclient.GenerateSSHKeypair()
 			if err != nil {
 				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key auto-generation failed: %v"), escHTML(err.Error()))
 				host.KeyPath = "password:" + loginPass
 			} else {
-				// Save it to settings so we can use it
 				keyName := fmt.Sprintf("auto-%s", host.Addr)
 				if strings.Contains(host.Addr, ":") {
 					keyName = fmt.Sprintf("auto-%s", strings.Split(host.Addr, ":")[0])
 				}
 				keyID := fmt.Sprintf("key-auto-%d", time.Now().Unix())
+				fp, _ := chain.DeriveKeyFingerprint(privPEM)
 
 				settings, _ := st.GetSettings()
 				settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
-					ID:      keyID,
-					Name:    keyName,
-					KeyData: privPEM,
+					ID:          keyID,
+					Name:        keyName,
+					KeyData:     privPEM,
+					Source:      model.SourceAuto,
+					Fingerprint: fp,
 				})
 				st.SaveSettings(settings)
 
-				selectedKey = keyID
-				hostCopy.KeyPath = keyID // update for install
+				sshKeyID = keyID
+				hostCopy.KeyPath = keyID // for install
 			}
 		}
 
-		if selectedKey != "" {
-			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, selectedKey); err != nil {
+		if sshKeyID != "" {
+			if err := sshclient.InstallPublicKey(hostCopy.Addr, hostCopy.User, loginPass, sshKeyID); err != nil {
 				installMsg = fmt.Sprintf(" <b>"+i18n.T(r.Context(), "Note:")+"</b> "+i18n.T(r.Context(), "SSH key installation failed: %v"), escHTML(err.Error()))
 				host.KeyPath = "password:" + loginPass
 			} else {
-				// Key installed successfully! Use the key instead of password.
-				host.KeyPath = selectedKey
+				// Key installed successfully — use the key instead of the password.
+				host.KeyPath = sshKeyID
 			}
 		}
 	} else if loginPass != "" {
 		host.KeyPath = "password:" + loginPass
-	} else if selectedKey != "" {
-		host.KeyPath = selectedKey
+	} else if sshKeyID != "" {
+		host.KeyPath = sshKeyID
 	}
 
 	st.SaveHost(host)
 
 	info := &model.NodeInfo{
-		Host:   *host,
-		Source: "captured",
+		Host:      *host,
+		Country:   country,
+		Bandwidth: bandwidth,
+		Source:    "captured",
 	}
 	st.SaveNodeInfo(info)
 	st.SaveMetrics(&model.NodeMetrics{
-		HostID:  id,
-		Online:  status.Running,
-		Version: status.Version,
+		HostID:            id,
+		Online:            status.Running,
+		Version:           status.Version,
+		OS:                status.OS,
+		SingBoxInstalled:  status.SingBoxInstalled,
+		AWGModuleInstalled: status.AWGModuleInstalled,
 	})
 
+	// Status line: OS / sing-box / AWG module (the new GetStatus probes).
+	statusLine := ""
+	if status.OS != "" {
+		statusLine += fmt.Sprintf(" · %s: %s", i18n.T(r.Context(), "OS"), escHTML(status.OS))
+	}
+	statusLine += fmt.Sprintf(" · %s: %s", i18n.T(r.Context(), "sing-box"),
+		boolLabel(r.Context(), status.SingBoxInstalled))
+	statusLine += fmt.Sprintf(" · %s: %s", i18n.T(r.Context(), "AWG kernel module"),
+		boolLabel(r.Context(), status.AWGModuleInstalled))
+
 	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
-		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Node %s captured! Running: %v, Version: %s.")+`%s</span>
+		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Node %s captured! Running: %v, Version: %s.")+`%s%s</span>
 		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Refresh Nodes")+`</button></div>`,
-		escHTML(id), status.Running, escHTML(status.Version), installMsg,
+		escHTML(id), status.Running, escHTML(status.Version), statusLine, installMsg,
 	)})
+}
+
+// boolLabel renders a localized yes/no-style label for a boolean status field.
+func boolLabel(ctx context.Context, on bool) string {
+	if on {
+		return i18n.T(ctx, "installed")
+	}
+	return i18n.T(ctx, "not installed")
 }
 
 func (s *Server) handleNodeCaptureForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	st := s.store()
+	// Render the wizard for BOTH new and existing nodes: a new id (not in the
+	// store yet) gets an empty in-memory Host so the form renders pre-fill-free.
 	host, err := st.GetHost(id)
 	if err != nil {
-		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
-		return
+		host = &model.Host{ID: id}
 	}
 	settings, _ := st.GetSettings()
 	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
 	s.render(w, r, templates.NodeCaptureForm(host, settings, allKeys))
+}
+
+// handleTestNodeConnection runs ONLY GetStatus (no save, no install) so the
+// user can verify the key/password works before committing to the wizard
+// flow. The host is built one-off and never persisted.
+func (s *Server) handleTestNodeConnection(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	addr := strings.TrimSpace(r.FormValue("addr"))
+	user := strings.TrimSpace(r.FormValue("login_user"))
+	if user == "" {
+		user = "root"
+	}
+	sshKeyID := strings.TrimSpace(r.FormValue("ssh_key_id"))
+	loginPass := strings.TrimSpace(r.FormValue("login_pass"))
+	manualKeyData := strings.TrimSpace(r.FormValue("ssh_key_manual"))
+
+	// Build a one-off host (NOT saved).
+	keyPath := sshKeyID
+	if sshKeyID == "manual" && manualKeyData != "" {
+		// Manual paste: write PEM to a temp file the SSH client can read.
+		tmp, err := os.CreateTemp("", "ab-test-key-*")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := tmp.WriteString(manualKeyData); err != nil {
+			tmp.Close()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		tmp.Close()
+		defer os.Remove(tmp.Name())
+		keyPath = tmp.Name()
+	}
+	if loginPass != "" {
+		keyPath = "password:" + loginPass
+	}
+	if keyPath == "" {
+		// No explicit key/password — try the panel default key.
+		if settings, err := s.store().GetSettings(); err == nil && settings.DefaultSSHKeyID != "" {
+			keyPath = settings.DefaultSSHKeyID
+		}
+	}
+
+	host := &model.Host{ID: id, Addr: addr, User: user, KeyPath: keyPath}
+	b := s.factory.Create()
+	status, err := b.GetStatus(r.Context(), *host)
+	if err != nil {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + escHTML(err.Error()) + `</span></div>`})
+		return
+	}
+	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
+		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Connection OK. sing-box: %s, OS: %s")+`</span></div>`,
+		escHTML(status.Version), escHTML(status.OS))})
 }
 
 func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) {

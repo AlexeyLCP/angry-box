@@ -59,7 +59,7 @@ func TestCSRF_CrossSiteSecFetchSiteRejected(t *testing.T) {
 }
 
 func TestCSRF_CrossOriginHeaderRejected(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "http://panel:9080/ui/nodes", nil)
+	req := httptest.NewRequest(http.MethodPost, "http://panel:9080/ui/nodes/n1/edit", nil)
 	req.Host = "panel:9080"
 	req.Header.Set("Origin", "http://evil.example.com")
 	rr := httptest.NewRecorder()

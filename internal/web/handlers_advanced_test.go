@@ -303,13 +303,14 @@ func TestHandler_NodeCaptureForm(t *testing.T) {
 	ts.assertStatus(w, http.StatusOK)
 }
 
-// TestHandler_CaptureNode_MissingFields verifies a capture POST without key data
-// is rejected.
+// TestHandler_CaptureNode_MissingFields verifies a capture POST without key
+// data is rejected (400 — the deploy-bug root-cause guard: a node must not be
+// savable with an empty KeyPath).
 func TestHandler_CaptureNode_MissingFields(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
-	w := ts.post("/ui/nodes/n1/capture", url.Values{})
-	ts.assertStatus(w, http.StatusOK)
+	w := ts.post("/ui/nodes/n1/capture", url.Values{"addr": {"1.1.1.1:22"}})
+	ts.assertStatus(w, http.StatusBadRequest)
 }
 
 // ─── Takeover (detect) ──────────────────────────────────────────────────────

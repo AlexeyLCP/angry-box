@@ -72,50 +72,24 @@ func TestHandler_Clients_Empty(t *testing.T) {
 	ts.assertStatus(w, http.StatusOK)
 }
 
-// TestHandler_NewNodeForm verifies the new-node modal form renders 200.
-func TestHandler_NewNodeForm(t *testing.T) {
-	ts := newTestServer(t)
-	w := ts.get("/ui/nodes/new")
-	ts.assertStatus(w, http.StatusOK)
-}
-
-// TestHandler_NewProfileForm verifies the new-profile modal renders 200.
+// TestHandler_NewProfileForm verifies the new-profile modal renders.
 func TestHandler_NewProfileForm(t *testing.T) {
 	ts := newTestServer(t)
 	w := ts.get("/ui/profiles/new")
 	ts.assertStatus(w, http.StatusOK)
 }
 
-// TestHandler_CreateNode_ThenList verifies a node can be created (POST returns
-// the rendered row for inline HTMX swap) and then appears in the nodes list.
+// TestHandler_CreateNode_ThenList verifies a node created via the createNode
+// helper (which saves directly to the store, mirroring the post-capture state)
+// appears in the nodes list. The old POST /ui/nodes route is gone (Task 5.2);
+// node creation now goes through the capture wizard, which is covered by the
+// capture handler tests.
 func TestHandler_CreateNode_ThenList(t *testing.T) {
 	ts := newTestServer(t)
-	form := url.Values{
-		"id":       {"node-A"},
-		"addr":     {"1.2.3.4:22"},
-		"user":     {"root"},
-		"keyPath":  {"/key"},
-	}
-	w := ts.post("/ui/nodes", form)
-	// handleCreateNode renders the new row inline (HTMX swap), 200 on success.
+	ts.createNode("node-A", "1.2.3.4:22")
+	w := ts.get("/ui/nodes")
 	ts.assertStatus(w, http.StatusOK)
 	ts.assertContains(w, "node-A")
-
-	w = ts.get("/ui/nodes")
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "node-A")
-}
-
-// TestHandler_CreateNode_MissingID verifies a missing id is rejected.
-func TestHandler_CreateNode_MissingID(t *testing.T) {
-	ts := newTestServer(t)
-	form := url.Values{
-		"addr":     {"1.2.3.4:22"},
-		"user":     {"root"},
-		"keyPath":  {"/key"},
-	}
-	w := ts.post("/ui/nodes", form)
-	ts.assertStatus(w, http.StatusBadRequest)
 }
 
 // TestHandler_CreateProfile_ThenList verifies a profile can be created and

@@ -8,15 +8,29 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
-// createNode helper: POSTs a node and returns its id (assumes success).
+// createNode helper: registers a node directly via the store (bypassing the
+// capture wizard's SSH probe) so the rest of the test suite — which expects a
+// saved host — works without hitting a real SSH connection. The old helper
+// POSTed /ui/nodes with a keyPath textarea; that route is gone (Task 5.2) and
+// the canonical entry point is now the capture wizard. Saving via the store
+// keeps all ~29 call sites working without editing them.
 func (ts *testServer) createNode(id, addr string) {
 	ts.t.Helper()
-	form := url.Values{"id": {id}, "addr": {addr}, "user": {"root"}, "keyPath": {"/key"}}
-	w := ts.post("/ui/nodes", form)
-	if w.Code != http.StatusOK {
-		ts.t.Fatalf("createNode %s: got %d, want 200 (body: %s)", id, w.Code, w.Body.String())
+	st := chain.NewStore(ts.storePath)
+	host := &model.Host{ID: id, Addr: addr, User: "root", KeyPath: "/key"}
+	if err := st.SaveHost(host); err != nil {
+		ts.t.Fatalf("createNode %s: SaveHost: %v", id, err)
+	}
+	if err := st.SaveNodeInfo(&model.NodeInfo{
+		Host:   *host,
+		Source: "ssh_key",
+	}); err != nil {
+		ts.t.Fatalf("createNode %s: SaveNodeInfo: %v", id, err)
 	}
 }
 
