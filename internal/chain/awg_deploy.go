@@ -121,6 +121,7 @@ func renderChainEntryAWG0Conf(r chainRole, users []model.User) AWGConfFile {
 			MTU:              1420,
 			Amnezia:          BuildAWGAmnezia(awg, &preset, ChainAWGObfsMaterial(c)),
 			Peers:            peers,
+			TUNInterface:     tunInterfaceName, // sing-box-tun: PostUp/PostDown FORWARD rules
 		}),
 	}
 }
@@ -217,6 +218,7 @@ func renderStandaloneAWG0Conf(ib *model.NodeInbound, tag string, usersByInbound 
 			MTU:              1420,
 			Amnezia:          amnezia,
 			Peers:            peers,
+			TUNInterface:     tunInterfaceName, // sing-box-tun: PostUp/PostDown FORWARD rules
 		}),
 	}
 }

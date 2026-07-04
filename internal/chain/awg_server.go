@@ -52,6 +52,15 @@ type AWGServerConfParams struct {
 	Amnezia *config.AmneziaOptions
 	// Peers are the per-user [Peer] entries (one per connected user).
 	Peers []AWGServerPeer
+	// TUNInterface is the sing-box TUN overlay interface name to forward
+	// traffic to/from. When non-empty (the kernel-AWG + sing-box-TUN-overlay
+	// architecture), PostUp/PostDown lines are emitted with iptables FORWARD
+	// rules between awg0 and the TUN interface — without these the kernel
+	// routes awg0→TUN via policy routing (table 2022) but the FORWARD chain
+	// drops return traffic, so egress through the tunnel silently fails
+	// (verified: the working dns.idoctor.mom reference has exactly these rules).
+	// Empty = no PostUp/PostDown (non-overlay use, e.g. plain AWG without sing-box).
+	TUNInterface string
 }
 
 // RenderServerAWGConf renders a kernel awg-quick .conf for the AWG server
@@ -81,6 +90,26 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	// the CPS handshake matches. Itime is dropped on purpose (see file header).
 	if p.Amnezia != nil {
 		writeAmneziaConfLines(&b, p.Amnezia)
+	}
+
+	// PostUp/PostDown: when a TUN overlay interface is specified, add iptables
+	// FORWARD rules between awg0 and the TUN so the kernel's policy routing
+	// (table 2022, set by sing-box auto_route) actually delivers traffic. Without
+	// these the FORWARD chain can drop return traffic and egress through the
+	// tunnel silently fails. Mirrors the dns.idoctor.mom reference awg0.conf
+	// PostUp/PostDown. Also sets ip_forward=1 (belt-and-braces — the deploy flow
+	// sets it via sysctl too, but awg-quick restarting without it would break).
+	if p.TUNInterface != "" {
+		tun := p.TUNInterface
+		b.WriteString(fmt.Sprintf(
+			"PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward; "+
+				"iptables -C FORWARD -i awg0 -o %s -j ACCEPT 2>/dev/null || iptables -A FORWARD -i awg0 -o %s -j ACCEPT; "+
+				"iptables -C FORWARD -i %s -o awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %s -o awg0 -j ACCEPT\n",
+			tun, tun, tun, tun))
+		b.WriteString(fmt.Sprintf(
+			"PostDown = iptables -D FORWARD -i awg0 -o %s -j ACCEPT 2>/dev/null || true; "+
+				"iptables -D FORWARD -i %s -o awg0 -j ACCEPT 2>/dev/null || true\n",
+			tun, tun))
 	}
 
 	for _, peer := range p.Peers {

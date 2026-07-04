@@ -153,6 +153,66 @@ func TestRenderServerAWGConf_Defaults(t *testing.T) {
 	}
 }
 
+// TestRenderServerAWGConf_PostUpPostDown verifies that when TUNInterface is set
+// (the kernel-AWG + sing-box-TUN-overlay architecture), PostUp/PostDown lines
+// are emitted with iptables FORWARD rules between awg0 and the TUN. Without
+// these the kernel's policy routing routes awg0→TUN but the FORWARD chain drops
+// return traffic — egress through the tunnel silently fails (verified on the
+// dns.idoctor.mom reference which has exactly these rules). PostUp/PostDown
+// must sit in [Interface] before [Peer] (amnezia too).
+func TestRenderServerAWGConf_PostUpPostDown(t *testing.T) {
+	out := RenderServerAWGConf(AWGServerConfParams{
+		ServerPrivateKey: "SERVER_PRIV",
+		ListenPort:       51820,
+		TUNInterface:     "sing-box-tun",
+		Peers:            []AWGServerPeer{{PublicKey: "PUB1", AllowedIPs: "10.8.0.2/32"}},
+	})
+	if !strings.Contains(out, "PostUp = ") {
+		t.Error("PostUp line missing when TUNInterface is set")
+	}
+	if !strings.Contains(out, "PostDown = ") {
+		t.Error("PostDown line missing when TUNInterface is set")
+	}
+	// The FORWARD rules must reference both awg0 and the TUN interface.
+	if !strings.Contains(out, "-i awg0 -o sing-box-tun -j ACCEPT") {
+		t.Error("PostUp missing FORWARD awg0→sing-box-tun ACCEPT rule")
+	}
+	if !strings.Contains(out, "-i sing-box-tun -o awg0 -j ACCEPT") {
+		t.Error("PostUp missing FORWARD sing-box-tun→awg0 ACCEPT rule")
+	}
+	// PostUp sets ip_forward=1 (belt-and-braces).
+	if !strings.Contains(out, "ip_forward") {
+		t.Error("PostUp should set ip_forward=1")
+	}
+	// PostUp/PostDown must sit BEFORE [Peer] (awg-quick passes [Interface]
+	// fields to awg setconf which parses PostUp there; after [Peer] it fails).
+	peerIdx := strings.Index(out, "[Peer]")
+	postUpIdx := strings.Index(out, "PostUp = ")
+	if peerIdx < 0 {
+		t.Fatal("missing [Peer]")
+	}
+	if postUpIdx < 0 {
+		t.Fatal("missing PostUp")
+	}
+	if postUpIdx > peerIdx {
+		t.Errorf("PostUp (idx %d) must come BEFORE [Peer] (idx %d)", postUpIdx, peerIdx)
+	}
+}
+
+// TestRenderServerAWGConf_NoPostUpWhenNoTUN verifies PostUp/PostDown are
+// omitted when TUNInterface is empty (non-overlay use — plain AWG without
+// sing-box, e.g. a standalone AWG node not yet wired to a TUN overlay).
+func TestRenderServerAWGConf_NoPostUpWhenNoTUN(t *testing.T) {
+	out := RenderServerAWGConf(AWGServerConfParams{
+		ServerPrivateKey: "SERVER_PRIV",
+		ListenPort:       51820,
+		// TUNInterface empty
+	})
+	if strings.Contains(out, "PostUp") || strings.Contains(out, "PostDown") {
+		t.Errorf("PostUp/PostDown must be omitted when TUNInterface is empty:\n%s", out)
+	}
+}
+
 // ─── Exit tunnels (multi-exit balancer) ────────────────────────────────────
 
 // TestRenderExitAWGConf verifies a balancer-side awg-exit-nX.conf: the client
