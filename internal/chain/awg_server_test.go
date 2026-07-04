@@ -252,6 +252,14 @@ func TestRenderExitAWGConf(t *testing.T) {
 	if !strings.Contains(out, "PersistentKeepalive = 25") {
 		t.Error("missing PersistentKeepalive (NAT'd VPS keepalive)")
 	}
+	// Table = off is CRITICAL: without it awg-quick installs a default route
+	// (AllowedIPs=0.0.0.0/0) through the exit tunnel, capturing ALL egress
+	// including SSH → VPS lockout. With Table=off awg-quick creates the
+	// interface but doesn't touch the routing table; sing-box bind_interface
+	// handles routing instead. Mirrors the real dns.idoctor.mom awg-exit-nX confs.
+	if !strings.Contains(out, "Table = off") {
+		t.Error("missing Table = off (without it awg-quick installs a default route → SSH lockout)")
+	}
 	// No amnezia by default on service tunnels.
 	if strings.Contains(out, "Jc =") {
 		t.Error("exit link must NOT carry amnezia by default (service tunnel between trusted servers)")

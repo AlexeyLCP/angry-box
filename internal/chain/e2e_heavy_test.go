@@ -575,45 +575,45 @@ tail -40 "$LOG" 2>/dev/null || true
 }
 
 // TestE2E_Heavy_PerClientRouting verifies AWG per-client routing end-to-end on
-// the real test VPSes: a 2-hop chain (entry -> exit) with AWG as the user-entry
-// protocol, one user with per-user AWG creds. The orchestrator deploys a
-// multi-peer AWG endpoint on entry (with persisted CPS I1-I5) + an inter-node
-// XHTTP outbound to exit. We then render the per-user awg-quick .conf, upload
-// it to the entry VPS, bring up `awg-quick up`, and curl ifconfig.me through the
-// tunnel — the egress IP must be the EXIT VPS IP (traffic flows client -> entry
-// AWG inbound -> XHTTP -> exit direct -> internet).
+// the real test VPSes using the MULTI-EXIT BALANCER architecture (matching the
+// dns.idoctor.mom reference): server-1 = balancer (kernel awg0 user-entry +
+// kernel awg-exit-n1 exit tunnel + sing-box TUN overlay), server-3 = exit
+// (kernel awg0 exit server with MASQUERADE + sing-box direct-out). This is the
+// kernel-AWG architecture — NO userspace WireGuard endpoints (which are
+// unstable under AmneziaWG: handshake works, data plane fails).
 //
-// This is the only test that brings up a real AWG tunnel and curls through it;
-// it catches the P0 handshake bugs (CPS I1-I5 mismatch, preset mismatch) that
-// config-shape tests cannot. Requires AB_E2E_AWG_PERCLIENT=1 (gates real VPS
-// mutation) — without it the test skips.
+// The test deploys, renders alice's per-user awg-quick .conf, uploads it to the
+// balancer VPS, brings up `awg-quick up` (with a host-route to prevent SSH
+// lockout), and curls ifconfig.me through the tunnel — the egress IP must be
+// the EXIT VPS IP. Requires AB_E2E_AWG_PERCLIENT=1.
 func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 	e2eHeavy(t)
 	if os.Getenv("AB_E2E_AWG_PERCLIENT") != "1" {
 		t.Skip("set AB_E2E_AWG_PERCLIENT=1 to run the real AWG tunnel e2e (mutates test VPSes)")
 	}
-	// The route section must be enabled so sing-box steers AWG-inbound traffic
-	// into the inter-node XHTTP outbound (without it the entry endpoint receives
-	// tunneled packets but has no route rule forwarding them to exit).
 	os.Setenv("AB_ROUTE_DNS", "1")
 	defer os.Unsetenv("AB_ROUTE_DNS")
 
 	store := newStore(t)
-	// 2-hop chain: entry (AWG user-entry) -> exit (egress), AWG as BOTH the
-	// user-entry protocol AND the inter-node transport — fully AWG end-to-end,
-	// no Reality/XHTTP in the path (Reality-transit is a separate open bug;
-	// AWG end-to-end avoids it and is the AWG-first product path). Both nodes
-	// need the AWG kernel module (the orchestrator installs it on Transport==AWG).
+	// Balancer architecture: server-1 = balancer (entry + ExitTargets),
+	// server-3 = exit (Role=exit). This produces:
+	//   server-1: kernel awg0.conf (user-entry, amnezia, PostUp FORWARD) +
+	//             kernel awg-exit-n1.conf (exit tunnel client) +
+	//             sing-box TUN overlay (include_interface awg0, balancer→exit-n1-direct)
+	//   server-3: kernel awg0.conf (exit server, MASQUERADE for 10.8.0.0/24) +
+	//             sing-box direct-out
+	// NO userspace WireGuard endpoints (the dns.idoctor.mom architecture).
 	nodes := buildChainNodes(e2eRoleEntry, e2eRoleExit)
+	nodes[0].Role = model.NodeRoleEntry
+	nodes[0].ExitTargets = []string{nodes[1].ID}
+	nodes[1].Role = model.NodeRoleExit
 	registerChainNodes(t, store, nodes, true)
+
 	c := baseChain("e2e-awg-perclient", nodes)
 	c.UserProtocol = model.UserProtocolAWG
-	c.Transport = model.TransportAWG
 	c.UserEntryPort = 51820
 
-	// One user with per-user AWG creds. EnsureUserCreds generates the keypair;
-	// EnsureUserAWGAddress assigns a unique inner IP. No ChainExit pin -> the
-	// user egresses at the chain's default exit (the last node = exit).
+	// One user with per-user AWG creds.
 	alice := &model.User{
 		ID: "alice", Name: "alice", Active: true,
 		Protocols:  []string{"awg"},
@@ -628,23 +628,19 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 
 	report := deployChain(t, store, c, deployChainOpts{})
 
-	// Kernel-AWG architecture: alice's AWG public key + CPS I1-I5 live in the
-	// kernel awg0.conf (NOT the sing-box config, which has only the TUN overlay).
-	// The sing-box entry config must have the TUN overlay. The user-entry is a
-	// kernel awg0 (NOT a sing-box inbound), so the user-in tag
-	// (ch-<chain>-user-in) must NOT appear — under kernel-AWG the user-entry
-	// produces no sing-box inbound, and after fix #1 route rules key on tun-in.
-	// NOTE: this chain uses Transport=AWG, so the entry DOES have a userspace
-	// wireguard endpoint — but it's the inter-node AWG transport outbound
-	// (ch-<chain>-out-awg-<exitID>), which the plan keeps userspace. That's fine;
-	// the invariant is about the user-ENTRY, not the transport.
+	// ENTRY (balancer): sing-box config has TUN overlay, NO userspace WG.
 	entryCfg := fetchRemoteConfig(t, e2eRoleEntry)
 	assertConfigContains(t, entryCfg, `"type": "tun"`, `"include_interface"`, `"awg0"`)
-	userInTag := fmt.Sprintf("ch-%s-user-in", c.Name)
-	if strings.Contains(entryCfg, userInTag) {
-		t.Errorf("kernel-AWG entry config must NOT contain the user-in tag %q (user-entry is kernel awg0, not a sing-box inbound):\n%s", userInTag, truncate(entryCfg, 2000))
+	if strings.Contains(entryCfg, `"type": "wireguard"`) {
+		t.Errorf("balancer config must NOT emit a userspace wireguard endpoint:\n%s", truncate(entryCfg, 2000))
 	}
-	// awg0.conf carries the user as a [Peer] + the persisted CPS material.
+	// The balancer must have a fallback/direct outbound bound to awg-exit-n1
+	// (bind_interface) — the kernel exit tunnel, NOT a userspace WG endpoint.
+	if !strings.Contains(entryCfg, "awg-exit-n1") {
+		t.Errorf("balancer config missing awg-exit-n1 (kernel exit tunnel bind_interface):\n%s", truncate(entryCfg, 2000))
+	}
+
+	// ENTRY: kernel awg0.conf pushed with alice as [Peer] + amnezia + PostUp.
 	awg0Conf, _ := e2eConnect(t, e2eRoleEntry).Run("sudo cat /etc/amnezia/amneziawg/awg0.conf 2>/dev/null || echo MISSING")
 	if strings.TrimSpace(awg0Conf) == "MISSING" {
 		t.Fatal("entry awg0.conf not pushed — kernel-AWG deploy must write it")
@@ -652,9 +648,35 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 	if !strings.Contains(awg0Conf, alice.AWGPublicKey) {
 		t.Errorf("awg0.conf missing alice's AWG public key %q\n%s", alice.AWGPublicKey, truncate(awg0Conf, 2000))
 	}
-	if c.AWGCPSLevel > 0 && !strings.Contains(strings.ToLower(awg0Conf), "i1") {
-		t.Errorf("awg0.conf missing CPS I1 (level=%d)\n%s", c.AWGCPSLevel, truncate(awg0Conf, 2000))
+	if !strings.Contains(awg0Conf, "PostUp") {
+		t.Errorf("awg0.conf missing PostUp (FORWARD rules for TUN overlay):\n%s", truncate(awg0Conf, 1500))
 	}
+
+	// ENTRY: kernel awg-exit-n1.conf pushed + awg-quick@awg-exit-n1 active.
+	exitConf, _ := e2eConnect(t, e2eRoleEntry).Run("sudo cat /etc/amnezia/amneziawg/awg-exit-n1.conf 2>/dev/null || echo MISSING")
+	if strings.TrimSpace(exitConf) == "MISSING" {
+		t.Fatal("entry awg-exit-n1.conf not pushed — balancer deploy must write it")
+	}
+	exitActive, _ := e2eConnect(t, e2eRoleEntry).Run("sudo systemctl is-active awg-quick@awg-exit-n1 2>/dev/null || echo inactive")
+	if strings.TrimSpace(exitActive) != "active" {
+		t.Errorf("awg-quick@awg-exit-n1 not active (got %q)", strings.TrimSpace(exitActive))
+	}
+	t.Logf("balancer: awg-exit-n1 active, awg0 active, TUN overlay present")
+
+	// EXIT: kernel awg0.conf with MASQUERADE for internet egress.
+	exitAwg0, _ := e2eConnect(t, e2eRoleExit).Run("sudo cat /etc/amnezia/amneziawg/awg0.conf 2>/dev/null || echo MISSING")
+	if strings.TrimSpace(exitAwg0) == "MISSING" {
+		t.Fatal("exit awg0.conf not pushed — exit server deploy must write it")
+	}
+	if !strings.Contains(exitAwg0, "MASQUERADE") {
+		t.Errorf("exit awg0.conf missing MASQUERADE (internet egress NAT):\n%s", truncate(exitAwg0, 1500))
+	}
+	exitAwgActive, _ := e2eConnect(t, e2eRoleExit).Run("sudo systemctl is-active awg-quick@awg0 2>/dev/null || echo inactive")
+	if strings.TrimSpace(exitAwgActive) != "active" {
+		t.Errorf("exit awg-quick@awg0 not active (got %q)", strings.TrimSpace(exitAwgActive))
+	}
+	t.Logf("exit: awg0 active with MASQUERADE")
+
 	if report.AWG == nil {
 		t.Fatal("expected AWG client material in deploy report")
 	}

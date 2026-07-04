@@ -216,6 +216,15 @@ func RenderExitAWGConf(p ExitClientConfParams) string {
 	var b strings.Builder
 	b.WriteString("[Interface]\n")
 	b.WriteString(fmt.Sprintf("Address = %s\n", p.ClientAddress))
+	// Table = off is CRITICAL: without it awg-quick installs a default route
+	// (because AllowedIPs = 0.0.0.0/0) through the exit tunnel, which captures
+	// ALL egress traffic — including SSH — and locks out the VPS. With Table = off
+	// awg-quick creates the interface but does NOT touch the routing table;
+	// sing-box's bind_interface handles routing instead (it binds outbound sockets
+	// directly to the awg-exit-nX interface, no route table entry needed). This
+	// is how the real dns.idoctor.mom server runs 4 exit tunnels simultaneously
+	// without lockout (each has Table = off in its [Interface]).
+	b.WriteString("Table = off\n")
 	if p.ClientListenPort > 0 {
 		b.WriteString(fmt.Sprintf("ListenPort = %d\n", p.ClientListenPort))
 	}
