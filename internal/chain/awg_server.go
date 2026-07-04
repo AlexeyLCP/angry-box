@@ -258,6 +258,21 @@ type ExitServerConfParams struct {
 	// Amnezia, when non-nil, enables amnezia obfuscation (must match the
 	// balancer's ExitClientConfParams.Amnezia for the handshake to succeed).
 	Amnezia *config.AmneziaOptions
+	// MASQUERADENetwork, when non-empty (e.g. "10.8.0.0/24"), emits PostUp/
+	// PostDown lines with iptables MASQUERADE for that subnet — NATs tunneled
+	// user traffic to the exit's public IP so the internet routes responses
+	// back. Without this, the exit sends packets to the internet with the
+	// user's private inner IP (10.8.0.x) as source — the internet can't route
+	// the response back, so egress silently fails (data out, nothing back).
+	// Mirrors the real exit server (n1) PostUp:
+	//   iptables -t nat -A POSTROUTING -s <network> -o <wan> -j MASQUERADE
+	// Also adds FORWARD ACCEPT for awg0 (so the kernel forwards tunneled→wan).
+	// Empty = no MASQUERADE (exit used only for balancer, not direct internet).
+	MASQUERADENetwork string
+	// WANInterface is the exit's public-facing interface for MASQUERADE (e.g.
+	// "ens4"). Auto-detected when empty via `ip route show default` — the
+	// PostUp script resolves it at runtime so we don't hardcode a wrong iface.
+	WANInterface string
 }
 
 // RenderExitServerAWGConf renders a Role=exit node's kernel awg0.conf — the
@@ -283,6 +298,36 @@ func RenderExitServerAWGConf(p ExitServerConfParams) string {
 	b.WriteString(fmt.Sprintf("MTU = %d\n", p.MTU))
 	if p.Amnezia != nil {
 		writeAmneziaConfLines(&b, p.Amnezia)
+	}
+	// MASQUERADE + FORWARD for internet egress: when MASQUERADENetwork is set,
+	// emit PostUp/PostDown that NAT tunneled user traffic to the exit's public
+	// IP. Without this the exit sends packets to the internet with the user's
+	// private inner IP (10.8.0.x) — the internet can't route responses back,
+	// so egress silently fails (data out, nothing back). Mirrors the real exit
+	// server (n1) PostUp. The WAN interface is auto-detected at runtime via
+	// `ip route show default` when WANInterface is empty (don't hardcode it —
+	// different VPSes have different iface names: ens3, ens4, eth0...).
+	if p.MASQUERADENetwork != "" {
+		wan := p.WANInterface
+		if wan == "" {
+			// Auto-detect: resolve the default-route interface at PostUp time.
+			// `ip -o route show default` prints "default via X dev IFACE" — awk
+			// extracts IFACE. This runs on the remote VPS, not the orchestrator.
+			wan = "$(ip -o route show default 0.0.0.0/0 2>/dev/null | awk '{print $5}' | head -1)"
+		}
+		b.WriteString(fmt.Sprintf(
+			"PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward; "+
+				"WAN=%s; "+
+				"iptables -t nat -C POSTROUTING -s %s -o $WAN -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s %s -o $WAN -j MASQUERADE; "+
+				"iptables -C FORWARD -i awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i awg0 -j ACCEPT; "+
+				"iptables -C FORWARD -o awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -o awg0 -j ACCEPT\n",
+			wan, p.MASQUERADENetwork, p.MASQUERADENetwork))
+		b.WriteString(fmt.Sprintf(
+			"PostDown = WAN=%s; "+
+				"iptables -t nat -D POSTROUTING -s %s -o $WAN -j MASQUERADE 2>/dev/null || true; "+
+				"iptables -D FORWARD -i awg0 -j ACCEPT 2>/dev/null || true; "+
+				"iptables -D FORWARD -o awg0 -j ACCEPT 2>/dev/null || true\n",
+			wan, p.MASQUERADENetwork))
 	}
 	if p.BalancerPublicKey != "" {
 		b.WriteString("\n[Peer]\n")

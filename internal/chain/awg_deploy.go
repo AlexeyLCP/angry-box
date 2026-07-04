@@ -176,6 +176,14 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 			MTU:                1420,
 			BalancerPublicKey:  link.ClientPub,
 			BalancerAllowedIPs: link.Address,
+			// MASQUERADE the user-entry subnet (10.8.0.0/24) to the exit's public
+			// IP so the internet routes responses back. Without this, the exit
+			// sends packets with the user's private inner IP (10.8.0.x) as source
+			// — the internet can't route the response back, so egress silently
+			// fails (data out, nothing back). Mirrors the real exit server (n1)
+			// PostUp. The WAN interface is auto-detected at runtime (different VPSes
+			// have different iface names: ens3, ens4, eth0...).
+			MASQUERADENetwork: "10.8.0.0/24",
 		}),
 	}, true
 }
