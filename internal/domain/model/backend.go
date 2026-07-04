@@ -75,6 +75,10 @@ type Status struct {
 	PID     int
 	Uptime  string
 	Error   string
+
+	OS                 string
+	SingBoxInstalled   bool
+	AWGModuleInstalled bool
 }
 
 // String returns a human-readable representation of ConfigType.
