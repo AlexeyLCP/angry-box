@@ -438,7 +438,7 @@ func (b *Backend) InstallAWGModuleWithOptions(ctx context.Context, host model.Ho
 }
 
 // awgKernelModuleLoaded reports whether the amneziawg kernel module is loaded.
-func awgKernelModuleLoaded(ctx context.Context, client ports.SSHClient, useSudo bool) bool {
+func (b *Backend) awgKernelModuleLoaded(ctx context.Context, client ports.SSHClient, useSudo bool) bool {
 	out, _, _, _ := client.RunWithOutput(ctx,
 		sudoBash(useSudo, "lsmod 2>/dev/null | grep -q amneziawg && echo loaded || echo not_loaded"),
 		30*time.Second)
@@ -474,7 +474,7 @@ func validateTarballURL(raw string) error {
 // The old amneziawg-tools apt name and upstream install.sh URL are obsolete
 // (package missing on Debian 12; install.sh returns 404 as of 2026).
 func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, useSudo bool) error {
-	if awgKernelModuleLoaded(ctx, client, useSudo) {
+	if b.awgKernelModuleLoaded(ctx, client, useSudo) {
 		return b.persistAWGModules(ctx, client, useSudo)
 	}
 
@@ -547,7 +547,7 @@ fi
 		return err
 	}
 
-	if !awgKernelModuleLoaded(ctx, client, useSudo) {
+	if !b.awgKernelModuleLoaded(ctx, client, useSudo) {
 		return fmt.Errorf("amneziawg module not loaded after install (check kernel headers / dkms log)")
 	}
 	awgQuick, _, _, _ := client.RunWithOutput(ctx, sudoBash(useSudo, "command -v awg-quick 2>/dev/null || echo missing"), 30*time.Second)
@@ -742,6 +742,22 @@ func (b *Backend) GetStatus(ctx context.Context, host model.Host) (*model.Status
 			status.Uptime = strings.TrimSpace(uptimeOut)
 		}
 	}
+
+	// OS — distro pretty name.
+	if osOut, _, _, err := client.RunWithOutput(ctx,
+		`. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME" || (lsb_release -ds 2>/dev/null || echo "")`,
+		30*time.Second); err == nil {
+		status.OS = strings.TrimSpace(strings.Trim(osOut, "\""))
+	}
+
+	// SingBoxInstalled — binary present, independent of Running.
+	if sbOut, _, _, err := client.RunWithOutput(ctx,
+		"command -v sing-box >/dev/null 2>&1 && echo yes || echo no", 30*time.Second); err == nil {
+		status.SingBoxInstalled = strings.TrimSpace(sbOut) == "yes"
+	}
+
+	// AWGModuleInstalled — kernel module currently loaded.
+	status.AWGModuleInstalled = b.awgKernelModuleLoaded(ctx, client, false)
 
 	return status, nil
 }
