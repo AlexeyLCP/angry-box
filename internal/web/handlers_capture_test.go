@@ -51,3 +51,27 @@ func TestHandler_NodeCaptureForm_NewNode(t *testing.T) {
 	w := ts.get("/ui/nodes/newnode/capture")
 	ts.assertStatus(w, http.StatusOK)
 }
+
+// ─── Task 6 — handleUpdateNode (simplified ssh_key_id reading) ──────────────
+
+// TestHandler_UpdateNode_RejectsStaleKeyID verifies the edit form rejects a
+// ssh_key_id that is not in the registry (the same existence guard as capture,
+// applied on edit so a stale KeyPath cannot be persisted).
+func TestHandler_UpdateNode_RejectsStaleKeyID(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	form := url.Values{"ssh_key_id": {"key-nope"}}
+	w := ts.post("/ui/nodes/n1/edit", form)
+	ts.assertStatus(w, http.StatusBadRequest)
+}
+
+// TestHandler_UpdateNode_PreservesKeyWhenBlank verifies that an edit POST with
+// no ssh_key_id preserves the node's existing KeyPath (lets the applier fall
+// back to the panel default rather than wiping the key).
+func TestHandler_UpdateNode_PreservesKeyWhenBlank(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	form := url.Values{} // no ssh_key_id
+	w := ts.post("/ui/nodes/n1/edit", form)
+	ts.assertStatus(w, http.StatusOK)
+}

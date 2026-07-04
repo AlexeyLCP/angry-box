@@ -71,8 +71,22 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	host.Addr = strings.TrimSpace(r.FormValue("addr"))
 	host.User = strings.TrimSpace(r.FormValue("user"))
-	if keyPath := strings.TrimSpace(r.FormValue("keyPath")); keyPath != "" {
-		host.KeyPath = keyPath
+	// SSH key: read the unified dropdown field (ssh_key_id). The legacy
+	// keyPath textarea is gone — only registry IDs or "password:<pass>" live
+	// in Host.KeyPath now. An empty ssh_key_id preserves the current KeyPath
+	// so the applier can fall back to the panel default (resolveHostKey).
+	sshKeyID := strings.TrimSpace(r.FormValue("ssh_key_id"))
+	if sshKeyID != "" {
+		// Key-existence validation: reject a stale/typo'd id loudly rather
+		// than silently saving an unresolvable KeyPath (the deploy-bug class).
+		// "password:"-prefixed values are auth intents, not registry IDs.
+		if !strings.HasPrefix(sshKeyID, "password:") {
+			if _, ok := st.ResolveKey(sshKeyID); !ok {
+				http.Error(w, i18n.T(r.Context(), "Selected key not found in registry"), http.StatusBadRequest)
+				return
+			}
+		}
+		host.KeyPath = sshKeyID
 	}
 	st.SaveHost(host)
 
