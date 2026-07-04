@@ -287,19 +287,34 @@
 
 ### Что ещё НЕ работает (open — egress routing polish)
 
-Даже с `ip_forward=1` на обеих нодах, `EGRESS:` пустой. Это известный open item (AGENTS.md #10 "egress through the AWG tunnel — routing polish").
+**КОРНЕВАЯ ПРИЧИНА НАЙДЕНА** через сравнение с работающим dns.idoctor.mom:
 
-**Диагноз через live trace (server-1 entry + server-3 exit):**
-- Inter-node AWG transport handshake **проходит на обеих нодах** (entry: `sending handshake initiation` → `received handshake response` + keepalive; exit: `received handshake initiation` → `sending handshake response`). Transport tunnel up.
-- НО: `awg show` — `72.96 KiB sent, 92 B received` (data goes OUT, nothing comes BACK).
-- Exit логи: flood `received message with unknown type` (22×) — это **AmneziaWG Jc junk-packets** (Jc=120 вставляет 120 junk-сообщений, receiver их discard-ит как "unknown type"). Handshake при этом проходит.
+Реальный сервер использует **multi-exit balancer** архитектуру (kernel `awg-exit-n1..n4` + `bind_interface`, **0 userspace WG endpoints**), а мой e2e тест использовал **linear chain** с `Transport=AWG` (userspace WG для inter-node — handshake работает, data plane падает под amnezia). Это ФУНДАМЕНТАЛЬНО разные пути.
 
-**Fix #1 применён (amnezia disable на inter-node transport):**
-- `buildAWGTransportInbound`/`buildAWGTransportOutbound` (applier.go) теперь ставят `Amnezia: nil` вместо `BuildAWGAmnezia(awg, preset, material)`. Inter-node transport = service tunnel между trusted servers → DPI obfuscation не нужна (это job user-entry awg0 на kernel module). Userspace amnezia unstable (chacha20poly1305 overlap — handshake works, data plane fails). Plain WireGuard в userspace rock-solid.
-- Live verify после fix: exit `amnezia=False` на transport-in, `unknown type` count = 0 (Jc flood cleared). НО egress всё ещё пустой — amnezia был не единственным blocker.
+**Сравнение архитектур (real vs test):**
 
-**Fix #2 (real root cause — AllowedIPs too restrictive на transport-in peer):**
-- **Root cause найден через re-analysis trace (без live test — server-1 lockout):** exit's transport-in peer (entry) имел `AllowedIPs = [prev.TransitAWGAddress]` = `["10.9.0.2/32"]` — только transport inner IP. Response packets (dst=10.8.0.x user subnet) **match no peer** → WireGuard drops them. Вот почему 72 KiB sent / 92 B received — data выходит, responses дропаются на exit.
+| | dns.idoctor.mom (РАБОТАЕТ) | e2e test (EGRESS ПУСТОЙ) |
+|---|---|---|
+| endpoints | 0 (NO userspace WG) | 1 (userspace WG transport) |
+| outbounds | direct[bind_interface: awg-exit-nX] | direct (no bind_interface) |
+| kernel exit ifaces | awg-exit-n1..n4 (kernel awg-quick) | none |
+| chain tags | 0 (no linear chain) | 3 (linear chain) |
+| route | tun-in → balancer → exit-directs | tun-in → userspace WG endpoint |
+| awg-exit conf | **Table = off** | missing Table=off → **SSH lockout** |
+| exit awg0.conf | **MASQUERADE** + FORWARD | missing → responses never return |
+
+**5 fixes применены (commits cce068a, ac017e6, 7912751):**
+
+1. **PostUp/PostDown FORWARD** в user-entry awg0.conf (`RenderServerAWGConf.TUNInterface`) — без этого FORWARD chain дропает return traffic между awg0 и sing-box-tun. (commit cce068a)
+2. **MASQUERADE + FORWARD** в exit server awg0.conf (`RenderExitServerAWGConf.MASQUERADENetwork`) — без этого exit отправляет пакеты в интернет с private IP (10.8.0.x), internet не может вернуть response. WAN auto-detected. (commit ac017e6)
+3. **Table = off** в awg-exit-nX.conf (`RenderExitAWGConf`) — БЕЗ ЭТОГО awg-quick ставит default route через exit tunnel → **SSH lockout** (произошло 2 раза на server-1). С Table=off awg-quick создаёт интерфейс но не трогает routing table; sing-box bind_interface handles routing. (commit 7912751)
+4. **Amnezia disabled** на inter-node transport (`buildAWGTransportInbound/Outbound.Amnezia=nil`) — userspace amnezia unstable (handshake works, data plane fails). (commit 1b0856e)
+5. **AllowedIPs 0.0.0.0/0** на transport-in peer — response packets (dst=10.8.0.x) match no peer при AllowedIPs=[10.9.0.2/32]. (commit 1b0856e)
+6. **ip_forward=1** для всех AWG-chain nodes (`ensureIPForward` в ApplyChain + ApplyMergedNode). (commit 1b0856e)
+
+**PerClientRouting e2e test переписан** на balancer архитектуру (commit 7912751): server-1=balancer (entry+ExitTargets), server-3=exit (Role=exit). kernel awg0 + awg-exit-n1 + TUN overlay + MASQUERADE. NO userspace WG. Соответствует dns.idoctor.mom.
+
+**Live verify: НЕ выполнен** — server-1 заблокирован 2 раза (Table=off fix применился после второго lockout). Нужен reboot server-1, потом re-run `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_PerClientRouting` — должен показать non-empty EGRESS (exit IP 23.251.133.38).
 - **Fix:** `buildAWGTransportInbound` peer AllowedIPs → `["0.0.0.0/0", "::/0"]` (вместо `[prev.TransitAWGAddress]`). Линейная цепь: transport-in имеет ровно one peer (previous node) → 0.0.0.0/0 безопасно (весь response traffic идёт к previous node). Это mirrors transport-out side (которая уже uses 0.0.0.0/0).
 - **Status:** fix applied + unit test updated (`TestAWGTransport_Builders_Fields` — `allowed_ips=[0.0.0.0/0 ::/0]`). **Live verify НЕ выполнен** (server-1 lockout) — это следующий e2e run после recovery.
 - **MASQUERADE hypothesis (отменена):** sing-box `direct` outbound proxies at L4 (TCP) — dials ifconfig.me с **exit's public IP** как source, so MASQUERADE на exit не нужна (response приходит на exit's public IP, sing-box маппит обратно). AllowedIPs был real blocker.
