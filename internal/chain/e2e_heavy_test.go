@@ -711,18 +711,34 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 	// derives the interface name from the file's basename (must be <iface>.conf,
 	// no hyphens/special chars), so install it as /etc/amnezia/amneziawg/<iface>.conf.
 	// awg-quick needs root (creates a net interface); lcp has passwordless sudo.
+	//
+	// CRITICAL SSH SAFETY: the client .conf has AllowedIPs=0.0.0.0/0 (correct for
+	// a real user device — route all traffic through the VPN). But running it ON
+	// the VPS would install a default route through awge2e, capturing SSH → lockout
+	// (happened twice on server-1). The fix: inject `Table = off` into the .conf
+	// before bringing it up — awg-quick creates the interface but does NOT touch
+	// the routing table. Then add a LOW-priority default route (metric 200, vs
+	// the DHCP default route at metric 100) so SSH uses the main route while
+	// `curl --interface awge2e` (SO_BINDTODEVICE) forces test traffic through the
+	// tunnel. This is exactly how the real dns.idoctor.mom server runs 4 exit
+	// tunnels simultaneously without lockout (each has Table = off).
 	iface := "awge2e"
 	remoteConf := fmt.Sprintf("/etc/amnezia/amneziawg/%s.conf", iface)
 	client := e2eConnect(t, e2eRoleEntry)
 	ctx := e2eContext(t, 3*time.Minute)
-	// Write via a temp file then sudo-move into place (lcp can't write /etc
-	// directly). Keep 0600 so the private key is not world-readable.
+	// Inject Table = off into the client conf before uploading — prevents awg-quick
+	// from replacing the default route (which would lock out SSH).
+	safeConf := strings.Replace(conf, "[Interface]\n", "[Interface]\nTable = off\n", 1)
+	if !strings.Contains(safeConf, "Table = off") {
+		// Fallback: prepend if the [Interface] marker wasn't found.
+		safeConf = "Table = off\n" + safeConf
+	}
 	tmpConf := fmt.Sprintf("/tmp/e2e-awg-alice-%d.conf", time.Now().UnixNano())
-	if err := client.UploadText(ctx, conf, tmpConf, 0o600); err != nil {
+	if err := client.UploadText(ctx, safeConf, tmpConf, 0o600); err != nil {
 		t.Fatalf("upload .conf: %v", err)
 	}
 	defer func() {
-		_, _ = client.Run(fmt.Sprintf("sudo awg-quick down %s 2>/dev/null || true; sudo rm -f %s %s", remoteConf, remoteConf, tmpConf))
+		_, _ = client.Run(fmt.Sprintf("sudo ip route del default dev %s metric 200 2>/dev/null || true; sudo awg-quick down %s 2>/dev/null || true; sudo rm -f %s %s", iface, remoteConf, remoteConf, tmpConf))
 	}()
 	if _, err := client.Run(fmt.Sprintf("sudo mkdir -p /etc/amnezia/amneziawg && sudo cp %s %s && sudo chmod 600 %s", tmpConf, remoteConf, remoteConf)); err != nil {
 		t.Fatalf("install .conf: %v", err)
@@ -732,12 +748,14 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 IFACE=%q
 EP=%q
 sudo awg-quick down "$IFACE" 2>/dev/null || true
-# Add an explicit host route to the endpoint via the VPS's real gateway, so the
-# tunnel does not loop back into itself (awg-quick's fwmark policy usually
-# handles this, but be explicit for the test).
+# Table = off in the conf means awg-quick won't install a default route —
+# SSH stays on the main routing table (DHCP default, metric 100). We add a
+# LOW-priority default route (metric 200) so `+"`curl --interface`"+` can send
+# through awge2e without affecting SSH (which uses the metric 100 route).
 sudo awg-quick up "$CONF" 2>&1 || { echo AWG_UP_FAILED; sudo awg-quick down "$IFACE" 2>/dev/null || true; exit 1; }
 GW=$(ip route show default | awk "/default/ {print \$3; exit}")
 sudo ip route add "$EP" via "$GW" dev ens4 2>/dev/null || true
+sudo ip route add default dev "$IFACE" metric 200 2>/dev/null || true
 sleep 5
 echo "---AWG SHOW---"
 sudo awg show "$IFACE" 2>&1
@@ -747,6 +765,7 @@ echo "---CURL VIA TUNNEL---"
 IP=$(curl -s --max-time 20 --interface "$IFACE" https://ifconfig.me 2>/dev/null || true)
 echo "---SINGBOX TRACE (last 60s, 30 lines)---"
 sudo journalctl -u sing-box --since "60 seconds ago" --no-pager 2>/dev/null | grep -v unknown | tail -30
+sudo ip route del default dev "$IFACE" metric 200 2>/dev/null || true
 sudo awg-quick down "$IFACE" 2>/dev/null || true
 echo EGRESS:$IP
 `, remoteConf, iface, entryIP)
