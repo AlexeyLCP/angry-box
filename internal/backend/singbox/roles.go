@@ -50,7 +50,7 @@ type ProxyNodeParams struct {
 	// RealityPrivateKey (base64-url X25519) persisted; if empty, generated.
 	RealityPrivateKey string
 	// ShortIDs persisted (hex strings). If empty, generated (8 ids, first "").
-	ShortIDs []string
+	ShortIDs  []string
 	XHTTPPath string // XHTTP path; if empty, a random one is generated
 }
 
@@ -90,19 +90,19 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 			{"name": "default", "uuid": p.UUID, "flow": "xtls-rprx-vision"},
 		},
 		"tls": map[string]any{
-			"enabled":           true,
-			"server_name":       sni,
-			"alpn":              []string{"h2", "http/1.1"},
-			"min_version":       "1.3",
-			"max_version":       "1.3",
+			"enabled":     true,
+			"server_name": sni,
+			"alpn":        []string{"h2", "http/1.1"},
+			"min_version": "1.3",
+			"max_version": "1.3",
 			"reality": map[string]any{
 				"enabled": true,
 				"handshake": map[string]any{
 					"server":      sni,
 					"server_port": 443,
 				},
-				"private_key":        p.RealityPrivateKey,
-				"short_id":           p.ShortIDs,
+				"private_key":         p.RealityPrivateKey,
+				"short_id":            p.ShortIDs,
 				"max_time_difference": "1m",
 			},
 			// NOTE: ECH is intentionally omitted — sing-box-extended rejects
@@ -146,28 +146,28 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 // Used by both the proxy_node inbound and the chain hop outbound.
 func xhttpTransportMap(sni, path string) map[string]any {
 	return map[string]any{
-		"type":                    "xhttp",
-		"mode":                    "packet-up",
-		"host":                    sni,
-		"path":                    path,
-		"x_padding_bytes":         "100-1000",
-		"x_padding_obfs_mode":     true,
-		"x_padding_method":        "tokenish",
-		"x_padding_placement":     "queryInHeader",
-		"x_padding_key":           "x_padding",
-		"x_padding_header":        "X-Padding",
-		"session_placement":       "cookie",
-		"seq_placement":           "cookie",
-		"uplink_data_placement":   "cookie",
-		"uplink_http_method":      "POST",
-		"sc_max_each_post_bytes":  "50000-200000",
+		"type":                     "xhttp",
+		"mode":                     "packet-up",
+		"host":                     sni,
+		"path":                     path,
+		"x_padding_bytes":          "100-1000",
+		"x_padding_obfs_mode":      true,
+		"x_padding_method":         "tokenish",
+		"x_padding_placement":      "queryInHeader",
+		"x_padding_key":            "x_padding",
+		"x_padding_header":         "X-Padding",
+		"session_placement":        "cookie",
+		"seq_placement":            "cookie",
+		"uplink_data_placement":    "cookie",
+		"uplink_http_method":       "POST",
+		"sc_max_each_post_bytes":   "50000-200000",
 		"sc_min_posts_interval_ms": "30-100",
-		"sc_max_buffered_posts":   30,
+		"sc_max_buffered_posts":    30,
 		"sc_stream_up_server_secs": "20-80",
-		"no_grpc_header":          true,
-		"no_sse_header":           true,
+		"no_grpc_header":           true,
+		"no_sse_header":            true,
 		"xmux": map[string]any{
-			"max_concurrency":    "2-4",
+			"max_concurrency":     "2-4",
 			"h_max_request_times": "600-900",
 			"h_max_reusable_secs": "1800-3000",
 		},
@@ -180,6 +180,109 @@ func xhttpTransportMap(sni, path string) map[string]any {
 }
 
 // ─── AWG Balancer (kernel) ─────────────────────────────────────────────────
+
+// AWGBalancerParams configures a kernel-AWG balancer node: the AWG server
+// interface (awg0) and the per-exit client interfaces (awg-exit-nX) are owned by
+// the kernel via awg-quick; sing-box captures awg0 traffic through a TUN overlay
+// and routes it across the exit interfaces via a fallback round-robin group with
+// bind_interface direct outbounds. Mirrors the dns.idoctor.mom reference
+// (VPN/orchestrator/app/templates/awg_balancer.json.j2).
+//
+// The kernel awg0.conf / awg-exit-nX.conf are rendered separately (the chain
+// package's RenderServerAWGConf / RenderExitAWGConf) and pushed as their own
+// files — this renderer only produces the sing-box config that sits on top.
+type AWGBalancerParams struct {
+	// ExitInterfaces are the kernel AWG client interface names (awg-exit-n1,
+	// awg-exit-n2, ...) the balancer rotates across. Each becomes a direct
+	// outbound with bind_interface. Empty produces a single-egress overlay
+	// (no fallback group — route targets the bare direct outbound).
+	ExitInterfaces []string
+	// BalancerTag is the fallback group tag. Empty defaults to "balancer".
+	// Ignored when fewer than two exit interfaces are present.
+	BalancerTag string
+}
+
+// RenderAWGBalancer renders a kernel-AWG balancer sing-box config: a TUN
+// inbound capturing awg0, one direct outbound per exit interface bound to that
+// interface, a fallback group rotating across them, and route rules steering
+// TUN traffic to the balancer. Endpoints is intentionally empty — the kernel
+// owns the WireGuard interfaces; a userspace endpoint would panic with
+// chacha20poly1305 under AmneziaWG obfuscation.
+func RenderAWGBalancer(p AWGBalancerParams) ([]byte, error) {
+	if p.BalancerTag == "" {
+		p.BalancerTag = "balancer"
+	}
+
+	tun := config.TUNInbound{
+		Type:             "tun",
+		Tag:              "tun-in",
+		InterfaceName:    "sing-box-tun",
+		Address:          []string{"172.16.250.1/30"},
+		MTU:              1200,
+		Stack:            "mixed", // kernel TCP + gVisor UDP so QUIC through-traffic works
+		AutoRoute:        true,
+		IncludeInterface: []string{"awg0"}, // awg0 only — exit ifaces are outbound-side (bind_interface)
+		StrictRoute:      false,
+	}
+	tunJSON := mustMarshal(tun)
+
+	outbounds := []json.RawMessage{
+		mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),
+		mustMarshal(config.BlockOutbound{Type: "block", Tag: "block"}),
+	}
+
+	// One direct outbound per exit interface, bound to the kernel AWG iface.
+	exitTags := make([]string, 0, len(p.ExitInterfaces))
+	for _, iface := range p.ExitInterfaces {
+		tag := "exit-" + iface // awg-exit-n1 -> exit-awg-exit-n1 (stable, route-referenced)
+		outbounds = append(outbounds, mustMarshal(config.DirectOutbound{
+			Type:          "direct",
+			Tag:           tag,
+			BindInterface: iface,
+		}))
+		exitTags = append(exitTags, tag)
+	}
+
+	// Fallback balancer rotating across the exit outbounds (round-robin on the
+	// patched sing-box-extended build; priority fallback on vanilla). Only when
+	// there is more than one exit — a single exit routes directly.
+	routeOut := "direct"
+	if len(exitTags) > 1 {
+		outbounds = append(outbounds, mustMarshal(config.FallbackOutbound{
+			Type:             "fallback",
+			Tag:              p.BalancerTag,
+			Outbounds:        exitTags,
+			BlacklistTimeout: "30s",
+		}))
+		routeOut = p.BalancerTag
+	} else if len(exitTags) == 1 {
+		routeOut = exitTags[0]
+	}
+
+	// Route rules match the reference: sniff → BitTorrent block → DNS hijack →
+	// TUN traffic to the balancer. inbound:["tun-in"] (NOT source_ip_cidr)
+	// because TUN NAT changes the source IP (nuances-bugs §source_ip_cidr vs inbound).
+	rules := []config.RouteRuleEntry{
+		{Action: "sniff"},
+		{Protocol: []string{"bittorrent"}, Outbound: "block"},
+		{Protocol: []string{"dns"}, Action: "hijack-dns"},
+		{Inbound: []string{"tun-in"}, Outbound: routeOut},
+	}
+
+	cfg := config.SingboxConfig{
+		Log:       &config.LogOptions{Level: "info", Timestamp: true},
+		Endpoints: []json.RawMessage{}, // empty — kernel owns AWG; no userspace endpoint
+		Inbounds:  []json.RawMessage{tunJSON},
+		Outbounds: outbounds,
+		Route: &config.RoutingSection{
+			Rules:               rules,
+			Final:               "direct",
+			AutoDetectInterface: true,
+		},
+		Experimental: &config.ExperimentalOptions{CacheFile: &config.CacheFileOptions{Enabled: true}},
+	}
+	return json.MarshalIndent(cfg, "", "  ")
+}
 
 // ─── AWG Hop (userspace, chain hop) ────────────────────────────────────────
 
@@ -251,7 +354,7 @@ func RenderAWGHop(p AWGHopParams) ([]byte, error) {
 	}
 
 	cfg := config.SingboxConfig{
-		Log:      &config.LogOptions{Level: "info", Timestamp: true},
+		Log:       &config.LogOptions{Level: "info", Timestamp: true},
 		Endpoints: []json.RawMessage{epJSON},
 		Outbounds: []json.RawMessage{
 			mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),

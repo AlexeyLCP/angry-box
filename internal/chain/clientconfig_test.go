@@ -544,7 +544,11 @@ func TestBuildMergedRoute_PerClientAWG_MultiHopPin(t *testing.T) {
 		inTagWant string
 	}
 	cases := []want{
-		{"entry", "", "ch-mh-user-in"},       // entry: has outbound, before exit -> inter-node out
+		// Under the kernel-AWG architecture the AWG entry's user traffic arrives
+		// via the TUN overlay inbound (tun-in), NOT the old userspace
+		// ch-mh-user-in endpoint (which no longer exists). Middle/exit are transit
+		// nodes — their per-client rules still key on the transport-in inbound.
+		{"entry", "", "tun-in"},              // entry: has outbound, before exit -> inter-node out
 		{"middle", "", "ch-mh-transport-in"}, // middle: has outbound, before exit -> inter-node out
 		{"exit", "direct-out", "ch-mh-transport-in"},
 	}

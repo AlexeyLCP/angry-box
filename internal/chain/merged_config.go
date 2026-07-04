@@ -14,13 +14,13 @@ import (
 )
 
 type MergeReport struct {
-	NodeID           string      `json:"node_id"`
-	StandaloneCount  int         `json:"standalone_count"`
-	ChainsIncluded   []string    `json:"chains_included"`
-	Ports            []PortUsage `json:"ports"`
-	Warnings         []string    `json:"warnings,omitempty"`
-	AddedInbounds    []string    `json:"added_inbounds,omitempty"`
-	RemovedInbounds  []string    `json:"removed_inbounds,omitempty"`
+	NodeID          string      `json:"node_id"`
+	StandaloneCount int         `json:"standalone_count"`
+	ChainsIncluded  []string    `json:"chains_included"`
+	Ports           []PortUsage `json:"ports"`
+	Warnings        []string    `json:"warnings,omitempty"`
+	AddedInbounds   []string    `json:"added_inbounds,omitempty"`
+	RemovedInbounds []string    `json:"removed_inbounds,omitempty"`
 }
 
 type PortUsage struct {
@@ -42,15 +42,18 @@ type chainRole struct {
 // RenderMergedNodeConfig is the exported variant of buildMergedNodeConfig for
 // callers that need to preview/dry-run a node's merged config without pushing
 // it (e.g. the Deploy Status hash comparison and config preview endpoint).
-// It does not know about users, so chain entry inbounds fall back to the
-// chain-wide shared credentials (single-user), matching the pre-per-user
-// behavior. Use buildMergedNodeConfig with a usersByChain map to emit
-// multi-user inbounds.
+// mtproxyUsers, when non-nil, drives the node-level MTProxy inbound emission
+// (same as the deploy path's ListMtproxyUsersForNode); pass nil for nodes with
+// no MTProxy users. It does not know about per-chain users, so chain entry
+// inbounds fall back to the chain-wide shared credentials (single-user),
+// matching the pre-per-user behavior. Use buildMergedNodeConfig with a
+// usersByChain map to emit multi-user inbounds.
 func RenderMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
+	mtproxyUsers []*model.MtproxyUser,
 ) (*config.SingboxConfig, *MergeReport, error) {
-	return buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil)
+	return buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil, mtproxyUsers)
 }
 
 // buildMergedNodeConfig renders a node's merged sing-box config from its
@@ -64,6 +67,7 @@ func buildMergedNodeConfig(
 	nodeChains []*model.Chain,
 	usersByChain map[string][]model.User,
 	usersByInbound map[string][]model.User,
+	mtproxyUsers []*model.MtproxyUser,
 ) (*config.SingboxConfig, *MergeReport, error) {
 
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
@@ -78,10 +82,16 @@ func buildMergedNodeConfig(
 	var endpoints []json.RawMessage
 	seenOB := map[string]bool{}
 
+	// roleErrors collects hard build errors from buildChainRoleInOut (currently
+	// only the frozen-Hysteria2-transport case, which produces no inbound/outbound
+	// — a broken chain). These MUST fail the deploy loudly rather than silently
+	// shipping a config missing its transport/user inbound. Collected separately
+	// from report.Warnings (which are non-fatal advisories).
+	var roleErrors []string
 	for i := range roles {
 		role := &roles[i]
 		users := usersForChain(usersByChain, role.Chain.Name)
-		ins, outs, eps := buildChainRoleInOut(role, users)
+		ins, outs, eps, roleWarnings := buildChainRoleInOut(role, users)
 		inbounds = append(inbounds, ins...)
 		endpoints = append(endpoints, eps...)
 		for _, ob := range outs {
@@ -90,7 +100,14 @@ func buildMergedNodeConfig(
 				outbounds = append(outbounds, ob)
 			}
 		}
+		roleErrors = append(roleErrors, roleWarnings...)
 		report.ChainsIncluded = append(report.ChainsIncluded, role.Chain.Name)
+	}
+	if len(roleErrors) > 0 {
+		// A frozen/unsupported transport produced a broken config (missing
+		// inbound or outbound). Fail the build so the deploy surfaces the error
+		// instead of pushing a non-functional chain.
+		return nil, report, fmt.Errorf("merged config: %s", strings.Join(roleErrors, "; "))
 	}
 
 	for i, ib := range nodeInfo.Inbounds {
@@ -104,6 +121,72 @@ func buildMergedNodeConfig(
 	}
 	report.StandaloneCount = len(nodeInfo.Inbounds)
 
+	// MTProxy inbounds are emitted at the node level (not in buildStandaloneInOut
+	// / buildChainRoleInOut, which have no access to the MtproxyUser list). A
+	// node can carry MTProxy as a standalone NodeInbound (protocol "mtproxy") or
+	// as a chain user-entry (UserProtocol == MTProxy); both are built from the
+	// node's mtproxyUsers via buildMTProxyInbound. Skipped when there are no
+	// enabled users with a secret (sing-box rejects an mtproxy inbound with an
+	// empty users[]).
+	enabledMTProxy := mtproxyUsersForNode(mtproxyUsers)
+	if len(enabledMTProxy) > 0 {
+		// Standalone MTProxy inbounds.
+		for i, ib := range nodeInfo.Inbounds {
+			if ib.Protocol != "mtproxy" {
+				continue
+			}
+			tag := ib.Tag
+			if tag == "" {
+				tag = fmt.Sprintf("sa-%d-mtproxy", i)
+			}
+			if inb := buildMTProxyInbound(mtproxyInboundPort(ib.Port), tag, enabledMTProxy); inb != nil {
+				inbounds = append(inbounds, inb)
+			}
+		}
+		// Chain MTProxy entry inbound(s).
+		for _, r := range roles {
+			if !r.IsEntry || r.Chain.UserProtocol != model.UserProtocolMTProxy {
+				continue
+			}
+			tag := chainUserInboundTag(r.Chain, r.Node.ID)
+			port := chainEntryPort(r.Chain, r.Node.ID)
+			if inb := buildMTProxyInbound(mtproxyInboundPort(port), tag, enabledMTProxy); inb != nil {
+				inbounds = append(inbounds, inb)
+			}
+		}
+	}
+
+	// Kernel-AWG TUN overlay: when this node runs a kernel AWG server (a chain
+	// AWG entry, a multi-exit balancer with ExitTargets, or a standalone AWG
+	// inbound), sing-box must capture awg0 traffic via a TUN inbound and route
+	// it across the exit interfaces through a fallback balancer. The AWG
+	// interface itself is owned by the kernel (awg-quick), pushed separately as
+	// awg0.conf — NOT a userspace sing-box endpoint. The overlay carries the
+	// route rules (sniff/hijack-dns/tun-in→balancer) that make the TUN useful,
+	// so AWG nodes get a Route section regardless of AB_ROUTE_DNS.
+	var awgOverlayRoute []config.RouteRuleEntry
+	if overlay := awgTUNOverlayNeeded(roles, nodeInfo); overlay {
+		node := awgOverlayNode(roles, nodeInfo)
+		ins, outs, rts := BuildAWGTUNOverlay(AWGTUNOverlayParams{
+			IncludeInterfaces: tunIncludeInterfaces(node),
+			ExitInterfaces:    exitInterfacesForNode(node),
+			BalancerTag:       balancerTagForNode(node),
+			FinalOutbound:     "direct",
+			// A linear AWG chain entry with a downstream hop forwards TUN traffic
+			// to the inter-node outbound — without this the catch-all targets
+			// "direct" and every AWG user egresses from the entry node, never
+			// reaching the downstream hop (chain forwarding broken). "" for
+			// multi-exit balancers (their awg-exit-nX handles exit) and last-node /
+			// standalone cases (egress direct).
+			ForwardOutbound: awgForwardOutboundForRoles(roles),
+		})
+		inbounds = append(inbounds, ins...)
+		for _, ob := range outs {
+			addIfMissing(&outbounds, seenOB, ob)
+		}
+		awgOverlayRoute = rts
+	}
+
 	addIfMissing(&outbounds, seenOB, buildDirectOutbound("direct-out"))
 	if needsBlock(roles) {
 		blockJSON, _ := json.Marshal(map[string]any{"type": "block", "tag": "block"})
@@ -115,9 +198,9 @@ func buildMergedNodeConfig(
 		logLevel = v
 	}
 	cfg := &config.SingboxConfig{
-		Log:          &config.LogOptions{Level: logLevel},
-		Inbounds:     inbounds,
-		Outbounds:    outbounds,
+		Log:       &config.LogOptions{Level: logLevel},
+		Inbounds:  inbounds,
+		Outbounds: outbounds,
 		// Route/DNS disabled by default for sing-box 1.13 detour compat (the
 		// minimal inbounds+outbounds config works; route+detour crashed 1.13).
 		// AB_ROUTE_DNS=1 opts back in so e2e can verify whether the patched
@@ -156,6 +239,35 @@ func buildMergedNodeConfig(
 		// can carry the DNS query that would learn that IP.
 		dns.Final = "dns-direct"
 		cfg.DNS = dns
+	}
+	// Kernel-AWG nodes need the TUN-overlay route rules (sniff/hijack-dns/
+	// tun-in→forward/balancer/direct) regardless of AB_ROUTE_DNS — without them
+	// the TUN captures traffic but routes it nowhere. Merge order matters:
+	//   1. Action rules (sniff, dns-hijack) FIRST — they're pre-route actions
+	//      (sniff runs on every connection; dns-hijack terminates DNS only) and
+	//      don't shadow per-client routing.
+	//   2. Per-client rules (buildMergedRoute, keyed on tun-in + source_ip_cidr
+	//      for AWG) MIDDLE — so a pinned user matches before the catch-all.
+	//   3. The tun-in catch-all (→forward/balancer/direct) LAST — it's the
+	//      fallback for unpinned AWG users. Putting it first (the old code) would
+	//      shadow every per-client pin: first-match-wins, catch-all matches all
+	//      tun-in traffic, the source_ip_cidr rules never fire.
+	if len(awgOverlayRoute) > 0 {
+		if cfg.Route == nil {
+			cfg.Route = &config.RoutingSection{
+				Final:               "direct",
+				AutoDetectInterface: true,
+			}
+		}
+		var actionRules, catchAll []config.RouteRuleEntry
+		for _, r := range awgOverlayRoute {
+			if len(r.Inbound) > 0 {
+				catchAll = append(catchAll, r) // the tun-in→routeOut catch-all
+			} else {
+				actionRules = append(actionRules, r) // sniff, dns-hijack
+			}
+		}
+		cfg.Route.Rules = append(append(actionRules, cfg.Route.Rules...), catchAll...)
 	}
 
 	return cfg, report, nil
@@ -201,7 +313,16 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain 
 		}
 		var inTag string
 		if role.IsEntry {
-			inTag = chainUserInboundTag(role.Chain, role.Node.ID)
+			// Under the kernel-AWG architecture, AWG user traffic arrives via the
+			// TUN overlay inbound (tun-in), NOT the old userspace ch-<chain>-user-in
+			// endpoint (which no longer exists). Re-key AWG-entry per-client rules
+			// to tun-in so they actually match. Non-AWG entries (TUIC/VLESS/MTProxy)
+			// still use their dedicated sing-box inbound tag.
+			if role.Chain.UserProtocol == model.UserProtocolAWG {
+				inTag = tunInboundTag
+			} else {
+				inTag = chainUserInboundTag(role.Chain, role.Node.ID)
+			}
 		} else if role.IsTransit {
 			inTag = fmt.Sprintf("ch-%s-transport-in", role.Chain.Name)
 		} else {
@@ -264,7 +385,16 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain 
 	}
 
 	// Generic inbound -> outbound rules (fallback for unpinned users and transit).
+	// AWG entries are skipped here: under the kernel-AWG architecture the
+	// TUN-overlay catch-all (tun-in→forward/balancer/direct, emitted by
+	// BuildAWGTUNOverlay) handles the unpinned-AWG-user default route. Emitting a
+	// second tun-in rule here would either duplicate or shadow the overlay one.
+	// Per-client AWG pins are already emitted above (keyed to tun-in); the
+	// overlay catch-all is the fallback for everyone else.
 	for _, role := range roles {
+		if role.IsEntry && role.Chain.UserProtocol == model.UserProtocolAWG {
+			continue // overlay catch-all handles unpinned AWG users
+		}
 		var inTags []string
 		if role.IsEntry {
 			inTags = append(inTags, chainUserInboundTag(role.Chain, role.Node.ID))
@@ -321,7 +451,7 @@ func resolveChainRoles(nodeID string, chains []*model.Chain) []chainRole {
 				Chain: c, NodeIndex: i, Node: n,
 				IsEntry: isEntry, IsTransit: isTransit,
 				HasOutbound: i < len(c.Nodes)-1,
-				Preset: resolveChainPreset(c),
+				Preset:      resolveChainPreset(c),
 			})
 			break
 		}
@@ -363,7 +493,18 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *Me
 	}
 
 	for _, ib := range nodeInfo.Inbounds {
-		claims = append(claims, claim{ib.Port, "standalone", ib.Protocol})
+		// Claim the EFFECTIVE listen port, not the raw NodeInbound.Port. A
+		// standalone MTProxy inbound with Port=0 renders on 443 (mtproxyInboundPort
+		// default — MTProxy's canonical FakeTLS port); claiming 0 would bypass
+		// collision detection and let it silently clash with a chain MTProxy entry
+		// (or any other inbound) that also resolves to 443 on the same node. Other
+		// protocols with Port=0 fall through unchanged (their renderer either
+		// errors or is never bound without an explicit port).
+		port := ib.Port
+		if ib.Protocol == "mtproxy" {
+			port = mtproxyInboundPort(ib.Port)
+		}
+		claims = append(claims, claim{port, "standalone", ib.Protocol})
 	}
 
 	for _, c := range claims {
@@ -442,7 +583,7 @@ func userAuthIdentity(u model.User, proto model.UserProtocol) string {
 	}
 }
 
-func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outbounds, endpoints []json.RawMessage) {
+func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outbounds, endpoints []json.RawMessage, warnings []string) {
 	c := role.Chain
 	cn := c.Name
 	p := ensureHopParams(role)
@@ -452,25 +593,29 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 		inTag := chainUserInboundTag(c, role.Node.ID)
 		switch c.UserProtocol {
 		case model.UserProtocolAWG:
-			// Multi-peer: one WireGuard peer per user (AWGPublicKey +
-			// AWGAddress). Per-client routing keys on the peer's inner source
-			// IP (source_ip_cidr), not auth_user — see buildMergedRoute.
-			// Userspace endpoint (System: false, wireguard-go) manages its own
-			// interface — NO TUN inbound here. A TUN with AutoRoute would hijack
-			// the host's default route and break the VPS's own networking
-			// (verified on a real VPS: curl timed out while tun0 was up). TUN is
-			// only needed for kernel-mode AWG (System: true + bind_interface),
-			// which the chain user-entry does not use.
-			ep, _, err := buildAWGUserInboundMulti(userPort, inTag, &role.Preset,
-				c.AWGEntryServerPriv, users, ChainAWGObfsMaterial(c))
-			if err == nil {
-				endpoints = append(endpoints, ep)
-			}
+			// Kernel-AWG architecture: the user-entry awg0 interface is owned by
+			// the kernel (awg-quick@awg0), not a sing-box userspace endpoint —
+			// userspace wireguard-go panics with chacha20poly1305 under AmneziaWG
+			// obfuscation. sing-box captures awg0 traffic via a TUN overlay
+			// (include_interface:["awg0"]) emitted once at the node level by
+			// buildMergedNodeConfig (see awgTUNOverlayNeeded). The per-user peers
+			// live in the separately-pushed awg0.conf (RenderServerAWGConf), not
+			// in the sing-box config. So nothing is emitted here.
+			_ = userPort
+			_ = inTag
 
 		case model.UserProtocolTUIC:
 			tuicUsers := chainTUICUsers(c, users)
 			inb := buildTUICInboundWithUsers(userPort, tuicUsers, inTag, &role.Preset, p)
 			inbounds = append(inbounds, inb)
+
+		case model.UserProtocolMTProxy:
+			// MTProxy chain entry: the mtproxy inbound is emitted at the node
+			// level by buildMergedNodeConfig (which has the node's MtproxyUser
+			// list), not here — buildChainRoleInOut has no access to the MTProxy
+			// users. No-op case just prevents the default VLESS fallthrough.
+			_ = userPort
+			_ = inTag
 
 		default:
 			inb := buildUserInbound(userPort, p.UUID, inTag)
@@ -492,6 +637,16 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 				prev = &c.Nodes[role.NodeIndex-1]
 			}
 			endpoints = append(endpoints, buildAWGTransportInbound(role.Node, prev, tag, &role.Preset, ChainAWGObfsMaterial(c)))
+		case model.TransportHysteria2:
+			// Hysteria2 inter-node transport is FROZEN (AGENTS.md Known Issues
+			// #11 — like TUIC). There is no builder, so refuse loudly instead of
+			// silently falling through to Reality (a silent Reality fallback
+			// would misconfigure the chain: the operator chose Hysteria2 but
+			// got Reality, with mismatched keys/params). The error propagates up
+			// through buildMergedNodeConfig and fails the deploy with a clear
+			// message rather than shipping a wrong config.
+			warnings = append(warnings, fmt.Sprintf(
+				"chain %q: Hysteria2 transport is not implemented (frozen, see AGENTS.md #11); use AWG/XHTTP/Reality", cn))
 		default: // Reality
 			inbounds = append(inbounds, buildTransportInbound(p, tag))
 		}
@@ -529,6 +684,13 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			outTag = fmt.Sprintf("ch-%s-out-awg-%s", cn, safeSNILabel(next.ID))
 			outb, err = buildAWGTransportOutbound(role.Node, &next, extractHost(next.Addr), outTag, &role.Preset, ChainAWGObfsMaterial(c))
 			isAWGOut = true
+		case model.TransportHysteria2:
+			// Hysteria2 inter-node transport is FROZEN (AGENTS.md #11). Refuse
+			// loudly — no outbound emitted, a warning recorded so the operator
+			// sees the chain chose Hysteria2 but got nothing (rather than a
+			// silent Reality fallback with mismatched keys/params).
+			warnings = append(warnings, fmt.Sprintf(
+				"chain %q: Hysteria2 transport outbound is not implemented (frozen, see AGENTS.md #11); use AWG/XHTTP/Reality", cn))
 		default: // Reality
 			outTag = fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
 			outb, err = buildTransportOutbound(np, extractHost(next.Addr), outTag)
@@ -625,21 +787,16 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		inbounds = append(inbounds, data)
 
 	case "awg":
-		// Multi-peer when the inbound has assigned users with AWG creds (one
-		// WireGuard peer per user, mirroring the chain user-entry path). Falls
-		// back to the single-peer legacy builder when no users qualify.
-		users := usersByInbound[tag]
-		if hasAWGPeerUsers(users) {
-			ep, _, err := buildAWGUserInboundMulti(ib.Port, tag, &preset, ib.ServerPrivKey, users, nil)
-			if err == nil {
-				endpoints = append(endpoints, ep)
-			}
-		} else {
-			ep, _, err := buildAWGUserInbound(ib.Port, ib.UUID, tag, &preset, ib.ServerPrivKey, ib.AWGClientPub)
-			if err == nil {
-				endpoints = append(endpoints, ep)
-			}
-		}
+		// Kernel-AWG architecture: the standalone AWG server interface (awg0) is
+		// owned by the kernel (awg-quick@awg0), not a sing-box userspace endpoint
+		// (userspace wireguard-go panics with chacha20poly1305 under AmneziaWG
+		// obfuscation). sing-box captures awg0 traffic via a TUN overlay
+		// (include_interface:["awg0"]) emitted once at the node level by
+		// buildMergedNodeConfig (see awgTUNOverlayNeeded). The per-user peers live
+		// in the separately-pushed awg0.conf (RenderServerAWGConf), not in the
+		// sing-box config. Nothing is emitted here.
+		_ = preset
+		_ = serverName
 
 	case "tuic":
 		tls := &config.InboundTLSOptions{
@@ -697,18 +854,27 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 	case "hysteria2":
 		inb := config.Hysteria2Inbound{
 			Type: "hysteria2", Tag: tag, Listen: "::", ListenPort: ib.Port,
-			Users: []config.Hysteria2User{{Password: ib.UUID}},
+			Users:  []config.Hysteria2User{{Password: ib.UUID}},
 			UpMbps: 1000, DownMbps: 1000,
 			Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: ib.ObfsPassword},
 		}
 		data, _ := json.Marshal(inb)
 		inbounds = append(inbounds, data)
 
+	case "mtproxy":
+		// MTProxy inbounds are emitted at the node level by buildMergedNodeConfig
+		// (which has the node's MtproxyUser list from the store), not here —
+		// buildStandaloneInOut has no access to the MTProxy users. This no-op
+		// case just prevents the default VLESS/WS fallthrough. The actual
+		// mtproxy inbound is built by buildMTProxyInbound in the node-level loop.
+		_ = preset
+		_ = serverName
+
 	default:
 		inb := config.VLESSInbound{
 			Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
-			Users: []config.VLESSUser{{Name: "user", UUID: ib.UUID, Flow: "xtls-rprx-vision"}},
-			TLS: &config.InboundTLSOptions{Enabled: false},
+			Users:     []config.VLESSUser{{Name: "user", UUID: ib.UUID, Flow: "xtls-rprx-vision"}},
+			TLS:       &config.InboundTLSOptions{Enabled: false},
 			Transport: &config.TransportOptions{Type: "ws", Path: "/ws"},
 		}
 		data, _ := json.Marshal(inb)
@@ -726,7 +892,9 @@ func addIfMissing(outbounds *[]json.RawMessage, seen map[string]bool, ob json.Ra
 }
 
 func extractTag(raw json.RawMessage) string {
-	var m struct{ Tag string `json:"tag"` }
+	var m struct {
+		Tag string `json:"tag"`
+	}
 	json.Unmarshal(raw, &m)
 	return m.Tag
 }

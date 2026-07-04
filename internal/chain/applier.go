@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -148,14 +149,14 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		chain.UserProtocol = model.UserProtocolAWG
 	}
 
-		// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
-		for _, node := range chain.Nodes {
-			client, err := a.connector.Connect(node.Addr, node.User, node.KeyPath)
-			if err != nil {
-				return nil, fmt.Errorf("pre-flight check failed: cannot connect to node %q (%s): %w", node.ID, node.Addr, err)
-			}
-			client.Close()
+	// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
+	for _, node := range chain.Nodes {
+		client, err := a.connector.Connect(node.Addr, node.User, node.KeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("pre-flight check failed: cannot connect to node %q (%s): %w", node.ID, node.Addr, err)
 		}
+		client.Close()
+	}
 
 	n := len(chain.Nodes)
 
@@ -282,6 +283,10 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 				node.TransitAWGClientPort = 51820 + i + 1
 			}
 		}
+
+		if err := ensureAWGExitLinks(chain, node); err != nil {
+			return nil, fmt.Errorf("chain: node %q: ensure awg exit links: %w", node.ID, err)
+		}
 	}
 
 	// Save chain to store so GetChainsForNode sees it.
@@ -317,7 +322,10 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			nodeChains = append(nodeChains, chain)
 		}
 
-		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains), usersByInboundMap(store, nodeInfo.Inbounds))
+		// Fetch this node's MTProxy users (the node-level MTProxy inbound is
+		// built from them in buildMergedNodeConfig). Empty for non-MTProxy nodes.
+		mtproxyUsers, _ := store.ListMtproxyUsersForNode(node.ID)
+		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains), usersByInboundMap(store, nodeInfo.Inbounds), mtproxyUsers)
 		if buildErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "build config: " + buildErr.Error()})
 			continue
@@ -352,6 +360,19 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
 				continue
 			}
+			// Enable IPv4 forwarding for EVERY AWG-chain node — not just nodes that
+			// get an awg0.conf (user-entry/standalone/exit-server/balancer, handled
+			// in pushAWGConfs), but ALSO AWG transit nodes (userspace transport
+			// endpoint, no awg0.conf → falls through to plain pushConfig). A transit
+			// node forwards packets between the transport-in endpoint and the
+			// egress outbound; without ip_forward=1 the kernel drops them and
+			// egress through the chain silently fails. Same condition as the module
+			// install: UserProtocol==AWG || Transport==AWG.
+			if fwdErr := ensureIPForward(client, nodeInfo.UseSudo); fwdErr != nil {
+				client.Close()
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "enable ip_forward: " + fwdErr.Error()})
+				continue
+			}
 		}
 
 		// Deploy sing-box with the node's UseSudo flag — Deploy() alone assumes
@@ -364,7 +385,13 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			continue
 		}
 
-		_, pushErr := pushConfig(client, node.ID, string(cfgJSON), nodeInfo.UseSudo)
+		// Render the kernel awg-quick .conf files this node needs under the
+		// kernel-AWG architecture (user-entry awg0, multi-exit awg-exit-nX, exit
+		// server awg0, or standalone awg0). Empty for non-AWG nodes —
+		// pushConfigWithAWG then falls through to the plain pushConfig path.
+		awgFiles := renderAWGConfsForDeploy(store, nodeInfo, nodeChains)
+
+		_, pushErr := pushConfigWithAWG(client, node.ID, string(cfgJSON), awgFiles, nodeInfo.UseSudo)
 		client.Close()
 		if pushErr != nil {
 			if strings.Contains(pushErr.Error(), "rollback successful") {
@@ -581,17 +608,23 @@ func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag 
 		if peer.PublicKey == "" {
 			peer.PublicKey = "CLIENT_PUBLIC_KEY_HERE"
 		}
-		if prev.TransitAWGAddress != "" {
-			peer.AllowedIPs = []string{prev.TransitAWGAddress}
-		}
+		// AllowedIPs MUST be 0.0.0.0/0 (not just the prev node's transport inner
+		// IP) so the exit/transit can route RESPONSE packets back through the
+		// tunnel. User traffic arrives with source IPs in 10.8.0.0/24 (the
+		// user-entry subnet); the response destination is 10.8.0.x. If the peer's
+		// AllowedIPs only lists 10.9.0.2/32 (the transport inner IP), WireGuard
+		// drops the response — 10.8.0.x matches no peer. With 0.0.0.0/0 the
+		// single peer (the previous node) receives ALL response traffic, which is
+		// correct for a linear chain (the transport-in has exactly one peer).
+		// This mirrors the transport-out side (which also uses 0.0.0.0/0).
+		peer.AllowedIPs = []string{"0.0.0.0/0", "::/0"}
 		// Explicit peer endpoint (prev's public IP + AWG client port). WireGuard
 		// server peers normally learn the endpoint from incoming packets, but
-		// sing-box-extended's userspace endpoint does not populate it for
-		// amnezia-obfuscated handshake initiations reliably — so the server
-		// never sends a response (the handshake initiation is accepted but the
-		// response has nowhere to go). Setting the endpoint explicitly makes the
-		// response reach the previous node. prev.Addr is the SSH addr (IP:22);
-		// strip the port to get the bare IP.
+		// sing-box-extended's userspace endpoint does not populate it reliably —
+		// so the server never sends a response (the handshake initiation is
+		// accepted but the response has nowhere to go). Setting the endpoint
+		// explicitly makes the response reach the previous node. prev.Addr is the
+		// SSH addr (IP:22); strip the port to get the bare IP.
 		peer.Address = extractHost(prev.Addr)
 		peer.Port = prev.TransitAWGClientPort
 		if peer.Port == 0 {
@@ -607,7 +640,17 @@ func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag 
 		PrivateKey: node.TransitAWGServerPriv,
 		ListenPort: port,
 		Peers:      []config.WireGuardPeer{peer},
-		Amnezia:    BuildAWGAmnezia(awg, preset, material),
+		// Amnezia is intentionally DISABLED on the inter-node transport. The
+		// transport is a service tunnel between trusted servers — it does NOT
+		// need DPI obfuscation (that's the user-entry awg0's job, which runs on
+		// the kernel module). Running amnezia on a USERSPACE wireguard-go
+		// endpoint is the known unstable path: the handshake (simpler crypto)
+		// completes, but the data plane fails — Jc junk-packets and the
+		// chacha20poly1305 overlap make userspace amnezia drop data packets
+		// (verified on a real VPS: 72 KiB sent, 92 B received — data out, no
+		// responses back). Plain WireGuard in userspace is rock-solid. See
+		// VPN/docs/sing-box-extended.md + the live-VPS trace in PROGRESS.md §8.
+		Amnezia: nil,
 	}
 	data, _ := json.Marshal(ep)
 	return data
@@ -648,14 +691,18 @@ func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag 
 		ListenPort: thisNode.TransitAWGClientPort, // fixed source port — NAT'd VPSes need a stable mapping or handshake responses never return (the peer replies to a port that's gone after a re-handshake retry)
 		Peers: []config.WireGuardPeer{
 			{
-				PublicKey:                  next.TransitAWGServerPub,
-				Address:                    serverAddr,
-				Port:                       serverPort,
+				PublicKey:                   next.TransitAWGServerPub,
+				Address:                     serverAddr,
+				Port:                        serverPort,
 				PersistentKeepaliveInterval: 25,
-				AllowedIPs:                 []string{"0.0.0.0/0", "::/0"},
+				AllowedIPs:                  []string{"0.0.0.0/0", "::/0"},
 			},
 		},
-		Amnezia: BuildAWGAmnezia(awg, preset, material),
+		// Amnezia DISABLED on inter-node transport — see buildAWGTransportInbound
+		// for the full rationale. Plain WireGuard in userspace is stable; userspace
+		// amnezia drops data packets (chacha20poly1305 overlap). The transport is a
+		// trusted server-to-server tunnel — DPI obfuscation is the user-entry's job.
+		Amnezia: nil,
 	}
 	data, _ := json.Marshal(ep)
 	return data, nil
@@ -724,23 +771,127 @@ func transitAddresses(chain *model.Chain) []string {
 	return taken
 }
 
+// exitAddresses returns the ExitAWGAddress values already claimed by chain
+// balancer nodes, so allocateAWGExitIP can pick a collision-free inner IP for a
+// new kernel awg-exit-nX interface.
+func exitAddresses(chain *model.Chain) []string {
+	var taken []string
+	for i := range chain.Nodes {
+		for _, link := range chain.Nodes[i].ExitAWGLinks {
+			if link.Address != "" {
+				taken = append(taken, link.Address)
+			}
+		}
+	}
+	return taken
+}
+
+func chainNodeByID(chain *model.Chain, id string) *model.ChainNode {
+	if chain == nil {
+		return nil
+	}
+	for i := range chain.Nodes {
+		if chain.Nodes[i].ID == id {
+			return &chain.Nodes[i]
+		}
+	}
+	return nil
+}
+
+func exitLinkByTarget(node *model.ChainNode, targetID string) *model.AWGExitLink {
+	if node == nil {
+		return nil
+	}
+	for i := range node.ExitAWGLinks {
+		if node.ExitAWGLinks[i].TargetID == targetID {
+			return &node.ExitAWGLinks[i]
+		}
+	}
+	return nil
+}
+
+// ensureAWGExitLinks creates stable per-target kernel AWG material for a
+// multi-exit balancer node and the matching Role=exit server nodes. Each target
+// gets one balancer-side awg-exit-nX client link in 10.10.0.0/24 and each exit
+// node gets one server keypair/listen port for its awg0 interface.
+func ensureAWGExitLinks(chain *model.Chain, node *model.ChainNode) error {
+	if chain == nil || node == nil || len(node.ExitTargets) == 0 {
+		return nil
+	}
+	taken := exitAddresses(chain)
+	for idx, targetID := range node.ExitTargets {
+		target := chainNodeByID(chain, targetID)
+		if target == nil {
+			return fmt.Errorf("exit target %q not found", targetID)
+		}
+		if target.Role != model.NodeRoleExit {
+			return fmt.Errorf("exit target %q has role %q, want %q", targetID, target.Role, model.NodeRoleExit)
+		}
+		if target.ExitAWGServerPriv == "" || target.ExitAWGServerPub == "" {
+			priv, pub, err := GenerateWireGuardKeypair()
+			if err != nil {
+				return fmt.Errorf("exit target %q: generate awg server keypair: %w", targetID, err)
+			}
+			target.ExitAWGServerPriv = priv
+			target.ExitAWGServerPub = pub
+		}
+		if target.ExitAWGListenPort == 0 {
+			// Keep exit server listen ports deterministic and away from the default
+			// user-entry port. The balancer can override later if a UI field is added.
+			target.ExitAWGListenPort = 52000 + idx
+		}
+
+		link := exitLinkByTarget(node, targetID)
+		if link == nil {
+			node.ExitAWGLinks = append(node.ExitAWGLinks, model.AWGExitLink{TargetID: targetID})
+			link = &node.ExitAWGLinks[len(node.ExitAWGLinks)-1]
+		}
+		if link.InterfaceName == "" {
+			link.InterfaceName = fmt.Sprintf("awg-exit-n%d", idx+1)
+		}
+		if link.ClientPriv == "" || link.ClientPub == "" {
+			priv, pub, err := GenerateWireGuardKeypair()
+			if err != nil {
+				return fmt.Errorf("exit target %q: generate awg client keypair: %w", targetID, err)
+			}
+			link.ClientPriv = priv
+			link.ClientPub = pub
+		}
+		if link.Address == "" {
+			link.Address = allocateAWGExitIP(taken)
+			taken = append(taken, link.Address)
+		}
+		if link.ClientPort == 0 {
+			link.ClientPort = 51900 + idx + 1
+		}
+	}
+	return nil
+}
+
 // createBackup makes a timestamped backup of the current config under $HOME
 // (writable without sudo) and returns the backup path. Uses cp — the backup is
 // PRESERVED (never destroyed by rollback) so a second recovery attempt is
 // always possible. Returns ("", nil) when there is no existing config (first
 // deploy); callers must tolerate that (rollback becomes a no-op restore).
 func createBackup(client ports.SSHClient, file string) (string, error) {
+	// Name the backup after the source file's basename so multiple files backed
+	// up in the same second (a multi-file AWG push: awg0.conf + awg-exit-n1.conf
+	// + ...) don't all collide into one "config.json.bak" and clobber each other.
+	// For the sing-box path (/etc/sing-box/config.json → "config.json.bak") this
+	// is identical to the old hardcoded behavior. For AWG confs each gets its own
+	// "<basename>.bak" inside the timestamped dir.
+	bakName := filepath.Base(file) + ".bak"
 	cmd := `set -e
 HOME_DIR="${HOME:-/tmp}"
 BAK_DIR="$HOME_DIR/sing-box-orch-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BAK_DIR"
 if [ -f "` + file + `" ]; then
-	cp -p "` + file + `" "$BAK_DIR/config.json.bak"
-	echo "$BAK_DIR/config.json.bak"
+	cp -p "` + file + `" "$BAK_DIR/` + bakName + `"
+	echo "$BAK_DIR/` + bakName + `"
 else
 	# No prior config — record an empty backup path so the caller knows rollback
 	# is unavailable, but still return the marker dir for consistency.
-	echo "$BAK_DIR/config.json.bak"
+	echo "$BAK_DIR/` + bakName + `"
 fi`
 	out, err := client.Run(cmd)
 	return strings.TrimSpace(out), err
@@ -1628,7 +1779,10 @@ func (a *Applier) applyMergedNodeLocked(
 		}
 	}
 
-	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains), usersByInboundMap(store, info.Inbounds))
+	// Fetch this node's MTProxy users (the node-level MTProxy inbound is built
+	// from them in buildMergedNodeConfig). Empty for non-MTProxy nodes.
+	mtproxyUsers, _ := store.ListMtproxyUsersForNode(info.ID)
+	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains), usersByInboundMap(store, info.Inbounds), mtproxyUsers)
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("build merged config: %w", err)
 	}
@@ -1649,11 +1803,50 @@ func (a *Applier) applyMergedNodeLocked(
 		return nil, mergeReport, fmt.Errorf("deploy sing-box: %w", deployErr)
 	}
 
+	// Install the AWG kernel module when the node runs a kernel AWG interface
+	// (standalone AWG inbound, or a chain AWG entry/transit/exit). ApplyChain
+	// already does this; ApplyMergedNode historically skipped it — a standalone
+	// AWG deploy would then push an awg0.conf with no module to load it. Gate on
+	// the same condition ApplyChain uses plus the exit role (no AWG inbound but
+	// ExitAWGServer* present).
+	needsAWGModule := false
+	for _, ib := range info.Inbounds {
+		if ib.Protocol == "awg" {
+			needsAWGModule = true
+			break
+		}
+	}
+	if !needsAWGModule {
+		for _, c := range chains {
+			if c.UserProtocol == model.UserProtocolAWG || c.Transport == model.TransportAWG {
+				needsAWGModule = true
+				break
+			}
+		}
+	}
+	if needsAWGModule {
+		if awgErr := backend.InstallAWGModuleWithOptions(ctx, info.Host, model.DeployOptions{UseSudo: info.UseSudo}); awgErr != nil {
+			return nil, mergeReport, fmt.Errorf("install awg module: %w", awgErr)
+		}
+		// Enable IPv4 forwarding for every AWG node (same pairing as ApplyChain):
+		// transit nodes get a userspace transport endpoint (no awg0.conf) but still
+		// forward packets between transport-in and the egress outbound — without
+		// ip_forward=1 the kernel drops them and egress silently fails.
+		if fwdErr := ensureIPForward(client, info.UseSudo); fwdErr != nil {
+			return nil, mergeReport, fmt.Errorf("enable ip_forward: %w", fwdErr)
+		}
+	}
+
 	// Read old config before pushing to compute inbound diff for observability.
 	oldCfgBytes, _ := client.Run("cat /etc/sing-box/config.json 2>/dev/null")
 	oldCfg := string(oldCfgBytes)
 
-	_, pushErr := pushConfig(client, info.ID, string(cfgJSON), info.UseSudo)
+	// Render the kernel awg-quick .conf files this node needs (standalone awg0,
+	// chain entry/transit/exit). Empty for non-AWG nodes — pushConfigWithAWG
+	// then falls through to the plain pushConfig path.
+	awgFiles := renderAWGConfsForDeploy(store, info, chains)
+
+	_, pushErr := pushConfigWithAWG(client, info.ID, string(cfgJSON), awgFiles, info.UseSudo)
 	if pushErr != nil {
 		if strings.Contains(pushErr.Error(), "rollback successful") {
 			return nil, mergeReport, fmt.Errorf("ROLLBACK APPLIED: %w", pushErr)

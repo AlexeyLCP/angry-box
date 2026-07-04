@@ -155,8 +155,19 @@ func TestBuildStandaloneInOut_AllProtocols(t *testing.T) {
 			// drop the endpoint, which is not the behaviour we're testing).
 			ib := &model.NodeInbound{Protocol: tc.proto, Port: tc.port, UUID: tc.uuid, ShortID: "sid", ObfsPassword: "obfs"}
 			inbounds, endpoints := buildStandaloneInOut(ib, "tag-"+tc.proto, nil)
-			// Each protocol must produce at least one inbound OR endpoint, and
-			// any inbound produced must be valid JSON with the right type.
+			// AWG is the exception under the kernel-AWG architecture: the builder
+			// emits NOTHING here (the kernel owns awg0; per-user peers live in the
+			// separately-pushed awg0.conf via RenderServerAWGConf, and the TUN
+			// overlay is emitted at the node level by buildMergedNodeConfig).
+			// Verified by standalone_awg_test.go + awg_tun_overlay_test.go.
+			if tc.proto == "awg" {
+				if len(inbounds) != 0 || len(endpoints) != 0 {
+					t.Fatalf("awg: kernel-AWG builder must emit nothing, got inbounds=%d endpoints=%d", len(inbounds), len(endpoints))
+				}
+				return
+			}
+			// Every other protocol must produce at least one inbound, and any
+			// inbound produced must be valid JSON with the right type.
 			if len(inbounds) == 0 && len(endpoints) == 0 {
 				t.Fatalf("%s: produced no inbound and no endpoint", tc.proto)
 			}

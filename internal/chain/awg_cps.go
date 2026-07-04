@@ -387,9 +387,65 @@ func EnsureChainAWGMaterial(c *model.Chain, preset ConnectionPreset) {
 	if level <= 0 {
 		return
 	}
-	// Already persisted (and the level/mimicry still match) -> keep it.
-	if c.AWGCPSI1 != "" && c.AWGCPSLevel == level && c.AWGCPSMimicry == mimicry {
+	// Already persisted and still valid -> keep it (Rule 5: stable across
+	// redeploys). The cache-validity rule depends on the mimicry mode:
+	//   - non-live: level + mimicry must match.
+	//   - quic-live SUCCESS cached (AWGCPSMimicry == "quic-live"): the captured
+	//     domain must match — a domain change re-captures the new one.
+	//   - quic-live FAILURE cached (AWGCPSMimicry == "quic", the fallback): the
+	//     failed domain must match AWGCPSCaptureFailedDomain, so a flaky/unreachable
+	//     domain is NOT re-dialed on every redeploy (Rule 5 — a failed capture
+	//     for THIS domain already fell back to synthesized packets; keep them).
+	//     A domain change clears the match → re-capture the new domain.
+	cacheValid := c.AWGCPSI1 != "" && c.AWGCPSLevel == level
+	if mimicry == mimicryQuicLive {
+		switch c.AWGCPSMimicry {
+		case mimicryQuicLive:
+			cacheValid = cacheValid && c.AWGCPSCapturedDomain == c.AWGCPSCaptureDomain
+		case "quic":
+			// Prior attempt for this domain failed and fell back — don't re-dial it.
+			cacheValid = cacheValid && c.AWGCPSCaptureFailedDomain == c.AWGCPSCaptureDomain
+		default:
+			cacheValid = false
+		}
+	} else {
+		cacheValid = cacheValid && c.AWGCPSMimicry == mimicry
+	}
+	if cacheValid {
 		return
+	}
+	// Live-capture path: when mimicry is "quic-live" and a capture domain is
+	// set, dial the domain over UDP 443, send a real AEAD-encrypted QUIC Initial
+	// with SNI=domain, and capture the server's response packets as I1-I5. This
+	// yields a domain-accurate QUIC silhouette DPI cannot distinguish from real
+	// traffic to that domain. Falls back to synthesized packets on any capture
+	// failure (network down, domain doesn't speak QUIC) so a chain never breaks.
+	if mimicry == mimicryQuicLive && c.AWGCPSCaptureDomain != "" {
+		res := CaptureQUICSignature(c.AWGCPSCaptureDomain, 0)
+		if res.OK && len(res.Packets) >= 5 {
+			c.AWGCPSLevel = level
+			c.AWGCPSMimicry = mimicry
+			c.AWGCPSCapturedDomain = c.AWGCPSCaptureDomain
+			c.AWGCPSCaptureFailedDomain = "" // success clears the failure marker
+			c.AWGCPSI1 = res.Packets[0]
+			c.AWGCPSI2 = res.Packets[1]
+			c.AWGCPSI3 = res.Packets[2]
+			c.AWGCPSI4 = res.Packets[3]
+			c.AWGCPSI5 = res.Packets[4]
+			// H1-H4 still come from the quadrant generator — live capture only
+			// supplies I1-I5 (the packet silhouettes), not the header-junk ranges.
+			mat := GenerateAWGObfsMaterial(level, "quic")
+			c.AWGH1 = mat.H1
+			c.AWGH2 = mat.H2
+			c.AWGH3 = mat.H3
+			c.AWGH4 = mat.H4
+			return
+		}
+		// Capture failed — record the failed domain so the next redeploy doesn't
+		// re-dial it (cache-validity check above), then fall through to synthesized
+		// packets so the chain still works.
+		c.AWGCPSCaptureFailedDomain = c.AWGCPSCaptureDomain
+		mimicry = "quic"
 	}
 	mat := GenerateAWGObfsMaterial(level, mimicry)
 	strs := CPSMaterialStrings(mat)
@@ -407,6 +463,11 @@ func EnsureChainAWGMaterial(c *model.Chain, preset ConnectionPreset) {
 	c.AWGH3 = mat.H3
 	c.AWGH4 = mat.H4
 }
+
+// mimicryQuicLive is the AWGCPSMimicry value that selects the live QUIC capture
+// path in EnsureChainAWGMaterial (vs the synthesized "quic"/"sip"/"dns" paths).
+// Set together with AWGCPSCaptureDomain on the chain to enable live capture.
+const mimicryQuicLive = "quic-live"
 
 // ChainAWGObfsMaterial reconstructs the persisted AWGObfsMaterial from a chain.
 // Returns nil when the chain has no CPS material (level 0 / not populated), so

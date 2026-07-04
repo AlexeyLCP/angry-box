@@ -90,11 +90,11 @@ func TestRenderProxyNode_DeterministicCredentials(t *testing.T) {
 	ids := []string{"", "abcdef0123456789"}
 
 	b, err := RenderProxyNode(ProxyNodeParams{
-		ListenPort:         443,
-		UUID:               uuid,
-		RealityPrivateKey:  priv,
-		ShortIDs:           ids,
-		XHTTPPath:          "/fixed",
+		ListenPort:        443,
+		UUID:              uuid,
+		RealityPrivateKey: priv,
+		ShortIDs:          ids,
+		XHTTPPath:         "/fixed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -114,12 +114,12 @@ func TestRenderProxyNode_DeterministicCredentials(t *testing.T) {
 // an amnezia block and a wireguard endpoint.
 func TestRenderAWGHop_UserspaceAmnezia(t *testing.T) {
 	b, err := RenderAWGHop(AWGHopParams{
-		Tag:         "awg-hop",
-		ListenPort:  51820,
-		Address:     []string{"10.8.0.1/24"},
-		PrivateKey:  "priv",
-		PeerPubKey:  "pub",
-		Amnezia:     nil, // omitted; just check endpoint shape
+		Tag:        "awg-hop",
+		ListenPort: 51820,
+		Address:    []string{"10.8.0.1/24"},
+		PrivateKey: "priv",
+		PeerPubKey: "pub",
+		Amnezia:    nil, // omitted; just check endpoint shape
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -161,4 +161,185 @@ func contains(s []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// ─── AWG Balancer (kernel) ──────────────────────────────────────────────────
+
+// findBalancerOutbound returns the fallback outbound group, or nil if none.
+func findBalancerOutbound(outbounds []any) map[string]any {
+	for _, ob := range outbounds {
+		m, _ := ob.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if m["type"] == "fallback" {
+			return m
+		}
+	}
+	return nil
+}
+
+// findOutboundByTagSingbox returns the outbound with the given tag, or nil.
+func findOutboundByTagSingbox(outbounds []any, tag string) map[string]any {
+	for _, ob := range outbounds {
+		m, _ := ob.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if m["tag"] == tag {
+			return m
+		}
+	}
+	return nil
+}
+
+// TestRenderAWGBalancer_MultiExit verifies the dns.idoctor.mom reference shape:
+// a TUN inbound capturing awg0 (no userspace wireguard endpoint), one direct
+// outbound per exit interface bound to it, a fallback group rotating across
+// them, and route rules steering TUN traffic to the balancer.
+func TestRenderAWGBalancer_MultiExit(t *testing.T) {
+	b, err := RenderAWGBalancer(AWGBalancerParams{
+		ExitInterfaces: []string{"awg-exit-n1", "awg-exit-n2", "awg-exit-n3", "awg-exit-n4"},
+		BalancerTag:    "balancer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustValidJSON(t, "awg_balancer", b)
+
+	var top map[string]any
+	json.Unmarshal(b, &top)
+
+	// Endpoints MUST be empty — the kernel owns the AWG interfaces; a userspace
+	// wireguard endpoint would panic with chacha20poly1305 under AmneziaWG.
+	endpoints, _ := top["endpoints"].([]any)
+	if len(endpoints) != 0 {
+		t.Errorf("kernel-AWG balancer must have NO userspace endpoints, got %d", len(endpoints))
+	}
+
+	// One TUN inbound capturing awg0 only (not the exit ifaces — those are
+	// outbound-side via bind_interface and must not be re-captured).
+	inbounds, _ := top["inbounds"].([]any)
+	if len(inbounds) != 1 {
+		t.Fatalf("expected 1 inbound (TUN), got %d", len(inbounds))
+	}
+	tun, _ := inbounds[0].(map[string]any)
+	if tun["type"] != "tun" {
+		t.Errorf("inbound type: got %v, want tun", tun["type"])
+	}
+	if tun["stack"] != "mixed" {
+		t.Errorf("TUN stack: got %v, want mixed (kernel TCP + gVisor UDP for QUIC)", tun["stack"])
+	}
+	if tun["auto_route"] != true {
+		t.Errorf("auto_route: got %v, want true", tun["auto_route"])
+	}
+	inc, _ := tun["include_interface"].([]any)
+	if len(inc) != 1 || inc[0] != "awg0" {
+		t.Errorf("include_interface: got %v, want [awg0] only (exit ifaces are outbound-side)", inc)
+	}
+
+	// One direct outbound per exit interface, bound to it.
+	outbounds, _ := top["outbounds"].([]any)
+	for _, iface := range []string{"awg-exit-n1", "awg-exit-n2", "awg-exit-n3", "awg-exit-n4"} {
+		ob := findOutboundByTagSingbox(outbounds, "exit-"+iface)
+		if ob == nil {
+			t.Errorf("missing direct outbound for %s", iface)
+			continue
+		}
+		if ob["type"] != "direct" {
+			t.Errorf("%s outbound type: got %v, want direct", iface, ob["type"])
+		}
+		if ob["bind_interface"] != iface {
+			t.Errorf("%s bind_interface: got %v, want %s", iface, ob["bind_interface"], iface)
+		}
+	}
+
+	// Fallback balancer rotating across the four exit outbounds.
+	fb := findBalancerOutbound(outbounds)
+	if fb == nil {
+		t.Fatal("missing fallback balancer outbound")
+	}
+	if fb["tag"] != "balancer" {
+		t.Errorf("balancer tag: got %v, want balancer", fb["tag"])
+	}
+	if fb["blacklist_timeout"] != "30s" {
+		t.Errorf("blacklist_timeout: got %v, want 30s", fb["blacklist_timeout"])
+	}
+	wantOuts := []string{"exit-awg-exit-n1", "exit-awg-exit-n2", "exit-awg-exit-n3", "exit-awg-exit-n4"}
+	gotOuts := toStrings(fb["outbounds"].([]any))
+	for _, w := range wantOuts {
+		if !contains(gotOuts, w) {
+			t.Errorf("balancer outbounds missing %s: got %v", w, gotOuts)
+		}
+	}
+
+	// Route: TUN traffic → balancer (inbound:["tun-in"], NOT source_ip_cidr).
+	route, _ := top["route"].(map[string]any)
+	rules, _ := route["rules"].([]any)
+	var tunRule map[string]any
+	for _, r := range rules {
+		m, _ := r.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if ins, _ := m["inbound"].([]any); len(ins) == 1 && ins[0] == "tun-in" {
+			tunRule = m
+		}
+	}
+	if tunRule == nil {
+		t.Fatal("missing route rule for inbound tun-in")
+	}
+	if tunRule["outbound"] != "balancer" {
+		t.Errorf("tun-in route outbound: got %v, want balancer", tunRule["outbound"])
+	}
+}
+
+// TestRenderAWGBalancer_NoUserspaceWG is the architectural invariant guard:
+// the balancer must NEVER emit a userspace wireguard endpoint/inbound (the
+// chacha20poly1305 panic path under AmneziaWG).
+func TestRenderAWGBalancer_NoUserspaceWG(t *testing.T) {
+	b, err := RenderAWGBalancer(AWGBalancerParams{
+		ExitInterfaces: []string{"awg-exit-n1", "awg-exit-n2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"type": "wireguard"`) {
+		t.Errorf("balancer must not emit a userspace wireguard endpoint:\n%s", string(b))
+	}
+}
+
+// TestRenderAWGBalancer_SingleEgress verifies a balancer with one exit
+// interface does NOT emit a fallback group (no rotation needed) and routes TUN
+// traffic directly to that exit.
+func TestRenderAWGBalancer_SingleEgress(t *testing.T) {
+	b, err := RenderAWGBalancer(AWGBalancerParams{
+		ExitInterfaces: []string{"awg-exit-n1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustValidJSON(t, "awg_balancer_single", b)
+
+	var top map[string]any
+	json.Unmarshal(b, &top)
+	outbounds, _ := top["outbounds"].([]any)
+	if findBalancerOutbound(outbounds) != nil {
+		t.Error("single-egress balancer must not emit a fallback group")
+	}
+	route, _ := top["route"].(map[string]any)
+	rules, _ := route["rules"].([]any)
+	for _, r := range rules {
+		m, _ := r.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if ins, _ := m["inbound"].([]any); len(ins) == 1 && ins[0] == "tun-in" {
+			if m["outbound"] != "exit-awg-exit-n1" {
+				t.Errorf("tun-in route: got outbound %v, want exit-awg-exit-n1", m["outbound"])
+			}
+			return
+		}
+	}
+	t.Error("missing tun-in route rule")
 }

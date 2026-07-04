@@ -230,6 +230,22 @@ var locales = map[string]map[string]string{
 		"QR Code": "QR Code",
 		"None": "None",
 		"%d bytes": "%d bytes",
+
+		// MTProxy users
+		"MTProxy Users": "MTProxy Users",
+		"+ Add MTProxy User": "+ Add MTProxy User",
+		"No MTProxy users yet. Add one to serve Telegram MTProxy on a node.": "No MTProxy users yet. Add one to serve Telegram MTProxy on a node.",
+		"FakeTLS Domain": "FakeTLS Domain",
+		"Secret": "Secret",
+		"Generate Secret": "Generate Secret",
+		"Add New MTProxy User": "Add New MTProxy User",
+		"Edit MTProxy User: ": "Edit MTProxy User: ",
+		"Create MTProxy User": "Create MTProxy User",
+		"The 32-hex-char secret. Leave empty to auto-generate.": "The 32-hex-char secret. Leave empty to auto-generate.",
+		"The domain MTProxy disguises itself as (FakeTLS).": "The domain MTProxy disguises itself as (FakeTLS).",
+		"node_id is required": "node_id is required",
+		"Are you sure?": "Are you sure?",
+		"Select node…": "Select node…",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -700,6 +716,22 @@ var locales = map[string]map[string]string{
 		"%d min": "%d мин",
 		"QR Code": "QR-код",
 		"%d bytes": "%d байт",
+
+		// MTProxy users
+		"MTProxy Users": "MTProxy-пользователи",
+		"+ Add MTProxy User": "+ Добавить MTProxy-пользователя",
+		"No MTProxy users yet. Add one to serve Telegram MTProxy on a node.": "Пока нет MTProxy-пользователей. Добавьте, чтобы поднять Telegram MTProxy на ноде.",
+		"FakeTLS Domain": "FakeTLS-домен",
+		"Secret": "Секрет",
+		"Generate Secret": "Сгенерировать секрет",
+		"Add New MTProxy User": "Новый MTProxy-пользователь",
+		"Edit MTProxy User: ": "Изменить MTProxy-пользователя: ",
+		"Create MTProxy User": "Создать MTProxy-пользователя",
+		"The 32-hex-char secret. Leave empty to auto-generate.": "32-символьный hex-секрет. Оставьте пустым для автогенерации.",
+		"The domain MTProxy disguises itself as (FakeTLS).": "Домен, под который маскируется MTProxy (FakeTLS).",
+		"node_id is required": "требуется node_id",
+		"Are you sure?": "Вы уверены?",
+		"Select node…": "Выберите ноду…",
 	},
 }
 

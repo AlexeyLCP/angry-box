@@ -237,6 +237,45 @@ func TestCreateBackup_FirstDeploy_NoConfig(t *testing.T) {
 	}
 }
 
+// TestCreateBackup_BasenamePerFile verifies createBackup names the backup after
+// the source file's basename (NOT a hardcoded config.json.bak). This is the
+// regression guard for the multi-file AWG push collision: awg0.conf +
+// awg-exit-n1.conf backed up in the same second must land in DISTINCT .bak
+// files (awg0.conf.bak / awg-exit-n1.conf.bak), not both clobbered into one
+// config.json.bak. The sing-box path (/etc/sing-box/config.json → config.json.bak)
+// stays identical to the old hardcoded behavior.
+func TestCreateBackup_BasenamePerFile(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		// the issued shell command must cp the source to "$BAK_DIR/<want>"
+		wantBak string
+	}{
+		{"sing-box config", "/etc/sing-box/config.json", "config.json.bak"},
+		{"awg0 conf", "/etc/amnezia/amneziawg/awg0.conf", "awg0.conf.bak"},
+		{"awg-exit conf", "/etc/amnezia/amneziawg/awg-exit-n1.conf", "awg-exit-n1.conf.bak"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newFakeSSH(fakeRule{substring: "sing-box-orch-backup", out: "/tmp/bak/" + tc.wantBak})
+			if _, err := createBackup(client, tc.file); err != nil {
+				t.Fatalf("createBackup: %v", err)
+			}
+			cmds := client.Commands()
+			if len(cmds) == 0 {
+				t.Fatal("no command issued")
+			}
+			cmd := cmds[0]
+			if !strings.Contains(cmd, "$BAK_DIR/"+tc.wantBak) {
+				t.Errorf("backup command does not use basename %q:\n%s", tc.wantBak, cmd)
+			}
+			if strings.Contains(cmd, "$BAK_DIR/config.json.bak") && tc.wantBak != "config.json.bak" {
+				t.Errorf("non-config file %q still uses hardcoded config.json.bak:\n%s", tc.file, cmd)
+			}
+		})
+	}
+}
+
 // TestProbeServiceUp_UP verifies the probe returns nil when is-active prints UP.
 func TestProbeServiceUp_UP(t *testing.T) {
 	client := newFakeSSH(fakeRule{substring: "is-active", out: "UP"})
@@ -404,18 +443,22 @@ func (noopBackend) DeployWithOptions(context.Context, model.Host, model.DeployOp
 	return &model.DeployResult{Success: true}, nil
 }
 func (noopBackend) InstallAWGModule(context.Context, model.Host) error { return nil }
-func (noopBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error { return nil }
+func (noopBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error {
+	return nil
+}
 func (noopBackend) ApplyConfig(context.Context, model.Host, model.ConfigType, model.ConfigParams) error {
 	return nil
 }
-func (noopBackend) Remove(context.Context, model.Host) error                       { return nil }
-func (noopBackend) GetStatus(context.Context, model.Host) (*model.Status, error)   { return &model.Status{}, nil }
+func (noopBackend) Remove(context.Context, model.Host) error { return nil }
+func (noopBackend) GetStatus(context.Context, model.Host) (*model.Status, error) {
+	return &model.Status{}, nil
+}
 func (noopBackend) GenerateConfig(model.ConfigType, model.ConfigParams) (*model.Config, error) {
 	return &model.Config{}, nil
 }
 func (noopBackend) Reload(context.Context, model.Host) error { return nil }
-func (noopBackend) Name() string                            { return "fake" }
-func (noopBackend) Version() string                         { return "test" }
+func (noopBackend) Name() string                             { return "fake" }
+func (noopBackend) Version() string                          { return "test" }
 
 // keep time imported (some rules above reference it implicitly via the package).
 var _ = time.Second

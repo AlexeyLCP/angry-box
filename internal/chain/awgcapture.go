@@ -2,7 +2,10 @@ package chain
 
 // awgcapture.go — live QUIC signature capture, ported from
 // VPN/orchestrator/app/services/awg_capture.py (which itself was ported from
-// hoaxisr/awg-manager — https://github.com/hoaxisr/awg-manager, MIT license).
+// hoaxisr/awg-manager — https://github.com/hoaxisr/awg-manager, MIT). The
+// upstream algorithm is MIT-licensed and integrated here with attribution;
+// this file as a whole is part of Angry-box, distributed under the project's
+// PolyForm Noncommercial license (see /LICENSE).
 // Connects to domain:443 over UDP, sends a real QUIC Initial (SNI=domain),
 // captures up to 5 server response packets, and hex-encodes them as <b 0x...>
 // for I1-I5. This yields a domain-accurate QUIC silhouette that DPI cannot
@@ -25,10 +28,10 @@ const (
 
 // CaptureResult mirrors the Python CaptureResult dataclass.
 type CaptureResult struct {
-	OK       bool     `json:"ok"`
-	Source   string   `json:"source"`   // "quic" | "error"
-	Packets  []string `json:"packets"`  // ["<b 0x...>", ...]
-	Warning  string   `json:"warning,omitempty"`
+	OK      bool     `json:"ok"`
+	Source  string   `json:"source"`  // "quic" | "error"
+	Packets []string `json:"packets"` // ["<b 0x...>", ...]
+	Warning string   `json:"warning,omitempty"`
 }
 
 var domainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$`)
@@ -80,9 +83,13 @@ func CaptureQUICSignature(domain string, timeout time.Duration) CaptureResult {
 		return CaptureResult{Source: "error", Warning: fmt.Sprintf("Domain not found: %s", domain)}
 	}
 
-	// Build the QUIC Initial datagram with SNI=domain (reuses the synthesized
-	// Initial generator — a real QUIC v1 Initial carrying a TLS ClientHello).
-	initial, _, _, buildErr := GenerateQUICInitialWithSNI(domain)
+	// Build a real, AEAD-encrypted QUIC v1 Initial carrying a genuine TLS 1.3
+	// ClientHello with SNI=domain (RFC 9001 key derivation + AES-128-GCM +
+	// header protection — see quic_initial_aead.go). The previous path reused the
+	// synthesized shape-fake GenerateQUICInitialWithSNI, which some QUIC servers
+	// dropped (no real QUIC cryptography) → no response. A real Initial makes
+	// every QUIC server reply, yielding genuine I1-I5 packets.
+	initial, _, buildErr := buildQUICInitialAEAD(domain)
 	if buildErr != nil {
 		return CaptureResult{Source: "error", Warning: fmt.Sprintf("Failed to build QUIC Initial: %v", buildErr)}
 	}

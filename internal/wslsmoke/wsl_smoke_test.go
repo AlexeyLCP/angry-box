@@ -308,7 +308,7 @@ func TestWSL_DeployStatusHash(t *testing.T) {
 func TestWSL_ConfigPreview(t *testing.T) {
 	info := &model.NodeInfo{Host: wslHost(t)}
 	info.Inbounds = []model.NodeInbound{{Protocol: "vless-reality", Port: 8443, UUID: "11111111-2222-3333-4444-555555555555"}}
-	cfg, _, err := chain.RenderMergedNodeConfig(info, nil)
+	cfg, _, err := chain.RenderMergedNodeConfig(info, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderMergedNodeConfig: %v", err)
 	}

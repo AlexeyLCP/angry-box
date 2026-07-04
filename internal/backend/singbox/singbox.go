@@ -330,7 +330,13 @@ func writeSystemdUnit(ctx context.Context, client ports.SSHClient, useSudo bool)
 	unit := fmt.Sprintf(`[Unit]
 Description=sing-box-extended proxy service
 Documentation=https://sing-box.sagernet.org
-After=network.target nss-lookup.target
+# Order sing-box after the kernel AWG interface so that, at boot or on
+# restart, awg0 (and its TUN overlay target) is up before sing-box tries to
+# capture traffic from it. After= is an ordering hint only — it is NOT a
+# Requires=/Wants=, so on non-AWG nodes where awg-quick@awg0 doesn't exist
+# systemd simply ignores it (no start failure). Matches the dns.idoctor.mom
+# reference (VPN/docs/server-dns-idoctor-mom.md).
+After=network.target nss-lookup.target awg-quick@awg0.service
 
 [Service]
 User=root
@@ -513,11 +519,22 @@ else
   rm -rf /tmp/awg-src && mkdir -p /tmp/awg-src
   curl -fsSL "$AB_AWG_URL" -o /tmp/awg-src.tar.gz
   tar -xzf /tmp/awg-src.tar.gz -C /tmp/awg-src --strip-components=1
-  rm -rf /usr/src/amneziawg-1.0.0
-  cp -r /tmp/awg-src /usr/src/amneziawg-1.0.0
-  dkms add -m amneziawg -v 1.0.0 || true
-  dkms build -m amneziawg -v 1.0.0
-  dkms install -m amneziawg -v 1.0.0
+  # Read the module version straight from dkms.conf so dkms add/build/install
+  # always matches the tarball's PACKAGE_VERSION (hardcoding -v 1.0.0 breaks
+  # the moment the bundled amneziawg is bumped to a new release — dkms refuses
+  # to register a version that disagrees with dkms.conf, and the module won't
+  # auto-rebuild on kernel upgrade). Mirrors awg-multi-script's mod_ver flow.
+  AB_AWG_MODVER="$(awk -F'"' '/^PACKAGE_VERSION=/{print $2}' /tmp/awg-src/dkms.conf 2>/dev/null)"
+  if [ -z "$AB_AWG_MODVER" ]; then
+    echo "[awg] WARNING: could not read PACKAGE_VERSION from dkms.conf, falling back to 1.0.0"
+    AB_AWG_MODVER="1.0.0"
+  fi
+  echo "[awg] DKMS module version: $AB_AWG_MODVER"
+  rm -rf "/usr/src/amneziawg-$AB_AWG_MODVER"
+  cp -r /tmp/awg-src "/usr/src/amneziawg-$AB_AWG_MODVER"
+  dkms add -m amneziawg -v "$AB_AWG_MODVER" || true
+  dkms build -m amneziawg -v "$AB_AWG_MODVER"
+  dkms install -m amneziawg -v "$AB_AWG_MODVER"
   modprobe amneziawg
   rm -rf /tmp/awg-src /tmp/awg-src.tar.gz
 fi

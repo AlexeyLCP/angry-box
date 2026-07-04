@@ -3,6 +3,7 @@
 package chain_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -14,8 +15,8 @@ import (
 	"github.com/alexeylcp/angry-box/internal/backend/singbox"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
-	"github.com/alexeylcp/angry-box/internal/takeover"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
+	"github.com/alexeylcp/angry-box/internal/takeover"
 )
 
 // Heavy tests mutate remote VPS state and run sequentially (e2eHeavy mutex).
@@ -148,7 +149,14 @@ func TestE2E_Heavy_Protocol_AWG_Kernel(t *testing.T) {
 	t.Logf("AWG material: cps=%d mimicry=%s", report.AWG.CPSLevel, report.AWG.Mimicry)
 
 	cfg := fetchRemoteConfig(t, e2eRoleEntry)
-	assertConfigContains(t, cfg, `"wireguard"`, `"amnezia"`, `"jc"`)
+	// Kernel-AWG architecture: the sing-box config has a TUN overlay capturing
+	// awg0 (include_interface), NOT a userspace wireguard endpoint (which panics
+	// with chacha20poly1305 under AmneziaWG). The amnezia obfuscation lives in
+	// the separately-pushed awg0.conf, not the sing-box config.
+	assertConfigContains(t, cfg, `"type": "tun"`, `"include_interface"`, `"awg0"`)
+	if strings.Contains(cfg, `"type": "wireguard"`) {
+		t.Errorf("kernel-AWG config must NOT emit a userspace wireguard endpoint:\n%s", truncate(cfg, 3000))
+	}
 
 	client := e2eConnect(t, e2eRoleEntry)
 	lsmod, _ := client.Run("lsmod 2>/dev/null | grep -i amnezia || echo NO_MOD")
@@ -163,7 +171,146 @@ func TestE2E_Heavy_Protocol_AWG_Kernel(t *testing.T) {
 	}
 	t.Logf("awg-quick: %s", strings.TrimSpace(awgQuick))
 
+	// Kernel-AWG deploy must push awg0.conf (with the amnezia obfuscation) and
+	// enable+start awg-quick@awg0. The old userspace path left awg0.conf absent
+	// and awg-quick@awg0 inactive.
+	awg0Conf, _ := client.Run("sudo cat /etc/amnezia/amneziawg/awg0.conf 2>/dev/null || echo MISSING")
+	if strings.TrimSpace(awg0Conf) == "MISSING" {
+		t.Fatal("awg0.conf not pushed to /etc/amnezia/amneziawg/awg0.conf — kernel-AWG deploy must write it")
+	}
+	t.Logf("awg0.conf pushed (%d bytes)", len(awg0Conf))
+	// The amnezia obfuscation (Jc/jc + S1-S4 + H1-H4) lives in awg0.conf's
+	// [Interface] section (BEFORE [Peer]), not the sing-box config.
+	awg0Lower := strings.ToLower(awg0Conf)
+	// [interface] + amnezia fields are always present (the chain has CPS on).
+	// [peer] is ONLY present when the chain has credentialed users — this test
+	// passes awgClientPubKey="" (single entry, no users), so RenderServerAWGConf
+	// correctly emits no [Peer]. Requiring [peer] here would be wrong.
+	for _, want := range []string{"[interface]", "jc", "s1", "h1"} {
+		if !strings.Contains(awg0Lower, want) {
+			t.Errorf("awg0.conf missing %q:\n%s", want, truncate(awg0Conf, 2000))
+		}
+	}
+	// Amnezia fields MUST sit in [Interface] BEFORE [Peer] (awg setconf rejects
+	// them after [Peer]). Itime must NEVER be written (runtime-breaking).
+	peerIdx, jcIdx := strings.Index(strings.ToLower(awg0Conf), "[peer]"), strings.Index(awg0Lower, "jc")
+	if peerIdx >= 0 && jcIdx >= 0 && jcIdx > peerIdx {
+		t.Errorf("awg0.conf: Jc sits AFTER [Peer] (awg setconf rejects it) — jc@%d peer@%d", jcIdx, peerIdx)
+	}
+	if strings.Contains(awg0Lower, "itime") {
+		t.Errorf("awg0.conf must NOT contain Itime (runtime-breaking):\n%s", truncate(awg0Conf, 1500))
+	}
+
+	awgActive, _ := client.Run("sudo systemctl is-active awg-quick@awg0 2>/dev/null || echo inactive")
+	if strings.TrimSpace(awgActive) != "active" {
+		journal, _ := client.Run("sudo journalctl -u awg-quick@awg0 -n 20 --no-pager 2>/dev/null")
+		t.Fatalf("awg-quick@awg0 not active (got %q); journal:\n%s", strings.TrimSpace(awgActive), journal)
+	}
+	t.Logf("awg-quick@awg0: active")
+
+	// awg0 interface must be up with the configured inner address.
+	awg0Iface, _ := client.Run("ip -br addr show awg0 2>/dev/null || echo NO_IFACE")
+	if strings.Contains(awg0Iface, "NO_IFACE") {
+		t.Fatal("awg0 interface not created by awg-quick@awg0")
+	}
+	t.Logf("awg0: %s", strings.TrimSpace(awg0Iface))
+
+	// systemd ordering: sing-box must come After awg-quick@awg0 (so the kernel
+	// AWG interface is up before sing-box's TUN overlay captures it).
+	afterLine, _ := client.Run("systemctl cat sing-box 2>/dev/null | grep '^After=' || echo none")
+	if !strings.Contains(afterLine, "awg-quick@awg0.service") {
+		t.Errorf("sing-box unit After= missing awg-quick@awg0.service (got %q)", strings.TrimSpace(afterLine))
+	}
+	t.Logf("sing-box After=: %s", strings.TrimSpace(afterLine))
+
 	assertNodeHealthy(t, e2eRoleEntry, 0)
+}
+
+// TestE2E_Heavy_Protocol_AWG_Kernel_2Hop verifies fix #1 (the highest-impact
+// review finding) on a live multi-node chain: a LINEAR AWG chain entry with a
+// downstream hop must forward the TUN-overlay catch-all (tun-in) to the
+// inter-node outbound — NOT "direct" (which would egress from the entry node
+// and silently break chain forwarding). Deploys entry→exit on test-server-1 +
+// test-server-3 (both already have the amneziawg module — fast path, no DKMS).
+func TestE2E_Heavy_Protocol_AWG_Kernel_2Hop(t *testing.T) {
+	e2eHeavy(t)
+	store := newStore(t)
+	// entry=server-1 (34.62.128.71), exit=server-3 (23.251.133.38) — both have
+	// the amneziawg module + awg-quick installed, so no DKMS build is needed.
+	nodes := buildChainNodes(e2eRoleEntry, e2eRoleExit)
+	registerChainNodes(t, store, nodes, true)
+
+	c := &model.Chain{
+		Name:               "e2e-awg-kernel-2hop",
+		Nodes:              nodes,
+		Strategy:           model.StrategyURLTest,
+		Transport:          model.TransportXHTTP,
+		UserProtocol:       model.UserProtocolAWG,
+		ObfuscationProfile: "pro_2026",
+		UserEntryPort:      51820,
+	}
+	if _, err := newApplier().ApplyChain(e2eContext(t, 12*time.Minute), store, c, ""); err != nil {
+		t.Fatalf("ApplyChain AWG kernel 2hop: %v", err)
+	}
+	assertNodeHealthy(t, e2eRoleEntry, 0)
+	assertNodeHealthy(t, e2eRoleExit, 0)
+
+	// ENTRY: sing-box config has the TUN overlay (no userspace WG), and the
+	// tun-in catch-all forwards to the inter-node outbound — NOT direct.
+	cfgEntry := fetchRemoteConfig(t, e2eRoleEntry)
+	assertConfigContains(t, cfgEntry, `"type": "tun"`, `"include_interface"`, `"awg0"`)
+	if strings.Contains(cfgEntry, `"type": "wireguard"`) {
+		t.Errorf("kernel-AWG entry config must NOT emit a userspace wireguard endpoint:\n%s", truncate(cfgEntry, 3000))
+	}
+	// Parse the route rules: the tun-in catch-all must target the inter-node
+	// outbound (ch-e2e-awg-kernel-2hop-out-*), not "direct".
+	var top struct {
+		Route *struct {
+			Rules []map[string]any `json:"rules"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal([]byte(cfgEntry), &top); err != nil || top.Route == nil {
+		t.Fatalf("parse entry route: %v\n%s", err, truncate(cfgEntry, 2000))
+	}
+	var tunCatchAll map[string]any
+	for _, r := range top.Route.Rules {
+		if ins, _ := r["inbound"].([]any); len(ins) == 1 && ins[0] == "tun-in" {
+			if _, hasSrc := r["source_ip_cidr"]; !hasSrc { // catch-all, not a per-client pin
+				tunCatchAll = r
+			}
+		}
+	}
+	if tunCatchAll == nil {
+		t.Fatal("entry config missing the tun-in catch-all route rule")
+	}
+	catchOut, _ := tunCatchAll["outbound"].(string)
+	if catchOut == "direct" {
+		t.Errorf("entry tun-in catch-all targets direct — linear AWG entry must forward to the inter-node outbound (chain forwarding broken):\n%s", truncate(cfgEntry, 3000))
+	}
+	if !strings.Contains(catchOut, "ch-e2e-awg-kernel-2hop-out") {
+		t.Errorf("entry tun-in catch-all outbound = %q, want a ch-e2e-awg-kernel-2hop-out-* inter-node forward", catchOut)
+	}
+	t.Logf("entry tun-in catch-all -> %s (chain forwarding wired)", catchOut)
+
+	// ENTRY: awg0.conf pushed + awg-quick@awg0 active + awg0 interface up.
+	entry := e2eConnect(t, e2eRoleEntry)
+	awgActive, _ := entry.Run("sudo systemctl is-active awg-quick@awg0 2>/dev/null || echo inactive")
+	if strings.TrimSpace(awgActive) != "active" {
+		t.Fatalf("entry awg-quick@awg0 not active (got %q)", strings.TrimSpace(awgActive))
+	}
+	awg0Iface, _ := entry.Run("ip -br addr show awg0 2>/dev/null || echo NO_IFACE")
+	if strings.Contains(awg0Iface, "NO_IFACE") {
+		t.Fatal("entry awg0 interface not created")
+	}
+	t.Logf("entry awg0: %s", strings.TrimSpace(awg0Iface))
+
+	// EXIT: the AWG-transit-inbound path. With AWG user-entry + XHTTP transport,
+	// the exit receives the inter-node XHTTP inbound (NOT a kernel awg0 — that's
+	// only for the user-entry). Verify exit is healthy and its config has the
+	// XHTTP transport inbound (ch-...-transport-in).
+	cfgExit := fetchRemoteConfig(t, e2eRoleExit)
+	assertConfigContains(t, cfgExit, "ch-e2e-awg-kernel-2hop-transport-in")
+	t.Logf("exit: XHTTP transport inbound present, healthy")
 }
 
 func TestE2E_Heavy_Protocol_AWG_Userspace(t *testing.T) {
@@ -185,8 +332,32 @@ func TestE2E_Heavy_Protocol_AWG_Userspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyChain AWG userspace: %v", err)
 	}
+	// Under the kernel-AWG architecture (the rework replaced the userspace
+	// user-entry path), a single-node AWG chain deploys a kernel awg0 + TUN
+	// overlay — NOT a userspace wireguard endpoint. The sing-box config has the
+	// TUN overlay (no "wireguard" type, no "system" field); the amnezia lives in
+	// the separately-pushed awg0.conf. This test is kept as a second single-node
+	// AWG deploy on a different server (exit) with a different preset
+	// (russia_2026) and port (51821) — broader coverage than the Kernel test
+	// alone (which uses pro_2026 / 51820 on the entry).
 	cfg := fetchRemoteConfig(t, e2eRoleExit)
-	assertConfigContains(t, cfg, `"wireguard"`, `"system": false`, `"amnezia"`)
+	assertConfigContains(t, cfg, `"type": "tun"`, `"include_interface"`, `"awg0"`)
+	if strings.Contains(cfg, `"type": "wireguard"`) {
+		t.Errorf("kernel-AWG config must NOT emit a userspace wireguard endpoint:\n%s", truncate(cfg, 3000))
+	}
+	// awg0.conf pushed + awg-quick@awg0 active.
+	client := e2eConnect(t, e2eRoleExit)
+	awg0Conf, _ := client.Run("sudo cat /etc/amnezia/amneziawg/awg0.conf 2>/dev/null || echo MISSING")
+	if strings.TrimSpace(awg0Conf) == "MISSING" {
+		t.Fatal("awg0.conf not pushed — kernel-AWG deploy must write it")
+	}
+	if !strings.Contains(strings.ToLower(awg0Conf), "jc") {
+		t.Errorf("awg0.conf missing Jc (russia_2026 preset has CPS):\n%s", truncate(awg0Conf, 1500))
+	}
+	awgActive, _ := client.Run("sudo systemctl is-active awg-quick@awg0 2>/dev/null || echo inactive")
+	if strings.TrimSpace(awgActive) != "active" {
+		t.Fatalf("awg-quick@awg0 not active (got %q)", strings.TrimSpace(awgActive))
+	}
 	assertNodeHealthy(t, e2eRoleExit, 0)
 }
 
@@ -457,14 +628,32 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 
 	report := deployChain(t, store, c, deployChainOpts{})
 
-	// The entry config must carry the user as a WireGuard peer (multi-peer
-	// endpoint) and the persisted CPS material (I1-I5) in the amnezia block.
+	// Kernel-AWG architecture: alice's AWG public key + CPS I1-I5 live in the
+	// kernel awg0.conf (NOT the sing-box config, which has only the TUN overlay).
+	// The sing-box entry config must have the TUN overlay. The user-entry is a
+	// kernel awg0 (NOT a sing-box inbound), so the user-in tag
+	// (ch-<chain>-user-in) must NOT appear — under kernel-AWG the user-entry
+	// produces no sing-box inbound, and after fix #1 route rules key on tun-in.
+	// NOTE: this chain uses Transport=AWG, so the entry DOES have a userspace
+	// wireguard endpoint — but it's the inter-node AWG transport outbound
+	// (ch-<chain>-out-awg-<exitID>), which the plan keeps userspace. That's fine;
+	// the invariant is about the user-ENTRY, not the transport.
 	entryCfg := fetchRemoteConfig(t, e2eRoleEntry)
-	if !strings.Contains(entryCfg, alice.AWGPublicKey) {
-		t.Errorf("entry config missing alice's AWG public key %q\n%s", alice.AWGPublicKey, truncate(entryCfg, 2000))
+	assertConfigContains(t, entryCfg, `"type": "tun"`, `"include_interface"`, `"awg0"`)
+	userInTag := fmt.Sprintf("ch-%s-user-in", c.Name)
+	if strings.Contains(entryCfg, userInTag) {
+		t.Errorf("kernel-AWG entry config must NOT contain the user-in tag %q (user-entry is kernel awg0, not a sing-box inbound):\n%s", userInTag, truncate(entryCfg, 2000))
 	}
-	if c.AWGCPSLevel > 0 && !strings.Contains(entryCfg, `"i1"`) {
-		t.Errorf("entry config missing CPS i1 (level=%d)\n%s", c.AWGCPSLevel, truncate(entryCfg, 2000))
+	// awg0.conf carries the user as a [Peer] + the persisted CPS material.
+	awg0Conf, _ := e2eConnect(t, e2eRoleEntry).Run("sudo cat /etc/amnezia/amneziawg/awg0.conf 2>/dev/null || echo MISSING")
+	if strings.TrimSpace(awg0Conf) == "MISSING" {
+		t.Fatal("entry awg0.conf not pushed — kernel-AWG deploy must write it")
+	}
+	if !strings.Contains(awg0Conf, alice.AWGPublicKey) {
+		t.Errorf("awg0.conf missing alice's AWG public key %q\n%s", alice.AWGPublicKey, truncate(awg0Conf, 2000))
+	}
+	if c.AWGCPSLevel > 0 && !strings.Contains(strings.ToLower(awg0Conf), "i1") {
+		t.Errorf("awg0.conf missing CPS I1 (level=%d)\n%s", c.AWGCPSLevel, truncate(awg0Conf, 2000))
 	}
 	if report.AWG == nil {
 		t.Fatal("expected AWG client material in deploy report")
@@ -485,14 +674,16 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 	}
 	t.Logf("alice .conf:\n%s", conf)
 
-	// CRITICAL: the server endpoint and client .conf must carry the SAME I1
-	// (CPS handshake breaks otherwise). The server JSON escapes "<" as \u003c
-	// and embeds \n in the hex payload, so compare the stripped hex payload.
-	// The authoritative check is the handshake itself (below); this is a log.
-	serverI1 := extractJSONStringField(entryCfg, "i1")
+	// CRITICAL: the server awg0.conf and client .conf must carry the SAME I1
+	// (CPS handshake breaks otherwise). Under the kernel-AWG architecture the
+	// amnezia obfuscation lives in the kernel awg0.conf (NOT the sing-box config,
+	// which has only the TUN overlay). Compare the awg0.conf I1 (already fetched
+	// above) with the client .conf I1. The authoritative check is the handshake
+	// itself (below); this is a log.
+	serverI1 := extractConfField(awg0Conf, "I1 = ")
 	clientI1 := extractConfField(conf, "I1 = ")
-	t.Logf("CPS I1 server (raw): %s", truncate(serverI1, 80))
-	t.Logf("CPS I1 client (raw): %s", truncate(clientI1, 80))
+	t.Logf("CPS I1 server (awg0.conf): %s", truncate(serverI1, 80))
+	t.Logf("CPS I1 client (.conf): %s", truncate(clientI1, 80))
 
 	// Upload the .conf, bring up awg-quick, curl egress, tear down. awg-quick
 	// derives the interface name from the file's basename (must be <iface>.conf,
@@ -927,4 +1118,3 @@ func extractJSONStringField(jsonText, field string) string {
 	}
 	return jsonText[start : start+end]
 }
-

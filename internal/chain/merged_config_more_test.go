@@ -6,6 +6,7 @@ package chain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -24,7 +25,7 @@ func TestRenderMergedNodeConfig_AWGChain(t *testing.T) {
 		},
 	}
 	info := &model.NodeInfo{Host: model.Host{ID: "n0", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"}}
-	cfg, report, err := RenderMergedNodeConfig(info, []*model.Chain{c})
+	cfg, report, err := RenderMergedNodeConfig(info, []*model.Chain{c}, nil)
 	if err != nil {
 		t.Fatalf("RenderMergedNodeConfig: %v", err)
 	}
@@ -60,9 +61,39 @@ func TestRenderMergedNodeConfig_PortConflict(t *testing.T) {
 			{Protocol: "vless", Port: 443}, // collides with chain transport 443
 		},
 	}
-	_, _, err := RenderMergedNodeConfig(info, []*model.Chain{c})
+	_, _, err := RenderMergedNodeConfig(info, []*model.Chain{c}, nil)
 	if err == nil {
 		t.Fatal("expected port-conflict error")
+	}
+}
+
+// TestRenderMergedNodeConfig_Hysteria2TransportHardError verifies that a chain
+// with Transport == Hysteria2 (frozen — AGENTS.md #11) fails the build LOUDLY
+// with an error, rather than silently shipping a config missing its transport
+// inbound/outbound. Previously the warning was appended to report.Warnings and
+// the deploy proceeded with a broken chain — now it's a hard build error so
+// the operator sees the failure and can switch to AWG/XHTTP/Reality.
+func TestRenderMergedNodeConfig_Hysteria2TransportHardError(t *testing.T) {
+	c := &model.Chain{
+		Name:      "hys-chain",
+		Transport: model.TransportHysteria2,
+		Nodes: []model.ChainNode{
+			{ID: "n0", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k", Role: model.NodeRoleEntry},
+			{ID: "n1", Addr: "5.6.7.8:22", User: "root", KeyPath: "/k", Role: model.NodeRoleTransit},
+		},
+	}
+	info := &model.NodeInfo{Host: model.Host{ID: "n0", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"}}
+	_, _, err := RenderMergedNodeConfig(info, []*model.Chain{c}, nil)
+	if err == nil {
+		t.Fatal("expected a hard build error for frozen Hysteria2 transport, got nil")
+	}
+	// The error must name Hysteria2 and point at the frozen-issue / alternatives
+	// so the operator knows what to do (not an opaque "merged config: " string).
+	msg := err.Error()
+	for _, want := range []string{"Hysteria2", "AGENTS.md"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q missing %q (operator needs the reason + the fix)", msg, want)
+		}
 	}
 }
 
@@ -86,4 +117,3 @@ func TestAWGClientPub_Generates(t *testing.T) {
 		t.Error("expected a fresh key, not the empty stored value")
 	}
 }
-

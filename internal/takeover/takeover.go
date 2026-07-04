@@ -110,15 +110,18 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 		return &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "render failed: " + err.Error()}, err
 	}
 
-	// 6. Cutover: disable old VPN, then push the sing-box config.
+	// 6. Cutover: disable old VPN (except AWG), then push the sing-box config.
 	res := &TakeoverResult{FromType: string(det.Type), OldService: det.ServiceName, OldConfigBackup: info.Takeover.OldConfigBackup, ConvertedInbounds: len(inbounds) + len(extra)}
 
-	// Disable the old VPN service to free its port(s). For AWG this is now
-	// REQUIRED (the takeover renders a userspace wireguard endpoint that binds
-	// the same listen_port — leaving awg-quick@awg0 running would conflict).
-	// The old "kernel balancer on top of awg0" model does not apply to the
-	// userspace endpoint we push.
-	if det.ServiceName != "" {
+	// Disable the old VPN service to free its port(s) — EXCEPT for AWG. Under
+	// the kernel-AWG architecture, takeover KEEPS awg-quick@awg0 running (it
+	// owns the AWG interface, peers, and amnezia obfuscation — userspace
+	// wireguard-go would panic with chacha20poly1305 under AmneziaWG) and pushes
+	// a sing-box TUN-overlay config that captures awg0 via include_interface.
+	// Disabling awg-quick@awg0 would drop every existing client; we leave it
+	// untouched and let sing-box route on top of it. The old config backup is
+	// still taken (step 3) so rollback can restore it if sing-box fails.
+	if det.Type != DetectedAWG && det.ServiceName != "" {
 		if err := chain.DisableService(client, det.ServiceName, useSudo); err != nil {
 			// Couldn't disable old — abort before pushing (leave old running).
 			res.Status = "rolled-back"
@@ -235,10 +238,12 @@ func buildMinimalConfigWithExtra(extra []json.RawMessage) (string, error) {
 
 // rollbackToOldVPN re-enables + restarts the old VPN service and restores its
 // config from the backup. Returns an error if the old VPN could not be brought
-// back (the caller marks the result "failed-both"). For AWG this now re-enables
-// awg-quick@awg0 (the takeover disables it to free the port for the userspace
-// endpoint); the old "kernel balancer, nothing to roll back" model no longer
-// applies.
+// back (the caller marks the result "failed-both"). For AWG the takeover does
+// NOT disable awg-quick@awg0 (the kernel-AWG architecture keeps it running and
+// sing-box sits on top via a TUN overlay), so this rollback only restores the
+// sing-box config.json's predecessor — the awg-quick service stays up the whole
+// time. EnableService on an already-running unit is idempotent (enable + restart
+// of a healthy service is a no-op).
 func rollbackToOldVPN(ctx context.Context, client ports.SSHClient, det *Detection, state *model.TakeoverState, useSudo bool) error {
 	if det.ServiceName == "" {
 		return fmt.Errorf("no old service name to roll back to")

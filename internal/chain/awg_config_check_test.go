@@ -88,17 +88,21 @@ var awgServerPriv = func() string {
 }()
 
 // TestAWGMergedConfig_SingBoxCheck_EntryOnly renders a single-node AWG chain
-// (entry == exit, the simplest case) with two users as multi-peer and runs
-// sing-box check. Proves the AWG inbound (wireguard endpoint + TUN + multi-peer)
-// is a valid config.
+// (entry == exit, the simplest case) with two users and runs sing-box check.
+// Under the kernel-AWG architecture the AWG server interface (awg0) is owned by
+// the kernel — sing-box emits a TUN overlay (include_interface:["awg0"]) NOT a
+// userspace wireguard endpoint (which panics with chacha20poly1305 under
+// AmneziaWG). The per-user peers live in the separately-rendered awg0.conf
+// (RenderServerAWGConf), so this test also renders that .conf and verifies the
+// two peers are present there.
 func TestAWGMergedConfig_SingBoxCheck_EntryOnly(t *testing.T) {
 	if awgServerPriv == "" {
 		t.Fatal("could not generate AWG server keypair")
 	}
 	c := &model.Chain{
-		Name:              "awg-check",
-		UserProtocol:      model.UserProtocolAWG,
-		Transport:         model.TransportXHTTP,
+		Name:               "awg-check",
+		UserProtocol:       model.UserProtocolAWG,
+		Transport:          model.TransportXHTTP,
 		AWGEntryServerPriv: awgServerPriv,
 		Nodes: []model.ChainNode{
 			{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry},
@@ -109,7 +113,7 @@ func TestAWGMergedConfig_SingBoxCheck_EntryOnly(t *testing.T) {
 		{Name: "alice", Active: true, AWGPublicKey: genAWGPub(t), AWGAddress: "10.8.0.2/32"},
 		{Name: "bob", Active: true, AWGPublicKey: genAWGPub(t), AWGAddress: "10.8.0.3/32"},
 	}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-check": users}, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-check": users}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -117,13 +121,39 @@ func TestAWGMergedConfig_SingBoxCheck_EntryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	// Sanity: the config actually contains a multi-peer wireguard endpoint.
-	if !strings.Contains(string(cfgJSON), `"wireguard"`) {
-		t.Fatalf("config has no wireguard endpoint:\n%s", cfgJSON)
+	// Kernel-AWG invariant: the sing-box config has a TUN overlay capturing awg0,
+	// NOT a userspace wireguard endpoint (the chacha20poly1305 panic path).
+	if !strings.Contains(string(cfgJSON), `"type": "tun"`) {
+		t.Fatalf("kernel-AWG config must have a TUN inbound:\n%s", cfgJSON)
 	}
-	if got := strings.Count(string(cfgJSON), `"public_key"`); got < 2 {
-		t.Errorf("want >=2 wireguard peers, got %d in:\n%s", got, cfgJSON)
+	// Format-agnostic: the TUN must reference awg0 in its include_interface.
+	if !strings.Contains(string(cfgJSON), `"include_interface"`) || !strings.Contains(string(cfgJSON), `"awg0"`) {
+		t.Errorf("TUN must include_interface awg0:\n%s", cfgJSON)
 	}
+	if strings.Contains(string(cfgJSON), `"type": "wireguard"`) {
+		t.Errorf("kernel-AWG config must NOT emit a userspace wireguard endpoint:\n%s", cfgJSON)
+	}
+
+	// The per-user peers now live in the kernel awg0.conf (RenderServerAWGConf),
+	// not the sing-box config. Verify the two peers are present there.
+	serverConf := RenderServerAWGConf(AWGServerConfParams{
+		ServerPrivateKey: awgServerPriv,
+		ListenPort:       51820,
+		TunnelAddress:    "10.8.0.1/24",
+		Peers: []AWGServerPeer{
+			{PublicKey: users[0].AWGPublicKey, AllowedIPs: users[0].AWGAddress},
+			{PublicKey: users[1].AWGPublicKey, AllowedIPs: users[1].AWGAddress},
+		},
+	})
+	if got := strings.Count(serverConf, "[Peer]"); got != 2 {
+		t.Errorf("awg0.conf want 2 [Peer] sections, got %d:\n%s", got, serverConf)
+	}
+	for _, u := range users {
+		if !strings.Contains(serverConf, u.AWGPublicKey) {
+			t.Errorf("awg0.conf missing peer %s:\n%s", u.AWGPublicKey, serverConf)
+		}
+	}
+
 	singBoxCheck(t, cfgJSON)
 }
 
@@ -158,7 +188,7 @@ func TestAWGMergedConfig_SingBoxCheck_MultiHopWithRoute(t *testing.T) {
 	os.Setenv("AB_ROUTE_DNS", "1")
 	defer os.Unsetenv("AB_ROUTE_DNS")
 
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-mh": users}, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, map[string][]model.User{"awg-mh": users}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -172,6 +202,43 @@ func TestAWGMergedConfig_SingBoxCheck_MultiHopWithRoute(t *testing.T) {
 	}
 	if !strings.Contains(string(cfgJSON), `"route"`) {
 		t.Errorf("config missing route section:\n%s", cfgJSON)
+	}
+
+	// Regression for the AWG entry-forwarding bug (post-rework review finding #1):
+	// the tun-in catch-all MUST forward to the inter-node outbound, NOT "direct" —
+	// otherwise every AWG user egresses from the entry node and chain forwarding
+	// is silently broken. And the per-client source_ip_cidr rule (alice pinned to
+	// exit) MUST come BEFORE the tun-in catch-all so the pin wins (first-match).
+	var top struct {
+		Route *struct {
+			Rules []map[string]any `json:"rules"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal(cfgJSON, &top); err != nil || top.Route == nil {
+		t.Fatalf("parse route: %v\n%s", err, cfgJSON)
+	}
+	var tunCatchAllIdx, alicePinIdx = -1, -1
+	for i, r := range top.Route.Rules {
+		if ins, _ := r["inbound"].([]any); len(ins) == 1 && ins[0] == "tun-in" {
+			if _, hasSource := r["source_ip_cidr"]; !hasSource { // the catch-all, not alice's pin
+				tunCatchAllIdx = i
+				if r["outbound"] == "direct" {
+					t.Errorf("tun-in catch-all routes to direct — linear AWG entry must forward to the inter-node outbound (chain forwarding broken):\n%s", cfgJSON)
+				}
+			}
+		}
+		if src, _ := r["source_ip_cidr"].([]any); len(src) == 1 && src[0] == "10.8.0.2/32" {
+			alicePinIdx = i
+		}
+	}
+	if tunCatchAllIdx < 0 {
+		t.Fatal("missing tun-in catch-all route rule")
+	}
+	if alicePinIdx < 0 {
+		t.Fatal("missing alice's source_ip_cidr=10.8.0.2/32 per-client rule")
+	}
+	if alicePinIdx > tunCatchAllIdx {
+		t.Errorf("alice's per-client pin (rule %d) must come BEFORE the tun-in catch-all (rule %d) — first-match-wins would shadow the pin:\n%s", alicePinIdx, tunCatchAllIdx, cfgJSON)
 	}
 	singBoxCheck(t, cfgJSON)
 }
@@ -285,7 +352,7 @@ func deriveClientPub(priv string, t *testing.T) (string, string) {
 func TestAWGTransport_MergedConfig_SingBoxCheck(t *testing.T) {
 	c := awgTransportChain(t)
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "entry"}}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -316,7 +383,7 @@ func TestAWGTransport_MergedConfig_SingBoxCheck(t *testing.T) {
 func TestAWGTransport_MiddleNode_HasTransitEndpoint(t *testing.T) {
 	c := awgTransportChain(t)
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "middle"}}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -342,7 +409,7 @@ func TestAWGTransport_MiddleNode_HasTransitEndpoint(t *testing.T) {
 func TestAWGTransport_NotRealityFallback(t *testing.T) {
 	c := awgTransportChain(t)
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "middle"}}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil)
+	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -410,8 +477,12 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	if len(ep.Peers) != 1 || ep.Peers[0].PublicKey != entryClientPub {
 		t.Errorf("inbound peer pub=%v, want entry client pub %s", ep.Peers, entryClientPub)
 	}
-	if len(ep.Peers[0].AllowedIPs) != 1 || ep.Peers[0].AllowedIPs[0] != "10.9.0.2/32" {
-		t.Errorf("inbound peer allowed_ips=%v, want [10.9.0.2/32]", ep.Peers[0].AllowedIPs)
+	// AllowedIPs MUST be 0.0.0.0/0 (not just the prev node's transport inner IP)
+	// so the exit/transit can route RESPONSE packets (dst=10.8.0.x user subnet)
+	// back through the tunnel — a peer with only [10.9.0.2/32] drops them. This
+	// mirrors the transport-out side (which also uses 0.0.0.0/0).
+	if len(ep.Peers[0].AllowedIPs) != 2 || ep.Peers[0].AllowedIPs[0] != "0.0.0.0/0" || ep.Peers[0].AllowedIPs[1] != "::/0" {
+		t.Errorf("inbound peer allowed_ips=%v, want [0.0.0.0/0 ::/0] (route user-subnet responses back)", ep.Peers[0].AllowedIPs)
 	}
 	// Explicit peer endpoint: entry's public IP + AWG client port. Without it
 	// sing-box-extended userspace endpoint does not send the handshake response
@@ -490,7 +561,7 @@ func TestAWGTransport_OutboundTagMatchesRoute(t *testing.T) {
 		t.Fatalf("want 1 role, got %d", len(roles))
 	}
 	// Render entry config and extract the actual outbound tag.
-	cfg, _, err := buildMergedNodeConfig(&model.NodeInfo{Host: model.Host{ID: "entry"}}, []*model.Chain{c}, nil, nil)
+	cfg, _, err := buildMergedNodeConfig(&model.NodeInfo{Host: model.Host{ID: "entry"}}, []*model.Chain{c}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -649,11 +720,11 @@ func TestAWGAmnezia_S3S4ITime(t *testing.T) {
 
 	// Client .conf must carry S3/S4. Itime is intentionally NOT written.
 	c := &model.Chain{
-		Name:              "awg-s3",
-		UserProtocol:      model.UserProtocolAWG,
-		Transport:         model.TransportXHTTP,
+		Name:               "awg-s3",
+		UserProtocol:       model.UserProtocolAWG,
+		Transport:          model.TransportXHTTP,
 		ObfuscationProfile: p.Name,
-		Nodes:             []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+		Nodes:              []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
 	}
 	EnsureChainAWGMaterial(c, p)
 	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{

@@ -194,7 +194,13 @@ func inferNodeRole(info *model.NodeInfo) string {
 // pushing it (for hash comparison). Returns the JSON string.
 func renderCurrentNodeConfig(st *chain.Store, info *model.NodeInfo) (string, error) {
 	nodeChains, _ := st.GetChainsForNode(info.ID)
-	cfg, _, err := chain.RenderMergedNodeConfig(info, nodeChains)
+	// Fetch the node's MTProxy users so the preview matches what the deploy path
+	// (buildMergedNodeConfig via ApplyMergedNode) actually emits. Without this,
+	// a node with enabled MTProxy users would preview WITHOUT the mtproxy inbound
+	// → CurrentHash != LastDeployedHash → the UI perpetually shows a pending-
+	// changes indicator even right after a successful deploy.
+	mtproxyUsers, _ := st.ListMtproxyUsersForNode(info.ID)
+	cfg, _, err := chain.RenderMergedNodeConfig(info, nodeChains, mtproxyUsers)
 	if err != nil {
 		return "", err
 	}

@@ -199,6 +199,12 @@ func TestInstallAWGModule_InstallSuccess(t *testing.T) {
 	if !fake.Saw("apt-get install -y -qq amneziawg") {
 		t.Error("amneziawg PPA apt install not run")
 	}
+	// Regression guard: the DKMS fallback must read PACKAGE_VERSION from
+	// dkms.conf into AB_AWG_MODVER (not hardcode -v 1.0.0) so a tarball bump
+	// doesn't silently break dkms add/build/install version matching.
+	if !fake.Saw("AB_AWG_MODVER") || !fake.Saw("PACKAGE_VERSION") {
+		t.Error("DKMS fallback missing dynamic AB_AWG_MODVER / PACKAGE_VERSION extraction")
+	}
 }
 
 // TestInstallAWGModule_InstallFails verifies an install failure surfaces.

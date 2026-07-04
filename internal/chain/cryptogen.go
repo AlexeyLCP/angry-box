@@ -158,7 +158,9 @@ func GenerateMTProxySecret() string {
 }
 
 // MTProxyFullSecret composes the sing-box/mtg FakeTLS secret:
-//   "ee" + secret_hex + hex(fake_tls_domain)
+//
+//	"ee" + secret_hex + hex(fake_tls_domain)
+//
 // secret_hex must be 32 chars (16 bytes).
 func MTProxyFullSecret(secretHex, fakeTLSDomain string) (string, error) {
 	if len(secretHex) != 32 {
@@ -295,12 +297,23 @@ func awgIPKey(a string) string {
 // 10.8.0.0/24 for user-entry peers) so the two subnets never collide. taken is
 // the list of TransitAWGAddress values already claimed by other nodes.
 func allocateAWGTransitIP(taken []string) string {
+	return allocateAWGHostIP("10.9.0", taken)
+}
+
+// allocateAWGExitIP returns the first free address in 10.10.0.0/24 for a
+// balancer-side kernel AWG exit-link client interface (awg-exit-nX). Separate
+// from user-entry (10.8.0.0/24) and inter-node transport (10.9.0.0/24).
+func allocateAWGExitIP(taken []string) string {
+	return allocateAWGHostIP("10.10.0", taken)
+}
+
+func allocateAWGHostIP(prefix string, taken []string) string {
 	occupied := make(map[string]bool, len(taken))
 	for _, a := range taken {
 		occupied[awgIPKey(a)] = true
 	}
 	for host := 2; host <= 254; host++ {
-		ip := fmt.Sprintf("10.9.0.%d/32", host)
+		ip := fmt.Sprintf("%s.%d/32", prefix, host)
 		if !occupied[awgIPKey(ip)] {
 			return ip
 		}

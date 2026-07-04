@@ -1,0 +1,192 @@
+package templates
+
+// mtproxy.templ — MTProxy-user CRUD UI (mirrors users.templ). MTProxy users back
+// the sing-box-extended mtproxy inbound (FakeTLS, "ee"+hex secret). The inbound
+// is emitted at the node level from ListMtproxyUsersForNode.
+
+import (
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
+
+// ─── MTProxy Users List ──────────────────────────────────────────────────────
+
+templ MtproxyUsers(users []*model.MtproxyUser, nodes []*model.NodeInfo) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "MTProxy Users") }</h2>
+			<button
+				class="btn btn-primary btn-sm"
+				hx-get="/ui/mtproxy/new"
+				hx-target="#modal-container"
+				hx-swap="innerHTML">
+				{ i18n.T(ctx, "+ Add MTProxy User") }
+			</button>
+		</div>
+
+		<div class="card bg-base-100 shadow">
+			<div class="w-full overflow-x-clip">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>{ i18n.T(ctx, "Name") }</th>
+							<th>{ i18n.T(ctx, "Node") }</th>
+							<th>{ i18n.T(ctx, "FakeTLS Domain") }</th>
+							<th>{ i18n.T(ctx, "Secret") }</th>
+							<th>{ i18n.T(ctx, "Status") }</th>
+							<th class="w-px"></th>
+						</tr>
+					</thead>
+					<tbody id="mtproxy-tbody">
+						for _, u := range users {
+							@MtproxyUserRow(u)
+						}
+						if len(users) == 0 {
+							<tr>
+								<td colspan="6" class="text-center py-8 text-base-content/50">
+									{ i18n.T(ctx, "No MTProxy users yet. Add one to serve Telegram MTProxy on a node.") }
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<div id="modal-container"></div>
+}
+
+// ─── MTProxy User Row ────────────────────────────────────────────────────────
+
+templ MtproxyUserRow(u *model.MtproxyUser) {
+	<tr id={"mtproxy-" + u.ID}>
+		<td>
+			<div class="font-semibold">{ u.Name }</div>
+			<div class="text-xs text-base-content/50 font-mono">{ u.ID }</div>
+		</td>
+		<td><div class="font-mono text-sm">{ u.NodeID }</div></td>
+		<td><div class="font-mono text-sm">{ u.FakeTLSDomain }</div></td>
+		<td><div class="font-mono text-xs text-base-content/60 truncate max-w-[12rem]" title={u.SecretHex}>{ u.SecretHex }</div></td>
+		<td>
+			if u.Enabled {
+				<span class="badge badge-success badge-sm">{ i18n.T(ctx, "Online") }</span>
+			} else {
+				<span class="badge badge-ghost badge-sm">{ i18n.T(ctx, "Offline") }</span>
+			}
+		</td>
+		<td>
+			<div class="flex gap-1">
+				<button
+					class="btn btn-ghost btn-xs"
+					hx-get={"/ui/mtproxy/" + u.ID + "/edit"}
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					{ i18n.T(ctx, "Edit") }
+				</button>
+				<button
+					class="btn btn-ghost btn-xs text-error"
+					hx-delete={"/ui/mtproxy/" + u.ID}
+					hx-target={"#mtproxy-" + u.ID}
+					hx-swap="outerHTML"
+					hx-confirm={i18n.T(ctx, "Are you sure?")}>
+					✕
+				</button>
+			</div>
+		</td>
+	</tr>
+}
+
+// ─── MTProxy User Form ───────────────────────────────────────────────────────
+
+templ MtproxyUserForm(u *model.MtproxyUser, nodes []*model.NodeInfo) {
+	<dialog id="mtproxy-modal" class="modal" open>
+		<div class="modal-box max-w-2xl">
+			<h3 class="font-bold text-lg mb-4">
+				if u != nil {
+					{ i18n.T(ctx, "Edit MTProxy User: ") }{ u.Name }
+				} else {
+					{ i18n.T(ctx, "Add New MTProxy User") }
+				}
+			</h3>
+
+			if u != nil {
+				<form
+					hx-post={"/ui/mtproxy/" + u.ID + "/edit"}
+					hx-target={"#mtproxy-" + u.ID}
+					hx-swap="outerHTML"
+					hx-on::after-request="this.closest('dialog').close()"
+					class="space-y-4">
+					@mtproxyUserFormBody(u, nodes)
+					<div class="form-control">
+						<label class="label cursor-pointer justify-start gap-3">
+							<input type="checkbox" name="enabled" class="checkbox" if u.Enabled { checked } />
+							<span class="label-text">{ i18n.T(ctx, "Online") }</span>
+						</label>
+					</div>
+					<div class="modal-action">
+						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
+					</div>
+				</form>
+			} else {
+				<form
+					hx-post="/ui/mtproxy"
+					hx-target="#mtproxy-tbody"
+					hx-swap="beforeend"
+					hx-on::after-request="this.closest('dialog').close(); this.reset()"
+					class="space-y-4">
+					@mtproxyUserFormBody(nil, nodes)
+					<div class="modal-action">
+						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Create MTProxy User") }</button>
+					</div>
+				</form>
+			}
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>{ i18n.T(ctx, "Close") }</button>
+		</form>
+	</dialog>
+}
+
+templ mtproxyUserFormBody(u *model.MtproxyUser, nodes []*model.NodeInfo) {
+	<div class="grid grid-cols-2 gap-4">
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Name") }</span></label>
+			<input type="text" name="name" class="input input-bordered" required
+				if u != nil { value={ u.Name } } placeholder="alice" />
+		</div>
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Node") }</span></label>
+			<select name="node_id" class="select select-bordered" required>
+				<option value="" disabled if u == nil { selected }>{ i18n.T(ctx, "Select node…") }</option>
+				for _, n := range nodes {
+					<option value={n.ID} if u != nil && u.NodeID == n.ID { selected }>{ n.ID }</option>
+				}
+			</select>
+		</div>
+	</div>
+
+	<div class="form-control">
+		<label class="label"><span class="label-text">{ i18n.T(ctx, "Secret") }</span></label>
+		<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "The 32-hex-char secret. Leave empty to auto-generate.") }</span></div>
+		<div class="join">
+			<input type="text" name="secret_hex" class="input input-bordered join-item font-mono"
+				if u != nil { value={ u.SecretHex } } placeholder="83b231c9ccf32ef09f48c8f63765ab4f" maxlength="32" />
+			<button type="button" class="btn join-item"
+				hx-get="/ui/mtproxy/generate-secret"
+				hx-target="[name='secret_hex']"
+				hx-swap="outerHTML">
+				{ i18n.T(ctx, "Generate Secret") }
+			</button>
+		</div>
+	</div>
+
+	<div class="form-control">
+		<label class="label"><span class="label-text">{ i18n.T(ctx, "FakeTLS Domain") }</span></label>
+		<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "The domain MTProxy disguises itself as (FakeTLS).") }</span></div>
+		<input type="text" name="fake_tls_domain" class="input input-bordered font-mono"
+			if u != nil { value={ u.FakeTLSDomain } } else { value="disk.yandex.ru" } placeholder="disk.yandex.ru" />
+	</div>
+}

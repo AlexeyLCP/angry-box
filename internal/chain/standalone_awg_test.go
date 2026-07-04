@@ -1,22 +1,25 @@
 package chain
 
-// standalone_awg_test.go — verifies standalone AWG multi-peer (#5): when a
-// standalone AWG inbound has assigned users (ForUsers) with per-user AWG creds,
-// the rendered endpoint carries one WireGuard peer per user (PublicKey +
-// AllowedIPs from the user), mirroring the chain user-entry path. Falls back to
-// the legacy single-peer builder when no users qualify.
+// standalone_awg_test.go — verifies standalone AWG under the kernel-AWG
+// architecture: the AWG server interface (awg0) is owned by the kernel
+// (awg-quick@awg0), NOT a sing-box userspace endpoint. buildStandaloneInOut
+// therefore emits NOTHING for an AWG inbound (the per-user peers live in the
+// separately-pushed awg0.conf via RenderServerAWGConf). The sing-box TUN
+// overlay that captures awg0 traffic is emitted at the node level by
+// buildMergedNodeConfig (see awg_tun_overlay_test.go).
 
 import (
 	"encoding/json"
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
-	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
-// TestBuildStandaloneInOut_AWG_MultiPeer verifies a standalone AWG inbound with
-// two assigned users (both with AWG creds) renders a multi-peer endpoint.
-func TestBuildStandaloneInOut_AWG_MultiPeer(t *testing.T) {
+// TestBuildStandaloneInOut_AWG_EmitsNoUserspaceEndpoint verifies a standalone
+// AWG inbound no longer produces a userspace WireGuard endpoint — the kernel
+// owns awg0. The per-user peers are rendered into awg0.conf by
+// RenderServerAWGConf (see awg_server_test.go), not the sing-box config.
+func TestBuildStandaloneInOut_AWG_EmitsNoUserspaceEndpoint(t *testing.T) {
 	ib := &model.NodeInbound{
 		Protocol: "awg", Port: 51820, Tag: "sa-awg-test",
 		ServerPrivKey: awgServerPriv,
@@ -26,75 +29,67 @@ func TestBuildStandaloneInOut_AWG_MultiPeer(t *testing.T) {
 		{ID: "u2", Name: "bob", Active: true, AWGPublicKey: "pub-bob", AWGAddress: "10.8.0.3/32"},
 	}
 	byInbound := map[string][]model.User{"sa-awg-test": users}
-	_, endpoints := buildStandaloneInOut(ib, "sa-awg-test", byInbound)
-	if len(endpoints) != 1 {
-		t.Fatalf("want 1 endpoint, got %d", len(endpoints))
+	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-test", byInbound)
+	if len(endpoints) != 0 {
+		t.Fatalf("kernel-AWG must emit NO userspace endpoint, got %d: %s", len(endpoints), endpoints)
 	}
-	var ep config.WireGuardEndpoint
-	if err := json.Unmarshal(endpoints[0], &ep); err != nil {
-		t.Fatalf("unmarshal: %v\n%s", err, endpoints[0])
-	}
-	if ep.Tag != "sa-awg-test" {
-		t.Errorf("tag=%s, want sa-awg-test", ep.Tag)
-	}
-	if ep.ListenPort != 51820 {
-		t.Errorf("listen_port=%d, want 51820", ep.ListenPort)
-	}
-	if len(ep.Peers) != 2 {
-		t.Fatalf("want 2 peers (alice, bob), got %d: %+v", len(ep.Peers), ep.Peers)
-	}
-	want := map[string]string{"pub-alice": "10.8.0.2/32", "pub-bob": "10.8.0.3/32"}
-	for _, p := range ep.Peers {
-		exp, ok := want[p.PublicKey]
-		if !ok {
-			t.Errorf("unexpected peer pubkey %s", p.PublicKey)
-			continue
-		}
-		if len(p.AllowedIPs) != 1 || p.AllowedIPs[0] != exp {
-			t.Errorf("peer %s allowed_ips=%v, want [%s]", p.PublicKey, p.AllowedIPs, exp)
-		}
+	if len(inbounds) != 0 {
+		t.Fatalf("kernel-AWG standalone must emit NO sing-box inbound (TUN overlay is node-level), got %d: %s", len(inbounds), inbounds)
 	}
 }
 
-// TestBuildStandaloneInOut_AWG_NoUsers_FallsBackToSinglePeer — no assigned
-// users (or users without AWG creds) -> legacy single-peer builder (placeholder
-// peer, since ib.AWGClientPub is empty).
-func TestBuildStandaloneInOut_AWG_NoUsers_FallsBackToSinglePeer(t *testing.T) {
+// TestBuildStandaloneInOut_AWG_NoUsers_EmitsNothing — no assigned users still
+// emits nothing (the kernel awg0.conf carries a placeholder peer, not the
+// sing-box config).
+func TestBuildStandaloneInOut_AWG_NoUsers_EmitsNothing(t *testing.T) {
 	ib := &model.NodeInbound{Protocol: "awg", Port: 51820, Tag: "sa-awg-empty", ServerPrivKey: awgServerPriv}
-	_, endpoints := buildStandaloneInOut(ib, "sa-awg-empty", nil)
-	if len(endpoints) != 1 {
-		t.Fatalf("want 1 endpoint (legacy fallback), got %d", len(endpoints))
-	}
-	var ep config.WireGuardEndpoint
-	if err := json.Unmarshal(endpoints[0], &ep); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	// Legacy builder produces a single peer (placeholder when AWGClientPub empty).
-	if len(ep.Peers) != 1 {
-		t.Fatalf("want 1 peer (legacy), got %d", len(ep.Peers))
-	}
-	if ep.Peers[0].PublicKey != "CLIENT_PUBLIC_KEY_HERE" {
-		t.Errorf("placeholder peer pub=%s, want CLIENT_PUBLIC_KEY_HERE", ep.Peers[0].PublicKey)
+	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-empty", nil)
+	if len(endpoints) != 0 || len(inbounds) != 0 {
+		t.Fatalf("kernel-AWG with no users must emit nothing, got inbounds=%d endpoints=%d", len(inbounds), len(endpoints))
 	}
 }
 
-// TestBuildStandaloneInOut_AWG_UsersWithoutCreds_FallsBack — users assigned but
-// none have AWGPublicKey/AWGAddress -> cannot be peers -> legacy single-peer.
-func TestBuildStandaloneInOut_AWG_UsersWithoutCreds_FallsBack(t *testing.T) {
+// TestBuildStandaloneInOut_AWG_UsersWithoutCreds_EmitsNothing — users without
+// AWG creds still emit nothing (the kernel owns the interface regardless).
+func TestBuildStandaloneInOut_AWG_UsersWithoutCreds_EmitsNothing(t *testing.T) {
 	ib := &model.NodeInbound{Protocol: "awg", Port: 51820, Tag: "sa-awg-nocreds", ServerPrivKey: awgServerPriv}
 	users := []model.User{
-		{ID: "u1", Name: "alice", Active: true}, // no AWG creds
+		{ID: "u1", Name: "alice", Active: true},                        // no AWG creds
 		{ID: "u2", Name: "bob", Active: true, AWGPublicKey: "pub-bob"}, // no AWGAddress
 	}
 	byInbound := map[string][]model.User{"sa-awg-nocreds": users}
-	_, endpoints := buildStandaloneInOut(ib, "sa-awg-nocreds", byInbound)
-	if len(endpoints) != 1 {
-		t.Fatalf("want 1 endpoint, got %d", len(endpoints))
+	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-nocreds", byInbound)
+	if len(endpoints) != 0 || len(inbounds) != 0 {
+		t.Fatalf("kernel-AWG must emit nothing regardless of user creds, got inbounds=%d endpoints=%d", len(inbounds), len(endpoints))
 	}
-	var ep config.WireGuardEndpoint
-	_ = json.Unmarshal(endpoints[0], &ep)
-	if len(ep.Peers) != 1 {
-		t.Fatalf("want 1 peer (legacy fallback, no qualified users), got %d", len(ep.Peers))
+}
+
+// TestBuildStandaloneInOut_AWG_NoUserspaceWGRegression is a belt-and-braces
+// guard: across every AWG standalone scenario, the builder must NEVER emit a
+// userspace wireguard endpoint/inbound (the chacha20poly1305 panic path).
+func TestBuildStandaloneInOut_AWG_NoUserspaceWGRegression(t *testing.T) {
+	scenarios := []struct {
+		name  string
+		ib    *model.NodeInbound
+		users []model.User
+	}{
+		{"multi-peer", &model.NodeInbound{Protocol: "awg", Port: 51820, Tag: "t1", ServerPrivKey: awgServerPriv},
+			[]model.User{{Name: "a", Active: true, AWGPublicKey: "pa", AWGAddress: "10.8.0.2/32"}}},
+		{"empty", &model.NodeInbound{Protocol: "awg", Port: 51820, Tag: "t2", ServerPrivKey: awgServerPriv}, nil},
+		{"nocreds", &model.NodeInbound{Protocol: "awg", Port: 51820, Tag: "t3", ServerPrivKey: awgServerPriv},
+			[]model.User{{Name: "a", Active: true}}},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			byInbound := map[string][]model.User{sc.ib.Tag: sc.users}
+			inbounds, endpoints := buildStandaloneInOut(sc.ib, sc.ib.Tag, byInbound)
+			for _, raw := range append(append([]json.RawMessage{}, inbounds...), endpoints...) {
+				var m map[string]any
+				if json.Unmarshal(raw, &m) == nil && m["type"] == "wireguard" {
+					t.Errorf("%s: emitted userspace wireguard (panic path): %s", sc.name, string(raw))
+				}
+			}
+		})
 	}
 }
 

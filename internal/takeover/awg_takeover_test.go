@@ -1,8 +1,10 @@
 package takeover
 
-// awg_takeover_test.go — verifies the dedicated AWG takeover renderer preserves
-// the imported server keypair + listen port + amnezia (JC/S1-S4/H1-H4/I1-I5) +
-// the full peer list, and that the produced config passes a real sing-box check.
+// awg_takeover_test.go — verifies the AWG takeover renderer under the kernel-AWG
+// architecture: the takeover KEEPS awg-quick@awg0 running (kernel owns the AWG
+// interface, peers, amnezia) and pushes a sing-box TUN-overlay config that
+// captures awg0 via include_interface:["awg0"] and routes traffic direct. No
+// userspace wireguard endpoint is emitted (that path panics under AmneziaWG).
 
 import (
 	"encoding/json"
@@ -14,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
-	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 // findSingBoxBinaryE2E locates the repo's deps sing-box binary (sing-box-extended
@@ -39,9 +40,13 @@ func findSingBoxBinaryE2E() string {
 	return ""
 }
 
-// TestRenderAWGTakeoverConfig_Fields verifies the rendered endpoint carries the
-// imported server PrivateKey/ListenPort, all peers, and amnezia 1:1.
-func TestRenderAWGTakeoverConfig_Fields(t *testing.T) {
+// TestRenderAWGTakeoverConfig_TUNOverlay verifies the rendered config is a
+// TUN-overlay (kernel-AWG architecture): a TUN inbound with
+// include_interface:["awg0"], direct/block outbounds, route tun-in→direct, and
+// NO userspace wireguard endpoint (the chacha20poly1305 panic path under
+// AmneziaWG). The kernel awg-quick@awg0 keeps the server keypair + amnezia +
+// peers from the imported awg0.conf — those are NOT in the sing-box config.
+func TestRenderAWGTakeoverConfig_TUNOverlay(t *testing.T) {
 	server := &chain.AwgServerConfig{
 		PrivateKey: "YNXtAzepDqRv9H52osJVDQnznT5AM11eCK3ESpwSt04=",
 		ListenPort: 51820,
@@ -56,76 +61,86 @@ func TestRenderAWGTakeoverConfig_Fields(t *testing.T) {
 	peers := []chain.AwgPeerEntry{
 		{Name: "alice", PublicKey: "pub-alice", AllowedIPs: "10.8.0.2/32"},
 		{Name: "bob", PublicKey: "pub-bob", AllowedIPs: "10.8.0.3/32,::/128"},
-		{Name: "carol", PublicKey: "", AllowedIPs: "10.8.0.4/32"}, // no pub -> skipped
 	}
 	cfgJSON, err := renderAWGTakeoverConfig(server, peers)
 	if err != nil {
 		t.Fatalf("renderAWGTakeoverConfig: %v", err)
 	}
-	// Parse the config + endpoint.
+
+	// Endpoints MUST be empty — the kernel owns awg0; a userspace wireguard
+	// endpoint would panic with chacha20poly1305 under AmneziaWG.
 	var top struct {
 		Endpoints []json.RawMessage `json:"endpoints"`
+		Inbounds  []json.RawMessage `json:"inbounds"`
+		Outbounds []json.RawMessage `json:"outbounds"`
+		Route     *struct {
+			Rules []map[string]any `json:"rules"`
+		} `json:"route"`
 	}
 	if err := json.Unmarshal([]byte(cfgJSON), &top); err != nil {
 		t.Fatalf("unmarshal config: %v\n%s", err, cfgJSON)
 	}
-	if len(top.Endpoints) != 1 {
-		t.Fatalf("want 1 endpoint, got %d", len(top.Endpoints))
+	if len(top.Endpoints) != 0 {
+		t.Errorf("kernel-AWG takeover must have NO userspace endpoints, got %d: %s", len(top.Endpoints), top.Endpoints)
 	}
-	var ep config.WireGuardEndpoint
-	if err := json.Unmarshal(top.Endpoints[0], &ep); err != nil {
-		t.Fatalf("unmarshal endpoint: %v", err)
+
+	// One TUN inbound capturing awg0.
+	var tunFound bool
+	for _, raw := range top.Inbounds {
+		var m map[string]any
+		if json.Unmarshal(raw, &m) == nil && m["type"] == "tun" {
+			tunFound = true
+			inc, _ := m["include_interface"].([]any)
+			if len(inc) != 1 || inc[0] != "awg0" {
+				t.Errorf("TUN include_interface = %v, want [awg0]", inc)
+			}
+			if m["stack"] != "mixed" {
+				t.Errorf("TUN stack = %v, want mixed", m["stack"])
+			}
+		}
+		if json.Unmarshal(raw, &m) == nil && m["type"] == "wireguard" {
+			t.Errorf("takeover must NOT emit a userspace wireguard endpoint: %s", string(raw))
+		}
 	}
-	if ep.PrivateKey != server.PrivateKey {
-		t.Errorf("private_key=%s, want server priv", ep.PrivateKey)
+	if !tunFound {
+		t.Fatal("kernel-AWG takeover config must have a TUN inbound capturing awg0")
 	}
-	if ep.ListenPort != 51820 {
-		t.Errorf("listen_port=%d, want 51820", ep.ListenPort)
+
+	// Route: tun-in → direct (the single-egress overlay).
+	var tunRule map[string]any
+	for _, r := range top.Route.Rules {
+		if ins, _ := r["inbound"].([]any); len(ins) == 1 && ins[0] == "tun-in" {
+			tunRule = r
+		}
 	}
-	if ep.System {
-		t.Error("system=true, want false (userspace)")
+	if tunRule == nil {
+		t.Fatal("missing route rule for inbound tun-in")
 	}
-	// 2 valid peers (carol skipped — no pub).
-	if len(ep.Peers) != 2 {
-		t.Fatalf("want 2 peers, got %d: %+v", len(ep.Peers), ep.Peers)
-	}
-	if ep.Peers[0].PublicKey != "pub-alice" || len(ep.Peers[0].AllowedIPs) != 1 || ep.Peers[0].AllowedIPs[0] != "10.8.0.2/32" {
-		t.Errorf("peer 0 = %+v, want pub-alice [10.8.0.2/32]", ep.Peers[0])
-	}
-	if len(ep.Peers[1].AllowedIPs) != 2 {
-		t.Errorf("peer 1 allowed_ips=%v, want 2 entries (comma split)", ep.Peers[1].AllowedIPs)
-	}
-	// Amnezia 1:1.
-	if ep.Amnezia == nil {
-		t.Fatal("amnezia nil despite server JC=120")
-	}
-	if ep.Amnezia.JC != 120 || ep.Amnezia.S3 != 22 || ep.Amnezia.S4 != 12 {
-		t.Errorf("amnezia JC=%d S3=%d S4=%d, want 120/22/12", ep.Amnezia.JC, ep.Amnezia.S3, ep.Amnezia.S4)
-	}
-	if ep.Amnezia.H1 != "12345-98765" || ep.Amnezia.I1 != "<b 0xc30000000108>" {
-		t.Errorf("amnezia H1=%q I1=%q, want 12345-98765 / <b 0xc30000000108>", ep.Amnezia.H1, ep.Amnezia.I1)
+	if tunRule["outbound"] != "direct" {
+		t.Errorf("tun-in route outbound = %v, want direct", tunRule["outbound"])
 	}
 }
 
-// TestRenderAWGTakeoverConfig_NoAmnezia — server with JC=0 (plain WireGuard)
-// renders an endpoint WITHOUT an amnezia block.
-func TestRenderAWGTakeoverConfig_NoAmnezia(t *testing.T) {
+// TestRenderAWGTakeoverConfig_NoAmneziaBlock — the sing-box TUN-overlay config
+// carries no amnezia block regardless of the imported server's amnezia (the
+// obfuscation lives in the kernel awg0.conf, which the takeover leaves on disk).
+func TestRenderAWGTakeoverConfig_NoAmneziaBlock(t *testing.T) {
 	server := &chain.AwgServerConfig{
 		PrivateKey: "YNXtAzepDqRv9H52osJVDQnznT5AM11eCK3ESpwSt04=",
 		ListenPort: 51820,
-		// JC=0 -> plain WireGuard
+		JC:         120, // amnezia present in the imported awg0.conf
 	}
 	cfgJSON, err := renderAWGTakeoverConfig(server, nil)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	if strings.Contains(cfgJSON, `"amnezia"`) {
-		t.Errorf("config should have no amnezia block for plain WireGuard:\n%s", cfgJSON)
+		t.Errorf("TUN-overlay config must NOT carry amnezia (it lives in the kernel awg0.conf):\n%s", cfgJSON)
 	}
 }
 
 // TestRenderAWGTakeoverConfig_SingBoxCheck runs a real `sing-box check` against
-// the rendered config (proves the amnezia 1:1 copy + peer shape is valid).
+// the rendered TUN-overlay config (proves the structure is valid).
 func TestRenderAWGTakeoverConfig_SingBoxCheck(t *testing.T) {
 	bin := findSingBoxBinaryE2E()
 	if bin == "" {
@@ -135,9 +150,6 @@ func TestRenderAWGTakeoverConfig_SingBoxCheck(t *testing.T) {
 		PrivateKey: "YNXtAzepDqRv9H52osJVDQnznT5AM11eCK3ESpwSt04=",
 		ListenPort: 51820, Address: "10.8.0.1/24",
 		JC: 120, JMIN: 50, JMAX: 1000, S1: 115, S2: 45, S3: 22, S4: 12,
-		H1: "12345-98765", H2: "600000000-700000000",
-		H3: "1100000000-1200000000", H4: "1700000000-1900000000",
-		I1: "<b 0xc30000000108>", I2: "<b 0x6a>", I3: "<b 0x5e>", I4: "<b 0x65>", I5: "<b 0x63>",
 	}
 	peers := []chain.AwgPeerEntry{
 		{PublicKey: "Z1XXLsKYkYxuiYjJIkRvtIKFepCYHTgON+GwPq7SOV4=", AllowedIPs: "10.8.0.2/32"},
