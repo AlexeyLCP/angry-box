@@ -130,6 +130,17 @@ func renderChainEntryAWG0Conf(r chainRole, users []model.User) AWGConfFile {
 // multi-exit balancer node. Each is the client end of a kernel AWG tunnel to
 // the remote exit server (a Role=exit node).
 func renderBalancerExitConfs(r chainRole) []AWGConfFile {
+	// Resolve the chain's preset + amnezia material for the exit-tunnel amnezia
+	// block. DPI can block plain WireGuard data packets (handshake passes, data
+	// gets cut), so exit tunnels need obfuscation — the real dns.idoctor.mom
+	// uses Jc=15 on its exit tunnels. Use the chain's material so both ends match.
+	preset := r.Preset
+	awg := preset.AWG
+	if awg == nil {
+		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
+	}
+	amnezia := BuildAWGAmnezia(awg, &preset, ChainAWGObfsMaterial(r.Chain))
+
 	var files []AWGConfFile
 	for _, link := range r.Node.ExitAWGLinks {
 		exit := chainNodeByID(r.Chain, link.TargetID)
@@ -147,8 +158,13 @@ func renderBalancerExitConfs(r chainRole) []AWGConfFile {
 				ClientListenPort: link.ClientPort,
 				ExitPublicKey:    exit.ExitAWGServerPub,
 				ExitEndpoint:     endpoint,
-				// Amnezia OFF on exit links by default — service tunnels between
-				// trusted servers; the DPI-facing surface is the user-entry awg0.
+				// Amnezia ON on exit links — the real dns.idoctor.mom server uses
+				// amnezia (Jc=15) on its exit tunnels too. DPI can block plain
+				// WireGuard data packets (handshake passes, data gets cut), so even
+				// "trusted server-to-server" tunnels need obfuscation. Use the
+				// chain's amnezia material (same I1-I5/H1-H4 as the user-entry) so
+				// the exit-tunnel handshake matches.
+				Amnezia: amnezia,
 			}),
 		})
 	}
@@ -166,6 +182,13 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 	if link == nil {
 		return AWGConfFile{}, false
 	}
+	// Resolve amnezia material matching the balancer's exit-client side.
+	preset := r.Preset
+	awg := preset.AWG
+	if awg == nil {
+		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
+	}
+	amnezia := BuildAWGAmnezia(awg, &preset, ChainAWGObfsMaterial(r.Chain))
 	return AWGConfFile{
 		Path:        awg0ConfPath,
 		ServiceName: "awg-quick@awg0",
@@ -176,14 +199,8 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 			MTU:                1420,
 			BalancerPublicKey:  link.ClientPub,
 			BalancerAllowedIPs: link.Address,
-			// MASQUERADE the user-entry subnet (10.8.0.0/24) to the exit's public
-			// IP so the internet routes responses back. Without this, the exit
-			// sends packets with the user's private inner IP (10.8.0.x) as source
-			// — the internet can't route the response back, so egress silently
-			// fails (data out, nothing back). Mirrors the real exit server (n1)
-			// PostUp. The WAN interface is auto-detected at runtime (different VPSes
-			// have different iface names: ens3, ens4, eth0...).
-			MASQUERADENetwork: "10.8.0.0/24",
+			MASQUERADENetwork:  "10.8.0.0/24",
+			Amnezia:            amnezia,
 		}),
 	}, true
 }

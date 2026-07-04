@@ -98,6 +98,14 @@ func TestRenderNodeAWGConfs_MultiExitBalancer(t *testing.T) {
 		if !strings.Contains(exitFiles[i].Content, exitPub) {
 			t.Errorf("exit %s missing exit server public key", want)
 		}
+		// Regression guard: amnezia MUST be on the exit-tunnel .conf. The default
+		// preset (maximum_stealth_2026, CPS level 3) yields Jc=120. DPI can cut
+		// plain WireGuard data packets even when the handshake passes — the real
+		// dns.idoctor.mom server runs Jc=15 on its exit tunnels for this reason.
+		// If this fails, renderBalancerExitConfs stopped wiring Amnezia.
+		if !strings.Contains(exitFiles[i].Content, "Jc = ") {
+			t.Errorf("exit %s missing amnezia block (Jc=) — DPI can block plain WG data", want)
+		}
 	}
 }
 
@@ -141,6 +149,12 @@ func TestRenderNodeAWGConfs_ExitServer(t *testing.T) {
 	}
 	if !strings.Contains(f.Content, "AllowedIPs = 10.10.0.2/32") {
 		t.Error("missing balancer inner IP as AllowedIPs")
+	}
+	// Regression guard: the exit SERVER side must carry amnezia matching the
+	// balancer's exit-client side (both render the chain's material). A
+	// Jc-mismatch breaks the exit-tunnel handshake. Default preset → Jc=120.
+	if !strings.Contains(f.Content, "Jc = ") {
+		t.Error("exit server missing amnezia block (Jc=) — handshake will mismatch the balancer client side")
 	}
 }
 
