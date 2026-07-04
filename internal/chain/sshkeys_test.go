@@ -3,6 +3,7 @@ package chain
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/alexeylcp/angry-box/internal/ssh"
 )
@@ -19,8 +20,8 @@ func TestDeriveKeyFingerprint(t *testing.T) {
 	if !strings.HasPrefix(fp, "…") {
 		t.Errorf("fingerprint should start with ellipsis, got %q", fp)
 	}
-	if len(fp) != 9 { // "…" + 8 hex chars
-		t.Errorf("fingerprint length: got %d, want 9 (%q)", len(fp), fp)
+	if n := utf8.RuneCountInString(fp); n != 9 { // "…" (1 rune) + 8 hex chars
+		t.Errorf("fingerprint length: got %d, want 9 (%q)", n, fp)
 	}
 }
 
