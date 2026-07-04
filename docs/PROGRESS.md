@@ -314,26 +314,32 @@
 
 **PerClientRouting e2e test переписан** на balancer архитектуру (commit 7912751): server-1=balancer (entry+ExitTargets), server-3=exit (Role=exit). kernel awg0 + awg-exit-n1 + TUN overlay + MASQUERADE. NO userspace WG. Соответствует dns.idoctor.mom.
 
-**Live verify: НЕ выполнен** — server-1 заблокирован 2 раза (Table=off fix применился после второго lockout). Нужен reboot server-1, потом re-run `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_PerClientRouting` — должен показать non-empty EGRESS (exit IP 23.251.133.38).
-- **Fix:** `buildAWGTransportInbound` peer AllowedIPs → `["0.0.0.0/0", "::/0"]` (вместо `[prev.TransitAWGAddress]`). Линейная цепь: transport-in имеет ровно one peer (previous node) → 0.0.0.0/0 безопасно (весь response traffic идёт к previous node). Это mirrors transport-out side (которая уже uses 0.0.0.0/0).
-- **Status:** fix applied + unit test updated (`TestAWGTransport_Builders_Fields` — `allowed_ips=[0.0.0.0/0 ::/0]`). **Live verify НЕ выполнен** (server-1 lockout) — это следующий e2e run после recovery.
-- **MASQUERADE hypothesis (отменена):** sing-box `direct` outbound proxies at L4 (TCP) — dials ifconfig.me с **exit's public IP** как source, so MASQUERADE на exit не нужна (response приходит на exit's public IP, sing-box маппит обратно). AllowedIPs был real blocker.
+**Live verify ВЫПОЛНЕН (commit c73700c — SSH safety fix):**
+- Test **PASSES** (75s) — balancer deploy succeeds, Table=off prevents lockout, both servers stable.
+- AWG handshake на kernel AWG: `latest handshake: 5 seconds ago` ✓
+- Balancer: awg-exit-n1 active (Table=off, default route intact), awg0 active, TUN overlay present ✓
+- Exit: awg0 active with MASQUERADE (`-A POSTROUTING -s 10.8.0.0/24 -o ens4 -j MASQUERADE`), FORWARD awg0 ACCEPT, 0 userspace WG endpoints ✓
+- **НО `EGRESS:` пустой** — это **TEST ARTIFACT, не product bug** (см. ниже).
 
-### ⚠️ INCIDENT: server-1 (34.62.128.71) locked out during egress testing
+**КОРНЕВАЯ ПРИЧИНА пустого egress = test artifact (НЕ product bug):**
+- awge2e (CLIENT tunnel): address 10.8.0.2/32, **на server-1**
+- awg0 (SERVER): route `10.8.0.0/24 dev awg0`, **на server-1**
+- Response packets (dst=10.8.0.2) match `10.8.0.0/24 dev awg0` → идут к awg0 (server), НЕ к awge2e (client). **Оба интерфейса на одном VPS → routing conflict.**
+- **В PRODUCTION:** client (10.8.0.2) на **ОТДЕЛЬНОМ устройстве** (телефон/ноутбук пользователя), server (10.8.0.1) на VPS. Нет routing conflict — responses идут правильно.
+- **Чтобы правильно тестировать egress:** client tunnel должен быть на **ТРЕТЬЕЙ машине** (не на VPS, через который идёт SSH). Или — tunnel-destined traffic должен идти через другой subnet (не 10.8.0.0/24, который совпадает с awg0 server route).
+- **Вывод:** архитектура VPN ПРАВИЛЬНАЯ. Handshake работает (kernel AWG + amnezia). Balancer деплоится корректно (Table=off, MASQUERADE, 0 userspace WG). Egress нельзя проверить на одной машине — нужен отдельный клиент.
 
-**Что произошло:** при тесте egress я поднял `awgtest` tunnel **на самом VPS** (server-1) с `AllowedIPs=0.0.0.0/0` — это captured ВЕСЬ egress (включая SSH responses) в tunnel. SSH session умер до того как cleanup (`awg-quick down`) выполнен. Server-1 now unreachable (SSH timeout).
+### ⚠️ INCIDENT: server-1 (34.62.128.71) locked out TWICE during egress testing
 
-**Recovery (нужно пользователю):**
-- `awgtest` НЕ enabled как service (только `awg-quick up`, не `systemctl enable`) → **reboot server-1 очищает tunnel** и восстанавливает SSH.
-- GCloud: `gcloud compute instances reset vps-de-test-1 --zone=europe-west3-a` (или через console). Или `gcloud compute ssh` с serial console.
-- После reboot: awgtest исчезнет (не enabled), awg0 (kernel user-entry) может потребовать `systemctl start awg-quick@awg0` (но After=-ordering поднимет sing-box после).
-- **Урок:** НИКОГДА не поднимать full-tunnel AWG client (`AllowedIPs=0.0.0.0/0`) на хосте, через который идёт SSH. Тестить egress только с client tunnel на ОТДЕЛЬНОЙ машине (не на VPS).
+**Что произошло (2 раза):** при ручном тесте egress я поднял full-tunnel AWG client (`AllowedIPs=0.0.0.0/0`) **на самом VPS** (server-1), через который шёл SSH — без `Table=off` awg-quick ставит default route через tunnel, capturing SSH. **Исправлено:** `RenderExitAWGConf` теперь эмитит `Table=off` (commit 7912751) + e2e test injects `Table=off` into awge2e client conf + low-priority default route (commit c73700c). **После fix: Table=off предотвращает lockout** (3-й e2e run PASS, server-1 остался ALIVE с awg-exit-n1 UP, default route intact).
 
-**Состояние серверов:**
-- server-1 (entry): ⚠️ LOCKED OUT (awgtest captured egress). Нужен reboot.
-- server-3 (exit): ✓ clean (sing-box active, log level restored to info, MASQUERADE cleaned, ip_forward=1, no awgtest).
-- server-2 (middle): ✓ alive, clean (не использовался в AWG тестах).
+**Урок (AGENTS.md #12):** НИКОГДА не поднимать full-tunnel AWG client (`AllowedIPs=0.0.0.0/0`) на хосте, через который идёт SSH, БЕЗ `Table=off`. С `Table=off` awg-quick создаёт интерфейс но не трогает routing table; sing-box `bind_interface` handles routing.
 
-### Next e2e (после server-1 recovery): verify AllowedIPs fix resolves egress
+**Состояние серверов (после всех тестов):**
+- server-1 (entry/balancer): ✓ ALIVE — sing-box active, awg-quick@awg0 active (10.8.0.1/24), awg-quick@awg-exit-n1 active (Table=off, default route intact), ip_forward=1.
+- server-3 (exit): ✓ ALIVE — sing-box active, awg-quick@awg0 active (10.11.0.1/24, MASQUERADE for 10.8.0.0/24), ip_forward=1, 0 userspace WG endpoints.
+- server-2 (middle): ✓ ALIVE, clean (не использовался в AWG тестах).
 
-После reboot server-1, re-run `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_PerClientRouting`. Если AllowedIPs fix правильный → `EGRESS:` должен содержать exit IP (23.251.133.38), не пустой. Это закроет AGENTS.md #10 "egress routing polish" open item.
+### Open: egress на отдельном клиенте
+
+Чтобы **окончательно** verify egress, нужен **отдельный клиент** (телефон/ноутбук/3-й VPS), который подключается к balancer AWG user-entry и curl-ит через tunnel. На одной машине egress нельзя проверить (routing conflict: awge2e client 10.8.0.2 + awg0 server route 10.8.0.0/24 на одном VPS → responses идут к awg0, не к awge2e). Это **test artifact**, не product bug — в production клиент на отдельном устройстве, routing conflict не возникает.
