@@ -61,6 +61,7 @@ Two complaints, one bug:
    )
    ```
    All entry points that create `SSHKeyEntry` MUST set `Source` (fixes `nodes.go:196,254` leaving it empty).
+   Add a `Fingerprint string` field (`json:"fingerprint,omitempty"`): last 8 chars of the SHA256 fingerprint of the key's public part (e.g. `…ab12cd34`). Computed **once** when the entry is created (Settings "Add key", wizard manual/auto-install, `detectSystemKeys`) via a new helper `chain.DeriveKeyFingerprint(privPEM string) (string, error)` (uses `ssh.ParsePrivateKey` → `PublicKey()` → `ssh.FingerprintSHA256`, truncated to last 8). Persisted on the entry so the dropdown/Settings render without re-parsing PEM per render. System keys: `detectSystemKeys` reads each file and populates `Fingerprint` at detection time.
 
 3. **`model.Status`** (`internal/domain/model/backend.go:72-78`) — add fields:
    ```go
@@ -101,8 +102,27 @@ Two complaints, one bug:
 
 **Applier fallback (new helper):**
 - Add `resolveHostKey(st Store, host *model.Host) *model.Host` used everywhere SSH is initiated: `applier.go:154,345,1815` and takeover (`takeover.go:70`, `detect.go:98`).
-- Logic: if `host.KeyPath == ""` → load `settings.DefaultSSHKeyID`; if non-empty, set `host.KeyPath = settings.DefaultSSHKeyID`. Return the (possibly patched) host copy. Soft fallback — does not error if default is also empty (existing `ResolveKey("")` → false → `ssh.Connect` errors with a clearer message).
-- This is the single chokepoint for the default-key policy; future stricter policies ("require key") plug in here.
+- Exact shape:
+  ```go
+  func resolveHostKey(st Store, host *model.Host) *model.Host {
+      h := *host // copy — never mutate the caller's Host
+      if h.KeyPath == "" {
+          if def := st.GetSettings().DefaultSSHKeyID; def != "" {
+              h.KeyPath = def
+          }
+      }
+      return &h
+  }
+  ```
+- Returns a **copy**; the caller uses the returned host for `Connect` and discards it. The stored `Host.KeyPath` is NOT mutated by this helper (the fallback is a deploy-time resolution, not a persisted rewrite — keeps the store clean and avoids surprise writes during read-only takeover/detect).
+- `h.KeyPath == "password:"` (empty password marker) is NOT treated as "empty" here — `password:` is a real auth intent; only a truly empty `KeyPath` triggers the default fallback. If the default itself is empty, `h.KeyPath` stays empty and `ssh.Connect` produces its existing error (now with a clearer upstream context: the applier logs "no SSH key configured and no default key set" before calling Connect).
+- This is the single chokepoint for the default-key policy; future stricter policies ("require key, refuse deploy") plug in here.
+
+**Key existence validation (new):**
+- Handlers that accept `ssh_key_id` from a form (`handleCaptureNode`, `handleUpdateNode`, `handleSetDefaultKey`, `handleTestKey`, `handleImportSystemKey`) MUST validate that the chosen ID resolves to a real registry entry before saving it to `host.KeyPath` / `DefaultSSHKeyID`.
+- Reuse `Store.ResolveKey(keyID)` (`store.go:613`): if it returns `(_, false)` for a non-`"manual"` / non-`"password:"` value → HTTP 400 "Selected key not found in registry". This prevents saving a dangling ID (e.g. after a key was deleted from the registry but a stale form submission still references it).
+- `"manual"` is special: it's resolved inline by the handler (PEM pasted into `ssh_key_manual` → saved as a new `key-manual-*` entry → that new ID is then validated as above).
+- This validation closes the "stale ID" gap: deleting a key from Settings removes it from the registry, but nodes referencing it would previously keep a dangling `KeyPath`; the deploy-time `ResolveKey` already returns false there, but the form-validation catches it at edit time with a clear message instead of at deploy time.
 
 ### `Backend.GetStatus` extension (`singbox.go:714-747`)
 
@@ -120,21 +140,27 @@ Port interface `Backend.GetStatus` (`ports/backend.go:24`) — signature unchang
 **Dropdown key selector (one shared component, name `ssh_key_id` everywhere):**
 - First option: if `DefaultSSHKeyID` set → `<option value="">Default ({defaultName})</option>`, else `<option value="">Select key...</option>`.
 - `<optgroup label="Stored keys">` for `Source == stored/auto/manual` entries; `<optgroup label="System keys">` for `Source == system`. (Built from `mergeSSHKeys`, grouped by `Source`.)
-- Each option label prefixed with a source badge: `[Stored] Home Server`, `[System] id_ed25519`, `[Auto] auto-34.40.120.7`.
+- Each option label carries a source badge + the short fingerprint:
+  - Stored/auto/manual: `[Stored] Home Server · …ab12cd34`
+  - System: `🔑 [System] id_ed25519 · …ab12cd34` (key icon prefix to mark it as a host-detected key).
+  - The fingerprint (last 8 of SHA256) is read from `SSHKeyEntry.Fingerprint` (set at creation) — no per-render PEM parsing.
 - Last option: `<option value="manual">== Paste key manually ==</option>` → JS `onchange` reveals textarea `ssh_key_manual`.
 - Rendered identically in the Capture wizard and the Edit form.
+- If `Fingerprint` is empty on an entry (legacy data, system key whose file vanished), the badge is shown without the fingerprint segment (no crash, no `…`).
 
 **Capture wizard (Add node = the only entry point for a new node):**
 - Step 1 — Credentials (single HTMX POST → partial in `#capture-result`):
   ```
   Addr: [______]   User: [root]
-  SSH key: [Stored] Home Server ▾   (optgroups + badges + Default option)
+  SSH key: [Stored] Home Server · …ab12cd34 ▾   (optgroups + badges + Default option)
            (== Paste manually == → reveals ssh_key_manual textarea)
   Password (for first login): [______]
   ☑ Install public key for passwordless access
-  [Verify & connect]
+  [Test connection]   [Verify & connect]
   ```
-  On failure → inline error / TOFU HostKey modal (existing `HostKeyWarning`). Step 2 not shown.
+  - **"Test connection"** (new): a lightweight HTMX POST to a new `POST /ui/nodes/{id}/test` (or `/test` for new-id) handler that runs ONLY `b.GetStatus` (no save, no install) and returns an inline OK/fail badge. Lets the user verify the key actually works before committing to the install+save flow. Idempotent.
+  - When `auto_install_key` is checked and `login_pass` is non-empty, an inline preview line appears (JS, no round-trip): "Public key will be added to authorized_keys on {addr} · fingerprint …ab12cd34". The fingerprint is the selected/generated key's `Fingerprint` (read from the dropdown selection or, for auto-generated, displayed after generation — but since generation happens server-side at install time, the preview for the **selected existing key** shows its `Fingerprint` now; for an **auto-generated** key the preview says "a new key will be generated and added" without a fingerprint until it's actually generated).
+  - On failure → inline error / TOFU HostKey modal (existing `HostKeyWarning`). Step 2 not shown.
 - Step 2 — Confirmed (rendered after a successful `GetStatus`):
   ```
   System:
@@ -158,7 +184,10 @@ Port interface `Backend.GetStatus` (`ports/backend.go:24`) — signature unchang
 **Settings → SSH Keys section (extended):**
 - Existing: list of stored keys (delete button) + system keys (read-only, auto-detected badge) + "Add key" form (name + PEM textarea).
 - New: **radio "Use as default"** next to each key → sets `PanelSettings.DefaultSSHKeyID` via `POST /ui/settings/default-key` (new handler).
-- Source badges `[Stored]`/`[System]`/`[Auto]` shown next to each key (consistent with the dropdown).
+- Source badges `[Stored]`/`[System]`/`[Auto]` + fingerprint shown next to each key (consistent with the dropdown).
+- **"Test key" button** (new) next to each key → `POST /ui/settings/ssh-keys/{id}/test` (new handler). User picks a target node from a dropdown (or "any online node"); the handler runs `b.GetStatus` against that node using the selected key (build a one-off `model.Host` from the target node's `Addr`/`User` + this key's ID). Returns inline OK/fail. Does NOT modify any stored data. Lets the user verify a registry key still works against a real node before assigning it as default.
+- **"Import from ~/.ssh/" button** (new) → `POST /ui/settings/ssh-keys/import-system` (new handler). Beyond the read-only auto-detect, this **copies** a chosen system key's file content into a `stored` entry (with `Source: SourceStored`, a user-given name, and a computed `Fingerprint`) so it can be managed/deleted/exported like any other stored key. Distinct from auto-detect (which only surfaces system keys read-only): import materializes the key into the registry. The original file on disk is untouched.
+- **"Export registry" button** (new) → `GET /ui/settings/ssh-keys/export` (new handler). Returns the registry as a JSON download (`application/octet-stream`, `Content-Disposition: attachment; filename="angry-box-ssh-keys.json"`) — a `[]SSHKeyEntry` snapshot, for backup/restore. Import counterpart: `POST /ui/settings/ssh-keys/import` accepts the same JSON (merges by `ID`, refusing to overwrite an existing ID unless a `force` flag is set). Backup/restore of the whole registry.
 
 ### i18n
 
@@ -191,43 +220,44 @@ Per AGENTS.md rule 1 — never hardcode English UI text.
 ## Files to change (summary)
 
 **Model:**
-- `internal/domain/model/panel.go` — `PanelSettings.DefaultSSHKeyID`, `SSHKeyEntry` Source consts, `NodeMetrics.{OS,SingBoxInstalled,AWGModuleInstalled}`.
+- `internal/domain/model/panel.go` — `PanelSettings.DefaultSSHKeyID`, `SSHKeyEntry` Source consts + `SSHKeyEntry.Fingerprint`, `NodeMetrics.{OS,SingBoxInstalled,AWGModuleInstalled}`.
 - `internal/domain/model/backend.go` — `Status.{OS,SingBoxInstalled,AWGModuleInstalled}`.
 
-**Backend:**
-- `internal/backend/singbox/singbox.go:714-747` — `GetStatus` extended probes; promote/reuse `awgKernelModuleLoaded`.
-
-**Chain / SSH:**
+**Chain / SSH helpers:**
+- `internal/chain/cryptogen.go` (or a new `internal/chain/sshkeys.go`) — `DeriveKeyFingerprint(privPEM string) (string, error)` (parse → `ssh.FingerprintSHA256` → last 8 chars).
 - `internal/chain/applier.go` — `resolveHostKey` helper + callers (`:154,345,1815`).
 - `internal/takeover/takeover.go:70`, `internal/takeover/detect.go:98` — use `resolveHostKey`.
-- `internal/chain/store.go:613` — `ResolveKey` unchanged (already returns false on empty; default-key resolution moves to the applier helper, NOT into ResolveKey, to keep lock scope clean).
+- `internal/chain/store.go:613` — `ResolveKey` unchanged. Default-key resolution lives in the applier helper, NOT in `ResolveKey`, to keep lock scope clean.
+
+**Backend:**
+- `internal/backend/singbox/singbox.go:714-747` — `GetStatus` extended probes (OS / SingBoxInstalled / AWGModuleInstalled); promote `awgKernelModuleLoaded` to a public method on the backend for reuse from `GetStatus`.
 
 **Web handlers:**
-- `internal/web/nodes.go` — remove `handleCreateNode`; extend `handleCaptureNode` (metadata fields, validation, Source on new entries, new-NodeInfo creation); simplify `handleUpdateNode`; `handleNodeCaptureForm` accepts existing id.
-- `internal/web/settings.go` — `handleSetDefaultKey` (new) for the default-key radio.
-- `internal/web/server.go` — route adjustments (remove `POST /ui/nodes` create path or repoint; add `POST /ui/settings/default-key`).
+- `internal/web/nodes.go` — remove `handleCreateNode`; extend `handleCaptureNode` (metadata fields, validation, Source on new entries, new-NodeInfo creation, key-existence validation); simplify `handleUpdateNode` (key-existence validation); `handleNodeCaptureForm` accepts existing id; new `handleTestNodeConnection` (lightweight GetStatus-only test).
+- `internal/web/settings.go` — `handleSetDefaultKey`, `handleTestKey`, `handleImportSystemKey`, `handleExportKeys`, `handleImportKeys` (new); existing `handleAddSSHKey` extended to compute `Fingerprint`; `detectSystemKeys` (in `server.go`) extended to populate `Fingerprint`.
+- `internal/web/server.go` — route adjustments (remove `POST /ui/nodes` create; add `POST /ui/nodes/{id}/test`, `POST /ui/settings/default-key`, `POST /ui/settings/ssh-keys/{id}/test`, `POST /ui/settings/ssh-keys/import-system`, `GET /ui/settings/ssh-keys/export`, `POST /ui/settings/ssh-keys/import`).
 
 **Templates:**
-- `web/templates/nodes.templ` — unified `ssh_key_id` dropdown component (optgroups + badges + Default option); Capture wizard 2-step flow; Edit form simplified + Re-capture button; remove standalone `NodeForm` New branch.
-- `web/templates/settings.templ` — default-key radio + source badges.
+- `web/templates/nodes.templ` — unified `ssh_key_id` dropdown component (optgroups + badges + fingerprint + Default option); Capture wizard 2-step flow with "Test connection" button + auto-install fingerprint preview; Edit form simplified + Re-capture button; remove standalone `NodeForm` New branch.
+- `web/templates/settings.templ` — default-key radio, fingerprint, "Test key" button, "Import from ~/.ssh/" button, "Export registry" / "Import registry" buttons, source badges.
 - `web/templates/nodes_templ.go` / `settings_templ.go` — regenerated via `templ generate`.
 
 **i18n:**
-- `internal/i18n/i18n.go` — new keys in `en` and `ru`.
+- `internal/i18n/i18n.go` — new keys in `en` and `ru` (including: `Test connection`, `Test key`, `Import from ~/.ssh/`, `Export registry`, `Import registry`, `Public key will be added to authorized_keys on`, `a new key will be generated and added`, `Selected key not found in registry`, `No SSH key configured and no default key set`, `…<fingerprint>` formatting).
 
 **JS:**
-- `web/static/js/app.js` — manual-paste toggle for the unified dropdown (consolidate existing `filterPresetsForRow`-style handlers).
+- `web/static/js/app.js` — manual-paste toggle for the unified dropdown; auto-install fingerprint preview line toggle; fingerprint display helpers (read pre-rendered `data-fingerprint` attributes, no client-side crypto).
 
 ---
 
 ## Build sequence (high level — detailed plan via writing-plans skill)
 
-1. Model + consts (`panel.go`, `backend.go`).
-2. `GetStatus` extension (`singbox.go`) + `awgKernelModuleLoaded` promotion.
+1. Model + consts (`panel.go`, `backend.go`) — including `SSHKeyEntry.Fingerprint` and `DeriveKeyFingerprint` helper.
+2. `GetStatus` extension (`singbox.go`) + `awgKernelModuleLoaded` promotion to a public method.
 3. `resolveHostKey` helper + applier/takeover wiring (this alone fixes the deploy bug for nodes that already have a key).
-4. Handler fixes: `handleCaptureNode` extension (validation, metadata, Source, new-node creation), `handleUpdateNode` simplification, remove `handleCreateNode`.
-5. `handleSetDefaultKey` + Settings radio.
-6. Templates: unified dropdown, wizard 2-step, simplified Edit, Re-capture button, Settings default radio + badges.
+4. Handler fixes: `handleCaptureNode` extension (validation, metadata, Source, new-node creation, key-existence validation), `handleUpdateNode` simplification, remove `handleCreateNode`, `handleTestNodeConnection`.
+5. `handleSetDefaultKey` + Settings radio; `handleTestKey`, `handleImportSystemKey`, `handleExportKeys`, `handleImportKeys`; `detectSystemKeys` + `handleAddSSHKey` populate `Fingerprint`.
+6. Templates: unified dropdown (badges + fingerprint + optgroups + Default), wizard 2-step with "Test connection" + auto-install preview, simplified Edit + Re-capture, Settings default radio + Test/Import/Export buttons + badges.
 7. `templ generate` → `go build ./...` → `go test ./...` (skip TUIC/Hysteria2 per AGENTS.md #6/#11).
-8. i18n keys.
-9. Manual E2E smoke: add node via wizard (key + password+auto-install paths), edit (re-select key, re-capture), deploy inbound (no more empty-key error).
+8. i18n keys (en + ru).
+9. Manual E2E smoke: add node via wizard (key path, password+auto-install path, Test-connection path), edit (re-select key, re-capture), Settings (set default, Test key, Import from ~/.ssh/, Export/Import registry roundtrip), deploy inbound (no more empty-key error).
