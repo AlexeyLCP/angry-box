@@ -236,6 +236,11 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// SSH Keys management
 	mux.HandleFunc("POST /ui/settings/ssh-keys", s.auth(s.handleAddSSHKey))
 	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.auth(s.handleDeleteSSHKey))
+	mux.HandleFunc("POST /ui/settings/default-key", s.auth(s.handleSetDefaultKey))
+	mux.HandleFunc("POST /ui/settings/ssh-keys/{id}/test", s.auth(s.handleTestKey))
+	mux.HandleFunc("POST /ui/settings/ssh-keys/import-system", s.auth(s.handleImportSystemKey))
+	mux.HandleFunc("GET /ui/settings/ssh-keys/export", s.auth(s.handleExportKeys))
+	mux.HandleFunc("POST /ui/settings/ssh-keys/import", s.auth(s.handleImportKeys))
 
 	// Status
 	mux.HandleFunc("GET /ui/status", s.auth(s.handleStatus))
@@ -312,12 +317,23 @@ func detectSystemKeys() []model.SSHKeyEntry {
 			continue
 		}
 		seen[name] = true
-		keys = append(keys, model.SSHKeyEntry{
+		path := sshDir + "/" + name
+		entry := model.SSHKeyEntry{
 			ID:      "system-" + name,
 			Name:    name,
-			KeyPath: sshDir + "/" + name,
-			Source:  "system",
-		})
+			KeyPath: path,
+			Source:  model.SourceSystem,
+		}
+		// Populate KeyData + Fingerprint so Test/Export are self-contained
+		// (no re-read of disk needed). Error-tolerant: a file that can't be
+		// parsed (e.g. encrypted key, binary) just gets an empty fingerprint.
+		if privPEM, err := os.ReadFile(path); err == nil {
+			entry.KeyData = string(privPEM)
+			if fp, err := chain.DeriveKeyFingerprint(string(privPEM)); err == nil {
+				entry.Fingerprint = fp
+			}
+		}
+		keys = append(keys, entry)
 	}
 	return keys
 }

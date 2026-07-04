@@ -4,11 +4,13 @@ package web
 // ui.go as part of the M11 split).
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
@@ -188,14 +190,22 @@ func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).") + `</span></div>`})
 		return
 	}
+	// Compute fingerprint (last 8 of SHA256 pubkey) so the dropdown and
+	// Settings render without re-parsing PEM per render.
+	fp, err := chain.DeriveKeyFingerprint(keyData)
+	if err != nil {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid key format. Expected a private key (BEGIN ... PRIVATE KEY).") + `</span></div>`})
+		return
+	}
 	st := s.store()
 	settings, _ := st.GetSettings()
 	id := fmt.Sprintf("key-%d", len(settings.SSHKeys)+1)
 	settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
-		ID:      id,
-		Name:    name,
-		KeyData: keyData,
-		Source:  "stored",
+		ID:          id,
+		Name:        name,
+		KeyData:     keyData,
+		Source:      model.SourceStored,
+		Fingerprint: fp,
 	})
 	st.SaveSettings(settings)
 	// Return updated key list
@@ -242,4 +252,170 @@ func looksLikePrivateKey(data string) bool {
 	header := data[:headerEnd+5] // include trailing "-----"
 	footer := strings.Replace(header, "BEGIN", "END", 1)
 	return strings.Contains(data, footer)
+}
+
+// ─── Default key, Test, Import-from-~/.ssh, Export/Import registry ─────────────
+
+// handleSetDefaultKey persists the panel default SSH key ID. An empty ssh_key_id
+// clears the default. A non-empty value must resolve in the registry.
+func (s *Server) handleSetDefaultKey(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	keyID := strings.TrimSpace(r.FormValue("ssh_key_id"))
+	st := s.store()
+	settings, _ := st.GetSettings()
+	if keyID != "" {
+		if _, ok := st.ResolveKey(keyID); !ok {
+			http.Error(w, i18n.T(r.Context(), "Selected key not found in registry"), http.StatusBadRequest)
+			return
+		}
+	}
+	settings.DefaultSSHKeyID = keyID
+	st.SaveSettings(settings)
+	sysKeys := detectSystemKeys()
+	s.render(w, r, templates.SSHKeyList(settings, sysKeys))
+}
+
+// handleTestKey runs a one-off GetStatus against a target node using the key
+// identified by the path value {id}. The key may be a stored entry or a
+// system-detected entry; the host's KeyPath is set to the entry ID and the
+// SSH connector resolves it via the registry (ResolveKey) at connect time.
+func (s *Server) handleTestKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	targetID := strings.TrimSpace(r.FormValue("target_node"))
+	st := s.store()
+	// Resolve the key entry (stored first, then system).
+	settings, _ := st.GetSettings()
+	var entry *model.SSHKeyEntry
+	for i := range settings.SSHKeys {
+		if settings.SSHKeys[i].ID == id {
+			entry = &settings.SSHKeys[i]
+			break
+		}
+	}
+	if entry == nil {
+		for _, k := range detectSystemKeys() {
+			if k.ID == id {
+				k := k
+				entry = &k
+				break
+			}
+		}
+	}
+	if entry == nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	// Resolve target node.
+	target, err := st.GetHost(targetID)
+	if err != nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	// Build a one-off host (NOT saved) using this key.
+	host := *target
+	host.KeyPath = entry.ID
+	b := s.factory.Create()
+	status, err := b.GetStatus(r.Context(), host)
+	if err != nil {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + escHTML(err.Error()) + `</span></div>`})
+		return
+	}
+	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
+		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Key works. sing-box: %s")+" "+i18n.T(r.Context(), "OS: %s")+`</span></div>`,
+		escHTML(status.Version), escHTML(status.OS))})
+}
+
+// handleImportSystemKey copies a system-detected key (from ~/.ssh/) into a new
+// stored registry entry so it can be referenced by ID and exported with the
+// rest of the registry.
+func (s *Server) handleImportSystemKey(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	keyID := strings.TrimSpace(r.FormValue("system_key_id"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	if keyID == "" || name == "" {
+		http.Error(w, i18n.T(r.Context(), "Name and key are required"), http.StatusBadRequest)
+		return
+	}
+	// Find the system key (detectSystemKeys loads KeyData + Fingerprint).
+	var sysEntry *model.SSHKeyEntry
+	for _, k := range detectSystemKeys() {
+		if k.ID == keyID {
+			k := k
+			sysEntry = &k
+			break
+		}
+	}
+	if sysEntry == nil || sysEntry.KeyData == "" {
+		http.Error(w, i18n.T(r.Context(), "System key not readable"), http.StatusBadRequest)
+		return
+	}
+	fp, _ := chain.DeriveKeyFingerprint(sysEntry.KeyData)
+	st := s.store()
+	settings, _ := st.GetSettings()
+	newID := fmt.Sprintf("key-imp-%d", time.Now().Unix())
+	settings.SSHKeys = append(settings.SSHKeys, model.SSHKeyEntry{
+		ID:          newID,
+		Name:        name,
+		KeyData:     sysEntry.KeyData,
+		Source:      model.SourceStored,
+		Fingerprint: fp,
+	})
+	st.SaveSettings(settings)
+	s.render(w, r, templates.SSHKeyList(settings, detectSystemKeys()))
+}
+
+// handleExportKeys streams the full registry (stored + system keys) as a JSON
+// attachment so the user can back up or migrate keys between panels.
+func (s *Server) handleExportKeys(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	settings, _ := st.GetSettings()
+	all := append([]model.SSHKeyEntry{}, settings.SSHKeys...)
+	all = append(all, detectSystemKeys()...)
+	w.Header().Set("Content-Disposition", `attachment; filename="angry-box-ssh-keys.json"`)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	_ = json.NewEncoder(w).Encode(all)
+}
+
+// handleImportKeys merges a JSON array of SSHKeyEntry (as produced by
+// handleExportKeys) into the registry. Existing IDs are skipped unless
+// force=on.
+func (s *Server) handleImportKeys(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	jsonData := strings.TrimSpace(r.FormValue("keys_json"))
+	force := r.FormValue("force") == "on"
+	var incoming []model.SSHKeyEntry
+	if err := json.Unmarshal([]byte(jsonData), &incoming); err != nil {
+		http.Error(w, i18n.T(r.Context(), "Invalid JSON")+": "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	settings, _ := st.GetSettings()
+	existing := map[string]bool{}
+	for _, k := range settings.SSHKeys {
+		existing[k.ID] = true
+	}
+	added := 0
+	for _, k := range incoming {
+		if existing[k.ID] && !force {
+			continue
+		}
+		settings.SSHKeys = append(settings.SSHKeys, k)
+		added++
+	}
+	st.SaveSettings(settings)
+	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
+		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Imported %d keys.")+`</span></div>`, added)})
 }
