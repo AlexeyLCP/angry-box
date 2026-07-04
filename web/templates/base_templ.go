@@ -340,7 +340,7 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, ",\n\t\t\t\tt: function(k){ var d=this.dict[this.lang]||{}; return d[k]||k; },\n\t\t\t\tdict: {\n\t\t\t\t\tru: {\n\t\t\t\t\t\t\"Key name\": \"Имя ключа\",\n\t\t\t\t\t\t\"/path/to/key\": \"/путь/к/ключу\",\n\t\t\t\t\t\t\"None\": \"Нет\"\n\t\t\t\t\t},\n\t\t\t\t\ten: {}\n\t\t\t\t}\n\t\t\t};\n\t\t</script><script src=\"/static/js/app.js\"></script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, ",\n\t\t\t\tt: function(k){ var d=this.dict[this.lang]||{}; return d[k]||k; },\n\t\t\t\tdict: {\n\t\t\t\t\tru: {\n\t\t\t\t\t\t\"Key name\": \"Имя ключа\",\n\t\t\t\t\t\t\"/path/to/key\": \"/путь/к/ключу\",\n\t\t\t\t\t\t\"None\": \"Нет\",\n\t\t\t\t\t\t\"Public key will be added to authorized_keys on\": \"Публичный ключ будет добавлен в authorized_keys на\",\n\t\t\t\t\t\t\"a new key will be generated and added\": \"новый ключ будет сгенерирован и добавлен\"\n\t\t\t\t\t},\n\t\t\t\t\ten: {}\n\t\t\t\t}\n\t\t\t};\n\t\t</script><script src=\"/static/js/app.js\"></script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

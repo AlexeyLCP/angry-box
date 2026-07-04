@@ -111,40 +111,7 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.") }</p>
 
 						<div id="ssh-keys-list" class="space-y-2">
-							<!-- Stored keys -->
-							for _, key := range settings.SSHKeys {
-								<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2">
-									<div class="flex-1">
-										<div class="text-sm font-medium">{ key.Name }</div>
-										<div class="text-xs text-base-content/50">
-											<span class="badge badge-primary badge-xs">{ i18n.T(ctx, "Stored") }</span>
-											if len(key.KeyData) > 0 {
-												<span class="ml-1">({ fmt.Sprintf(i18n.T(ctx, "%d bytes"), len(key.KeyData)) })</span>
-											}
-										</div>
-									</div>
-									<button class="btn btn-ghost btn-xs text-error"
-										hx-delete={"/ui/settings/ssh-keys/" + key.ID}
-										hx-target="#ssh-keys-list"
-										hx-swap="outerHTML">
-										{ i18n.T(ctx, "Delete") }
-									</button>
-								</div>
-							}
-							<!-- System keys (auto-detected) -->
-							if len(systemKeys) > 0 {
-								for _, key := range systemKeys[0] {
-									<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2 opacity-70">
-										<div class="flex-1">
-											<div class="text-sm font-medium">{ key.Name }</div>
-											<div class="text-xs text-base-content/50">
-												<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "System") }</span>
-												<span class="ml-1">— { key.KeyPath }</span>
-											</div>
-										</div>
-									</div>
-								}
-							}
+							@SSHKeyList(settings, systemKeysSlice(systemKeys), hosts)
 						</div>
 
 					</div>
@@ -229,40 +196,140 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 	</div>
 }
 
-// SSHKeyList renders just the SSH key list (used for HTMX partial updates).
-templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) {
+// SSHKeyList renders the SSH key list (used for HTMX partial updates). It lists
+// stored keys (with default-radio + Test-key form + Delete) and system keys,
+// plus the Add-new-key form, Import-from-~/.ssh/, Export-registry, and
+// Import-registry controls. hosts is passed so the per-key Test form can
+// render a target-node dropdown without an extra round-trip.
+templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, hosts []*model.Host) {
 	<!-- Stored keys -->
 	for _, key := range settings.SSHKeys {
-		<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2">
-			<div class="flex-1">
-				<div class="text-sm font-medium">{ key.Name }</div>
-				<div class="text-xs text-base-content/50">
-					<span class="badge badge-primary badge-xs">{ i18n.T(ctx, "Stored") }</span>
-					if len(key.KeyData) > 0 {
-						<span class="ml-1">({ fmt.Sprintf(i18n.T(ctx, "%d bytes"), len(key.KeyData)) })</span>
-					}
+		<div class="border border-base-300 rounded-lg p-2 space-y-2">
+			<div class="flex gap-2 items-center">
+				<input type="radio" name="default_key" value={ key.ID } class="radio radio-sm radio-primary"
+					if settings.DefaultSSHKeyID == key.ID { checked }
+					hx-post="/ui/settings/default-key"
+					hx-vals={ fmt.Sprintf(`{"ssh_key_id":"%s"}`, key.ID) }
+					hx-target="#ssh-keys-list"
+					hx-swap="outerHTML" />
+				<div class="flex-1">
+					<div class="text-sm font-medium">
+						<span class="badge badge-primary badge-xs mr-1">{ keyBadge(ctx, key.Source) }</span>
+						{ key.Name }
+						if settings.DefaultSSHKeyID == key.ID {
+							<span class="badge badge-success badge-xs ml-1">{ i18n.T(ctx, "Use as default") }</span>
+						}
+					</div>
+					<div class="text-xs text-base-content/50">
+						if key.Fingerprint != "" {
+							<span class="font-mono">{ key.Fingerprint }</span>
+						}
+						if len(key.KeyData) > 0 {
+							<span class="ml-1">({ fmt.Sprintf(i18n.T(ctx, "%d bytes"), len(key.KeyData)) })</span>
+						}
+					</div>
 				</div>
+				<button class="btn btn-ghost btn-xs"
+					data-target={ "test-form-" + key.ID }
+					onclick="var f=document.getElementById(this.dataset.target);if(f){f.style.display=f.style.display==='none'?'block':'none';}">
+					{ i18n.T(ctx, "Test key") }
+				</button>
+				<button class="btn btn-ghost btn-xs text-error"
+					hx-delete={"/ui/settings/ssh-keys/" + key.ID}
+					hx-target="#ssh-keys-list"
+					hx-swap="outerHTML">
+					{ i18n.T(ctx, "Delete") }
+				</button>
 			</div>
-			<button class="btn btn-ghost btn-xs text-error"
-				hx-delete={"/ui/settings/ssh-keys/" + key.ID}
-				hx-target="closest .flex"
-				hx-swap="delete">
-				{ i18n.T(ctx, "Delete") }
-			</button>
+			<div id={ "test-form-" + key.ID } class="hidden border-t border-base-300 pt-2">
+				<form class="flex gap-2 items-end"
+					hx-post={ "/ui/settings/ssh-keys/" + key.ID + "/test" }
+					hx-target={ "#test-result-" + key.ID }
+					hx-swap="innerHTML">
+					<div class="form-control flex-1">
+						<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Node") }</span></label>
+						<select name="target_node" class="select select-bordered select-sm">
+							<option value="">{ i18n.T(ctx, "Select node…") }</option>
+							for _, h := range hosts {
+								<option value={ h.ID }>{ h.ID } — { h.Addr }</option>
+							}
+						</select>
+					</div>
+					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Test connection") }</button>
+				</form>
+				<div id={ "test-result-" + key.ID } class="mt-1"></div>
+			</div>
 		</div>
 	}
 	<!-- System keys (auto-detected) -->
 	for _, key := range systemKeys {
 		<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2 opacity-70">
 			<div class="flex-1">
-				<div class="text-sm font-medium">{ key.Name }</div>
+				<div class="text-sm font-medium">
+					<span class="badge badge-ghost badge-xs mr-1">{ keyBadge(ctx, key.Source) }</span>
+					🔑 { key.Name }
+				</div>
 				<div class="text-xs text-base-content/50">
-					<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "System") }</span>
-					<span class="ml-1">— { key.KeyPath }</span>
+					if key.Fingerprint != "" {
+						<span class="font-mono">{ key.Fingerprint }</span>
+						<span class="ml-1">—</span>
+					}
+					<span class="ml-1">{ key.KeyPath }</span>
 				</div>
 			</div>
 		</div>
 	}
+	<!-- Import from ~/.ssh/ -->
+	<div class="mt-2 border border-dashed border-base-300 rounded-lg p-2">
+		<button type="button" class="btn btn-ghost btn-sm"
+			onclick="var f=document.getElementById('import-system-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
+			{ i18n.T(ctx, "Import from ~/.ssh/") }
+		</button>
+		<div id="import-system-form" class="hidden mt-2 space-y-2">
+			for _, k := range systemKeys {
+				<form class="flex gap-2 items-end"
+					hx-post="/ui/settings/ssh-keys/import-system"
+					hx-target="#ssh-keys-list"
+					hx-swap="outerHTML">
+					<input type="hidden" name="system_key_id" value={ k.ID } />
+					<div class="form-control flex-1">
+						<label class="label"><span class="label-text text-xs">🔑 { k.Name } <span class="opacity-60">{ k.KeyPath }</span></span></label>
+						<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
+					</div>
+					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
+				</form>
+			}
+			if len(systemKeys) == 0 {
+				<div class="text-xs text-base-content/50">{ i18n.T(ctx, "No SSH key configured and no default key set") }</div>
+			}
+		</div>
+	</div>
+	<!-- Export / Import registry -->
+	<div class="mt-2 flex gap-2 flex-wrap">
+		<a class="btn btn-ghost btn-sm" href="/ui/settings/ssh-keys/export" download>{ i18n.T(ctx, "Export registry") }</a>
+		<button type="button" class="btn btn-ghost btn-sm"
+			onclick="var f=document.getElementById('import-registry-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
+			{ i18n.T(ctx, "Import registry") }
+		</button>
+	</div>
+	<div id="import-registry-form" class="hidden mt-2 border border-dashed border-base-300 rounded-lg p-2">
+		<form
+			hx-post="/ui/settings/ssh-keys/import"
+			hx-target="#import-result"
+			hx-swap="innerHTML"
+			class="space-y-2">
+			<div class="form-control">
+				<textarea name="keys_json" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
+					placeholder="[{&quot;id&quot;:...,&quot;name&quot;:...,&quot;key_data&quot;:...}]"></textarea>
+			</div>
+			<label class="label cursor-pointer gap-2">
+				<input type="checkbox" name="force" class="checkbox checkbox-sm" />
+				<span class="label-text text-xs">{ i18n.T(ctx, "Are you sure?") } (overwrite)</span>
+			</label>
+			<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import registry") }</button>
+		</form>
+		<div id="import-result" class="mt-1"></div>
+	</div>
 	<!-- Add new key form -->
 	<div class="mt-3 border border-dashed border-base-300 rounded-lg p-3">
 		<form
@@ -284,4 +351,13 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry) 
 			<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
 		</form>
 	</div>
+}
+
+// systemKeysSlice normalizes the variadic systemKeys arg of Settings() into a
+// single slice so it can be passed to SSHKeyList (which takes a concrete slice).
+func systemKeysSlice(systemKeys [][]model.SSHKeyEntry) []model.SSHKeyEntry {
+	if len(systemKeys) == 0 {
+		return nil
+	}
+	return systemKeys[0]
 }

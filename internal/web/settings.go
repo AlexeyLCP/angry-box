@@ -210,7 +210,8 @@ func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 	st.SaveSettings(settings)
 	// Return updated key list
 	sysKeys := detectSystemKeys()
-	s.render(w, r, templates.SSHKeyList(settings, sysKeys))
+	hosts, _ := st.ListHosts()
+	s.render(w, r, templates.SSHKeyList(settings, sysKeys, hosts))
 }
 
 func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
@@ -275,7 +276,8 @@ func (s *Server) handleSetDefaultKey(w http.ResponseWriter, r *http.Request) {
 	settings.DefaultSSHKeyID = keyID
 	st.SaveSettings(settings)
 	sysKeys := detectSystemKeys()
-	s.render(w, r, templates.SSHKeyList(settings, sysKeys))
+	hosts, _ := st.ListHosts()
+	s.render(w, r, templates.SSHKeyList(settings, sysKeys, hosts))
 }
 
 // handleTestKey runs a one-off GetStatus against a target node using the key
@@ -371,7 +373,8 @@ func (s *Server) handleImportSystemKey(w http.ResponseWriter, r *http.Request) {
 		Fingerprint: fp,
 	})
 	st.SaveSettings(settings)
-	s.render(w, r, templates.SSHKeyList(settings, detectSystemKeys()))
+	hosts, _ := st.ListHosts()
+	s.render(w, r, templates.SSHKeyList(settings, detectSystemKeys(), hosts))
 }
 
 // handleExportKeys streams the full registry (stored + system keys) as a JSON

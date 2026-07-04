@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -15,9 +16,7 @@ templ Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeM
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Nodes") }</h2>
 			<button
 				class="btn btn-primary btn-sm shadow-md hover:shadow-lg transition-shadow"
-				hx-get="/ui/nodes/new"
-				hx-target="#modal-container"
-				hx-swap="innerHTML">
+				onclick="location.href='/ui/nodes/'+('n'+Math.floor(Date.now()/1000))+Math.floor(Math.random()*100)+'/capture'">
 				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
 				{ i18n.T(ctx, "Add Node") }
 			</button>
@@ -176,7 +175,7 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 	</tr>
 }
 
-// ─── Node Form (create / edit) ──────────────────────────────────────────────────
+// ─── Node Form (edit only) ─────────────────────────────────────────────────────
 
 templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry, nodeInfo ...*model.NodeInfo) {
 	<dialog id="node-modal" class="modal" open>
@@ -201,74 +200,32 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 						<input type="text" name="id" class="input input-bordered" value={ h.ID } readonly />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Address") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "IP:port") }</span></label>
-						<input type="text" name="addr" class="input input-bordered" value={ h.Addr } required placeholder="e.g. 203.0.113.10:22" />
+						<label class="label">
+							<span class="label-text">{ i18n.T(ctx, "SSH Address") }</span>
+							<span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "IP:port") }</span>
+						</label>
+						<input type="text" name="addr" class="input input-bordered" value={ h.Addr } readonly />
 					</div>
 					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH User") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "usually root") }</span></label>
-						<input type="text" name="user" class="input input-bordered" value={ h.User } />
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH User") }</span></label>
+						<input type="text" name="user" class="input input-bordered" value={ h.User } readonly />
+						<a class="btn btn-ghost btn-xs mt-1" href={ "/ui/nodes/" + h.ID + "/capture" }>{ i18n.T(ctx, "Re-capture node") }</a>
 					</div>
-<div class="form-control">
+					<div class="form-control">
 						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Key") }</span></label>
-						<select name="ssh_key_id" class="select select-bordered"
-							onchange="var ta=this.parentElement.querySelector('.manual-key-ta');var manual=this.value==='manual';ta.style.display=manual?'block':'none';if(!manual)ta.value=''">
-							<option value="">{ i18n.T(ctx, "Select key...") }</option>
-							for _, k := range allKeys {
-								<option value={ k.ID }>{ k.Name }</option>
-							}
-							<option value="manual">{ i18n.T(ctx, "== Enter key manually ==") }</option>
-						</select>
-						<textarea name="keyPath" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
-							rows="3" style="display:none"
-							placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
-...
------END OPENSSH PRIVATE KEY-----">{ h.KeyPath }</textarea>
+						@sshKeySelect("ssh_key_id", h.KeyPath, settings, allKeys)
+						if h.KeyPath == "" && (settings == nil || settings.DefaultSSHKeyID == "") {
+							<div class="label">
+								<span class="label-text-alt text-base-content/50">
+									{ i18n.T(ctx, "No SSH key configured and no default key set") } — { i18n.T(ctx, "Import from ~/.ssh/") }
+								</span>
+							</div>
+						}
 					</div>
 					@nodeFormFields(nodeInfo...)
 					<div class="modal-action">
 						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
 						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
-					</div>
-				</form>
-			} else {
-				<form
-					hx-post="/ui/nodes"
-					hx-target="#nodes-tbody"
-					hx-swap="beforeend"
-					hx-on::after-request="this.closest('dialog').close(); this.reset()"
-					class="space-y-4">
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "ID (unique)") }</span></label>
-						<input type="text" name="id" class="input input-bordered" required placeholder="node-helsinki" />
-					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Address") }</span></label>
-						<input type="text" name="addr" class="input input-bordered" required placeholder="1.2.3.4:22" />
-					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH User") }</span></label>
-						<input type="text" name="user" class="input input-bordered" value="root" />
-					</div>
-<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Key") }</span></label>
-						<select name="ssh_key_id" class="select select-bordered"
-							onchange="var ta=this.parentElement.querySelector('.manual-key-ta');var manual=this.value==='manual';ta.style.display=manual?'block':'none';if(!manual)ta.value=''">
-							<option value="">{ i18n.T(ctx, "Select key...") }</option>
-							for _, k := range allKeys {
-								<option value={ k.ID }>{ k.Name }</option>
-							}
-							<option value="manual">{ i18n.T(ctx, "== Enter key manually ==") }</option>
-						</select>
-						<textarea name="keyPath" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
-							rows="3" style="display:none"
-							placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
-...
------END OPENSSH PRIVATE KEY-----"></textarea>
-					</div>
-					@nodeFormFields()
-					<div class="modal-action">
-						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
-						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Add Node") }</button>
 					</div>
 				</form>
 			}
@@ -277,6 +234,42 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 	</dialog>
+}
+
+// sshKeySelect renders the unified SSH-key dropdown. The first option is the
+// panel default (when set) or a "Select key..." placeholder. Stored/auto/manual
+// keys are grouped under "Stored keys", system keys under "System keys". The
+// trailing "manual" option reveals a sibling .manual-key-ta textarea (wired by
+// the inline onchange). data-fingerprint on each option drives the capture
+// wizard's auto-install preview line.
+templ sshKeySelect(name string, selected string, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {
+	<select name={ name } class="select select-bordered"
+		onchange="var ta=this.parentElement.querySelector('.manual-key-ta');var manual=this.value==='manual';if(ta){ta.style.display=manual?'block':'none';if(!manual)ta.value='';}var prev=this.parentElement.querySelector('.auto-install-preview');if(prev){var fp=this.selectedOptions[0]&&this.selectedOptions[0].dataset.fingerprint;var addr=this.closest('form')&&this.closest('form').querySelector('[name=addr]');var a=addr?addr.value:'';if(fp&&a){prev.textContent=abt('Public key will be added to authorized_keys on')+' '+a+' · '+fp;prev.classList.remove('hidden');}else if(this.value==='manual'&&a){prev.textContent=abt('a new key will be generated and added')+' ('+a+')';prev.classList.remove('hidden');}else{prev.textContent='';prev.classList.add('hidden');}}">
+		if settings != nil && settings.DefaultSSHKeyID != "" {
+			<option value="">{ i18n.T(ctx, "Default") } ({ defaultKeyName(settings, allKeys) })</option>
+		} else {
+			<option value="">{ i18n.T(ctx, "Select key...") }</option>
+		}
+		<optgroup label={ i18n.T(ctx, "Stored keys") }>
+			for _, k := range allKeys {
+				if k.Source == model.SourceStored || k.Source == model.SourceAuto || k.Source == model.SourceManual {
+					<option value={ k.ID } data-fingerprint={ k.Fingerprint } selected?={ k.ID == selected }>
+						{ "[" + keyBadge(ctx, k.Source) + "] " + k.Name + keyFpSuffix(k.Fingerprint) }
+					</option>
+				}
+			}
+		</optgroup>
+		<optgroup label={ i18n.T(ctx, "System keys") }>
+			for _, k := range allKeys {
+				if k.Source == model.SourceSystem {
+					<option value={ k.ID } data-fingerprint={ k.Fingerprint } selected?={ k.ID == selected }>
+						{ "🔑 [" + keyBadge(ctx, k.Source) + "] " + k.Name + keyFpSuffix(k.Fingerprint) }
+					</option>
+				}
+			}
+		</optgroup>
+		<option value="manual">== { i18n.T(ctx, "Paste key manually") } ==</option>
+	</select>
 }
 
 // nodeFormFields renders country, bandwidth, source fields (shared between create/edit)
@@ -490,7 +483,13 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 	</template>
 }
 
-// ─── Node Capture Form ──────────────────────────────────────────────────────────
+// ─── Node Capture Form (1-step wizard) ─────────────────────────────────────────
+//
+// Deviation from the plan's 2-step wizard: country/bandwidth metadata is
+// captured here in Step 1 so the wizard is a single POST (the capture handler
+// already saves NodeInfo with Country/Bandwidth on success). The plan's
+// "Step 2" is just the server-rendered success partial (OS / sing-box / AWG
+// status line + a "Refresh Nodes" button), not a separate client form.
 
 templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {
 	<dialog id="capture-modal" class="modal" open>
@@ -505,55 +504,80 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys [
 				class="space-y-4">
 
 				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Address") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "IP:port") }</span></label>
+					<input type="text" name="addr" class="input input-bordered" value={ host.Addr } placeholder="1.2.3.4:22" required />
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Login User") }</span></label>
+					<input type="text" name="login_user" class="input input-bordered" value={ captureUser(host.User) } placeholder="root" />
+				</div>
+
+				<div class="form-control">
 					<label class="label"><span class="label-text">{ i18n.T(ctx, "SSH Key") }</span></label>
-					<select name="ssh_key" class="select select-bordered">
-						<option value="">{ i18n.T(ctx, "Select key...") }</option>
-						for _, k := range allKeys {
-							<option value={ k.ID }>{ k.Name }</option>
-						}
-						<option value="manual">{ i18n.T(ctx, "== Enter key manually ==") }</option>
-					</select>
+					@sshKeySelect("ssh_key_id", host.KeyPath, settings, allKeys)
 					<textarea name="ssh_key_manual" class="manual-key-ta textarea textarea-bordered textarea-sm font-mono text-xs mt-2"
 						rows="3" style="display:none"
 						placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
 ...
 -----END OPENSSH PRIVATE KEY-----"></textarea>
+					<div class="auto-install-preview text-xs text-base-content/50 hidden"></div>
 				</div>
 
 				<div class="text-sm text-base-content/50 text-center">{ i18n.T(ctx, "— or use login + password —") }</div>
 
-				<div class="grid grid-cols-2 gap-4">
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Login User") }</span></label>
-						<input type="text" name="login_user" class="input input-bordered" value={ host.User } placeholder="root" />
-					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Password") }</span></label>
-						<input type="password" name="login_pass" class="input input-bordered" placeholder={i18n.T(ctx, "Enter SSH password")} />
-					</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Password") }</span></label>
+					<input type="password" name="login_pass" class="input input-bordered" placeholder={ i18n.T(ctx, "Enter SSH password") } />
 				</div>
 
 				<div class="form-control">
 					<label class="label cursor-pointer">
-						<span class="label-text">{ i18n.T(ctx, "Auto-install SSH key on server after successful login") }</span>
+						<span class="label-text">{ i18n.T(ctx, "Install public key for passwordless access") }</span>
 						<input type="checkbox" name="auto_install_key" class="checkbox checkbox-sm" checked />
 					</label>
+					<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "If checked, the SSH key selected above will be installed on the target server for future passwordless access.") }</span></div>
 				</div>
 
-				<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "If checked, the SSH key selected above will be installed on the target server for future passwordless access.") }</span></div>
+				<div class="grid grid-cols-2 gap-3">
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Country") }</span></label>
+						<input type="text" name="country" class="input input-bordered" placeholder="FI" />
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Bandwidth") }</span></label>
+						<input type="text" name="bandwidth" class="input input-bordered" placeholder="1 Gbps" />
+					</div>
+				</div>
 
 				<div class="modal-action">
 					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
-					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Capture") }</button>
+					<button type="button" class="btn btn-ghost btn-sm"
+						hx-post={ "/ui/nodes/" + host.ID + "/test" }
+						hx-target="#capture-test-result"
+						hx-include="closest form">
+						{ i18n.T(ctx, "Test connection") }
+					</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Verify & connect") }</button>
 				</div>
 			</form>
 
+			<div id="capture-test-result" class="mt-2"></div>
 			<div id="capture-result" class="mt-2"></div>
 		</div>
 		<form method="dialog" class="modal-backdrop">
 			<button>{ i18n.T(ctx, "Close") }</button>
 		</form>
 	</dialog>
+}
+
+// captureUser returns the user to pre-fill in the capture wizard: the host's
+// stored user if any, otherwise "root".
+func captureUser(u string) string {
+	if u == "" {
+		return "root"
+	}
+	return u
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -604,6 +628,41 @@ func niSource(nodeInfo []*model.NodeInfo) string {
 		return nodeInfo[0].Source
 	}
 	return ""
+}
+
+// defaultKeyName returns the Name of the panel default SSH key (looked up in
+// allKeys by ID), or the ID itself if the entry cannot be found (defensive —
+// the default id is validated server-side so this is just a render fallback).
+func defaultKeyName(settings *model.PanelSettings, allKeys []model.SSHKeyEntry) string {
+	for _, k := range allKeys {
+		if k.ID == settings.DefaultSSHKeyID {
+			return k.Name
+		}
+	}
+	return settings.DefaultSSHKeyID
+}
+
+// keyBadge maps a key Source to its localized badge label.
+func keyBadge(ctx context.Context, source string) string {
+	switch source {
+	case model.SourceSystem:
+		return i18n.T(ctx, "[System]")
+	case model.SourceAuto:
+		return i18n.T(ctx, "[Auto]")
+	case model.SourceManual:
+		return i18n.T(ctx, "[Manual]")
+	default:
+		return i18n.T(ctx, "[Stored]")
+	}
+}
+
+// keyFpSuffix renders the " · {fingerprint}" suffix for an option label when a
+// fingerprint is present, or an empty string otherwise.
+func keyFpSuffix(fp string) string {
+	if fp == "" {
+		return ""
+	}
+	return " · " + fp
 }
 
 
