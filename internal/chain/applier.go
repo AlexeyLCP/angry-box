@@ -1373,6 +1373,18 @@ func buildTUICInlineTLS(serverName string) *config.InboundTLSOptions {
 	return tls
 }
 
+// buildAWGUserInbound builds a single-peer userspace AWG endpoint (config.WireGuardEndpoint
+// with System:false). This is the PRE-kernel-rework user-entry shape.
+//
+// TEST-ONLY / LEGACY: production user-facing AWG servers (chain entry, standalone,
+// exit) now use kernel `awg-quick@awg0` + sing-box TUN-overlay — see awg_server.go
+// (RenderServerAWGConf) + awg_tun_overlay.go (BuildAWGTUNOverlay). This builder has
+// NO production callers (grep-verified: only clientconfig_test.go / helpers_test.go
+// reference it). It is retained because those tests assert peer/amnezia-material
+// logic that is still meaningful for the userspace path used by inter-node AWG
+// transit (buildAWGTransportInbound/Outbound). Do NOT wire this into a production
+// render path — per AGENTS.md #11, the userspace-endpoint path is unstable under
+// amnezia for user-facing servers. Remove once the transit path also moves to kernel.
 func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPreset, serverPrivKeyB64, clientPubKey string) ([]byte, string, error) {
 	awg := preset.AWG
 	if awg == nil {
@@ -1433,6 +1445,14 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 //
 // Returns the endpoint JSON and the server's public key (derived from
 // serverPrivKeyB64, or generated when empty — caller persists the latter).
+//
+// TEST-ONLY / LEGACY: same status as buildAWGUserInbound above. Production
+// chain-entry AWG is kernel awg0 + TUN-overlay (RenderServerAWGConf builds the
+// .conf with all user peers directly). This builder has NO production callers
+// (only clientconfig_test.go). The per-user peer-material logic it exercises
+// (AWGPublicKey/AWGAddress → peer) is still correct and reused conceptually by
+// RenderServerAWGConf, which is why the tests are kept. Do NOT wire this into a
+// production render path — see AGENTS.md #11 / PROGRESS §1.A.
 func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User, material *AWGObfsMaterial) ([]byte, string, error) {
 	awg := preset.AWG
 	if awg == nil {

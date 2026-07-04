@@ -231,12 +231,16 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 				<option value="" if u == nil || u.SecretType == "" { selected }>{ i18n.T(ctx, "None") }</option>
 				<option value="telemt" if u != nil && u.SecretType == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto) — Secret") }</option>
 				<option value="awg" if u != nil && u.SecretType == "awg" { selected }>{ i18n.T(ctx, "AWG — Private Key (base64, 44 chars)") }</option>
-				<option value="tuic" if u != nil && u.SecretType == "tuic" { selected }>{ i18n.T(ctx, "TUIC v5 — UUID") }</option>
+				if u != nil && u.SecretType == "tuic" {
+					<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 — UUID (paused)") }</option>
+				}
 				<option value="vless-reality" if u != nil && u.SecretType == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality — Private Key") }</option>
 				<option value="shadowsocks" if u != nil && u.SecretType == "shadowsocks" { selected }>{ i18n.T(ctx, "Shadowsocks — Password/Key") }</option>
 				<option value="trojan" if u != nil && u.SecretType == "trojan" { selected }>{ i18n.T(ctx, "Trojan — Password") }</option>
 				<option value="vmess" if u != nil && u.SecretType == "vmess" { selected }>{ i18n.T(ctx, "VMess — UUID") }</option>
-				<option value="hysteria2" if u != nil && u.SecretType == "hysteria2" { selected }>{ i18n.T(ctx, "Hysteria2 — Password/Key") }</option>
+				if u != nil && u.SecretType == "hysteria2" {
+					<option value="hysteria2" selected disabled>{ i18n.T(ctx, "Hysteria2 — Password/Key (paused)") }</option>
+				}
 			</select>
 			<input type="text" name="imported_secret" class="input input-bordered input-sm font-mono"
 				if u != nil { value={ u.ImportedSecret } } placeholder={ i18n.T(ctx, "Paste your existing key here...") } />

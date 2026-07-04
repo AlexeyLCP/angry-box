@@ -45,6 +45,10 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	if transport == "" {
 		transport = "xhttp"
 	}
+	if err := chain.ValidateChainTransport(model.TransportType(transport)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	st := s.store()
 

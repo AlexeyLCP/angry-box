@@ -2,7 +2,7 @@
 
 > Единый источник правды: что сделано, что нужно, откуда берём. Обновлять при каждом изменении. Не удалять — накапливать.
 
-Последнее обновление: 2026-07-04 (после live-VPS testing на 3 серверах)
+Последнее обновление: 2026-07-04 (Hysteria2 frozen everywhere + edit-guard fix + E2E re-confirmed)
 
 ---
 
@@ -27,13 +27,17 @@
 1. **AWG — основной протокол.** Упор на него: обфускация, пресеты, все пути.
 2. **AWG-сервер = kernel `awg-quick@awg0.service` + sing-box TUN-overlay.** Никакого userspace `WireGuardEndpoint` на серверах — userspace wireguard-go падает с `panic: chacha20poly1305` с amnezia-обфускацией (gVisor `system:false` И `system:true` — оба падают; amnezia-математика идёт через userspace-код даже в system-режиме). Доказано в `VPN/docs/sing-box-extended.md:103-111`, `nuances-bugs-patches.md:199-201`.
 3. **sing-box НЕ поднимает AWG-интерфейс.** `awg-quick@awg0.service` (kernel systemd) поднимает, sing-box работает поверх через TUN `include_interface:["awg0"]` + direct outbounds с `bind_interface`. Эталон: `VPN/orchestrator/app/templates/awg_balancer.json.j2`.
-4. **TUIC — FROZEN.** Не тестировать, не фиксить (AGENTS.md Known Issues #6).
-5. **Hysteria2 transport — НЕ реализован** (enum есть, case в свиче нет → молча падает в Reality). Решить: реализовать или заморозить.
-6. **TLS-capture для CPS НЕ работает с AWG** (несовместим, крашит). Только QUIC. Знание из `awg-manager/internal/signature/capture.go`.
-7. **Itime ломает runtime.** `sing-box UAPI` rejects "itime", `awg setconf` rejects "Itime". Держим только в Go (`AmneziaOptions.ITime json:"-"`), не эмитим в .conf. Фикс 6f1a108.
-8. **awg-quick .conf: amnezia-поля в `[Interface]` ДО `[Peer]`.** `awg setconf` парсит amnezia только в `[Interface]`; после `[Peer]` → `Line unrecognized: Jc=...`.
-9. **commit convention:** `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-10. **E2E-инфра:** GCloud VPSes — entry `34.62.128.71`, middle `207.175.40.161`, exit `23.251.133.38`. User `lcp`, key `id_ed25519`. GCloud UDP 443 firewall на exit VPS — известный инфраструктурный затык e2e.
+4. **TUIC — FROZEN (на паузе).** User entry + standalone. QUIC/TLS cert геморрой + нерешённые баги. Не тестировать, не фиксить, не предлагать в UI для новых конфигов (AGENTS.md #6). См. `internal/chain/frozen.go`.
+5. **Hysteria2 — FROZEN (на паузе).** Transport + standalone + user entry. Тот же класс проблем что TUIC (QUIC требует TLS/self-signed cert). Builder не написан, UI блокирует новый выбор. Не реализовывать пока не доведены до ума AWG, Reality+XHTTP, MTProxy (AGENTS.md #11). См. `internal/chain/frozen.go`.
+6. **Product focus (базовый минимум v0.2.x):** AWG (kernel + balancer), VLESS+Reality+XHTTP (transport + standalone), MTProxy/Telemt. Всё остальное — вне скоупа.
+7. **Live CPS capture: только QUIC, не plain TCP TLS.** Два режима capture — не путать:
+   - ✅ **QUIC live capture** (`quic-live`, `CaptureQUICSignature`) — **РАБОТАЕТ**. UDP→domain:443, QUIC Initial (внутри — TLS ClientHello в CRYPTO frame), ловим ответы → I1-I5. Интегрирован в `EnsureChainAWGMaterial` (раздел 2.4).
+   - ❌ **TCP TLS live capture** (plain TLS handshake по TCP:443 без QUIC-обёртки) — **НЕ поддерживается** (awg-manager: несовместим с AWG, крашит runtime). В angry-box не портирован и не планируется.
+   Синтетический CPS (`quic`/`sip`/`dns` mimicry, `GenerateQUICInitial`) — тоже работает, без сети.
+8. **Itime ломает runtime.** `sing-box UAPI` rejects "itime", `awg setconf` rejects "Itime". Держим только в Go (`AmneziaOptions.ITime json:"-"`), не эмитим в .conf. Фикс 6f1a108.
+9. **awg-quick .conf: amnezia-поля в `[Interface]` ДО `[Peer]`.** `awg setconf` парсит amnezia только в `[Interface]`; после `[Peer]` → `Line unrecognized: Jc=...`.
+10. **commit convention:** `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+11. **E2E-инфра:** GCloud VPSes — entry `34.62.128.71`, middle `207.175.40.161`, exit `23.251.133.38`. User `lcp`, key `id_ed25519`. GCloud UDP 443 firewall на exit VPS — известный инфраструктурный затык e2e.
 
 ---
 
@@ -125,10 +129,10 @@
 
 ~~убивает awg-quick@awg0, userspace endpoint.~~ → `renderAWGTakeoverConfig` эмитит TUN-overlay (include_interface:["awg0"], no userspace endpoint). Cutover НЕ дизейблит `awg-quick@awg0` для AWG (kernel keeps running, sing-box поверх). Rollback — откат sing-box config (не трогает awg-quick). 3 теста (TUN-overlay, no amnezia block, real sing-box check).
 
-### 2.8. Hysteria2 transport — PENDING (решение пользователя)
+### 2.8. ~~Hysteria2~~ — ✅ ЗАМОРОЖЕН (2026-07-04)
 
-- Enum `TransportHysteria2` (chain.go), case в свиче транспорта нет → молча падает в Reality.
-- Решение: реализовать builder (как AWG-transport) или заморозить как TUIC.
+- Transport + standalone + user entry — **на паузе** (QUIC/TLS cert отложен; фокус: AWG, Reality+XHTTP, MTProxy).
+- `internal/chain/frozen.go` + UI: новый выбор заблокирован; apply существующих hysteria2-transport цепей — hard error.
 
 ---
 
@@ -154,7 +158,7 @@
 Файл: `internal/signature/capture.go` (master branch, 403 строки, чистый Go stdlib + `netutil.ResolveHost`).
 
 **Что делает:**
-- `Capture(domain) CaptureResult` — нормализует домен (`normalizeDomain`), резолвит IP (`netutil.ResolveHost`), вызывает `captureQUIC`. Только QUIC (TLS несовместим с AWG, крашит).
+- `Capture(domain) CaptureResult` — нормализует домен (`normalizeDomain`), резолвит IP (`netutil.ResolveHost`), вызывает `captureQUIC` (UDP/QUIC). Plain TCP TLS capture в upstream не реализован — несовместим с AWG. Наш порт: только QUIC path (`awgcapture.go`).
 - `captureQUIC(domain, ip, timeout) ([][]byte, error)` — реальный capture: dial `net.DialTimeout("udp", ip:443)`, пишет QUIC Initial, читает до 5 ответов. Возвращает `[наш_Initial, ответ1, ...]`.
 - `buildQUICInitial(domain) ([]byte, error)` — полная RFC 9001, не shape-фейк:
   - `buildTLSClientHello(domain)` через `crypto/tls` + `net.Pipe()` — Go сам генерит настоящий TLS 1.3 ClientHello с реальным SNI (`ServerName: domain`, `NextProtos: ["h3"]`, `MinVersion/MaxVersion: TLS13`). `tlsConn.Handshake()` пишет ClientHello в pipe, мы читаем raw bytes. Ключевое: SNI реально работает.
@@ -227,7 +231,23 @@
 
 ---
 
-## 6. Открытые вопросы / что проверить
+## 6. Статус трафика (итог, re-confirmed 2026-07-04)
+
+| Путь | Трафик ходит? | Доказательство |
+|------|---------------|----------------|
+| Inter-node XHTTP/Reality transport | **Да** | `TestE2E_Heavy_Protocol_AWG_Kernel_2Hop` PASS (35.95s) — entry `tun-in` catch-all → `ch-e2e-awg-kernel-2hop-out-www` (chain outbound) → exit XHTTP transport-in healthy |
+| Kernel AWG handshake (entry) | **Да** | `TestE2E_Heavy_Protocol_AWG_Kernel` PASS (23.83s) — awg0.conf pushed (3624B), `awg-quick@awg0` active, awg0 10.8.0.1/24, 0 userspace WG endpoints, systemd `After=awg-quick@awg0.service` |
+| AWG handshake (per-client/balancer) | **Да** | `TestE2E_Heavy_PerClientRouting` PASS (76.97s) — `latest handshake: 5 seconds ago`, transfer 92B rx/64.49KiB tx, jc/jmin/jmax/s1-s4/h1-h4/i1-i5 all matching |
+| Balancer deploy (entry + exit) | **Да** | E2E PASS, awg0 + awg-exit-n1 + MASQUERADE (`-A POSTROUTING -s 10.8.0.0/24 -o ens4 -j MASQUERADE` live на server-3) + Table=off (default route intact) |
+| Client → internet egress (полный путь) | **Не проверен в e2e** | Test artifact: client tunnel awge2e (10.8.0.2) + server awg0 route 10.8.0.0/24 на одном VPS → routing conflict (responses идут к awg0, не к awge2e). В production клиент на отдельном устройстве — конфликта нет. Нужен отдельный клиент для финального verify. |
+| Linear AWG inter-node transport | **Частично** | Handshake OK, data plane под amnezia нестабилен → amnezia отключена на transit. Balancer architecture (kernel exit tunnels) — рабочий путь. |
+| TUIC / Hysteria2 | **На паузе** | Не в скоупе product focus (базовый минимум: AWG, Reality+XHTTP, MTProxy). Frozen enforcement в `internal/chain/frozen.go` + UI edit-guard. |
+
+**Вывод:** инфраструктура деплоится, handshake проходит (kernel AWG + amnezia), межузловой forwarding работает (XHTTP transport), balancer architecture стабильна. Полный egress end-to-end на отдельном клиенте — последний незакрытый verify, не блокер архитектуры (test artifact, не product bug).
+
+---
+
+## 7. Открытые вопросы / что проверить
 
 - [x] Лицензия `awg-manager` (hoaxisr) — **MIT** (источник), интегрируем в наш PolyForm-проект с атрибуцией. Сам angry-box — **PolyForm Noncommercial** (`LICENSE`).
 - [x] ~~Статус `internal/chain/awgcapture.go` — упрощённый, без AEAD.~~ → УСИЛЕН: `quic_initial_aead.go` (полная RFC 9001 AEAD) подключён к `CaptureQUICSignature` (раздел 2.4).
@@ -237,13 +257,13 @@
 - [x] Hysteria2 transport — **ЗАМОРОЖЕН** как TUIC (AGENTS.md #11). Loud-fail guard в `buildChainRoleInOut` (fix #3: hard build error, не silent warning).
 - [ ] GCloud UDP 443 firewall на exit VPS — инфраструктурный затык e2e, не код. Открыть порт или менять exit.
 - [ ] **НОВОЕ (follow-up из kernel-AWG rework):** `RenderAWGHop` (userspace AWG endpoint) всё ещё зовётся legacy-CLI-путём `Backend.GenerateConfig`/`ApplyConfig` (`cmd/angry-box/main.go:673`, `config.go:83`) для standalone-AWG. Это НЕ web-UI путь (тот идёт через `ApplyMergedNode` → kernel AWG). Legacy-путь пушит только один `config.json` (без двухфайлового awg0.conf push), поэтому не может тривиально переключиться на kernel AWG без реструктуризации `ApplyConfig`. Решение: либо перевести CLI-путь на `pushConfigWithAWG`, либо задепрекейтить `Backend.ApplyConfig` в пользу `ApplyMergedNode` для standalone.
-- [ ] **НОВОЕ (review follow-up #dead):** `buildAWGUserInbound`/`buildAWGUserInboundMulti` (applier.go) теперь не имеют production-callers (только тесты `clientconfig_test.go:622,654`, `helpers_test.go`). Под kernel-AWG живые билдеры — `RenderServerAWGConf`/`RenderExitAWGConf` (awg_server.go). Техдолг: удалить dead builders или пометить test-only, чтобы не imply что userspace-entry путь ещё жив.
+- [x] **(review follow-up #dead, resolved 2026-07-04):** `buildAWGUserInbound`/`buildAWGUserInboundMulti` (applier.go) помечены `TEST-ONLY / LEGACY` в doc-комментариях — production user-facing AWG теперь kernel awg0 + TUN-overlay (`RenderServerAWGConf`/`RenderExitAWGConf`). Builders оставлены: тесты (`clientconfig_test.go`, `helpers_test.go`) утверждают peer/amnezia-material логику, релевантную для userspace AWG transit (который ещё alive). Удалять нельзя — сломает тесты; пометки снимают путаницу что userspace-entry путь жив.
 - [ ] **НОВОЕ (review #1 — критично, real-VPS verify):** per-client `source_ip_cidr` под TUN-overlay — `awg_tun_overlay.go` утверждает «TUN NAT changes the source IP», что ЕСЛИ правда значит `source_ip_cidr` per-client routing архитектурно несовместимо с overlay (AGENTS.md #7 primary механизм). **Надо проверить на real VPS** с поднятым kernel-модулем: сохраняется ли peer inner IP (10.8.0.X) через TUN, или NAT меняет его на TUN address (172.16.250.1). Логика покрыта unit-тестами (`TestBuildMergedRoute_PerClientAWG_*`); e2e — skip stub пока модуль не staged.
 - [ ] E2E AWG: нужен реальный kernel-модуль на test VPSes (deps staging). AWG per-client E2E — skip stub (`TestE2E_Heavy_PerClientRouting`) пока модуль не staged; routing logic покрыт unit-тестами.
 
 ---
 
-## 7. Code review + fixes (2026-07-04)
+## 8. Code review + fixes (2026-07-04)
 
 После kernel-AWG rework проведён независимый code review (coderabbit agent) полного diff'а (24 файла, +1267/-561). Найдено 6 real issues — **все 6 исправлены** + regression-тесты. Финальный `go build ./...` + `go vet ./...` + полный non-e2e `go test` зелёные.
 
@@ -265,7 +285,7 @@
 
 ---
 
-## 8. Live-VPS testing (2026-07-04) — 3 сервера, реальные e2e
+## 9. Live-VPS testing (2026-07-04) — 3 сервера, реальные e2e
 
 Пользователь дал живые сервера: `34.62.128.71` (entry/server-1), `207.175.40.161` (middle/server-2), `23.251.133.38` (exit/server-3). User `lcp`, key `~/.ssh/id_ed25519`, passwordless sudo, Debian 12, kernel 6.1.0-49. Это E2E-инфра из AGENTS.md.
 
@@ -344,3 +364,59 @@
 ### Open: egress на отдельном клиенте
 
 Чтобы **окончательно** verify egress, нужен **отдельный клиент** (телефон/ноутбук/3-й VPS), который подключается к balancer AWG user-entry и curl-ит через tunnel. На одной машине egress нельзя проверить (routing conflict: awge2e client 10.8.0.2 + awg0 server route 10.8.0.0/24 на одном VPS → responses идут к awg0, не к awge2e). Это **test artifact**, не product bug — в production клиент на отдельном устройстве, routing conflict не возникает.
+
+---
+
+## 10. Hysteria2 frozen everywhere + edit-guard fix + E2E re-confirm (2026-07-04)
+
+Пользователь подтвердил: Hysteria2 — на паузе как TUIC, фокус на базовом минимуме (AWG, Reality+XHTTP, MTProxy). Запрос: «везде добавить что Hysteria2 тоже на паузе» + «продолжи и тесты по прогрессу».
+
+### 10.1. Hysteria2 frozen — audit «везде»
+
+Frozen-enforcement уже централизован в `internal/chain/frozen.go` (`FrozenTransports` / `FrozenUserProtocols` / `FrozenStandaloneProtocols` + `Validate*` guards). Аудит всех entry points подтверждает покрытие:
+
+| Entry point | Файл | Guard |
+|---|---|---|
+| Chain create | `internal/web/chains.go:46,54` | `ValidateChainTransport` + `ValidateChainUserProtocol` |
+| Chain edit | `internal/web/chains.go:165,173` | `ValidateChainTransport` + `ValidateChainUserProtocol` (только при *изменении* — см. 10.2) |
+| Spider link create | `internal/web/spider.go:48` | `ValidateChainTransport` |
+| Standalone inbound add | `internal/web/nodes.go:439,448` | `IsFrozenStandaloneProtocol` + `ValidateStandaloneProtocol` |
+| Default protocol | `internal/web/settings.go:136` | `ValidateChainUserProtocol` (только при `!= DefaultProtocol`) |
+| Transport role build | `internal/chain/merged_config.go` | `buildMergedNodeConfig` hard-error on Hysteria2-transport (fix #3) |
+
+UI dropdowns рендерят frozen options как `<option ... selected disabled>` (edit-only, никогда не newly selectable): `chains.templ:234`, `nodes.templ:387`, `users.templ:241`, `settings.templ:101`. i18n-ключи `Hysteria2 (paused — QUIC/TLS)` / `(на паузе — QUIC/TLS)` в en/ru (`internal/i18n/i18n.go:370-376`). README.md / README.ru.md уже упоминают «TUIC и Hysteria2 на паузе». AGENTS.md #11 обновлён с explicit списком всех guarded entry points + edit-guard nuance.
+
+### 10.2. Edit-guard fix (regression найден через test suite)
+
+**Regression:** `TestHandler_UpdateChain` падал — `handleUpdateChain` rejected re-save цепи с `user_protocol=tuic`. Но по AGENTS.md существующие TUIC/Hysteria2 цепи **должны оставаться редактируемыми** («may remain for display/edit») — блокируется только *новый* выбор.
+
+**Fix:** `handleUpdateChain` теперь валидирует только когда значение реально *меняется* (`transport != c.Transport` / `userProto != c.UserProtocol`) — тот же pattern что `settings.go` (`DefaultProtocol != dp`). Disabled `<option>` в `EditChainForm` не сабмитится → form value пустой → guard пропускает → frozen-протокол сохраняется. Переключение non-frozen → frozen по-прежнему rejected с 400.
+
+**Regression-тесты:** `TestHandler_UpdateChain` (переключение на vless-reality — allowed), `TestHandler_UpdateChain_PreservedFrozenProtocol` (re-save frozen цепи без отправки protocol — preserved), `TestHandler_UpdateChain_RejectsSwitchToFrozen` (switch to tuic — 400).
+
+### 10.3. Dead builders помечены (review #dead → resolved)
+
+`buildAWGUserInbound` / `buildAWGUserInboundMulti` (applier.go) — `TEST-ONLY / LEGACY` doc-комментарии. Production user-facing AWG = kernel awg0 + TUN-overlay. Builders оставлены: тесты утверждают peer/amnezia-material логику, релевантную для userspace AWG transit (ещё alive). Pометки снимают путаницу что userspace-entry путь жив.
+
+### 10.4. E2E re-confirmed (live VPSes, 2026-07-04)
+
+Все 3 ключевых теста PASS на live VPSes (entry `34.62.128.71`, exit `23.251.133.38`, user `lcp`, key `id_ed25519`):
+
+| Тест | Время | Что доказано |
+|---|---|---|
+| `TestE2E_Heavy_Protocol_AWG_Kernel` | 23.83s | kernel-AWG single-node deploy: awg0.conf (3624B), `awg-quick@awg0` active, awg0 10.8.0.1/24, 0 userspace WG, systemd `After=awg-quick@awg0.service` |
+| `TestE2E_Heavy_Protocol_AWG_Kernel_2Hop` | 35.95s | inter-node forwarding: entry `tun-in` catch-all → `ch-e2e-awg-kernel-2hop-out-www` (chain outbound) → exit XHTTP transport-in healthy |
+| `TestE2E_Heavy_PerClientRouting` | 76.97s | balancer architecture: AWG handshake `latest handshake: 5 seconds ago`, transfer 92B rx/64.49KiB tx, jc/jmin/jmax/s1-s4/h1-h4/i1-i5 matching, Table=off, MASQUERADE live |
+
+**Серверы после тестов:** server-1 ✓ ALIVE (sing-box active, awg-quick@awg0 active, ip_forward=1), server-3 ✓ ALIVE (sing-box active, awg-quick@awg0 active, MASQUERADE for 10.8.0.0/24, ip_forward=1). Никаких lockout'ов.
+
+### 10.5. Test baseline
+
+`go build ./...` + `go vet ./...` зелёные. Полный non-e2e `go test` зелёный (включая `internal/chain` 69s, `internal/web` с новыми edit-guard тестами). E2E — 3/3 PASS на live VPSes.
+
+### 10.6. Открыто (не блокеры)
+
+- **Egress на отдельном клиенте** — последний незакрытый verify (test artifact, не product bug). Нужен 3-й VPS / телефон / ноутбук.
+- **Legacy CLI `Backend.ApplyConfig` standalone-AWG** (`cmd/angry-box/main.go:673` via `RenderAWGHop`) — ещё userspace, known follow-up.
+- **Per-client `source_ip_cidr` под TUN-overlay** — real-VPS verify (unit-тесты покрывают логику).
+- **GCloud UDP 443 firewall на exit VPS** — инфраструктурный, не код.

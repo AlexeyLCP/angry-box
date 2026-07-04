@@ -43,9 +43,17 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	if transport == "" {
 		transport = model.TransportXHTTP
 	}
+	if err := chain.ValidateChainTransport(transport); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	userProto := model.UserProtocol(strings.TrimSpace(r.FormValue("user_protocol")))
 	if userProto == "" {
 		userProto = model.UserProtocolAWG
+	}
+	if err := chain.ValidateChainUserProtocol(userProto); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	profile := strings.TrimSpace(r.FormValue("profile"))
 
@@ -152,12 +160,27 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 	if c.Strategy == "" {
 		c.Strategy = "urltest"
 	}
+	// Frozen-protocol guard: a chain that already uses a paused transport/user
+	// protocol (TUIC, Hysteria2) may be re-saved as-is (display/edit permitted
+	// per AGENTS.md — only NEW selection is blocked). So we only validate when
+	// the value actually CHANGES; submitting the unchanged frozen value (the
+	// `selected disabled` option) is preserved, while switching a non-frozen
+	// chain TO a frozen one is rejected. Mirrors the settings.go default_protocol
+	// guard (settings.DefaultProtocol != dp).
 	transport := model.TransportType(strings.TrimSpace(r.FormValue("transport")))
-	if transport != "" {
+	if transport != "" && transport != c.Transport {
+		if err := chain.ValidateChainTransport(transport); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		c.Transport = transport
 	}
 	userProto := model.UserProtocol(strings.TrimSpace(r.FormValue("user_protocol")))
-	if userProto != "" {
+	if userProto != "" && userProto != c.UserProtocol {
+		if err := chain.ValidateChainUserProtocol(userProto); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		c.UserProtocol = userProto
 	}
 	c.ObfuscationProfile = strings.TrimSpace(r.FormValue("profile"))

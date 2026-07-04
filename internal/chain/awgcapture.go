@@ -6,6 +6,15 @@ package chain
 // upstream algorithm is MIT-licensed and integrated here with attribution;
 // this file as a whole is part of Angry-box, distributed under the project's
 // PolyForm Noncommercial license (see /LICENSE).
+//
+// CPS capture modes (do not confuse):
+//   - QUIC live capture (THIS FILE): UDP domain:443 → QUIC Initial → server
+//     responses → I1-I5. Works with AWG. The Initial carries a real TLS 1.3
+//     ClientHello inside a QUIC CRYPTO frame (via quic_initial_aead.go) — that
+//     is normal QUIC, not a separate "TLS capture" mode.
+//   - TCP TLS live capture: plain TLS handshake over TCP:443. awg-manager does
+//     NOT implement this for AWG (incompatible, crashes). We do not port it.
+//
 // Connects to domain:443 over UDP, sends a real QUIC Initial (SNI=domain),
 // captures up to 5 server response packets, and hex-encodes them as <b 0x...>
 // for I1-I5. This yields a domain-accurate QUIC silhouette that DPI cannot

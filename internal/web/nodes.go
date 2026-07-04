@@ -436,6 +436,20 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 			Obfuscation: obf,
 		}
 
+		if chain.IsFrozenStandaloneProtocol(newIb.Protocol) {
+			allowed := false
+			for _, oldIb := range info.Inbounds {
+				if oldIb.Source == "" && oldIb.Protocol == newIb.Protocol && oldIb.Port == newIb.Port {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				http.Error(w, chain.ValidateStandaloneProtocol(newIb.Protocol).Error(), http.StatusBadRequest)
+				return
+			}
+		}
+
 		// Preserve existing generated credentials if port and protocol match
 		for _, oldIb := range info.Inbounds {
 			if oldIb.Protocol == newIb.Protocol && oldIb.Port == newIb.Port {

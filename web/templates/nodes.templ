@@ -326,12 +326,10 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									<select name="proto" class="select select-bordered select-sm" onchange="filterPresetsForRow(this)">
 										<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 										<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-										<option value="tuic">{ i18n.T(ctx, "TUIC v5") }</option>
 										<option value="vless-reality">{ i18n.T(ctx, "VLESS Reality") }</option>
 										<option value="shadowsocks">{ i18n.T(ctx, "Shadowsocks") }</option>
 										<option value="trojan">{ i18n.T(ctx, "Trojan") }</option>
 										<option value="vmess">{ i18n.T(ctx, "VMess") }</option>
-										<option value="hysteria2">{ i18n.T(ctx, "Hysteria2") }</option>
 									</select>
 								</div>
 								<div class="form-control">
@@ -379,12 +377,16 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									<select name={ templ.KV("proto", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" } onchange="filterPresetsForRow(this)">
 										<option value="telemt" if ib.Protocol == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 									<option value="awg" if ib.Protocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-										<option value="tuic" if ib.Protocol == "tuic" { selected }>{ i18n.T(ctx, "TUIC v5") }</option>
+										if ib.Protocol == "tuic" {
+											<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused)") }</option>
+										}
 										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
 										<option value="shadowsocks" if ib.Protocol == "shadowsocks" { selected }>{ i18n.T(ctx, "Shadowsocks") }</option>
 										<option value="trojan" if ib.Protocol == "trojan" { selected }>{ i18n.T(ctx, "Trojan") }</option>
 										<option value="vmess" if ib.Protocol == "vmess" { selected }>{ i18n.T(ctx, "VMess") }</option>
-										<option value="hysteria2" if ib.Protocol == "hysteria2" { selected }>{ i18n.T(ctx, "Hysteria2") }</option>
+										if ib.Protocol == "hysteria2" {
+											<option value="hysteria2" selected disabled>{ i18n.T(ctx, "Hysteria2 (paused)") }</option>
+										}
 									</select>
 								</div>
 								<div class="form-control">
@@ -449,12 +451,10 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 					<select name="proto" class="select select-bordered select-sm" onchange="filterPresetsForRow(this)">
 						<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 						<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-						<option value="tuic">{ i18n.T(ctx, "TUIC v5") }</option>
 						<option value="vless-reality">{ i18n.T(ctx, "VLESS Reality") }</option>
 						<option value="shadowsocks">{ i18n.T(ctx, "Shadowsocks") }</option>
 						<option value="trojan">{ i18n.T(ctx, "Trojan") }</option>
 						<option value="vmess">{ i18n.T(ctx, "VMess") }</option>
-						<option value="hysteria2">{ i18n.T(ctx, "Hysteria2") }</option>
 					</select>
 				</div>
 				<div class="form-control">

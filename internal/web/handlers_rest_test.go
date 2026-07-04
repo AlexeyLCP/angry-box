@@ -10,17 +10,71 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
 // TestHandler_UpdateChain verifies a chain's strategy/transport can be updated.
+// Uses an allowed user protocol (vless-reality) — TUIC/Hysteria2 are frozen for
+// NEW selection (internal/chain/frozen.go), so switching to them is rejected.
 func TestHandler_UpdateChain(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
 	ts.post("/ui/chains", url.Values{"name": {"chain-U"}, "nodes": {"n1"}})
-	form := url.Values{"strategy": {"random"}, "transport": {"reality"}, "user_protocol": {"tuic"}}
+	form := url.Values{"strategy": {"random"}, "transport": {"reality"}, "user_protocol": {"vless-reality"}}
 	w := ts.post("/ui/chains/chain-U/edit", form)
 	ts.assertStatus(w, http.StatusOK)
 	ts.assertContains(w, "chain-U")
+}
+
+// TestHandler_UpdateChain_PreservedFrozenProtocol verifies that an existing
+// chain using a paused user protocol (TUIC) can still be re-saved — the
+// disabled <option> in EditChainForm is not a successful form control, so the
+// handler receives an empty user_protocol and must keep the frozen value
+// (AGENTS.md: existing TUIC/Hysteria2 chains "may remain for display/edit").
+func TestHandler_UpdateChain_PreservedFrozenProtocol(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	// Create directly with a frozen protocol (bypassing the handler guard via
+	// the store) to simulate a legacy chain created before the freeze.
+	st := chain.NewStore(ts.storePath)
+	if err := st.SaveChain(&model.Chain{
+		Name:         "chain-frozen",
+		Nodes:        []model.ChainNode{{ID: "n1", Addr: "1.1.1.1:22"}},
+		Strategy:     model.StrategyURLTest,
+		Transport:    model.TransportXHTTP,
+		UserProtocol: model.UserProtocolTUIC,
+	}); err != nil {
+		t.Fatalf("SaveChain: %v", err)
+	}
+	// Edit WITHOUT sending user_protocol (as the disabled option would) and
+	// WITHOUT changing transport — only strategy. Must succeed and preserve TUIC.
+	form := url.Values{"strategy": {"failover"}}
+	w := ts.post("/ui/chains/chain-frozen/edit", form)
+	ts.assertStatus(w, http.StatusOK)
+	c, err := st.GetChain("chain-frozen")
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	if c.UserProtocol != model.UserProtocolTUIC {
+		t.Errorf("frozen user protocol not preserved: got %q, want %q", c.UserProtocol, model.UserProtocolTUIC)
+	}
+	if c.Strategy != model.StrategyFailover {
+		t.Errorf("strategy not updated: got %q, want %q", c.Strategy, model.StrategyFailover)
+	}
+}
+
+// TestHandler_UpdateChain_RejectsSwitchToFrozen verifies that switching a
+// non-frozen chain TO a frozen user protocol (TUIC) is rejected with 400.
+func TestHandler_UpdateChain_RejectsSwitchToFrozen(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	ts.post("/ui/chains", url.Values{"name": {"chain-sw"}, "nodes": {"n1"}})
+	form := url.Values{"strategy": {"urltest"}, "user_protocol": {"tuic"}}
+	w := ts.post("/ui/chains/chain-sw/edit", form)
+	ts.assertStatus(w, http.StatusBadRequest)
+	ts.assertContains(w, "TUIC is paused")
 }
 
 // TestHandler_UpdateChain_NotFound verifies updating a missing chain 404s.

@@ -147,7 +147,6 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 							<option value="xhttp" selected>{ i18n.T(ctx, "XHTTP (max obfuscation, recommended)") }</option>
 							<option value="reality">{ i18n.T(ctx, "Reality + XHTTP (max obfuscation)") }</option>
 							<option value="awg">{ i18n.T(ctx, "AWG / AmneziaWG (encrypted tunnel)") }</option>
-							<option value="hysteria2">{ i18n.T(ctx, "Hysteria2 (max obfuscation, QUIC)") }</option>
 						</select>
 					</div>
 
@@ -156,7 +155,6 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 						<select name="user_protocol" class="select select-bordered">
 							<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 							<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-							<option value="tuic">{ i18n.T(ctx, "TUIC v5") }</option>
 							<option value="vless-reality">{ i18n.T(ctx, "VLESS + Reality") }</option>
 						</select>
 					</div>
@@ -233,7 +231,9 @@ templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []str
 							<option value="xhttp" if c.Transport == "xhttp" { selected }>{ i18n.T(ctx, "XHTTP (max obfuscation, recommended)") }</option>
 							<option value="reality" if c.Transport == "reality" { selected }>{ i18n.T(ctx, "Reality + XHTTP (max obfuscation)") }</option>
 							<option value="awg" if c.Transport == "awg" { selected }>{ i18n.T(ctx, "AWG / AmneziaWG (encrypted tunnel)") }</option>
-							<option value="hysteria2" if c.Transport == "hysteria2" { selected }>{ i18n.T(ctx, "Hysteria2 (max obfuscation, QUIC)") }</option>
+							if c.Transport == "hysteria2" {
+								<option value="hysteria2" selected disabled>{ i18n.T(ctx, "Hysteria2 (paused — QUIC/TLS)") }</option>
+							}
 						</select>
 					</div>
 
@@ -242,7 +242,9 @@ templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []str
 						<select name="user_protocol" class="select select-bordered">
 							<option value="telemt" if c.UserProtocol == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 							<option value="awg" if c.UserProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-							<option value="tuic" if c.UserProtocol == "tuic" { selected }>{ i18n.T(ctx, "TUIC v5") }</option>
+							if c.UserProtocol == "tuic" {
+								<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused — QUIC/TLS)") }</option>
+							}
 							<option value="vless-reality" if c.UserProtocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS + Reality") }</option>
 						</select>
 					</div>

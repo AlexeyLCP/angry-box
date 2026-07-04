@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
@@ -131,7 +132,13 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if intervalStr := strings.TrimSpace(r.FormValue("metrics_interval")); intervalStr != "" {
 		settings.MetricsInterval, _ = strconv.Atoi(intervalStr)
 	}
-	settings.DefaultProtocol = strings.TrimSpace(r.FormValue("default_protocol"))
+	if dp := strings.TrimSpace(r.FormValue("default_protocol")); dp != "" {
+		if err := chain.ValidateChainUserProtocol(model.UserProtocol(dp)); err != nil && settings.DefaultProtocol != dp {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		settings.DefaultProtocol = dp
+	}
 
 	// SSH keys
 	keyNames := r.Form["ssh_key_name"]

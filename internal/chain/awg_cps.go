@@ -467,6 +467,8 @@ func EnsureChainAWGMaterial(c *model.Chain, preset ConnectionPreset) {
 // mimicryQuicLive is the AWGCPSMimicry value that selects the live QUIC capture
 // path in EnsureChainAWGMaterial (vs the synthesized "quic"/"sip"/"dns" paths).
 // Set together with AWGCPSCaptureDomain on the chain to enable live capture.
+// Note: this is UDP/QUIC capture (CaptureQUICSignature), NOT plain TCP TLS
+// capture — the latter is unsupported for AWG (see docs/PROGRESS.md §0.7).
 const mimicryQuicLive = "quic-live"
 
 // ChainAWGObfsMaterial reconstructs the persisted AWGObfsMaterial from a chain.

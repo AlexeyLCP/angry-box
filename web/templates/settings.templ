@@ -98,7 +98,9 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 						<label class="label"><span class="label-text">{ i18n.T(ctx, "Default Protocol") }</span></label>
 						<select name="default_protocol" class="select select-bordered max-w-sm">
 							<option value="awg" if settings.DefaultProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-							<option value="tuic" if settings.DefaultProtocol == "tuic" { selected }>{ i18n.T(ctx, "TUIC v5") }</option>
+							if settings.DefaultProtocol == "tuic" {
+								<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused — QUIC/TLS)") }</option>
+							}
 							<option value="vless-reality" if settings.DefaultProtocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
 						</select>
 					</div>

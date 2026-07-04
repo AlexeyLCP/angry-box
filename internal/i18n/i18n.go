@@ -368,6 +368,12 @@ var locales = map[string]map[string]string{
 		"Reality + XHTTP (max obfuscation)": "Reality + XHTTP (макс. маскировка)",
 		"AWG / AmneziaWG (encrypted tunnel)": "AWG / AmneziaWG (зашифрованный туннель)",
 		"Hysteria2 (max obfuscation, QUIC)": "Hysteria2 (макс. маскировка, QUIC)",
+		"Hysteria2 (paused — QUIC/TLS)": "Hysteria2 (на паузе — QUIC/TLS)",
+		"Hysteria2 (paused)": "Hysteria2 (на паузе)",
+		"TUIC v5 (paused — QUIC/TLS)": "TUIC v5 (на паузе — QUIC/TLS)",
+		"TUIC v5 (paused)": "TUIC v5 (на паузе)",
+		"TUIC v5 — UUID (paused)": "TUIC v5 — UUID (на паузе)",
+		"Hysteria2 — Password/Key (paused)": "Hysteria2 — Пароль/Ключ (на паузе)",
 		"Chain Name": "Имя цепочки",
 		"Create Link": "Создать связь",
 
