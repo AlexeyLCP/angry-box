@@ -1,0 +1,92 @@
+# angry-box release builder — automates the cross-build + .ipk packaging +
+# GitHub release upload that was previously done by hand. Triggered by pushing
+# a v* tag. Produces the same artifact set as the manual v0.2.5 release:
+#   - angry-box-<ver>-linux-amd64.tar.gz
+#   - angry-box-<ver>-linux-arm64.tar.gz
+#   - angry-box-<ver>-linux-armv7.tar.gz
+#   - angry-box-<ver>-keenetic-mipsel.tar.gz
+#   - angry-box-<ver>-windows-amd64.zip
+#   - angry-box_<ver>_mipsel_24kc.ipk
+#   - angry-box_<ver>_aarch64_cortex-a53.ipk
+#   - checksums-sha256.txt
+# The tarballs carry the binary renamed to `angry-box` inside a version-named
+# subdirectory (the layout scripts/install.sh expects).
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # needed by softprops/action-gh-release to create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest # has `ar`, GNU `tar`, `gzip` (required by build-opkg.sh)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags so `git describe --tags` → the pushed tag
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ
+        run: |
+          templ generate ./web/templates
+          cd web/templates
+          for f in *_templ.go; do
+            awk 'BEGIN{seen=0} /^import "github.com\/a-h\/templ"$/ {if(++seen>1) next} {print}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+          cd ../..
+
+      - name: Cross-build binaries
+        run: make build-all
+        # Produces dist/angry-box-{linux-amd64,linux-arm64,linux-armv7,keenetic-mipsel,windows-amd64.exe}
+        # with -ldflags injecting version=$(git describe) + commit + date.
+
+      - name: Build .ipk packages
+        run: make build-all-opkg
+        # Produces dist/angry-box_$(VERSION)_mipsel_24kc.ipk + _aarch64_cortex-a53.ipk
+
+      - name: Package release archives
+        run: |
+          # VERSION here mirrors Makefile: git describe on the tag → bare "vX.Y.Z".
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+          mkdir -p release
+          # Each tarball: angry-box-<ver>-<target>.tar.gz containing a subdir
+          # angry-box-<ver>-<target>/angry-box (the layout install.sh expects).
+          for tgt in linux-amd64 linux-arm64 linux-armv7 keenetic-mipsel; do
+            bin="dist/angry-box-${tgt}"
+            [ -f "$bin" ] || { echo "missing $bin"; exit 1; }
+            subdir="angry-box-${VERSION}-${tgt}"
+            rm -rf "release/$subdir"
+            mkdir -p "release/$subdir"
+            cp "$bin" "release/$subdir/angry-box"
+            tar -C release -czf "release/angry-box-${VERSION}-${tgt}.tar.gz" "$subdir"
+          done
+          # Windows: zip the .exe (no rename — Windows users run the .exe directly).
+          ( cd dist && zip -j "../release/angry-box-${VERSION}-windows-amd64.zip" angry-box-windows-amd64.exe )
+          # .ipk packages keep their build-opkg.sh naming — copy as-is.
+          cp dist/*.ipk release/
+          # Checksums over everything that gets uploaded.
+          ( cd release && sha256sum *.tar.gz *.zip *.ipk > checksums-sha256.txt )
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Use the tag's own message; fall back to CHANGELOG if the tag has no body.
+          body_path: CHANGELOG.md
+          files: |
+            release/angry-box-*.tar.gz
+            release/angry-box-*.zip
+            release/*.ipk
+            release/checksums-sha256.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

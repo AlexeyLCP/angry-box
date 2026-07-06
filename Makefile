@@ -155,73 +155,60 @@ version:
 
 # ==================== opkg / .ipk packaging (for Keenetic + OpenWRT) ====================
 # These targets produce installable .ipk packages for real router users.
-# The packaging logic lives entirely in scripts/build-opkg.sh (self-contained).
-# Requires a previously cross-built binary (see build-cross or CI).
+# The packaging logic lives entirely in scripts/build-opkg.sh (self-contained,
+# signature: <binary> <arch> <version> <outdir>). Requires a previously
+# cross-built binary (see build-* targets below or CI).
 
+# Build proper .ipk package for Keenetic / Entware (mipsel_24kc). GOMIPS=
+# softfloat is required for Keenetic MIPS soft-float targets (the binary would
+# SIGILL on hard-float).
 .PHONY: build-keenetic-opkg
-build-keenetic-opkg: build
-	@echo "==> Building Keenetic (mipsel_24kc) .ipk ..."
-	@mkdir -p release
-	@export PATH="$$HOME/.local/go/bin:$$PATH"; \
-	GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0 \
-	go build -trimpath $(LDFLAGS) -o /tmp/angry-box-mipsel $(CMD_DIR)
-	@./scripts/build-opkg.sh /tmp/angry-box-mipsel mipsel_24kc $(VERSION) ./release
-	@rm -f /tmp/angry-box-mipsel
-	@echo "    Keenetic .ipk ready in ./release/"
+build-keenetic-opkg: build-keenetic-mipsel
+	@echo "==> Building Keenetic (mipsel_24kc) .ipk package..."
+	@mkdir -p dist
+	@./scripts/build-opkg.sh dist/angry-box-keenetic-mipsel mipsel_24kc $(VERSION) dist
+	@echo "==> Keenetic .ipk ready in dist/"
 
+# arm64 OpenWRT / Entware .ipk (aarch64_cortex-a53).
 .PHONY: build-arm64-opkg
-build-arm64-opkg: build
-	@echo "==> Building OpenWRT aarch64 .ipk ..."
-	@mkdir -p release
-	@export PATH="$$HOME/.local/go/bin:$$PATH"; \
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-	go build -trimpath $(LDFLAGS) -o /tmp/angry-box-arm64 $(CMD_DIR)
-	@./scripts/build-opkg.sh /tmp/angry-box-arm64 aarch64_cortex-a53 $(VERSION) ./release
-	@rm -f /tmp/angry-box-arm64
-	@echo "    aarch64 .ipk ready in ./release/"
+build-arm64-opkg: build-linux-arm64
+	@echo "==> Building arm64 (aarch64_cortex-a53) .ipk package..."
+	@mkdir -p dist
+	@./scripts/build-opkg.sh dist/angry-box-linux-arm64 aarch64_cortex-a53 $(VERSION) dist
+	@echo "==> arm64 .ipk ready in dist/"
 
 .PHONY: build-all-opkg
 build-all-opkg: build-keenetic-opkg build-arm64-opkg
-	@echo "==> All router .ipk packages built in ./release/"
+	@echo "==> All router .ipk packages built in dist/"
 	@echo "commit:  $(COMMIT)"
 	@echo "date:    $(DATE)"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Cross-compilation targets (CGO disabled for simplicity and portability)
+# Cross-compilation targets (CGO disabled for simplicity and portability).
+# All output to dist/. -trimpath strips local paths from the binary.
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: build-linux-amd64
 build-linux-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/angry-box-linux-amd64 $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath $(LDFLAGS) -o dist/angry-box-linux-amd64 $(CMD_DIR)
 
 .PHONY: build-linux-arm64
 build-linux-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/angry-box-linux-arm64 $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath $(LDFLAGS) -o dist/angry-box-linux-arm64 $(CMD_DIR)
 
 .PHONY: build-linux-armv7
 build-linux-armv7:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(LDFLAGS) -o dist/angry-box-linux-armv7 $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath $(LDFLAGS) -o dist/angry-box-linux-armv7 $(CMD_DIR)
 
-# Keenetic MIPS (mipsel)
+# Keenetic MIPS (mipsel) — GOMIPS=softfloat for Keenetic soft-float targets.
 .PHONY: build-keenetic-mipsel
 build-keenetic-mipsel:
-	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle go build $(LDFLAGS) -o dist/angry-box-keenetic-mipsel $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath $(LDFLAGS) -o dist/angry-box-keenetic-mipsel $(CMD_DIR)
 
-# Build proper .ipk package for Keenetic / Entware (mipsel)
-.PHONY: build-keenetic-opkg
-build-keenetic-opkg: build-keenetic-mipsel
-	@echo "==> Building Keenetic .ipk package..."
-	@mkdir -p dist
-	@VERSION=$(VERSION) ./scripts/build-keenetic-opkg.sh dist/angry-box-keenetic-mipsel $(VERSION) dist
-	@echo "==> Keenetic .ipk package ready in dist/"
-
-# arm64 OpenWRT / Entware .ipk
-.PHONY: build-arm64-opkg
-build-arm64-opkg: build-linux-arm64
-	@echo "==> Building arm64 .ipk package..."
-	@mkdir -p dist
-	@VERSION=$(VERSION) ./scripts/build-opkg.sh dist/angry-box-linux-arm64 $(VERSION) aarch64_cortex-a53 dist
-	@echo "==> arm64 .ipk package ready in dist/"
+# Windows amd64 (for operators running the orchestrator on Windows).
+.PHONY: build-windows-amd64
+build-windows-amd64:
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath $(LDFLAGS) -o dist/angry-box-windows-amd64.exe $(CMD_DIR)
 
 .PHONY: build-all
 build-all:
@@ -230,4 +217,5 @@ build-all:
 	$(MAKE) build-linux-arm64
 	$(MAKE) build-linux-armv7
 	$(MAKE) build-keenetic-mipsel
+	$(MAKE) build-windows-amd64
 	@echo "==> All cross builds complete in dist/"
