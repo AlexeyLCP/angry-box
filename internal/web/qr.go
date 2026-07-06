@@ -27,3 +27,8 @@ func (s *Server) handleQRImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Write(png)
 }
+// registerQRRoutes wires the QR image endpoint (PNG render of a share-link QR
+// code). Single route. CTO-review §4: split out of server.go Register.
+func (s *Server) registerQRRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/qr-image", s.auth(s.handleQRImage))
+}

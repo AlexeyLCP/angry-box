@@ -218,3 +218,12 @@ func truncForDisplay(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+// registerMiscRoutes wires the cross-resource status/audit/deploy-status
+// endpoints + the per-host liveness probe (host-status). CTO-review §4: split
+// out of server.go Register.
+func (s *Server) registerMiscRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/hosts/{id}/status", s.auth(s.handleHostStatus))
+	mux.HandleFunc("GET /ui/status", s.auth(s.handleStatus))
+	mux.HandleFunc("GET /ui/audit", s.auth(s.handleAudit))
+	mux.HandleFunc("GET /ui/deploy-status", s.auth(s.handleDeployStatus))
+}

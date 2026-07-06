@@ -172,7 +172,7 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
-	// Static files (CSS, JS, images) — from disk in dev, from embed in prod
+	// Static files (CSS, JS, images) — from disk in dev, from embed in prod.
 	staticFS, err := s.staticFS()
 	if err != nil {
 		log.Printf("WARNING: static files unavailable: %v", err)
@@ -180,98 +180,25 @@ func (s *Server) Register(mux *http.ServeMux) {
 		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	}
 
-	mux.HandleFunc("GET /ui", s.auth(s.handleDashboard))
+	// Root redirect → dashboard. (The only non-resource route kept here.)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui", http.StatusSeeOther)
 	})
 
-	// Dashboard stats partial (HTMX, used by the dashboard template).
-	mux.HandleFunc("GET /ui/dashboard/stats", s.auth(s.handleDashboardStatsHTML))
-
-	// Hosts (kept for backward compat, redirect to nodes). The status endpoint
-	// is used by node/chain tables to poll per-host liveness.
-	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
-	mux.HandleFunc("GET /ui/hosts/{id}/status", s.auth(s.handleHostStatus))
-
-	// Nodes (new CRUD)
-	mux.HandleFunc("GET /ui/nodes", s.auth(s.handleNodes))
-	mux.HandleFunc("GET /ui/nodes/{id}/edit", s.auth(s.handleEditNodeForm))
-	mux.HandleFunc("POST /ui/nodes/{id}/edit", s.auth(s.handleUpdateNode))
-	mux.HandleFunc("DELETE /ui/nodes/{id}", s.auth(s.handleDeleteNode))
-	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.auth(s.handleCaptureNode))
-	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.auth(s.handleNodeCaptureForm))
-	mux.HandleFunc("POST /ui/nodes/{id}/test", s.auth(s.handleTestNodeConnection))
-	mux.HandleFunc("POST /ui/nodes/{id}/trust", s.auth(s.handleTrustHostKey))
-	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
-	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
-	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
-
-	// Takeover (detect existing VPN → convert → cutover → rollback on failure)
-	mux.HandleFunc("GET /ui/nodes/{id}/detect-vpn", s.auth(s.handleDetectVPN))
-	mux.HandleFunc("POST /ui/nodes/{id}/takeover", s.auth(s.handleTakeover))
-
-	// Chains (existing)
-	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
-	mux.HandleFunc("POST /ui/chains", s.auth(s.handleCreateChain))
-	mux.HandleFunc("POST /ui/chains/capture-preview", s.auth(s.handleCaptureQUICPreview))
-	mux.HandleFunc("DELETE /ui/chains/{name}", s.auth(s.handleDeleteChain))
-	mux.HandleFunc("POST /ui/chains/{name}/apply", s.auth(s.handleApplyChain))
-	mux.HandleFunc("GET /ui/chains/new", s.auth(s.handleNewChainForm))
-	mux.HandleFunc("GET /ui/chains/{name}/edit", s.auth(s.handleEditChainForm))
-	mux.HandleFunc("POST /ui/chains/{name}/edit", s.auth(s.handleUpdateChain))
-
-	// Spider Web (visual chain editor)
-	mux.HandleFunc("GET /ui/spider", s.auth(s.handleSpiderWeb))
-	mux.HandleFunc("POST /ui/spider/links", s.auth(s.handleCreateSpiderLink))
-	mux.HandleFunc("DELETE /ui/spider/links/{id}", s.auth(s.handleDeleteSpiderLink))
-	mux.HandleFunc("POST /ui/spider/nodes/{id}/position", s.auth(s.handleSaveNodePosition))
-	mux.HandleFunc("POST /ui/spider/apply/{name}", s.auth(s.handleApplyChain))
-
-	// Users
-	mux.HandleFunc("GET /ui/users", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/ui/clients", http.StatusMovedPermanently)
-	})
-	mux.HandleFunc("POST /ui/users", s.auth(s.handleCreateUser))
-	mux.HandleFunc("GET /ui/users/new", s.auth(s.handleNewUserForm))
-	mux.HandleFunc("GET /ui/users/{id}/edit", s.auth(s.handleEditUserForm))
-	mux.HandleFunc("POST /ui/users/{id}/edit", s.auth(s.handleUpdateUser))
-	mux.HandleFunc("DELETE /ui/users/{id}", s.auth(s.handleDeleteUser))
-	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
-	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
-	mux.HandleFunc("POST /ui/users/generate-mtproxy-secret", s.auth(s.handleGenerateMTProxySecret))
-	mux.HandleFunc("GET /ui/qr-image", s.auth(s.handleQRImage))
-
-	// Settings
-	mux.HandleFunc("GET /ui/settings", s.auth(s.handleSettings))
-	mux.HandleFunc("POST /ui/settings", s.auth(s.handleSaveSettings))
-	// SSH Keys management
-	mux.HandleFunc("POST /ui/settings/ssh-keys", s.auth(s.handleAddSSHKey))
-	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.auth(s.handleDeleteSSHKey))
-	mux.HandleFunc("POST /ui/settings/default-key", s.auth(s.handleSetDefaultKey))
-	mux.HandleFunc("POST /ui/settings/ssh-keys/{id}/test", s.auth(s.handleTestKey))
-	mux.HandleFunc("POST /ui/settings/ssh-keys/import-system", s.auth(s.handleImportSystemKey))
-	mux.HandleFunc("GET /ui/settings/ssh-keys/export", s.auth(s.handleExportKeys))
-	mux.HandleFunc("POST /ui/settings/ssh-keys/import", s.auth(s.handleImportKeys))
-
-	// Status
-	mux.HandleFunc("GET /ui/status", s.auth(s.handleStatus))
-
-	// Audit log
-	mux.HandleFunc("GET /ui/audit", s.auth(s.handleAudit))
-
-	// Deploy status (pending-changes)
-	mux.HandleFunc("GET /ui/deploy-status", s.auth(s.handleDeployStatus))
-
-	// Unified clients page
-	mux.HandleFunc("GET /ui/clients", s.auth(s.handleClients))
-
-	// Presets — custom obfuscation preset CRUD (replaces the dead Profiles page).
-	mux.HandleFunc("GET /ui/presets", s.auth(s.handlePresets))
-	mux.HandleFunc("POST /ui/presets", s.auth(s.handleCreatePreset))
-	mux.HandleFunc("GET /ui/presets/new", s.auth(s.handleNewPresetForm))
-	mux.HandleFunc("GET /ui/presets/{name}/edit", s.auth(s.handleEditPresetForm))
-	mux.HandleFunc("POST /ui/presets/{name}/edit", s.auth(s.handleUpdatePreset))
-	mux.HandleFunc("DELETE /ui/presets/{name}", s.auth(s.handleDeletePreset))
+	// Resource-scoped route registrations (CTO-review §4: split out of the old
+	// ~60-route monolith). Each register*Routes method lives next to its
+	// handlers in the resource file.
+	s.registerDashboardRoutes(mux)
+	s.registerNodeRoutes(mux)
+	s.registerTakeoverRoutes(mux)
+	s.registerChainRoutes(mux)
+	s.registerSpiderRoutes(mux)
+	s.registerUserRoutes(mux)
+	s.registerQRRoutes(mux)
+	s.registerSettingsRoutes(mux)
+	s.registerMiscRoutes(mux)
+	s.registerClientRoutes(mux)
+	s.registerPresetRoutes(mux)
 }
 
 func (s *Server) store() *chain.Store { return chain.NewStore(s.storePath) }

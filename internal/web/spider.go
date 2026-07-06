@@ -245,3 +245,13 @@ func indexOfChainNode(nodes []model.ChainNode, nodeID string) int {
 	}
 	return -1
 }
+// registerSpiderRoutes wires the visual chain editor (spider web). The
+// /ui/spider/apply/{name} path reuses handleApplyChain (chains.go) — registered
+// here by path. CTO-review §4: split out of server.go Register.
+func (s *Server) registerSpiderRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/spider", s.auth(s.handleSpiderWeb))
+	mux.HandleFunc("POST /ui/spider/links", s.auth(s.handleCreateSpiderLink))
+	mux.HandleFunc("DELETE /ui/spider/links/{id}", s.auth(s.handleDeleteSpiderLink))
+	mux.HandleFunc("POST /ui/spider/nodes/{id}/position", s.auth(s.handleSaveNodePosition))
+	mux.HandleFunc("POST /ui/spider/apply/{name}", s.auth(s.handleApplyChain))
+}

@@ -689,3 +689,19 @@ func (s *Server) handleGenerateMTProxySecret(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<input type="text" name="mtproxy_secret" class="input input-bordered join-item font-mono" value="%s" maxlength="32" />`, secret)
 }
+// registerUserRoutes wires every user-scoped route (CRUD + config + qr + the
+// MTProxy secret generator). The legacy /ui/users GET redirects to the unified
+// /ui/clients page. The /ui/qr-image route is in qr.go. CTO-review §4.
+func (s *Server) registerUserRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/users", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/clients", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("POST /ui/users", s.auth(s.handleCreateUser))
+	mux.HandleFunc("GET /ui/users/new", s.auth(s.handleNewUserForm))
+	mux.HandleFunc("GET /ui/users/{id}/edit", s.auth(s.handleEditUserForm))
+	mux.HandleFunc("POST /ui/users/{id}/edit", s.auth(s.handleUpdateUser))
+	mux.HandleFunc("DELETE /ui/users/{id}", s.auth(s.handleDeleteUser))
+	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
+	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
+	mux.HandleFunc("POST /ui/users/generate-mtproxy-secret", s.auth(s.handleGenerateMTProxySecret))
+}

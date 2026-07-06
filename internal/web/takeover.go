@@ -91,3 +91,10 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 	}
 	s.renderContent(w, r, i18n.T(r.Context(), "Takeover result"), &simpleHTML{html: b.String()})
 }
+// registerTakeoverRoutes wires the takeover flow (detect existing VPN →
+// convert → cutover). Node-path routes whose handlers live in takeover.go.
+// CTO-review §4: split out of server.go Register.
+func (s *Server) registerTakeoverRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/nodes/{id}/detect-vpn", s.auth(s.handleDetectVPN))
+	mux.HandleFunc("POST /ui/nodes/{id}/takeover", s.auth(s.handleTakeover))
+}

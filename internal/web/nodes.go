@@ -628,3 +628,23 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	chain.ScheduleAutoApply(info.ID, "inbounds update")
 	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">` + i18n.T(r.Context(), "Inbounds saved.") + `</div>`})
 }
+// registerNodeRoutes wires every node-scoped route (CRUD + capture + test +
+// inbounds + apply) onto the mux. Trust-host-key lives in dashboard.go (the
+// handler is there); host-status lives in misc.go. Grouped by path prefix
+// /ui/nodes and /ui/hosts (the legacy alias). CTO-review §4: split out of
+// server.go Register (~60 routes in one method).
+func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/hosts", s.auth(s.handleNodes))
+	mux.HandleFunc("GET /ui/nodes", s.auth(s.handleNodes))
+	mux.HandleFunc("GET /ui/nodes/{id}/edit", s.auth(s.handleEditNodeForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/edit", s.auth(s.handleUpdateNode))
+	mux.HandleFunc("DELETE /ui/nodes/{id}", s.auth(s.handleDeleteNode))
+	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.auth(s.handleCaptureNode))
+	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.auth(s.handleNodeCaptureForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/test", s.auth(s.handleTestNodeConnection))
+	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
+	// apply is a node-path route but the handler shares chain apply logic —
+	// registered here by path, handler stays in chains.go.
+	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
+}

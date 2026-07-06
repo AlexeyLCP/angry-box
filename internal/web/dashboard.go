@@ -107,3 +107,12 @@ func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request
 	}
 	s.render(w, r, templates.StatsCards(stats))
 }
+// registerDashboardRoutes wires the dashboard + the dashboard stats partial
+// (HTMX) + the trust-host-key POST. trust-host-key is a node-path route but the
+// handler lives here; registered here to keep handler+registration together.
+// CTO-review §4: split out of server.go Register.
+func (s *Server) registerDashboardRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui", s.auth(s.handleDashboard))
+	mux.HandleFunc("GET /ui/dashboard/stats", s.auth(s.handleDashboardStatsHTML))
+	mux.HandleFunc("POST /ui/nodes/{id}/trust", s.auth(s.handleTrustHostKey))
+}

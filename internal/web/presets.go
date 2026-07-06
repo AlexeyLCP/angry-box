@@ -286,3 +286,13 @@ func presetInUse(st *chain.Store, name string) string {
 	}
 	return ""
 }
+// registerPresetRoutes wires the custom obfuscation preset CRUD (replaces the
+// dead Profiles page). CTO-review §4: split out of server.go Register.
+func (s *Server) registerPresetRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/presets", s.auth(s.handlePresets))
+	mux.HandleFunc("POST /ui/presets", s.auth(s.handleCreatePreset))
+	mux.HandleFunc("GET /ui/presets/new", s.auth(s.handleNewPresetForm))
+	mux.HandleFunc("GET /ui/presets/{name}/edit", s.auth(s.handleEditPresetForm))
+	mux.HandleFunc("POST /ui/presets/{name}/edit", s.auth(s.handleUpdatePreset))
+	mux.HandleFunc("DELETE /ui/presets/{name}", s.auth(s.handleDeletePreset))
+}

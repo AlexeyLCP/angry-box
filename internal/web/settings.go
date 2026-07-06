@@ -422,3 +422,17 @@ func (s *Server) handleImportKeys(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
 		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Imported %d keys.")+`</span></div>`, added)})
 }
+// registerSettingsRoutes wires the settings page + the SSH-key management
+// sub-routes (add/delete/set-default/test/import-system/export/import).
+// CTO-review §4: split out of server.go Register.
+func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/settings", s.auth(s.handleSettings))
+	mux.HandleFunc("POST /ui/settings", s.auth(s.handleSaveSettings))
+	mux.HandleFunc("POST /ui/settings/ssh-keys", s.auth(s.handleAddSSHKey))
+	mux.HandleFunc("DELETE /ui/settings/ssh-keys/{id}", s.auth(s.handleDeleteSSHKey))
+	mux.HandleFunc("POST /ui/settings/default-key", s.auth(s.handleSetDefaultKey))
+	mux.HandleFunc("POST /ui/settings/ssh-keys/{id}/test", s.auth(s.handleTestKey))
+	mux.HandleFunc("POST /ui/settings/ssh-keys/import-system", s.auth(s.handleImportSystemKey))
+	mux.HandleFunc("GET /ui/settings/ssh-keys/export", s.auth(s.handleExportKeys))
+	mux.HandleFunc("POST /ui/settings/ssh-keys/import", s.auth(s.handleImportKeys))
+}

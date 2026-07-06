@@ -462,3 +462,16 @@ func (s *Server) handleCaptureQUICPreview(w http.ResponseWriter, r *http.Request
 	}
 	s.render(w, r, &simpleHTML{html: `<div class="alert alert-warning"><div class="text-xs space-y-1"><div><strong>` + i18n.T(r.Context(), "Capture failed, fell back to synthesized QUIC packets") + `</strong></div><div>` + escHTML(res.Warning) + `</div></div></div>`})
 }
+// registerChainRoutes wires every chain-scoped route (CRUD + apply + QUIC
+// capture-preview) onto the mux. The spider apply path (/ui/spider/apply/{name})
+// is registered in spider.go by path; handleApplyChain is shared. CTO-review §4.
+func (s *Server) registerChainRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
+	mux.HandleFunc("POST /ui/chains", s.auth(s.handleCreateChain))
+	mux.HandleFunc("POST /ui/chains/capture-preview", s.auth(s.handleCaptureQUICPreview))
+	mux.HandleFunc("DELETE /ui/chains/{name}", s.auth(s.handleDeleteChain))
+	mux.HandleFunc("POST /ui/chains/{name}/apply", s.auth(s.handleApplyChain))
+	mux.HandleFunc("GET /ui/chains/new", s.auth(s.handleNewChainForm))
+	mux.HandleFunc("GET /ui/chains/{name}/edit", s.auth(s.handleEditChainForm))
+	mux.HandleFunc("POST /ui/chains/{name}/edit", s.auth(s.handleUpdateChain))
+}

@@ -22,3 +22,8 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, templates.Users(users, chains))
 }
+// registerClientRoutes wires the unified clients page (replaces the dead
+// Profiles page). Single route. CTO-review §4: split out of server.go Register.
+func (s *Server) registerClientRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /ui/clients", s.auth(s.handleClients))
+}
