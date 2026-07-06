@@ -23,7 +23,12 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestLoad_NonExistentFileReturnsDefault(t *testing.T) {
-	cfg, err := Load("/this/path/does/not/exist/angry-box.toml")
+	// Use a platform-portable non-existent path (under the test temp dir).
+	// The previous "/this/path/does/not/exist/..." Unix-absolute path is
+	// unreliable on Windows where MSYS path translation can make it resolve
+	// to an existing file, which would trip the unknown-field strict check.
+	path := filepath.Join(t.TempDir(), "definitely-nonexistent-angry-box.toml")
+	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load non-existent file should not error: %v", err)
 	}
@@ -58,6 +63,25 @@ presets_file = "/etc/custom.json"
 	}
 	if cfg.PresetsFile != "/etc/custom.json" {
 		t.Error("presets_file not loaded")
+	}
+}
+
+// TestLoad_RejectsUnknownFields verifies the strict-mode unknown-field
+// rejection: a typo in a config key (e.g. auth_passord_hash) must surface as a
+// hard error at startup rather than being silently ignored and dropping the
+// panel to stale defaults (CTO-review §2/§8).
+func TestLoad_RejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "typo.toml")
+	content := `
+listen_addr = ":9999"
+default_backend = "sing-box"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error for unknown field 'default_backend', got nil")
 	}
 }
 

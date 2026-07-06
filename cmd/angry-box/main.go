@@ -115,7 +115,26 @@ func main() {
 		}
 	}
 
-	orchCfg, _ := config.Load(configPath) // ignore error, fall back to defaults
+	orchCfg, err := config.Load(configPath)
+	if err != nil {
+		// A config-load error (malformed TOML, unknown field, unreadable file)
+		// must NOT be silently ignored: it previously fell back to DefaultConfig
+		// without a word, so an operator's typo could silently drop
+		// auth_password_hash / listen_addr / store_file (CTO-review §8 finding).
+		// For `serve` we treat it as fatal (the panel would run on wrong
+		// defaults); for read-only CLI commands we warn but continue so a
+		// broken config does not block `version`/`status` diagnostics.
+		cmd := ""
+		if len(os.Args) > 1 {
+			cmd = os.Args[1]
+		}
+		if cmd == "serve" {
+			fmt.Fprintf(os.Stderr, "config load error (%s): %v\nFix the config file or remove it to regenerate defaults.\n", configPath, err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "WARNING: config load error (%s): %v — continuing with defaults\n", configPath, err)
+		orchCfg = config.DefaultConfig()
+	}
 
 	if orchCfg != nil && orchCfg.StoreFile != "" {
 		defaultStorePath = orchCfg.StoreFile

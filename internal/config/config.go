@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"golang.org/x/crypto/bcrypt"
@@ -58,14 +59,43 @@ func DefaultConfig() *Config {
 
 // Load loads configuration from the given path (TOML).
 // If the file does not exist, it returns DefaultConfig.
+//
+// Unknown fields are rejected: a typo in a config key (e.g. auth_passord_hash)
+// would otherwise be silently ignored and the panel could start with a stale
+// value (e.g. empty password hash → silent regeneration). DisallowUnknownFields
+// surfaces such typos as a hard error at startup so the operator fixes the
+// config instead of debugging silent fallback behaviour (CTO-review §2/§8).
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	fileExtisted := true
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		fileExtisted = false
-	} else if _, err := toml.DecodeFile(path, cfg); err != nil {
-		return nil, err
+	} else {
+		f, err := os.Open(path)
+		if err != nil {
+			// Race guard: file existed at stat but is gone now, or unreadable.
+			return nil, fmt.Errorf("config %s: %w", path, err)
+		}
+		dec := toml.NewDecoder(f)
+		md, err := dec.Decode(cfg)
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("config %s: %w", path, err)
+		}
+		// Reject unknown top-level keys: a typo in a config key (e.g.
+		// auth_passord_hash) would otherwise be silently ignored and the
+		// panel could start with a stale value (e.g. empty password hash →
+		// silent regeneration). BurntSushi/toml v1.6.0 has no
+		// DisallowUnknownFields; emulate it via MetaData.Undecoded()
+		// (CTO-review §2/§8).
+		if undec := md.Undecoded(); len(undec) > 0 {
+			names := make([]string, 0, len(undec))
+			for _, k := range undec {
+				names = append(names, k.String())
+			}
+			return nil, fmt.Errorf("config %s: unknown field(s): %s", path, strings.Join(names, ", "))
+		}
 	}
 
 	// Apply some sane fallbacks
@@ -87,16 +117,18 @@ func Load(path string) (*Config, error) {
 	// Если аутентификация включена, но пароль не задан, сгенерируем случайный.
 	if cfg.AuthEnabled && cfg.AuthPasswordHash == "" {
 		b := make([]byte, 8)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			return nil, fmt.Errorf("failed to generate admin password: %w", err)
+		}
 		randomPass := hex.EncodeToString(b)
-		
+
 		hash, err := bcrypt.GenerateFromPassword([]byte(randomPass), bcrypt.DefaultCost)
 		if err != nil {
 			return nil, fmt.Errorf("failed to hash generated password: %w", err)
 		}
 		cfg.AuthPasswordHash = string(hash)
 		needsSave = true
-		
+
 		log.Println("=========================================================")
 		log.Println("WARNING: No admin password found in config.")
 		log.Printf("Generated random password for '%s': %s\n", cfg.AuthUsername, randomPass)
@@ -105,7 +137,13 @@ func Load(path string) (*Config, error) {
 	}
 
 	if needsSave {
-		_ = cfg.Save(path)
+		// Persist the generated/normalized config. A failure here is not fatal
+		// (the panel can still run with in-memory config), but the operator must
+		// be warned — otherwise they would not know the config file is missing
+		// or unwritable (CTO-review §2 silent-failure finding).
+		if err := cfg.Save(path); err != nil {
+			log.Printf("WARNING: could not save config to %s: %v (running with in-memory config)", path, err)
+		}
 	}
 
 	return cfg, nil
