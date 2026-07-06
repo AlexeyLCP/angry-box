@@ -209,7 +209,7 @@ func (s *Store) GetHost(id string) (*model.Host, error) {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("store: host %q not found", id)
+		return nil, fmt.Errorf("store: host %q not found: %w", id, ErrHostNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: read: %w", err)
@@ -220,7 +220,7 @@ func (s *Store) GetHost(id string) (*model.Host, error) {
 			return h, nil
 		}
 	}
-	return nil, fmt.Errorf("store: host %q not found", id)
+	return nil, fmt.Errorf("store: host %q not found: %w", id, ErrHostNotFound)
 }
 
 // ListHosts returns all stored hosts.
@@ -245,7 +245,7 @@ func (s *Store) DeleteHost(id string) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		return fmt.Errorf("store: host %q not found", id)
+		return fmt.Errorf("store: host %q not found: %w", id, ErrHostNotFound)
 	}
 	if err != nil {
 		return fmt.Errorf("store: read: %w", err)
@@ -270,7 +270,7 @@ func (s *Store) DeleteHost(id string) error {
 		filtered = append(filtered, h)
 	}
 	if !found {
-		return fmt.Errorf("store: host %q not found", id)
+		return fmt.Errorf("store: host %q not found: %w", id, ErrHostNotFound)
 	}
 
 	sf.Hosts = filtered
@@ -313,7 +313,7 @@ func (s *Store) GetChain(name string) (*model.Chain, error) {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("store: chain %q not found", name)
+		return nil, fmt.Errorf("store: chain %q not found: %w", name, ErrChainNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: read: %w", err)
@@ -324,7 +324,7 @@ func (s *Store) GetChain(name string) (*model.Chain, error) {
 			return c, nil
 		}
 	}
-	return nil, fmt.Errorf("store: chain %q not found", name)
+	return nil, fmt.Errorf("store: chain %q not found: %w", name, ErrChainNotFound)
 }
 
 // ListChains returns all stored chains.
@@ -367,7 +367,7 @@ func (s *Store) DeleteChain(name string) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		return fmt.Errorf("store: chain %q not found", name)
+		return fmt.Errorf("store: chain %q not found: %w", name, ErrChainNotFound)
 	}
 	if err != nil {
 		return fmt.Errorf("store: read: %w", err)
@@ -383,7 +383,7 @@ func (s *Store) DeleteChain(name string) error {
 		filtered = append(filtered, c)
 	}
 	if !found {
-		return fmt.Errorf("store: chain %q not found", name)
+		return fmt.Errorf("store: chain %q not found: %w", name, ErrChainNotFound)
 	}
 
 	sf.Chains = filtered
@@ -475,15 +475,18 @@ func (s *Store) GetUser(id string) (*model.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("store: user %q not found: %w", id, ErrUserNotFound)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("store: read: %w", err)
 	}
 	for _, u := range sf.Users {
 		if u.ID == id {
 			return u, nil
 		}
 	}
-	return nil, fmt.Errorf("store: user %q not found", id)
+	return nil, fmt.Errorf("store: user %q not found: %w", id, ErrUserNotFound)
 }
 
 // ListUsers returns all users.
@@ -518,7 +521,7 @@ func (s *Store) DeleteUser(id string) error {
 		filtered = append(filtered, u)
 	}
 	if !found {
-		return fmt.Errorf("store: user %q not found", id)
+		return fmt.Errorf("store: user %q not found: %w", id, ErrUserNotFound)
 	}
 	sf.Users = filtered
 	return s.writeStore(sf)
