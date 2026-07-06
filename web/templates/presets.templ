@@ -1,0 +1,17 @@
+package templates
+
+import "github.com/alexeylcp/angry-box/internal/chain"
+
+// presets.templ — custom obfuscation preset CRUD UI.
+//
+// Task 5 ships minimal stubs so the handlers compile + the page-render test
+// (which asserts the body contains "Presets") passes. The full UI
+// (PresetsPage table + PresetForm modal with per-protocol fields) is Task 7.
+
+templ PresetsPage(builtins []chain.ConnectionPreset, customs []chain.ConnectionPreset) {
+	<div>Presets page (stub)</div>
+}
+
+templ PresetForm(p *chain.ConnectionPreset) {
+	<div>Preset form (stub)</div>
+}
