@@ -4,11 +4,10 @@ package web
 // and the MTProxy-aware user create flow. Task 5 of the client unification plan
 // (subproject B).
 //
-// Note on TestHandler_ClientsPage_ShowsMTProxyBadge: the Users template does not
-// yet render an MTProxy badge (Task 7 adds it), so this test asserts only that
-// the injected MTProxy user's NAME ("mtp-alice") appears in the rendered table —
-// proving the migrated user is listed on the Clients page. The badge itself is a
-// Task 7 template concern.
+// Note on TestHandler_ClientsPage_ShowsMTProxyBadge: asserts that the injected
+// MTProxy user's NAME ("mtp-alice") appears in the rendered table (proving the
+// migrated user is listed on the Clients page) AND that the "MTProxy" badge is
+// rendered next to it (Task 7 added the badge in UserRow).
 
 import (
 	"net/http"
@@ -35,9 +34,10 @@ func TestHandler_ClientsPage_ShowsMTProxyBadge(t *testing.T) {
 	_ = st.SaveUser(&model.User{ID: "m1", Name: "mtp-alice", Active: true, MTProxySecret: "83b231c9ccf32ef09f48c8f63765ab4f", MTProxyDomain: "disk.yandex.ru", MTProxyNodes: []string{"n1"}})
 	w := ts.get("/ui/clients")
 	ts.assertStatus(w, http.StatusOK)
-	// The Users template does not yet render an MTProxy badge (Task 7 adds it),
-	// so assert only that the migrated MTProxy user is listed by name.
+	// The migrated MTProxy user is listed by name, and the MTProxy badge is
+	// rendered next to it (Task 7).
 	ts.assertContains(w, "mtp-alice")
+	ts.assertContains(w, "MTProxy")
 }
 
 func TestHandler_CreateUser_WithMTProxy(t *testing.T) {

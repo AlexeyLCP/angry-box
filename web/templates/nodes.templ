@@ -331,14 +331,24 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								</div>
 								<div class="form-control col-span-2">
 									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
-									<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-										if len(users) == 0 {
-											<span class="text-xs text-base-content/50">{ i18n.T(ctx, "No users yet. ") }</span>
-											<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">{ i18n.T(ctx, "Create first user") }</a>
-										}
-										for _, u := range users {
-											<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-												<input type="checkbox" name="for_users_0" value={ u.ID } class="checkbox checkbox-xs" />
+										<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
+											if len(users) == 0 {
+												<div class="text-xs space-y-1">
+													<span class="text-base-content/50">{ i18n.T(ctx, "No clients yet. Create one in the Clients page first.") }</span>
+													<div class="flex gap-2 items-center">
+														<a href="/ui/clients" target="_blank" class="link link-primary">{ i18n.T(ctx, "Open Clients") }</a>
+														<button type="button" class="btn btn-ghost btn-xs"
+															hx-get={ fmt.Sprintf("/ui/nodes/%s/inbounds", info.ID) }
+															hx-target="#modal-container"
+															hx-swap="innerHTML">
+															{ i18n.T(ctx, "Refresh clients") }
+														</button>
+													</div>
+												</div>
+											}
+											for _, u := range users {
+												<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
+													<input type="checkbox" name="for_users_0" value={ u.ID } class="checkbox checkbox-xs" />
 												<span>{ u.Name }</span>
 											</label>
 										}
@@ -388,15 +398,25 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 								</div>
 								<div class="form-control col-span-2">
 								<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
-								<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-									if len(users) == 0 {
-										<span class="text-xs text-base-content/50">{ i18n.T(ctx, "No users yet. ") }</span>
-										<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">{ i18n.T(ctx, "Create first user") }</a>
-									}
-									for _, u := range users {
-										<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-											<input type="checkbox" name={ templ.KV(fmt.Sprintf("for_users_%d", i), ib.Source == "") } value={ u.ID } class="checkbox checkbox-xs"
-												if containsStr(ib.ForUsers, u.ID) { checked } disabled?={ ib.Source != "" } />
+									<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
+										if len(users) == 0 {
+											<div class="text-xs space-y-1">
+												<span class="text-base-content/50">{ i18n.T(ctx, "No clients yet. Create one in the Clients page first.") }</span>
+												<div class="flex gap-2 items-center">
+													<a href="/ui/clients" target="_blank" class="link link-primary">{ i18n.T(ctx, "Open Clients") }</a>
+													<button type="button" class="btn btn-ghost btn-xs"
+														hx-get={ fmt.Sprintf("/ui/nodes/%s/inbounds", info.ID) }
+														hx-target="#modal-container"
+														hx-swap="innerHTML">
+														{ i18n.T(ctx, "Refresh clients") }
+													</button>
+												</div>
+											</div>
+										}
+										for _, u := range users {
+											<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
+												<input type="checkbox" name={ templ.KV(fmt.Sprintf("for_users_%d", i), ib.Source == "") } value={ u.ID } class="checkbox checkbox-xs"
+													if containsStr(ib.ForUsers, u.ID) { checked } disabled?={ ib.Source != "" } />
 											<span>{ u.Name }</span>
 										</label>
 									}
@@ -456,14 +476,24 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 				</div>
 				<div class="form-control col-span-2">
 					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
-					<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-						if len(users) == 0 {
-							<span class="text-xs text-base-content/50">{ i18n.T(ctx, "No users yet. ") }</span>
-							<a hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML" class="link link-primary text-xs">{ i18n.T(ctx, "Create first user") }</a>
-						}
-						for _, u := range users {
-							<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-								<input type="checkbox" name="for_users" value={ u.ID } class="checkbox checkbox-xs" />
+						<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
+							if len(users) == 0 {
+								<div class="text-xs space-y-1">
+									<span class="text-base-content/50">{ i18n.T(ctx, "No clients yet. Create one in the Clients page first.") }</span>
+									<div class="flex gap-2 items-center">
+										<a href="/ui/clients" target="_blank" class="link link-primary">{ i18n.T(ctx, "Open Clients") }</a>
+										<button type="button" class="btn btn-ghost btn-xs"
+											hx-get={ fmt.Sprintf("/ui/nodes/%s/inbounds", info.ID) }
+											hx-target="#modal-container"
+											hx-swap="innerHTML">
+											{ i18n.T(ctx, "Refresh clients") }
+										</button>
+									</div>
+								</div>
+							}
+							for _, u := range users {
+								<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
+									<input type="checkbox" name="for_users" value={ u.ID } class="checkbox checkbox-xs" />
 								<span>{ u.Name }</span>
 							</label>
 						}

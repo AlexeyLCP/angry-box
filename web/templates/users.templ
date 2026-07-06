@@ -79,6 +79,9 @@ templ UserRow(u *model.User) {
 				for _, p := range u.Protocols {
 					<span class="badge badge-outline badge-xs">{ p }</span>
 				}
+				if u.MTProxySecret != "" {
+					<span class="badge badge-warning badge-xs">{ i18n.T(ctx, "MTProxy") }</span>
+				}
 			</div>
 		</td>
 		<td>
@@ -276,6 +279,48 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 					<span class="text-sm font-mono">{ c.Name } ({ fmt.Sprintf("%d %s", len(c.Nodes), i18n.T(ctx, "hops")) })</span>
 				</label>
 			}
+		</div>
+	</div>
+
+	<div class="collapse collapse-arrow border border-base-300 rounded-lg mt-2">
+		<input type="checkbox" name="mtproxy_enabled" class="peer" if u != nil && u.MTProxySecret != "" { checked } />
+		<div class="collapse-title font-medium">
+			{ i18n.T(ctx, "MTProxy (Telegram FakeTLS)") }
+		</div>
+		<div class="collapse-content space-y-3">
+			<div class="join">
+				<input type="text" name="mtproxy_secret" class="input input-bordered join-item font-mono"
+					if u != nil { value={ u.MTProxySecret } } maxlength="32" placeholder={ i18n.T(ctx, "Generate MTProxy Secret") } />
+				<button type="button" class="btn join-item"
+					hx-post="/ui/users/generate-mtproxy-secret"
+					hx-target="[name='mtproxy_secret']"
+					hx-swap="outerHTML">
+					{ i18n.T(ctx, "Generate") }
+				</button>
+			</div>
+			<div class="form-control">
+				<label class="label"><span class="label-text">{ i18n.T(ctx, "FakeTLS Domain") }</span></label>
+				<input type="text" name="mtproxy_domain" class="input input-bordered"
+					if u != nil && u.MTProxyDomain != "" { value={ u.MTProxyDomain } } else { value="disk.yandex.ru" } />
+			</div>
+			<div class="form-control">
+				<label class="label"><span class="label-text">{ i18n.T(ctx, "Order Index") }</span></label>
+				<input type="number" name="mtproxy_order_index" class="input input-bordered"
+					if u != nil && u.MTProxyOrderIndex != 0 { value={ fmt.Sprintf("%d", u.MTProxyOrderIndex) } } />
+			</div>
+			<div class="form-control">
+				<label class="label"><span class="label-text">{ i18n.T(ctx, "MTProxy Nodes") }</span></label>
+				<select name="mtproxy_nodes" multiple class="select select-bordered" size="4">
+					if len(chains) == 0 {
+						<option disabled>{ i18n.T(ctx, "Add a node first") }</option>
+					}
+					for _, c := range chains {
+						for _, n := range c.Nodes {
+							<option value={ n.ID } if u != nil && containsProtocol(u.MTProxyNodes, n.ID) { selected }>{ n.ID }</option>
+						}
+					}
+				</select>
+			</div>
 		</div>
 	</div>
 }
