@@ -31,7 +31,102 @@ type Store struct {
 
 // NewStore creates a store backed by the given JSON file.
 func NewStore(path string) *Store {
-	return &Store{path: path}
+	s := &Store{path: path}
+	s.migrateOnce()
+	return s
+}
+
+// migrateOnce runs the one-shot legacy MtproxyUser → User migration. Idempotent:
+// no-op when the store has no MtproxyUsers (already migrated or fresh). Holds
+// the lock, reads the store, migrates if needed, and writes it back.
+func (s *Store) migrateOnce() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sf, err := s.readStore()
+	if err != nil || len(sf.MtproxyUsers) == 0 {
+		return
+	}
+	if err := s.migrateMtproxyUsers(sf); err != nil {
+		return
+	}
+	_ = s.writeStore(sf)
+}
+
+// migrateMtproxyUsers converts legacy storeFile.MtproxyUsers into Users with
+// MTProxy* fields. Idempotent: no-op when MtproxyUsers is empty. Writes a
+// one-shot .bak backup before the first migration.
+func (s *Store) migrateMtproxyUsers(sf *storeFile) error {
+	if len(sf.MtproxyUsers) == 0 {
+		return nil
+	}
+	// One-shot backup (only if not already backed up this run).
+	bakPath := s.path + ".prebmigrate.bak"
+	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
+		if data, err := os.ReadFile(s.path); err == nil {
+			_ = os.WriteFile(bakPath, data, 0o600)
+		}
+	}
+	existingNames := map[string]bool{}
+	existingIDs := map[string]bool{}
+	for _, u := range sf.Users {
+		existingNames[u.Name] = true
+		existingIDs[u.ID] = true
+	}
+	for _, m := range sf.MtproxyUsers {
+		id := m.ID
+		if existingIDs[id] {
+			id = m.ID + "_mtp"
+		}
+		name := m.Name
+		if existingNames[name] {
+			name = m.Name + " (MTProxy @" + m.NodeID + ")"
+		}
+		domain := m.FakeTLSDomain
+		if domain == "" {
+			domain = "disk.yandex.ru"
+		}
+		sf.Users = append(sf.Users, &model.User{
+			ID:                id,
+			Name:              name,
+			Active:            m.Enabled,
+			CreatedAt:         m.CreatedAt,
+			MTProxySecret:     m.SecretHex,
+			MTProxyDomain:     domain,
+			MTProxyOrderIndex: m.OrderIndex,
+			MTProxyNodes:      []string{m.NodeID},
+		})
+		existingNames[name] = true
+		existingIDs[id] = true
+	}
+	sf.MtproxyUsers = nil
+	return nil
+}
+
+// ListMTProxyUsers returns all Users that have MTProxySecret set.
+func (s *Store) ListMTProxyUsers() []*model.User {
+	all, _ := s.ListUsers()
+	out := make([]*model.User, 0, len(all))
+	for _, u := range all {
+		if u.MTProxySecret != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// ListMTProxyUsersForNode returns Users whose MTProxyNodes contains nodeID.
+func (s *Store) ListMTProxyUsersForNode(nodeID string) []*model.User {
+	all, _ := s.ListUsers()
+	out := make([]*model.User, 0)
+	for _, u := range all {
+		for _, n := range u.MTProxyNodes {
+			if n == nodeID {
+				out = append(out, u)
+				break
+			}
+		}
+	}
+	return out
 }
 
 type storeFile struct {
@@ -324,6 +419,25 @@ func (s *Store) SaveUser(u *model.User) error {
 	}
 	if !replaced {
 		sf.Users = append(sf.Users, u)
+	}
+	// MTProxy secret uniqueness: reject if another user shares the same secret AND
+	// an overlapping MTProxyNode. Self (same ID on update) is allowed.
+	if u.MTProxySecret != "" && len(u.MTProxyNodes) > 0 {
+		for _, ex := range sf.Users {
+			if ex.ID == u.ID {
+				continue
+			}
+			if ex.MTProxySecret != u.MTProxySecret {
+				continue
+			}
+			for _, n := range u.MTProxyNodes {
+				for _, en := range ex.MTProxyNodes {
+					if en == n {
+						return fmt.Errorf("store: mtproxy secret already used on node %s", n)
+					}
+				}
+			}
+		}
 	}
 	return s.writeStore(sf)
 }
