@@ -19,3 +19,14 @@ import "html"
 func escHTML(s string) string {
 	return html.EscapeString(s)
 }
+
+// shortHex returns s if its length is within n bytes, else s truncated to n
+// bytes followed by an ellipsis. Used to preview long hex strings (e.g. AWG
+// CPS I1-I5 packets) inline without overflowing the UI. Byte-based truncation
+// is safe here because the inputs are ASCII hex strings.
+func shortHex(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
