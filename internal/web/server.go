@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -145,6 +146,21 @@ func (s *Server) collectAllMetrics() {
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	return BasicAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Recover from any panic in the handler chain so a single malformed
+		// request/deploy (e.g. a generator panic in cryptogen/roles) cannot
+		// crash the whole orchestrator process. The error is logged with a
+		// stack trace and a 500 is returned to the client (best-effort: if the
+		// handler already started writing the response body, the 500 status is
+		// not sent and the client sees a truncated response — but the process
+		// survives, which is the point). Without this, Go's net/http aborts
+		// only the serving goroutine, but the panic propagates and can take
+		// down the process under some logger configurations.
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic in handler %s: %v\n%s", r.URL.Path, rec, debug.Stack())
+				http.Error(w, i18n.T(r.Context(), "internal error"), http.StatusInternalServerError)
+			}
+		}()
 		settings, _ := s.store().GetSettings()
 		lang := settings.Language
 		if lang == "" {

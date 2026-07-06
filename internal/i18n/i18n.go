@@ -128,6 +128,7 @@ var locales = map[string]map[string]string{
 		"bad form": "bad form",
 		"not found": "not found",
 		"render error": "render error",
+		"internal error": "internal error",
 		"id and addr are required": "id and addr are required",
 		"save: %v": "save: %v",
 		"delete: %v": "delete: %v",
@@ -715,6 +716,7 @@ var locales = map[string]map[string]string{
 		// ui.go — additional user-facing strings
 		"bad form": "неверная форма",
 		"not found": "не найдено",
+		"internal error": "внутренняя ошибка",
 		"render error": "ошибка рендеринга",
 		"id and addr are required": "требуются id и addr",
 		"save: %v": "сохранение: %v",
