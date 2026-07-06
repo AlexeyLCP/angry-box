@@ -1046,14 +1046,14 @@ func pushConfigLocked(client ports.SSHClient, cfgContent string, useSudo bool) (
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box", useSudo)
 			if rbErr != nil {
-				// Wrap the rollback error so callers can detect deploy+rollback
-				// failure via errors.Is/As; the original check err is kept in the
-				// message for context (CTO-review: use %w to preserve the chain).
-				return "", fmt.Errorf("check failed (exit %d): %s | AND rollback failed: %w (check err: %v)", exit, stderr, rbErr, err)
+				// Rollback failed → node left in a broken state → not retry-able.
+				return "", fmt.Errorf("check failed (exit %d): %s | AND rollback failed: %v: %w", exit, stderr, rbErr, ErrRollbackFailed)
 			}
-			return "", fmt.Errorf("rolled back — check failed (exit %d): %s (check err: %w)", exit, stderr, err)
+			// Rollback succeeded → node still running old config → retry-able.
+			return "", fmt.Errorf("rolled back — check failed (exit %d): %s: %w", exit, stderr, ErrDeployFailed)
 		}
-		return "", fmt.Errorf("check failed (exit %d, no backup): %s (err: %w)", exit, stderr, err)
+		// No backup (first deploy) → nothing to roll back to → deploy-failed.
+		return "", fmt.Errorf("check failed (exit %d, no backup): %s: %w", exit, stderr, ErrDeployFailed)
 	}
 
 	// 5. Restart. No 2>&1 (that would swallow the useful stderr into stdout,
@@ -1062,11 +1062,11 @@ func pushConfigLocked(client ports.SSHClient, cfgContent string, useSudo bool) (
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, "sing-box", useSudo)
 			if rbErr != nil {
-				return "", fmt.Errorf("restart failed: %v | AND rollback failed: %w", err, rbErr)
+				return "", fmt.Errorf("restart failed: %v | AND rollback failed: %w", err, ErrRollbackFailed)
 			}
-			return "", fmt.Errorf("rolled back — restart failed: %w", err)
+			return "", fmt.Errorf("rolled back — restart failed: %v: %w", err, ErrDeployFailed)
 		}
-		return "", fmt.Errorf("restart failed (no backup): %w", err)
+		return "", fmt.Errorf("restart failed (no backup): %v: %w", err, ErrDeployFailed)
 	}
 
 	// 6. Real health-probe: is-active with a short retry (handles the brief
@@ -1078,9 +1078,10 @@ func pushConfigLocked(client ports.SSHClient, cfgContent string, useSudo bool) (
 			if rbErr := performRollback(client, configFile, backupPath, "sing-box", useSudo); rbErr != nil {
 				slog.Error("deploy: health-probe rollback also failed",
 					"file", configFile, "backup", backupPath, "err", rbErr)
+				return "", fmt.Errorf("service not active after restart: %v | AND rollback failed: %v: %w", err, rbErr, ErrRollbackFailed)
 			}
 		}
-		return "", fmt.Errorf("service not active after restart: %v", err)
+		return "", fmt.Errorf("service not active after restart: %v: %w", err, ErrDeployFailed)
 	}
 
 	// 7. Cleanup old backups.

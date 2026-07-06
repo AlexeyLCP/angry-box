@@ -116,6 +116,14 @@ func TestPushConfig_CheckFails_RollsBack(t *testing.T) {
 	if !strings.Contains(err.Error(), "rolled back") {
 		t.Errorf("got %q, want rolled back", err.Error())
 	}
+	// CTO-review §6: rollback succeeded → ErrDeployFailed (retry-able, node
+	// still running old config), NOT ErrRollbackFailed.
+	if !errors.Is(err, ErrDeployFailed) {
+		t.Errorf("got %q, want errors.Is(err, ErrDeployFailed)", err.Error())
+	}
+	if errors.Is(err, ErrRollbackFailed) {
+		t.Errorf("got %q, want !errors.Is(err, ErrRollbackFailed)", err.Error())
+	}
 	if !client.SawCommand("systemctl restart sing-box") {
 		// rollback restarts the service to restore the old config
 		t.Error("rollback did not restart the service")
