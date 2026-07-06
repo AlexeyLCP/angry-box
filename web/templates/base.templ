@@ -7,38 +7,43 @@ import (
 
 templ Base(title string, content templ.Component) {
 	<!DOCTYPE html>
-	<html lang={ i18n.Lang(ctx) } data-theme="dark">
+	<html lang={ i18n.Lang(ctx) } data-theme="tokyonight">
 	<head>
 		<script>
+			// Pre-paint theme application (prevents FOUC). Migrate old dark/light
+			// localStorage values to the Tokyo Night theme names.
 			(function(){
-				var t = localStorage.getItem('angrybox-theme') || 'dark';
+				var t = localStorage.getItem('angrybox-theme') || 'tokyonight';
+				if (t === 'dark') t = 'tokyonight';
+				else if (t === 'light') t = 'tokyonight-day';
+				var valid = ['tokyonight','tokyonight-day','tokyonight-storm'];
+				if (valid.indexOf(t) < 0) t = 'tokyonight';
 				document.documentElement.setAttribute('data-theme', t);
 			})();
 		</script>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="theme-color" content="#16161e">
+		<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg" />
 		<title>{ title } | Angry-BOX</title>
 
 		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+		<link href="/static/css/fonts.css" rel="stylesheet" />
 		<link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet" type="text/css" />
 		<script src="https://cdn.tailwindcss.com"></script>
 		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
 
 		<style>
 			html, body { overflow-x: hidden; max-width: 100vw; }
-			body { font-family: 'Inter', sans-serif; }
+			body { font-family: 'IBM Plex Sans', 'Inter', sans-serif; font-size: 14px; line-height: 1.5; }
+			.font-mono, code, pre, kbd { font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace; }
 			* { box-sizing: border-box; }
 			.sidebar-active { @apply bg-primary/20 text-primary border-r-2 border-primary; }
 			.status-online { @apply bg-success; }
 			.status-offline { @apply bg-error; }
 			.status-degraded { @apply bg-warning; }
-			
-			/* Custom Scrollbar */
-			::-webkit-scrollbar { width: 8px; height: 8px; }
-			::-webkit-scrollbar-track { background: transparent; }
-			::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
-			::-webkit-scrollbar-thumb:hover { background: #4B5563; }
 		</style>
+		<link href="/static/css/tokyo-night.css" rel="stylesheet" />
 		<link href="/static/css/app.css" rel="stylesheet" />
 	</head>
 	<body class="min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased">
@@ -89,14 +94,31 @@ templ Base(title string, content templ.Component) {
 					</div>
 					<div class="flex items-center gap-4">
 							<span class="text-[10px] text-base-content/20">PolyForm Noncommercial 1.0.0 &middot; { i18n.T(ctx, "Personal/Educational use only") }</span>
-						<div class="text-sm text-base-content/60 flex items-center gap-2">
-							<span>{ i18n.T(ctx, "Profile:") } <span class="font-mono text-primary">{ chain.GetDefaultPresetName() }</span></span>
-							<span id="connection-status" class="opacity-50">| { i18n.T(ctx, "Connected") }</span>
-							<button class="btn btn-ghost btn-circle btn-sm" onclick="toggleTheme()" aria-label={ i18n.T(ctx, "Toggle theme") } title={ i18n.T(ctx, "Toggle theme") }>
-								<svg id="ico-sun" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-								<svg id="ico-moon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-							</button>
-						</div>
+							<div class="text-sm text-base-content/60 flex items-center gap-2">
+								<span>{ i18n.T(ctx, "Profile:") } <span class="font-mono text-primary">{ chain.GetDefaultPresetName() }</span></span>
+								<span id="connection-status" class="opacity-50">| { i18n.T(ctx, "Connected") }</span>
+								<div class="dropdown dropdown-end">
+									<div tabindex="0" role="button" class="btn btn-ghost btn-circle btn-sm" aria-label={ i18n.T(ctx, "Theme") } title={ i18n.T(ctx, "Theme") }>
+										<svg id="ico-sun" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+										<svg id="ico-moon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+									</div>
+									<ul tabindex="0" class="dropdown-content z-[1000] menu p-2 shadow-lg bg-base-200 rounded-box w-52 border border-base-300">
+										<li class="menu-title text-xs">{ i18n.T(ctx, "Theme") }</li>
+										<li><button data-set-theme="tokyonight" class="theme-option">
+											<span class="theme-swatch" style="background:#1a1b26;border:1px solid #3b4261"></span>
+											{ i18n.T(ctx, "Tokyo Night") }
+										</button></li>
+										<li><button data-set-theme="tokyonight-day" class="theme-option">
+											<span class="theme-swatch" style="background:#e9e9ed;border:1px solid #b8b9c0"></span>
+											{ i18n.T(ctx, "Tokyo Night Day") }
+										</button></li>
+										<li><button data-set-theme="tokyonight-storm" class="theme-option">
+											<span class="theme-swatch" style="background:#1f2335;border:1px solid #414868"></span>
+											{ i18n.T(ctx, "Tokyo Night Storm") }
+										</button></li>
+									</ul>
+								</div>
+							</div>
 					</div>
 				</div>
 

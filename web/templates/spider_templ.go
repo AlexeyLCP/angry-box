@@ -67,7 +67,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</button></div></div><!-- SVG Canvas with pan/zoom --><div class=\"card bg-base-100 shadow overflow-hidden\"><div class=\"p-4 border-b border-base-300 flex items-center justify-between\"><div class=\"text-sm text-base-content/60\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</button></div></div><!-- SVG Canvas with pan/zoom --><div class=\"tn-card overflow-hidden\"><div class=\"p-4 border-b border-base-300 flex items-center justify-between\"><div class=\"text-sm text-base-content/60\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -284,7 +284,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div></div><!-- Add connection form --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div></div><!-- Add connection form --><div class=\"tn-card\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -530,7 +530,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			return templ_7745c5c3_Err
 		}
 		if len(links) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<div class=\"card bg-base-100 shadow\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<div class=\"tn-card\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -654,7 +654,7 @@ func SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeIn
 			return templ_7745c5c3_Err
 		}
 		if len(chains) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<div class=\"card bg-base-100 shadow\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<div class=\"tn-card\"><div class=\"card-body p-3\"><h3 class=\"font-semibold mb-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

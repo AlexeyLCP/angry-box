@@ -64,7 +64,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</button></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl\"><div class=\"w-full overflow-x-clip\"><table class=\"table w-full\"><thead class=\"text-base-content/60 text-sm\"><tr class=\"border-b border-base-content/10\"><th class=\"font-medium\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</button></div><div class=\"tn-card\"><div class=\"w-full overflow-x-clip\"><table class=\"tn-table\"><thead class=\"text-base-content/60 text-sm\"><tr class=\"border-b border-base-content/10\"><th class=\"font-medium\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

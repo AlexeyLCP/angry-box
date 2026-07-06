@@ -116,6 +116,10 @@ var locales = map[string]map[string]string{
 		"This software is licensed for personal, non-commercial, educational, and scientific use only. Any commercial use is strictly prohibited.": "This software is licensed for personal, non-commercial, educational, and scientific use only. Any commercial use is strictly prohibited.",
 		"THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND. The author assumes no responsibility for any damage, data loss, or legal consequences resulting from the use of this software.": "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND. The author assumes no responsibility for any damage, data loss, or legal consequences resulting from the use of this software.",
 		"Toggle theme": "Toggle theme",
+		"Theme": "Theme",
+		"Tokyo Night": "Tokyo Night",
+		"Tokyo Night Day": "Tokyo Night Day",
+		"Tokyo Night Storm": "Tokyo Night Storm",
 		"Click to expand": "Click to expand",
 		"Close": "Close",
 		"reset": "reset",
@@ -933,6 +937,10 @@ var locales = map[string]map[string]string{
 
 		// Previously hardcoded strings (now wrapped in i18n.T)
 		"Toggle theme": "Переключить тему",
+		"Theme": "Тема",
+		"Tokyo Night": "Tokyo Night",
+		"Tokyo Night Day": "Tokyo Night Day",
+		"Tokyo Night Storm": "Tokyo Night Storm",
 		"Click to expand": "Развернуть",
 		"reset": "сброс",
 		"Personal/Educational use only": "Только личное/образовательное использование",

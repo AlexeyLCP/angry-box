@@ -101,7 +101,7 @@ templ PresetsPage(builtins []chain.ConnectionPreset, customs []chain.ConnectionP
 			<div class="card-body">
 				<h3 class="font-semibold">{ i18n.T(ctx, "Built-in presets") }</h3>
 				<div class="overflow-x-auto">
-					<table class="table table-sm">
+					<table class="tn-table">
 						<thead><tr><th>{ i18n.T(ctx, "Name") }</th><th>{ i18n.T(ctx, "Protocol") }</th><th>{ i18n.T(ctx, "Description") }</th></tr></thead>
 						<tbody>
 							for _, b := range builtins {

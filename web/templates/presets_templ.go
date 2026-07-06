@@ -294,7 +294,7 @@ func PresetsPage(builtins []chain.ConnectionPreset, customs []chain.ConnectionPr
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</h3><div class=\"overflow-x-auto\"><table class=\"table table-sm\"><thead><tr><th>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</h3><div class=\"overflow-x-auto\"><table class=\"tn-table\"><thead><tr><th>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

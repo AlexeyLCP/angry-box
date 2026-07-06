@@ -50,7 +50,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -642,7 +642,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></form></div></div></div><!-- System Info --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></form></div></div></div><!-- System Info --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -787,7 +787,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</div></div></div></div></div><!-- License & Disclaimer --><div class=\"card bg-base-100 shadow\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</div></div></div></div></div><!-- License & Disclaimer --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

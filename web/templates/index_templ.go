@@ -59,7 +59,7 @@ func Index() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p><div class=\"grid grid-cols-1 md:grid-cols-3 gap-4\"><div class=\"card bg-base-100 shadow\"><div class=\"card-body\"><h3 class=\"card-title text-lg\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p><div class=\"grid grid-cols-1 md:grid-cols-3 gap-4\"><div class=\"tn-card\"><div class=\"card-body\"><h3 class=\"card-title text-lg\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -98,7 +98,7 @@ func Index() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</button></div></div></div><div class=\"card bg-base-100 shadow\"><div class=\"card-body\"><h3 class=\"card-title text-lg\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</button></div></div></div><div class=\"tn-card\"><div class=\"card-body\"><h3 class=\"card-title text-lg\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -137,7 +137,7 @@ func Index() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</button></div></div></div><div class=\"card bg-base-100 shadow\"><div class=\"card-body\"><h3 class=\"card-title text-lg\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</button></div></div></div><div class=\"tn-card\"><div class=\"card-body\"><h3 class=\"card-title text-lg\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -98,7 +98,7 @@ func Chains(chains []*model.Chain, availableHosts []*model.Host) templ.Component
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card bg-base-100 shadow\"><div class=\"w-full overflow-x-clip\"><table class=\"table table-sm\"><thead><tr><th>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"tn-card\"><div class=\"w-full overflow-x-clip\"><table class=\"tn-table\"><thead><tr><th>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2405,7 +2405,7 @@ func StatusPage(hosts []*model.Host, metrics []*model.NodeMetrics) templ.Compone
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "</h2><div class=\"card bg-base-100 shadow\"><div class=\"w-full\"><table class=\"table table-sm\"><thead><tr><th>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "</h2><div class=\"tn-card\"><div class=\"w-full\"><table class=\"tn-table\"><thead><tr><th>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

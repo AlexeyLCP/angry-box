@@ -1,4 +1,7 @@
-/* Angry-BOX custom styles (non-Tailwind) */
+/* Angry-BOX custom styles (non-Tailwind) + Tokyo Night component conventions.
+   The .tn-* classes use the --tn-* CSS custom props from tokyo-night.css
+   (which differ per theme). Ported from hoaxisr/awg-manager (MIT — see
+   docs/CREDITS.md). */
 
 /* HTMX loading indicator */
 #htmx-loading-bar {
@@ -14,3 +17,150 @@
     100% { background-position: -200% 0; }
 }
 .dev-test { color: red; }
+
+/* ─── Tokyo Night component conventions ─────────────────────────────────── */
+
+/* Card — unified surface. Cards sit on bg-secondary with a 1px border, 12px
+   radius, subtle shadow. Replaces the two inconsistent flavours
+   (card bg-base-100/50 backdrop-blur-xl… vs card bg-base-100 shadow). */
+.tn-card {
+  background: var(--tn-bg-secondary);
+  border: 1px solid var(--tn-border);
+  border-radius: var(--rounded-box, 12px);
+  padding: 1rem;
+  box-shadow: var(--tn-shadow);
+  transition: border-color var(--animation-btn, 0.15s) ease, box-shadow 0.15s ease;
+}
+.tn-card-hover:hover {
+  border-color: var(--tn-border-hover);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.tn-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1rem; padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--tn-border);
+}
+/* Status-up cards recolor their border to the status color (server-card pattern). */
+.tn-card.status-up   { border-color: var(--tn-success); }
+.tn-card.status-warn { border-color: var(--tn-warning); }
+.tn-card.status-down { border-color: var(--tn-error); }
+
+/* Table — header on bg-tertiary (uppercase, muted), rows on bg-secondary,
+   hover a 70%-opacity bg-hover wash (subtle, not full hover). Mono for
+   technical values via .font-mono (already set in base.templ). */
+.tn-table { width: 100%; border-collapse: collapse; }
+.tn-table thead th {
+  background: var(--tn-bg-tertiary);
+  font-size: 0.6875rem; font-weight: 700; line-height: 1.2;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--tn-text-muted);
+  padding: 0.65rem 0.75rem; text-align: left;
+  border-bottom: 1px solid var(--tn-border);
+}
+.tn-table tbody td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--tn-border);
+  color: var(--tn-text-primary);
+}
+.tn-table tbody tr {
+  background: var(--tn-bg-secondary);
+  transition: background 0.15s ease;
+}
+@media (pointer: fine) {
+  .tn-table tbody tr:hover {
+    background: color-mix(in srgb, var(--tn-bg-hover) 70%, transparent);
+  }
+}
+/* Tunneled-row tint (3% accent wash for alternating/highlighted rows). */
+.tn-table tbody tr.tn-row-tinted { background: var(--tn-tunneled-row); }
+
+/* Badges — pill or 6px-radius, bg = semantic-tint (18%), color = full semantic.
+   Broken uses 14% tint. Use .tn-badge-{success|error|warning|info|broken|muted}. */
+.tn-badge {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.125rem 0.5rem; border-radius: var(--rounded-btn, 6px);
+  font-size: 0.6875rem; font-weight: 600; line-height: 1.2;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.tn-badge-success { background: var(--tn-success-tint); color: var(--tn-success); border-color: var(--tn-success-border); }
+.tn-badge-error   { background: var(--tn-error-tint);   color: var(--tn-error);   border-color: var(--tn-error-border); }
+.tn-badge-warning { background: var(--tn-warning-tint); color: var(--tn-warning); border-color: var(--tn-warning-border); }
+.tn-badge-info    { background: var(--tn-info-tint);    color: var(--tn-info);    border-color: var(--tn-info-border); }
+.tn-badge-accent  { background: var(--tn-accent-tint);  color: var(--tn-accent);  border-color: var(--tn-accent-border); }
+.tn-badge-broken  { background: var(--tn-broken-tint);  color: var(--tn-broken);  border-color: var(--tn-broken-border); }
+.tn-badge-muted   { background: var(--tn-muted-tint);   color: var(--tn-text-secondary); border-color: var(--tn-muted-border); }
+/* Pill variant (rounded-full, for inline status dots/chips). */
+.tn-badge-pill { border-radius: 999px; padding: 0.1rem 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.625rem; }
+/* Status dot (small circle, used inline). */
+.tn-status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 999px;
+  background: var(--tn-text-muted); flex-shrink: 0;
+}
+.tn-status-dot.ok   { background: var(--tn-success); box-shadow: 0 0 6px var(--tn-success-border); }
+.tn-status-dot.slow { background: var(--tn-warning); box-shadow: 0 0 6px var(--tn-warning-border); }
+.tn-status-dot.fail { background: var(--tn-error);   box-shadow: 0 0 6px var(--tn-error-border); }
+
+/* Inputs — 6px radius, focus → accent border + accent focus ring.
+   Overrides DaisyUI .input-bordered/.select-bordered/.textarea-bordered to
+   match the Tokyo Night inset look (controls on bg-tertiary inside bg-secondary
+   cards). */
+.input-bordered, .select-bordered, .textarea-bordered {
+  background: var(--tn-bg-tertiary);
+  border: 1px solid var(--tn-border);
+  border-radius: var(--rounded-btn, 6px);
+  color: var(--tn-text-primary);
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease;
+}
+.input-bordered:focus, .select-bordered:focus, .textarea-bordered:focus {
+  border-color: var(--tn-accent);
+  outline: 2px solid var(--tn-accent-border);
+  outline-offset: 1px;
+}
+.input-bordered::placeholder, .textarea-bordered::placeholder { color: var(--tn-text-muted); }
+
+/* Icon buttons — 28-31px square, transparent bg, text-muted → hover
+   text-primary + bg-hover. DaisyUI .btn-ghost already does most of this; we
+   only tighten the focus ring to the Tokyo Night accent. */
+.btn-ghost:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--tn-accent);
+  outline-offset: 2px;
+}
+
+/* Scrollbar — re-tokened on the theme (was hardcoded #374151/#4B5563). */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--tn-border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--tn-border-hover); }
+
+/* Settings inset — cards on bg-secondary, the controls *inside* them on
+   bg-tertiary (the two-layer inset is the signature settings look). The
+   .tn-settings-block wraps a card and applies the settings gap between blocks. */
+.tn-settings-layout { display: flex; flex-direction: column; gap: var(--tn-settings-gap, 0.765rem); }
+.tn-settings-block > .tn-card { background: var(--tn-bg-secondary); }
+
+/* Theme dropdown polish — the swatch is a small color chip next to each option. */
+.theme-option {
+  display: flex; align-items: center; gap: 0.5rem;
+  width: 100%; padding: 0.5rem 0.75rem; border-radius: var(--rounded-btn, 6px);
+  background: transparent; color: var(--tn-text-primary);
+  font-size: 0.875rem; text-align: left; cursor: pointer;
+  border: none; transition: background 0.15s ease, color 0.15s ease;
+}
+.theme-option:hover { background: var(--tn-bg-hover); color: var(--tn-text-primary); }
+.theme-swatch {
+  display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0;
+}
+
+/* Mono utility — IBM Plex Mono for technical values (IP/port/UUID/key/hash).
+   base.templ already sets .font-mono, but this ensures it for elements that
+   don't carry the Tailwind class. */
+.mono, .tn-mono { font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace; }
+
+/* Z-index scale (single source of truth — components can reference these). */
+.tn-z-header { z-index: var(--tn-z-sticky-header); }
+.tn-z-drawer-backdrop { z-index: var(--tn-z-drawer-backdrop); }
+.tn-z-drawer { z-index: var(--tn-z-drawer); }
+.tn-z-modal { z-index: var(--tn-z-modal); }
+.tn-z-toast { z-index: var(--tn-z-toast); }

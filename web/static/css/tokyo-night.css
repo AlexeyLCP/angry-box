@@ -1,0 +1,240 @@
+/* tokyo-night.css — Tokyo Night theme(s) for DaisyUI v4.
+   Design tokens ported from hoaxisr/awg-manager (MIT — see docs/CREDITS.md).
+   DaisyUI v4 stores theme colors as OKLCH (L% C H) in CSS vars; these
+   overrides map the Tokyo Night palette onto the DaisyUI semantic slots so
+   every DaisyUI component (cards, buttons, badges, inputs, modals…) picks up
+   the Tokyo Night colors automatically. Load AFTER daisyui full.min.css.
+
+   Three selectable themes via [data-theme]:
+     tokyonight      — dark (Tokyo Night, the default)
+     tokyonight-day  — light (Tokyo Night Day)
+     tokyonight-storm— dark variant (Tokyo Night Storm: bluer bg ramp)
+
+   Extra non-DaisyUI tokens (accent-tint, broken, latency palette, tunneled-row,
+   z-index scale, settings-gap, font-mono) are exposed as CSS custom props on
+   each theme block for the .tn-* component classes in app.css. */
+
+/* ════════════════════════════════════════════════════════════════════════
+   Tokyo Night (dark) — default
+   ════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="tokyonight"] {
+  color-scheme: dark;
+  /* DaisyUI semantic slots (OKLCH L% C H) */
+  --p: 71.91% 0.132 264.66;   /* primary = accent #7aa2f7 */
+  --pc: 19.12% 0.042 266.50;  /* primary-content = #0b1327 */
+  --s: 71.91% 0.132 264.66;   /* secondary = accent (alias) */
+  --sc: 19.12% 0.042 266.50;
+  --a: 82.01% 0.105 236.13;   /* accent = info blue #7dcfff */
+  --ac: 19.12% 0.042 266.50;
+  --n: 38.67% 0.054 274.36;   /* neutral = border #3b4261 */
+  --nc: 84.56% 0.061 275.42;  /* neutral-content = text-primary #c0caf5 */
+  --b1: 22.63% 0.021 281.03;  /* base-100 = page #1a1b26 */
+  --b2: 20.40% 0.016 285.50;  /* base-200 = cards #16161e */
+  --b3: 28.20% 0.036 275.24;  /* base-300 = controls #24283b */
+  --bc: 84.56% 0.061 275.42;  /* base-content = text #c0caf5 */
+  --in: 82.01% 0.105 236.13;  /* info #7dcfff */
+  --inc: 100% 0 0;
+  --su: 79.53% 0.139 130.10;  /* success #9ece6a */
+  --suc: 100% 0 0;
+  --wa: 78.39% 0.106 75.35;   /* warning #e0af68 */
+  --wac: 100% 0 0;
+  --er: 72.27% 0.159 10.25;   /* error #f7768e */
+  --erc: 100% 0 0;
+  --rounded-box: 12px;
+  --rounded-btn: 6px;
+  --rounded-badge: 999px;
+  --animation-btn: 0.15s;
+  --animation-input: 0.15s;
+  --btn-focus-scale: 1;
+
+  /* Extra Tokyo Night tokens for .tn-* component classes */
+  --tn-accent: #7aa2f7;
+  --tn-accent-hover: #6e8bbb;
+  --tn-success: #9ece6a;
+  --tn-error: #f7768e;
+  --tn-warning: #e0af68;
+  --tn-info: #7dcfff;
+  --tn-broken: #f97316;
+  --tn-bg-primary: #1a1b26;
+  --tn-bg-secondary: #16161e;
+  --tn-bg-tertiary: #24283b;
+  --tn-bg-hover: #292e42;
+  --tn-text-primary: #c0caf5;
+  --tn-text-secondary: #a9b1d6;
+  --tn-text-muted: #737aa2;
+  --tn-border: #3b4261;
+  --tn-border-hover: #565f89;
+  --tn-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --tn-tunneled-row: rgba(122, 162, 247, 0.03);
+  --tn-settings-gap: 0.765rem;
+  /* semantic tints (18%) + borders (40%) via color-mix */
+  --tn-accent-tint: color-mix(in srgb, var(--tn-accent) 18%, transparent);
+  --tn-accent-border: color-mix(in srgb, var(--tn-accent) 40%, transparent);
+  --tn-success-tint: color-mix(in srgb, var(--tn-success) 18%, transparent);
+  --tn-success-border: color-mix(in srgb, var(--tn-success) 40%, transparent);
+  --tn-error-tint: color-mix(in srgb, var(--tn-error) 18%, transparent);
+  --tn-error-border: color-mix(in srgb, var(--tn-error) 40%, transparent);
+  --tn-warning-tint: color-mix(in srgb, var(--tn-warning) 18%, transparent);
+  --tn-warning-border: color-mix(in srgb, var(--tn-warning) 40%, transparent);
+  --tn-info-tint: color-mix(in srgb, var(--tn-info) 18%, transparent);
+  --tn-info-border: color-mix(in srgb, var(--tn-info) 40%, transparent);
+  --tn-broken-tint: color-mix(in srgb, var(--tn-broken) 14%, transparent);
+  --tn-broken-border: color-mix(in srgb, var(--tn-broken) 40%, transparent);
+  --tn-muted-tint: color-mix(in srgb, var(--tn-text-secondary) 12%, transparent);
+  --tn-muted-border: color-mix(in srgb, var(--tn-text-secondary) 30%, transparent);
+  /* z-index scale */
+  --tn-z-sticky-header: 80;
+  --tn-z-drawer-backdrop: 90;
+  --tn-z-drawer: 100;
+  --tn-z-modal: 200;
+  --tn-z-toast: 1000;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Tokyo Night Day (light)
+   ════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="tokyonight-day"] {
+  color-scheme: light;
+  --p: 53.43% 0.081 258.54;   /* accent #4f6e9c */
+  --pc: 100% 0.001 355.00;    /* primary-content #ffffff */
+  --s: 53.43% 0.081 258.54;
+  --sc: 100% 0.001 355.00;
+  --a: 56.97% 0.055 228.53;   /* info #547e91 */
+  --ac: 100% 0.001 355.00;
+  --n: 78.71% 0.010 282.28;   /* border #b8b9c0 */
+  --nc: 35.93% 0.051 273.65;  /* text-primary #343b58 */
+  --b1: 93.52% 0.006 291.50;  /* page #e9e9ed */
+  --b2: 95.60% 0.004 293.29;  /* cards #f0f0f3 */
+  --b3: 87.68% 0.007 281.26;  /* controls #d5d6db */
+  --bc: 35.93% 0.051 273.65;  /* text #343b58 */
+  --in: 56.97% 0.055 228.53;
+  --inc: 100% 0 0;
+  --su: 57.73% 0.064 153.77;  /* #5b8568 */
+  --suc: 100% 0 0;
+  --wa: 60.44% 0.090 76.57;   /* #a07a3f */
+  --wac: 100% 0 0;
+  --er: 52.34% 0.101 6.75;    /* #9a4f60 */
+  --erc: 100% 0 0;
+  --rounded-box: 12px;
+  --rounded-btn: 6px;
+  --rounded-badge: 999px;
+  --animation-btn: 0.15s;
+  --animation-input: 0.15s;
+  --btn-focus-scale: 1;
+
+  --tn-accent: #4f6e9c;
+  --tn-accent-hover: #6082b0;
+  --tn-success: #5b8568;
+  --tn-error: #9a4f60;
+  --tn-warning: #a07a3f;
+  --tn-info: #547e91;
+  --tn-broken: #f97316;
+  --tn-bg-primary: #e9e9ed;
+  --tn-bg-secondary: #f0f0f3;
+  --tn-bg-tertiary: #d5d6db;
+  --tn-bg-hover: #cacbd2;
+  --tn-text-primary: #343b58;
+  --tn-text-secondary: #434754;
+  --tn-text-muted: #545760;
+  --tn-border: #b8b9c0;
+  --tn-border-hover: #9a9ba2;
+  --tn-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --tn-tunneled-row: rgba(46, 125, 233, 0.05);
+  --tn-settings-gap: 0.765rem;
+  --tn-accent-tint: color-mix(in srgb, var(--tn-accent) 18%, transparent);
+  --tn-accent-border: color-mix(in srgb, var(--tn-accent) 40%, transparent);
+  --tn-success-tint: color-mix(in srgb, var(--tn-success) 18%, transparent);
+  --tn-success-border: color-mix(in srgb, var(--tn-success) 40%, transparent);
+  --tn-error-tint: color-mix(in srgb, var(--tn-error) 18%, transparent);
+  --tn-error-border: color-mix(in srgb, var(--tn-error) 40%, transparent);
+  --tn-warning-tint: color-mix(in srgb, var(--tn-warning) 18%, transparent);
+  --tn-warning-border: color-mix(in srgb, var(--tn-warning) 40%, transparent);
+  --tn-info-tint: color-mix(in srgb, var(--tn-info) 18%, transparent);
+  --tn-info-border: color-mix(in srgb, var(--tn-info) 40%, transparent);
+  --tn-broken-tint: color-mix(in srgb, var(--tn-broken) 14%, transparent);
+  --tn-broken-border: color-mix(in srgb, var(--tn-broken) 40%, transparent);
+  --tn-muted-tint: color-mix(in srgb, var(--tn-text-secondary) 12%, transparent);
+  --tn-muted-border: color-mix(in srgb, var(--tn-text-secondary) 30%, transparent);
+  --tn-z-sticky-header: 80;
+  --tn-z-drawer-backdrop: 90;
+  --tn-z-drawer: 100;
+  --tn-z-modal: 200;
+  --tn-z-toast: 1000;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Tokyo Night Storm (dark variant — bluer/deeper bg ramp)
+   ════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="tokyonight-storm"] {
+  color-scheme: dark;
+  --p: 71.91% 0.132 264.66;
+  --pc: 19.12% 0.042 266.50;
+  --s: 71.91% 0.132 264.66;
+  --sc: 19.12% 0.042 266.50;
+  --a: 82.01% 0.105 236.13;
+  --ac: 19.12% 0.042 266.50;
+  --n: 38.67% 0.054 274.36;
+  --nc: 84.56% 0.061 275.42;
+  --b1: 26.10% 0.034 274.65;  /* #1f2335 */
+  --b2: 28.20% 0.036 275.24;  /* #24283b */
+  --b3: 31.29% 0.038 280.25;  /* #2d2f44 */
+  --bc: 84.56% 0.061 275.42;
+  --in: 82.01% 0.105 236.13;
+  --inc: 100% 0 0;
+  --su: 79.53% 0.139 130.10;
+  --suc: 100% 0 0;
+  --wa: 78.39% 0.106 75.35;
+  --wac: 100% 0 0;
+  --er: 72.27% 0.159 10.25;
+  --erc: 100% 0 0;
+  --rounded-box: 12px;
+  --rounded-btn: 6px;
+  --rounded-badge: 999px;
+  --animation-btn: 0.15s;
+  --animation-input: 0.15s;
+  --btn-focus-scale: 1;
+
+  --tn-accent: #7aa2f7;
+  --tn-accent-hover: #6e8bbb;
+  --tn-success: #9ece6a;
+  --tn-error: #f7768e;
+  --tn-warning: #e0af68;
+  --tn-info: #7dcfff;
+  --tn-broken: #f97316;
+  --tn-bg-primary: #1f2335;
+  --tn-bg-secondary: #24283b;
+  --tn-bg-tertiary: #2d2f44;
+  --tn-bg-hover: #3b3f54;
+  --tn-text-primary: #c0caf5;
+  --tn-text-secondary: #a9b1d6;
+  --tn-text-muted: #737aa2;
+  --tn-border: #414868;
+  --tn-border-hover: #565f89;
+  --tn-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --tn-tunneled-row: rgba(122, 162, 247, 0.03);
+  --tn-settings-gap: 0.765rem;
+  --tn-accent-tint: color-mix(in srgb, var(--tn-accent) 18%, transparent);
+  --tn-accent-border: color-mix(in srgb, var(--tn-accent) 40%, transparent);
+  --tn-success-tint: color-mix(in srgb, var(--tn-success) 18%, transparent);
+  --tn-success-border: color-mix(in srgb, var(--tn-success) 40%, transparent);
+  --tn-error-tint: color-mix(in srgb, var(--tn-error) 18%, transparent);
+  --tn-error-border: color-mix(in srgb, var(--tn-error) 40%, transparent);
+  --tn-warning-tint: color-mix(in srgb, var(--tn-warning) 18%, transparent);
+  --tn-warning-border: color-mix(in srgb, var(--tn-warning) 40%, transparent);
+  --tn-info-tint: color-mix(in srgb, var(--tn-info) 18%, transparent);
+  --tn-info-border: color-mix(in srgb, var(--tn-info) 40%, transparent);
+  --tn-broken-tint: color-mix(in srgb, var(--tn-broken) 14%, transparent);
+  --tn-broken-border: color-mix(in srgb, var(--tn-broken) 40%, transparent);
+  --tn-muted-tint: color-mix(in srgb, var(--tn-text-secondary) 12%, transparent);
+  --tn-muted-border: color-mix(in srgb, var(--tn-text-secondary) 30%, transparent);
+  --tn-z-sticky-header: 80;
+  --tn-z-drawer-backdrop: 90;
+  --tn-z-drawer: 100;
+  --tn-z-modal: 200;
+  --tn-z-toast: 1000;
+}
+
+/* meta theme-color (mobile browser chrome) tracks bg-secondary per theme */
+:root[data-theme="tokyonight"] { --tn-meta-theme-color: #16161e; }
+:root[data-theme="tokyonight-day"] { --tn-meta-theme-color: #f0f0f3; }
+:root[data-theme="tokyonight-storm"] { --tn-meta-theme-color: #24283b; }

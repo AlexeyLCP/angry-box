@@ -19,7 +19,7 @@ type DashboardStats struct {
 // StatsCards renders just the four stat cards (used for polling).
 templ StatsCards(stats DashboardStats) {
 	<div class="grid grid-cols-2 md:grid-cols-4 gap-6" id="dashboard-stats">
-		<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+		<div class="tn-card tn-card-hover">
 			<div class="card-body p-6 flex flex-row items-center justify-between">
 				<div>
 					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Nodes") }</div>
@@ -30,7 +30,7 @@ templ StatsCards(stats DashboardStats) {
 				</div>
 			</div>
 		</div>
-		<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+		<div class="tn-card tn-card-hover">
 			<div class="card-body p-6 flex flex-row items-center justify-between">
 				<div>
 					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Online") }</div>
@@ -44,7 +44,7 @@ templ StatsCards(stats DashboardStats) {
 				</div>
 			</div>
 		</div>
-		<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+		<div class="tn-card tn-card-hover">
 			<div class="card-body p-6 flex flex-row items-center justify-between">
 				<div>
 					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Chains") }</div>
@@ -55,7 +55,7 @@ templ StatsCards(stats DashboardStats) {
 				</div>
 			</div>
 		</div>
-		<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+		<div class="tn-card tn-card-hover">
 			<div class="card-body p-6 flex flex-row items-center justify-between">
 				<div>
 					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Users") }</div>
@@ -78,7 +78,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 
 		<!-- Stats Cards (same as above but inside Dashboard for initial render) -->
 		<div class="grid grid-cols-2 md:grid-cols-4 gap-6" id="dashboard-stats">
-			<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+			<div class="tn-card tn-card-hover">
 				<div class="card-body p-6 flex flex-row items-center justify-between">
 					<div>
 						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Nodes") }</div>
@@ -89,7 +89,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 					</div>
 				</div>
 			</div>
-			<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+			<div class="tn-card tn-card-hover">
 				<div class="card-body p-6 flex flex-row items-center justify-between">
 					<div>
 						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Online") }</div>
@@ -103,7 +103,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 					</div>
 				</div>
 			</div>
-			<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+			<div class="tn-card tn-card-hover">
 				<div class="card-body p-6 flex flex-row items-center justify-between">
 					<div>
 						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Chains") }</div>
@@ -114,7 +114,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 					</div>
 				</div>
 			</div>
-			<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+			<div class="tn-card tn-card-hover">
 				<div class="card-body p-6 flex flex-row items-center justify-between">
 					<div>
 						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Users") }</div>
@@ -128,14 +128,14 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 		</div>
 
 		<!-- Node List with Quick Status -->
-		<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl">
+		<div class="tn-card">
 			<div class="card-body p-6">
 				<div class="flex items-center justify-between mb-4">
 					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Nodes") }</h3>
 					<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">{ i18n.T(ctx, "Manage Nodes") }</a>
 				</div>
 				<div class="w-full overflow-x-clip">
-					<table class="table w-full">
+					<table class="tn-table">
 						<thead class="text-base-content/60 text-sm">
 							<tr class="border-b border-base-content/10">
 								<th class="font-medium">{ i18n.T(ctx, "Name") }</th>
@@ -183,7 +183,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 		</div>
 
 		<!-- Chains overview -->
-		<div class="card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl">
+		<div class="tn-card">
 			<div class="card-body p-6">
 				<div class="flex items-center justify-between mb-4">
 					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Chains") }</h3>

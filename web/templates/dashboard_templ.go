@@ -46,7 +46,7 @@ func StatsCards(stats DashboardStats) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid grid-cols-2 md:grid-cols-4 gap-6\" id=\"dashboard-stats\"><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid grid-cols-2 md:grid-cols-4 gap-6\" id=\"dashboard-stats\"><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -72,7 +72,7 @@ func StatsCards(stats DashboardStats) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></div><div class=\"w-12 h-12 bg-base-200/50 rounded-xl flex items-center justify-center opacity-80\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-base-content/50\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01\"></path></svg></div></div></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></div><div class=\"w-12 h-12 bg-base-200/50 rounded-xl flex items-center justify-center opacity-80\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-base-content/50\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01\"></path></svg></div></div></div><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -98,7 +98,7 @@ func StatsCards(stats DashboardStats) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div><div class=\"w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center\"><span class=\"relative flex h-4 w-4\"><span class=\"animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75\"></span> <span class=\"relative inline-flex rounded-full h-4 w-4 bg-success\"></span></span></div></div></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div><div class=\"w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center\"><span class=\"relative flex h-4 w-4\"><span class=\"animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75\"></span> <span class=\"relative inline-flex rounded-full h-4 w-4 bg-success\"></span></span></div></div></div><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -124,7 +124,7 @@ func StatsCards(stats DashboardStats) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><div class=\"w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-primary\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1\"></path></svg></div></div></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><div class=\"w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-primary\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1\"></path></svg></div></div></div><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -193,7 +193,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</h2><!-- Stats Cards (same as above but inside Dashboard for initial render) --><div class=\"grid grid-cols-2 md:grid-cols-4 gap-6\" id=\"dashboard-stats\"><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</h2><!-- Stats Cards (same as above but inside Dashboard for initial render) --><div class=\"grid grid-cols-2 md:grid-cols-4 gap-6\" id=\"dashboard-stats\"><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -219,7 +219,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></div><div class=\"w-12 h-12 bg-base-200/50 rounded-xl flex items-center justify-center opacity-80\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-base-content/50\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01\"></path></svg></div></div></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></div><div class=\"w-12 h-12 bg-base-200/50 rounded-xl flex items-center justify-center opacity-80\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-base-content/50\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01\"></path></svg></div></div></div><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -245,7 +245,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></div><div class=\"w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center\"><span class=\"relative flex h-4 w-4\"><span class=\"animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75\"></span> <span class=\"relative inline-flex rounded-full h-4 w-4 bg-success\"></span></span></div></div></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></div><div class=\"w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center\"><span class=\"relative flex h-4 w-4\"><span class=\"animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75\"></span> <span class=\"relative inline-flex rounded-full h-4 w-4 bg-success\"></span></span></div></div></div><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -271,7 +271,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div></div><div class=\"w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-primary\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1\"></path></svg></div></div></div><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div></div><div class=\"w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-primary\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1\"></path></svg></div></div></div><div class=\"tn-card tn-card-hover\"><div class=\"card-body p-6 flex flex-row items-center justify-between\"><div><div class=\"text-sm font-medium text-base-content/60 uppercase tracking-wider\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -297,7 +297,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div><div class=\"w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-secondary\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z\"></path></svg></div></div></div></div><!-- Node List with Quick Status --><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl\"><div class=\"card-body p-6\"><div class=\"flex items-center justify-between mb-4\"><h3 class=\"text-xl font-semibold\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div><div class=\"w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"w-6 h-6 text-secondary\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z\"></path></svg></div></div></div></div><!-- Node List with Quick Status --><div class=\"tn-card\"><div class=\"card-body p-6\"><div class=\"flex items-center justify-between mb-4\"><h3 class=\"text-xl font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -323,7 +323,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</a></div><div class=\"w-full overflow-x-clip\"><table class=\"table w-full\"><thead class=\"text-base-content/60 text-sm\"><tr class=\"border-b border-base-content/10\"><th class=\"font-medium\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</a></div><div class=\"w-full overflow-x-clip\"><table class=\"tn-table\"><thead class=\"text-base-content/60 text-sm\"><tr class=\"border-b border-base-content/10\"><th class=\"font-medium\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -501,7 +501,7 @@ func Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeM
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</tbody></table></div></div></div><!-- Chains overview --><div class=\"card bg-base-100/50 backdrop-blur-xl border border-base-content/5 shadow-xl\"><div class=\"card-body p-6\"><div class=\"flex items-center justify-between mb-4\"><h3 class=\"text-xl font-semibold\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</tbody></table></div></div></div><!-- Chains overview --><div class=\"tn-card\"><div class=\"card-body p-6\"><div class=\"flex items-center justify-between mb-4\"><h3 class=\"text-xl font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
