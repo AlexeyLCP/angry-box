@@ -8,13 +8,28 @@
 PATH=/opt/bin:/opt/sbin:/sbin:/bin:/usr/sbin:/usr/bin
 
 DAEMON="/opt/bin/angry-box"
-ARGS="serve --listen 0.0.0.0:9080 --file /opt/etc/angry-box/store.json"
+# Bind loopback only — the control plane carries SSH private keys and can push
+# RCE configs, so it must not be exposed on the router's WAN/LAN interfaces.
+# On Keenetic the admin UI is reached through the router's own web admin or
+# an SSH tunnel; remote access MUST be fronted by a TLS-terminating reverse
+# proxy. CTO-review §7.
+ARGS="serve --listen 127.0.0.1:9080 --file /opt/etc/angry-box/store.json"
 PIDFILE="/opt/var/run/angry-box.pid"
 LOGFILE="/opt/var/log/angry-box.log"
 
 start() {
     echo "Starting Angry-BOX..."
     mkdir -p /opt/etc/angry-box /opt/var/run /opt/var/log
+    # At-rest encryption master key (CTO-review §6 CRITICAL): auto-generate
+    # on first start so the store.json (SSH privkeys + AWG/Reality/TLS
+    # secrets) is encrypted at rest by default. Keenetic /opt is writable by
+    # root (this init script runs as root under NDMS — there is no systemd
+    # hardening here, but encryption-at-rest still protects against
+    # backup/disk-theft).
+    if [ ! -f /opt/etc/angry-box/store.json.key ]; then
+        ( umask 077 && head -c 32 /dev/urandom > /opt/etc/angry-box/store.json.key )
+        chmod 600 /opt/etc/angry-box/store.json.key
+    fi
     $DAEMON $ARGS >> $LOGFILE 2>&1 &
     echo $! > $PIDFILE
 }

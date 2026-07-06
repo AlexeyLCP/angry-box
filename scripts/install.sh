@@ -221,6 +221,7 @@ install_service() {
 
 BIN="/opt/bin/angry-box"
 STORE="/opt/etc/angry-box/store.json"
+KEYFILE="/opt/etc/angry-box/store.json.key"
 PID="/var/run/angry-box.pid"
 
 start() {
@@ -233,7 +234,15 @@ start() {
         rm -f "$PID"
     fi
     mkdir -p "$(dirname "$STORE")" 2>/dev/null || true
-    "$BIN" serve -listen 0.0.0.0:9080 -file "$STORE" >/dev/null 2>&1 &
+    # At-rest encryption master key (CTO-review §6): auto-generate on first
+    # start so the store (SSH privkeys + secrets) is encrypted by default.
+    if [ ! -f "$KEYFILE" ]; then
+        ( umask 077 && head -c 32 /dev/urandom > "$KEYFILE" )
+        chmod 600 "$KEYFILE"
+    fi
+    # Bind loopback only — the control plane must not be exposed on the
+    # router's WAN/LAN interfaces (CTO-review §7).
+    "$BIN" serve -listen 127.0.0.1:9080 -file "$STORE" >/dev/null 2>&1 &
     echo $! > "$PID"
     echo "angry-box started"
 }
@@ -275,6 +284,12 @@ WorkingDirectory=$CONFIG_DIR
 [Install]
 WantedBy=default.target
 UNIT_EOF
+            # At-rest encryption master key (CTO-review §6): auto-generate so
+            # the store (SSH privkeys + secrets) is encrypted by default.
+            if [ ! -f "$CONFIG_DIR/store.json.key" ]; then
+                ( umask 077 && head -c 32 /dev/urandom > "$CONFIG_DIR/store.json.key" )
+                chmod 600 "$CONFIG_DIR/store.json.key"
+            fi
             systemctl --user daemon-reload
             systemctl --user enable angry-box
         else
@@ -314,6 +329,18 @@ ReadWritePaths=$DATA_DIR
 [Install]
 WantedBy=multi-user.target
 UNIT_EOF
+            # Generate at-rest encryption master key (CTO-review §6 CRITICAL).
+            # The key gates AES-256-GCM of the whole store.json — without it,
+            # the SSH privkeys + AWG/Reality/TLS secrets sit in plaintext on
+            # disk, so stealing the file compromises the whole VPS fleet.
+            # Auto-generate on first install so the default is encrypted; an
+            # existing legacy store is migrated transparently on the next
+            # writeStore (see store_crypto.go).
+            if [ ! -f "$DATA_DIR/store.json.key" ]; then
+                ( umask 077 && head -c 32 /dev/urandom > "$DATA_DIR/store.json.key" )
+                chmod 600 "$DATA_DIR/store.json.key"
+                chown angry-box:angry-box "$DATA_DIR/store.json.key"
+            fi
             systemctl daemon-reload
             systemctl enable angry-box
         fi

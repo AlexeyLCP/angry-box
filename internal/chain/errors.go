@@ -25,3 +25,20 @@ var ErrChainNotFound = errors.New("chain not found")
 // ErrUserNotFound is returned by GetUser/DeleteUser when the requested user
 // ID does not exist in the store.
 var ErrUserNotFound = errors.New("user not found")
+
+// ErrRollbackFailed is returned by the deploy path (pushConfig / pushConfigWithAWG)
+// when the config push or service restart failed AND the rollback to the
+// previous config also failed. Callers can use errors.Is(err, ErrRollbackFailed)
+// to distinguish "node left in a broken state" (needs manual intervention)
+// from "deploy failed but node is still running the old config" (retry-able).
+// CTO-review §6 finding: the deploy path returned a fmt.Errorf string, so no
+// caller could programmatically tell a recoverable failure from a node left
+// in a broken state — a critical operational distinction.
+var ErrRollbackFailed = errors.New("rollback failed")
+
+// ErrDeployFailed is returned by the deploy path when the config push or
+// service restart failed but the rollback succeeded (the node is still
+// running the previous, known-good config). Pair with ErrRollbackFailed:
+// errors.Is(err, ErrDeployFailed) && !errors.Is(err, ErrRollbackFailed) →
+// retry-able; errors.Is(err, ErrRollbackFailed) → node broken, page operator.
+var ErrDeployFailed = errors.New("deploy failed")

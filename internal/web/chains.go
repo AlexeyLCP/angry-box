@@ -5,6 +5,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -114,7 +115,15 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	for _, id := range nodeIDs {
 		h, err := st.GetHost(id)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), id), http.StatusBadRequest)
+			// CTO-review §2: distinguish not-found (400 — user input error)
+			// from store I/O failure (500 — server error). The sentinel is
+			// set by the store on a missing host; any other error (corrupt
+			// store, permission) surfaces as 500 with the real cause.
+			if errors.Is(err, chain.ErrHostNotFound) {
+				http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), id), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "store error: %v"), err), http.StatusInternalServerError)
 			return
 		}
 		n := model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath}
