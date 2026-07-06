@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/alexeylcp/angry-box/internal/chain"
 )
 
 // ─── Chains CRUD ────────────────────────────────────────────────────────────
@@ -273,23 +275,52 @@ func TestHandler_DashboardStats(t *testing.T) {
 	ts.assertStatus(w, http.StatusOK)
 }
 
-// TestHandler_TrustHostKey verifies trusting a fingerprint redirects to the
-// capture form.
+// TestHandler_TrustHostKey verifies trusting a fingerprint that matches the
+// pending observed fingerprint redirects to the capture form. The pending
+// fingerprint is persisted by handleCaptureNode when the HostKeyError is
+// rendered (CTO-review §6: the trust POST must be verified against the
+// actually-observed host key, not an arbitrary submitted value).
 func TestHandler_TrustHostKey(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
+	// Seed the pending fingerprint as handleCaptureNode would.
+	st := chain.NewStore(ts.storePath)
+	info, _ := st.GetNodeInfo("n1")
+	info.PendingHostKeyFingerprint = "SHA256:abc"
+	_ = st.SaveNodeInfo(info)
 	form := url.Values{"addr": {"1.1.1.1:22"}, "fingerprint": {"SHA256:abc"}}
 	w := ts.post("/ui/nodes/n1/trust", form)
 	ts.assertStatus(w, http.StatusSeeOther)
+	// Pending fingerprint should be cleared after a successful trust.
+	info2, _ := st.GetNodeInfo("n1")
+	if info2.PendingHostKeyFingerprint != "" {
+		t.Errorf("pending fingerprint not cleared after trust: %q", info2.PendingHostKeyFingerprint)
+	}
 }
 
-// TestHandler_TrustHostKey_MissingFields verifies trust without addr/fingerprint
-// still redirects (no panic on empty save).
-func TestHandler_TrustHostKey_MissingFields(t *testing.T) {
+// TestHandler_TrustHostKey_MismatchFingerprint verifies that a trust POST with
+// a fingerprint that does NOT match the observed pending fingerprint is
+// rejected with 400 (CTO-review §6 MITM/CSRF guard).
+func TestHandler_TrustHostKey_MismatchFingerprint(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
-	w := ts.post("/ui/nodes/n1/trust", url.Values{})
-	ts.assertStatus(w, http.StatusSeeOther)
+	st := chain.NewStore(ts.storePath)
+	info, _ := st.GetNodeInfo("n1")
+	info.PendingHostKeyFingerprint = "SHA256:abc"
+	_ = st.SaveNodeInfo(info)
+	form := url.Values{"addr": {"1.1.1.1:22"}, "fingerprint": {"SHA256:FORGED"}}
+	w := ts.post("/ui/nodes/n1/trust", form)
+	ts.assertStatus(w, http.StatusBadRequest)
+}
+
+// TestHandler_TrustHostKey_NoPending verifies that a trust POST with no prior
+// pending fingerprint on record is rejected with 400 (forged POST without a
+// preceding capture attempt).
+func TestHandler_TrustHostKey_NoPending(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	w := ts.post("/ui/nodes/n1/trust", url.Values{"addr": {"1.1.1.1:22"}, "fingerprint": {"SHA256:abc"}})
+	ts.assertStatus(w, http.StatusBadRequest)
 }
 
 // ─── Capture form ───────────────────────────────────────────────────────────

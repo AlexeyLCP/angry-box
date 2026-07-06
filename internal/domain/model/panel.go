@@ -157,6 +157,15 @@ type NodeInfo struct {
 	// User-facing inbounds on this node (for per-user config generation).
 	Inbounds []NodeInbound `json:"inbounds,omitempty"`
 
+	// PendingHostKeyFingerprint is the remote SSH host-key fingerprint the
+	// orchestrator observed during a capture/apply attempt that failed the
+	// TOFU check (host key changed or untrusted). It is stored so that the
+	// subsequent /trust POST can be verified against the actually-observed
+	// fingerprint, preventing an attacker (or CSRF) from trusting an arbitrary
+	// MITM fingerprint via a forged POST. Cleared on a successful trust or the
+	// next capture attempt. (CTO-review §6 HIGH finding.)
+	PendingHostKeyFingerprint string `json:"pending_host_key_fingerprint,omitempty"`
+
 	// Takeover state — set when the node was captured from an existing VPN
 	// (awg/singbox/xray/mtproxy). Carries the old service name + config backup
 	// paths so the takeover can be rolled back to the old VPN if sing-box fails.

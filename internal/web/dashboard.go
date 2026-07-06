@@ -5,6 +5,7 @@ package web
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -41,10 +42,31 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	addr := r.FormValue("addr")
-	fingerprint := r.FormValue("fingerprint")
+	fingerprint := strings.TrimSpace(r.FormValue("fingerprint"))
 
+	st := s.store()
+	// Verify the submitted fingerprint matches the one the orchestrator
+	// actually observed during the failed capture/apply attempt. Without
+	// this check, a forged POST (CSRF / social engineering) could trust an
+	// arbitrary MITM fingerprint. The pending fingerprint is set in
+	// handleCaptureNode when the HostKeyError is rendered. (CTO-review §6.)
+	info, _ := st.GetNodeInfo(id)
+	pending := ""
+	if info != nil {
+		pending = info.PendingHostKeyFingerprint
+	}
+	if pending == "" {
+		// No prior observed fingerprint on record — refuse to trust blindly.
+		// This happens if the store was wiped between the warning render and
+		// the trust POST, or the POST is forged without a preceding capture.
+		http.Error(w, i18n.T(r.Context(), "No pending host key fingerprint — re-capture the node first."), http.StatusBadRequest)
+		return
+	}
+	if fingerprint == "" || fingerprint != pending {
+		http.Error(w, i18n.T(r.Context(), "Fingerprint does not match the observed host key."), http.StatusBadRequest)
+		return
+	}
 	if addr != "" && fingerprint != "" {
-		st := s.store()
 		kh := &model.KnownHost{
 			Addr:        addr,
 			Fingerprint: fingerprint,
@@ -52,6 +74,11 @@ func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {
 			Trusted:     true,
 		}
 		_ = st.SaveKnownHost(kh)
+		// Clear the pending fingerprint so it cannot be reused.
+		if info != nil {
+			info.PendingHostKeyFingerprint = ""
+			_ = st.SaveNodeInfo(info)
+		}
 	}
 
 	// Redirect back to capture form to try again. (HTMX expects HTML or redirect)

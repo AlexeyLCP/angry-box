@@ -225,6 +225,22 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	if sshErr != nil {
 		var hkErr *sshclient.HostKeyError
 		if errors.As(sshErr, &hkErr) {
+			// Persist the actually-observed fingerprint so the subsequent
+			// /trust POST can be verified against it (CTO-review §6: without
+			// this, handleTrustHostKey would accept ANY fingerprint from a
+			// forged POST, enabling MITM via UI/CSRF).
+			if hkErr.RemoteFingerprint != "" {
+				if info, err := st.GetNodeInfo(id); err == nil {
+					info.PendingHostKeyFingerprint = hkErr.RemoteFingerprint
+					_ = st.SaveNodeInfo(info)
+				} else {
+					// New node: create a NodeInfo to carry the pending fp.
+					_ = st.SaveNodeInfo(&model.NodeInfo{
+						Host:                       model.Host{ID: id},
+						PendingHostKeyFingerprint: hkErr.RemoteFingerprint,
+					})
+				}
+			}
 			s.render(w, r, templates.HostKeyWarning(*host, hkErr.RemoteFingerprint, hkErr.Changed))
 			return
 		}
