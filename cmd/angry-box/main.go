@@ -22,7 +22,7 @@ var (
 	commit  = "none"
 	date    = "unknown"
 
-	defaultStorePath = "chains.json"
+	defaultStorePath = "store.json"
 )
 
 const usage = `angry-box — lightweight proxy orchestrator for sing-box-extended.
@@ -57,7 +57,7 @@ Other:
   version        Show version information
 
 Common flags:
-  -file      Path to store file (default: chains.json)
+  -file      Path to store file (default: store.json)
   -config    Path to angry-box config file (default: /etc/angry-box/angry-box.toml)
   -addr      Remote host address (IP:port)
   -user      SSH user (default: root)
@@ -158,10 +158,10 @@ func main() {
 	}
 
 	// For commands that use SSH and a store path flag, the actual `storePath` might be parsed later.
-	// But `storePath` string flag default is "chains.json". It's safe to initialize the HostKeyManager
+	// But `storePath` string flag default is defaultStorePath. It's safe to initialize the HostKeyManager
 	// here. If a command overrides the `-file` flag, it should ideally re-initialize, but for most
 	// cases (like serve), we can initialize it inside the command after parsing. To be safe, we'll initialize 
-	s := chain.NewStore("chains.json")
+	s := chain.NewStore(defaultStorePath)
 	sshclient.SetHostKeyManager(s)
 	sshclient.SetKeyResolver(s)
 
@@ -599,7 +599,7 @@ func nodeCmd(cmd string) {
 	_ = fs.Parse(os.Args[2:])
 
 	// For single node commands, we don't have a storePath flag directly defined in nodeCmd,
-	s := chain.NewStore("chains.json")
+	s := chain.NewStore(defaultStorePath)
 	sshclient.SetHostKeyManager(s)
 	sshclient.SetKeyResolver(s)
 
@@ -731,7 +731,7 @@ func serveCmd() {
 	}
 	defaultStore := cfg.StoreFile
 	if defaultStore == "" {
-		defaultStore = "chains.json"
+		defaultStore = config.DefaultConfig().StoreFile
 	}
 
 	// Apply global default obfuscation profile (this becomes the default for all config generation)
