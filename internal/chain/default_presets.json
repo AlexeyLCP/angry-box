@@ -178,6 +178,7 @@
   {
     "name": "xhttp_max_stealth_2026",
     "description": "Extreme XHTTP + AWG combination (2026). Maximum padding ranges, XMUX controls, full CPS3 + QUIC. Use only when lighter profiles are burned. Security is strictly prioritized over compatibility.",
+    "protocol": "xhttp",
     "xhttp": {
       "methods": ["POST"],
       "paths": ["/api/telemetry/v2/report", "/v1/metrics", "/cdn-cgi/trace"],
@@ -208,6 +209,194 @@
     "awg_mimicry": "quic",
     "routing": {
       "block_geosite": ["geosite-category-ads-all"]
+    }
+  },
+  {
+    "name": "russia_2026_awg",
+    "protocol": "awg",
+    "description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI. (AWG variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 15, "s2": 85,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 164, "h2": 18, "h3": 59, "h4": 110,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "russia_2026_reality",
+    "protocol": "vless-reality",
+    "description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI. (Reality variant)",
+    "reality": {
+      "server_names": ["discord.com", "www.microsoft.com"],
+      "fingerprints": ["chrome", "firefox"],
+      "short_id_len": 8
+    }
+  },
+  {
+    "name": "russia_2026_xhttp",
+    "protocol": "xhttp",
+    "description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI. (XHTTP variant)",
+    "xhttp": {
+      "methods": ["POST"],
+      "paths": ["/api/v3/", "/graphql"],
+      "hosts": ["discord.com"],
+      "headers": {
+        "User-Agent": ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"],
+        "Content-Type": ["application/json"],
+        "Accept-Language": ["ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"]
+      },
+      "idle_timeout": "15s",
+      "ping_timeout": "15s"
+    }
+  },
+  {
+    "name": "iran_2026_awg",
+    "protocol": "awg",
+    "description": "Strong preset against Iranian DPI. XHTTP performs very well here. (AWG variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 39, "s2": 72,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 204, "h2": 38, "h3": 79, "h4": 130,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "iran_2026_reality",
+    "protocol": "vless-reality",
+    "description": "Strong preset against Iranian DPI. XHTTP performs very well here. (Reality variant)"
+  },
+  {
+    "name": "iran_2026_xhttp",
+    "protocol": "xhttp",
+    "description": "Strong preset against Iranian DPI. XHTTP performs very well here. (XHTTP variant)",
+    "xhttp": {
+      "methods": ["PUT"],
+      "paths": ["/msdownload/update/v3/"],
+      "hosts": ["www.microsoft.com"],
+      "headers": {
+        "User-Agent": ["Microsoft-Delivery-Optimization/10.0"],
+        "Content-Type": ["application/octet-stream"]
+      },
+      "idle_timeout": "15s",
+      "ping_timeout": "15s"
+    }
+  },
+  {
+    "name": "china_2026_awg",
+    "protocol": "awg",
+    "description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic. (AWG variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 28, "s2": 66,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 1024, "h2": 128, "h3": 256, "h4": 512,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "china_2026_reality",
+    "protocol": "vless-reality",
+    "description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic. (Reality variant)",
+    "reality": {
+      "server_names": ["www.apple.com", "www.microsoft.com"],
+      "fingerprints": ["safari", "chrome"],
+      "short_id_len": 8
+    }
+  },
+  {
+    "name": "china_2026_xhttp",
+    "protocol": "xhttp",
+    "description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic. (XHTTP variant)",
+    "xhttp": {
+      "methods": ["GET"],
+      "paths": ["/shopping/bag", "/api/shopping"],
+      "hosts": ["www.apple.com"],
+      "headers": {
+        "User-Agent": ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"],
+        "Accept": ["text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"],
+        "Accept-Language": ["zh-CN,zh;q=0.9,en;q=0.8"]
+      },
+      "idle_timeout": "15s",
+      "ping_timeout": "15s"
+    }
+  },
+  {
+    "name": "maximum_stealth_2026_awg",
+    "protocol": "awg",
+    "description": "Very aggressive preset for when lighter ones start getting blocked. (AWG variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 115, "s2": 45,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 1984, "h2": 2048, "h3": 4096, "h4": 8192,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "maximum_stealth_2026_reality",
+    "protocol": "vless-reality",
+    "description": "Very aggressive preset for when lighter ones start getting blocked. (Reality variant)"
+  },
+  {
+    "name": "maximum_stealth_2026_xhttp",
+    "protocol": "xhttp",
+    "description": "Very aggressive preset for when lighter ones start getting blocked. (XHTTP variant)",
+    "xhttp": {
+      "methods": ["POST"],
+      "paths": ["/api/telemetry/v2/report"],
+      "hosts": ["www.cloudflare.com"],
+      "headers": {
+        "User-Agent": ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/135.0.0.0"],
+        "Content-Type": ["application/json"]
+      },
+      "idle_timeout": "15s",
+      "ping_timeout": "15s"
+    }
+  },
+  {
+    "name": "pro_2026_awg",
+    "protocol": "awg",
+    "description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required. (AWG variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 85, "s2": 15,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 164, "h2": 18, "h3": 59, "h4": 110,
+      "cps_level": 3,
+      "mimicry": "quic",
+      "i1_packet": "quic-1200"
+    }
+  },
+  {
+    "name": "pro_2026_reality",
+    "protocol": "vless-reality",
+    "description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required. (Reality variant)",
+    "reality": {
+      "server_names": ["www.cloudflare.com", "discord.com", "www.apple.com"],
+      "fingerprints": ["chrome", "firefox", "safari"],
+      "short_id_len": 8
+    }
+  },
+  {
+    "name": "pro_2026_xhttp",
+    "protocol": "xhttp",
+    "description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required. (XHTTP variant)",
+    "xhttp": {
+      "methods": ["POST", "PUT"],
+      "paths": ["/api/v3/telemetry", "/graphql", "/msdownload/update/v3/"],
+      "hosts": ["www.cloudflare.com"],
+      "headers": {
+        "User-Agent": ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/135.0.0.0"],
+        "Content-Type": ["application/json"]
+      },
+      "idle_timeout": "12s",
+      "ping_timeout": "12s"
     }
   }
 ]

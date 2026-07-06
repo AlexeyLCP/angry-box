@@ -79,14 +79,15 @@ func (u *User) IsExpired() bool {
 
 // PanelSettings holds global panel configuration.
 type PanelSettings struct {
-	AdminPasswordHash string `json:"admin_password_hash"`
-	PanelCountry      string `json:"panel_country,omitempty"`   // e.g. "RU", "IR", "CN"
-	Language          string `json:"language,omitempty"`        // e.g. "en", "ru"
-	MetricsInterval   int    `json:"metrics_interval,omitempty"` // minutes, default 15 minutes
-	SSHKeys           []SSHKeyEntry `json:"ssh_keys,omitempty"`
-	DefaultProtocol   string          `json:"default_protocol,omitempty"` // "awg", "tuic", "vless-reality"
-	CustomPresets     json.RawMessage `json:"custom_presets,omitempty"` // user-created obfuscation presets (JSON array of ConnectionPreset)
-	DefaultSSHKeyID   string          `json:"default_ssh_key_id,omitempty"`
+	AdminPasswordHash       string            `json:"admin_password_hash"`
+	PanelCountry            string            `json:"panel_country,omitempty"`    // e.g. "RU", "IR", "CN"
+	Language                string            `json:"language,omitempty"`         // e.g. "en", "ru"
+	MetricsInterval         int               `json:"metrics_interval,omitempty"` // minutes, default 15 minutes
+	SSHKeys                 []SSHKeyEntry     `json:"ssh_keys,omitempty"`
+	DefaultProtocol         string            `json:"default_protocol,omitempty"`           // "awg", "tuic", "vless-reality"
+	CustomPresets           json.RawMessage   `json:"custom_presets,omitempty"`             // user-created obfuscation presets (JSON array of ConnectionPreset)
+	DefaultPresetByProtocol map[string]string `json:"default_preset_by_protocol,omitempty"` // optional per-protocol default override
+	DefaultSSHKeyID         string            `json:"default_ssh_key_id,omitempty"`
 }
 
 // Source of an SSHKeyEntry. Stored as a JSON string (no iota) so the registry
@@ -110,13 +111,13 @@ type SSHKeyEntry struct {
 
 // NodeMetrics holds the latest health/metrics snapshot for a node.
 type NodeMetrics struct {
-	HostID       string    `json:"host_id"`
-	Online       bool      `json:"online"`
-	Version      string    `json:"version,omitempty"`
-	LatencyMs    int64     `json:"latency_ms,omitempty"`
-	BytesSent    int64     `json:"bytes_sent,omitempty"`
-	BytesRecv    int64     `json:"bytes_recv,omitempty"`
-	LastChecked  time.Time `json:"last_checked"`
+	HostID      string    `json:"host_id"`
+	Online      bool      `json:"online"`
+	Version     string    `json:"version,omitempty"`
+	LatencyMs   int64     `json:"latency_ms,omitempty"`
+	BytesSent   int64     `json:"bytes_sent,omitempty"`
+	BytesRecv   int64     `json:"bytes_recv,omitempty"`
+	LastChecked time.Time `json:"last_checked"`
 
 	OS                 string `json:"os,omitempty"`
 	SingBoxInstalled   bool   `json:"sing_box_installed,omitempty"`
@@ -127,9 +128,9 @@ type NodeMetrics struct {
 type NodeInfo struct {
 	Host
 
-	Country    string `json:"country,omitempty"`
-	Bandwidth  string `json:"bandwidth,omitempty"` // human-readable: "100 Mbps", "1 Gbps"
-	Source     string `json:"source,omitempty"`    // "ssh_key", "password", "captured"
+	Country   string `json:"country,omitempty"`
+	Bandwidth string `json:"bandwidth,omitempty"` // human-readable: "100 Mbps", "1 Gbps"
+	Source    string `json:"source,omitempty"`    // "ssh_key", "password", "captured"
 
 	// AutoApply enables background SSH deploy when a client/inbound on this
 	// node is created/updated/deleted (hybrid mode — structural changes still
@@ -191,9 +192,9 @@ type TakeoverState struct {
 
 // NodeInbound describes a user-facing inbound on a node.
 type NodeInbound struct {
-	Protocol    string   `json:"protocol"`              // "awg", "tuic", "vless-reality"
+	Protocol    string   `json:"protocol"` // "awg", "tuic", "vless-reality"
 	Port        int      `json:"port"`
-	Obfuscation string   `json:"obfuscation,omitempty"` // extra obfuscation notes (preset name for AWG)
+	Obfuscation string   `json:"obfuscation,omitempty"`  // extra obfuscation notes (preset name for AWG)
 	ForUsers    []string `json:"for_users,omitempty"`    // user IDs this inbound serves
 	OutboundTag string   `json:"outbound_tag,omitempty"` // target outbound tag; empty = "direct-out"
 	Source      string   `json:"source,omitempty"`       // "standalone" or "chain:<chain_name>"
@@ -228,7 +229,7 @@ type NodeInbound struct {
 // list) remains the materialized deploy path. The two are kept in sync by the
 // spider handlers when edges are created/deleted.
 type ConnectionLink struct {
-	ID        string        `json:"id"`
+	ID         string        `json:"id"`
 	FromNodeID string        `json:"from_node_id"`
 	ToNodeID   string        `json:"to_node_id"`
 	Transport  TransportType `json:"transport"`
@@ -242,13 +243,13 @@ type ConnectionLink struct {
 // assign). target_id is always stored as a string (ints coerced); payload_json
 // is the JSON-encoded payload or empty when no payload was supplied.
 type AuditLog struct {
-	ID           string    `json:"id"`
-	Actor        string    `json:"actor"`                    // "operator" by default
-	Action       string    `json:"action"`                   // create|update|delete|deploy|install|assign|unassign
-	TargetType   string    `json:"target_type"`              // node|chain|user|profile|route_rule|client_assignment|...
-	TargetID     string    `json:"target_id,omitempty"`
-	PayloadJSON  string    `json:"payload_json,omitempty"`
-	TS           time.Time `json:"ts"`
+	ID          string    `json:"id"`
+	Actor       string    `json:"actor"`       // "operator" by default
+	Action      string    `json:"action"`      // create|update|delete|deploy|install|assign|unassign
+	TargetType  string    `json:"target_type"` // node|chain|user|profile|route_rule|client_assignment|...
+	TargetID    string    `json:"target_id,omitempty"`
+	PayloadJSON string    `json:"payload_json,omitempty"`
+	TS          time.Time `json:"ts"`
 }
 
 // ─── Profiles / Services (client↔server mediation) ──────────────────────────
@@ -260,7 +261,7 @@ type AuditLog struct {
 // "mtproxy_server", "any".
 type Profile struct {
 	ID          string    `json:"id"`
-	Name        string    `json:"name"`        // unique
+	Name        string    `json:"name"` // unique
 	Description string    `json:"description,omitempty"`
 	ClientType  string    `json:"client_type"`
 	ServerRole  string    `json:"server_role,omitempty"` // default "any"
@@ -289,10 +290,10 @@ type ClientAssignment struct {
 type RouteRule struct {
 	ID          string    `json:"id"`
 	NodeID      string    `json:"node_id"`
-	Priority    int       `json:"priority"` // lower = earlier
-	MatchType   string    `json:"match_type"`   // domain|domain_suffix|domain_keyword|ip_cidr|protocol
-	MatchValues string    `json:"match_values"` // newline- or comma-separated
-	Action      string    `json:"action"`       // route|block|sniff|hijack-dns
+	Priority    int       `json:"priority"`               // lower = earlier
+	MatchType   string    `json:"match_type"`             // domain|domain_suffix|domain_keyword|ip_cidr|protocol
+	MatchValues string    `json:"match_values"`           // newline- or comma-separated
+	Action      string    `json:"action"`                 // route|block|sniff|hijack-dns
 	OutboundTag string    `json:"outbound_tag,omitempty"` // for action=route
 	Comment     string    `json:"comment,omitempty"`
 	Enabled     bool      `json:"enabled"`
