@@ -35,3 +35,12 @@ type SSHClient interface {
 type SSHConnector interface {
 	Connect(addr, user, keyPath string) (SSHClient, error)
 }
+
+// Pinger is an OPTIONAL capability an SSHClient may implement: a cheap liveness
+// probe used by the SSH connection pool on borrow (keepalive@openssh.com global
+// request). The pool type-asserts the cached client to Pinger; if the client
+// does not implement it, the pool skips the probe and reuses the connection
+// unconditionally (relying on the first Run to surface a dead connection).
+type Pinger interface {
+	Ping(ctx context.Context) error
+}

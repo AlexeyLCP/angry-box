@@ -2,10 +2,13 @@ package ssh
 
 import (
 	"crypto/ed25519"
+	"fmt"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
 func TestGenerateSSHKeypair(t *testing.T) {
@@ -160,6 +163,13 @@ func (m *fakeHostKeyManager) CheckHostKey(addr string, remoteKey ssh.PublicKey) 
 		return nil
 	}
 	return &HostKeyError{RemoteFingerprint: fp, Changed: !m.trusted[addr]}
+}
+
+// GetKnownHost satisfies the HostKeyManager interface (the pool re-checks the
+// stored fingerprint on borrow). The fake does not persist known hosts — return
+// not-found so the pool's fingerprint re-check is a no-op in client_test.go.
+func (m *fakeHostKeyManager) GetKnownHost(addr string) (*model.KnownHost, error) {
+	return nil, fmt.Errorf("fakeHostKeyManager: no known host for %s", addr)
 }
 
 func TestSetHostKeyManager(t *testing.T) {

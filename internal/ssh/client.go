@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
 )
 
@@ -22,9 +23,14 @@ import (
 // should pass their own context with a larger timeout via RunContext.
 const defaultRunTimeout = 5 * time.Minute
 
-// HostKeyManager is used to verify remote host keys.
+// HostKeyManager is used to verify remote host keys. GetKnownHost lets the
+// SSH connection pool re-check the stored fingerprint on borrow (TOFU
+// staleness mitigation — an operator editing the known-host entry evicts the
+// stale pooled connection; CTO-review §8 pool follow-up). Implementations
+// (the chain Store) already provide both methods.
 type HostKeyManager interface {
 	CheckHostKey(addr string, remoteKey ssh.PublicKey) error
+	GetKnownHost(addr string) (*model.KnownHost, error)
 }
 
 var globalManager HostKeyManager
@@ -262,6 +268,28 @@ func (c *Client) UploadText(ctx context.Context, content, remotePath string, mod
 // Close terminates the SSH connection.
 func (c *Client) Close() error {
 	return c.client.Close()
+}
+
+// Ping verifies the underlying SSH connection is still alive by sending an
+// OpenSSH keepalive global request and waiting for a reply. It is the cheap,
+// session-free liveness probe the SSH connection pool uses on borrow (a dead
+// peer / restarted sshd / NAT-timed-out connection fails here, triggering an
+// eviction + fresh dial which then re-runs the full TOFU host-key check). A
+// short ctx deadline bounds the probe cost.
+func (c *Client) Ping(ctx context.Context) error {
+	done := make(chan error, 1)
+	go func() {
+		// SendGlobalRequest with wantReply=true blocks until the server replies
+		// (or the connection drops). openssh-3.x+ replies to keepalive@openssh.com.
+		_, _, err := c.client.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // InstallPublicKey connects via password and adds the provided private key's corresponding public key to authorized_keys.

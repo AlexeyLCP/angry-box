@@ -50,6 +50,11 @@ func (s *Server) SSHConnector() ports.SSHConnector {
 	return s.connector
 }
 
+// SetSSHConnector overrides the SSH connector (e.g. a connection POOL wired at
+// the composition root). Used by serveCmd to share a cross-deploy pool across
+// the deploy/apply handlers + auto-apply (CTO-review §8 pool follow-up).
+func (s *Server) SetSSHConnector(c ports.SSHConnector) { s.connector = c }
+
 // NewServer creates a web UI server.
 // If devMode is true, static files are served from web/static/ instead of the embedded filesystem.
 // f is the composition-root factory used by all deploy/apply handlers.

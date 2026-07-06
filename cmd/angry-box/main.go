@@ -779,14 +779,23 @@ func serveCmd() {
 	// Register HTMX Web UI (DaisyUI + templ + HTMX, community patterns from Pagoda/TemplUI).
 	// Composition root: create the factory once here and inject it into the UI
 	// server (and the auto-apply background), so handlers don't call factory.New()
-	// ad-hoc (CTO-review M11).
-	orchFactory := factory.New(nil)
+	// ad-hoc (CTO-review M11). The SSH connection POOL wraps the production
+	// connector so a node re-deployed by auto-apply reuses its already-open
+	// connection instead of re-dialing every ~5 min (CTO-review §8 pool
+	// follow-up). The pool re-verifies liveness (keepalive) + stored known-host
+	// fingerprint + key-resolution on each borrow; CLI commands (apply/node) use
+	// the raw DefaultConnector directly (short-lived process — no pool benefit).
+	sshPool := sshclient.NewPool(sshclient.DefaultConnector, store, store)
+	orchFactory := factory.New(sshPool)
 	ui := web.NewServer(storePath, *devMode, cfg, *listen, orchFactory)
+	ui.SetSSHConnector(sshPool)
 	ui.Register(mux)
 
 	// Wire background auto-apply (hybrid deploy mode) with the same factory the
 	// CLI uses, so per-user mutations can trigger SSH deploys in the background.
-	chain.InitAutoApply(orchFactory, nil, storePath)
+	// The pool is shared so background deploys reuse the same connections as web
+	// deploys to the same node.
+	chain.InitAutoApply(orchFactory, sshPool, storePath)
 
 	// Start background metrics collection based on panel settings
 	settings, _ := chain.NewStore(storePath).GetSettings()
@@ -873,7 +882,15 @@ func serveCmd() {
 		}
 	}()
 
-	gracefulShutdown(srv, ui.Stop, chain.WaitAutoApply, installSignalHandler())
+	// Graceful shutdown: stop HTTP + metrics, wait for in-flight background
+	// deploys to finish (so they're not cut off mid-SSH), then close the SSH
+	// connection pool (tears down the idle cached connections). The pool MUST
+	// close after WaitAutoApply — otherwise a still-running background deploy
+	// would have its pooled connection closed under it.
+	gracefulShutdown(srv, ui.Stop, func() {
+		chain.WaitAutoApply()
+		sshPool.Close()
+	}, installSignalHandler())
 }
 
 // isLoopbackListen reports whether the listen address binds only to the
