@@ -4,6 +4,58 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.3.2] — 2026-07-06
+
+### UI redesign — Tokyo Night theme (ported from hoaxisr/awg-manager, MIT)
+
+Full visual redesign under the Tokyo Night aesthetic. The stack is unchanged
+(HTMX + Go Templ + DaisyUI v4 + Tailwind play CDN) — NO build step introduced.
+Themes are hand-written CSS-override blocks mapping the Tokyo Night palette onto
+DaisyUI v4 OKLCH CSS variables, so every DaisyUI component picks up the palette
+automatically.
+
+- **IBM Plex fonts** — 14 self-hosted woff2 (Sans 400/500/600/700 + Mono
+  400/500/600, Latin + Cyrillic via unicode-range) in `web/static/fonts/`,
+  embedded via `web/embed.go`. `web/static/css/fonts.css` @font-face. Body
+  IBM Plex Sans 14px/1.5; `.font-mono`/code/pre → IBM Plex Mono.
+- **3 selectable Tokyo Night themes** — `tokyonight` (dark, default),
+  `tokyonight-day` (light), `tokyonight-storm` (dark variant, bluer bg). Each
+  maps accent `#7aa2f7` + the Tokyo Night bg/text/border ramp + success/error/
+  warning/info/broken onto DaisyUI v4 `--p/--b1/--b2/--b3/--bc/--n/--su/--er/
+  --wa/--in` (OKLCH) + `--rounded-box 12px/--rounded-btn 6px`. Extra `--tn-*`
+  custom props (tints, broken, latency, z-index, settings-gap) for `.tn-*`
+  classes. `web/static/css/tokyo-night.css` (loaded after daisyui CDN).
+- **Theme dropdown** — the header sun/moon toggle is now a DaisyUI dropdown with
+  the 3 themes (each a button + color swatch). `app.js setTheme(name)` persists
+  to localStorage; `toggleTheme()` kept as a dark/light shortcut. Migrates old
+  `dark`/`light` localStorage values. `<meta name=theme-color>` syncs per theme;
+  pre-paint script prevents FOUC. i18n keys (en+ru).
+- **Component conventions** — `web/static/css/app.css` `.tn-*` classes:
+  `.tn-card` (unifies the two inconsistent glass/plain card flavours — bg-200,
+  1px border, 12px radius, shadow, hover); `.tn-table` (header bg-300 uppercase
+  muted, rows bg-200, hover 70%-opacity wash, tunneled-row tint);
+  `.tn-badge-*` (semantic tints 18%/borders 40%, broken 14%, pill + status-dot);
+  `.input-bordered`/`.select-bordered`/`.textarea-bordered` overridden to the
+  Tokyo Night inset look (bg-300 inside bg-200 cards, focus → accent border +
+  ring); scrollbar re-tokened on `--tn-border`; settings-inset layout;
+  theme-dropdown polish; z-index scale utilities.
+- **Layout polish** — `<html data-theme="tokyonight">` default; `<meta
+  name=theme-color #16161e>`; favicon.svg (Tokyo Night accent); scrollbar moved
+  to app.css (theme-tokened, was hardcoded greys).
+- **Page templates** — all glass cards + plain cards → `.tn-card` across
+  dashboard/nodes/chains/users/settings/presets/spider/index; all `<table
+  class="table…">` → `.tn-table`. Badges stay DaisyUI (theme swaps their
+  `--su/--er/--wa/--in` colors). No logic changes — only class swaps; all
+  i18n.T wrappers, hx-* attrs, modals preserved.
+- **Attribution** — `docs/CREDITS.md` + `docs/LICENSES/hoaxisr-awg-manager-MIT.txt`
+  (the source's MIT license preserved). Design tokens + IBM Plex fonts + component
+  conventions ported; no Svelte/Skeleton components (different stack).
+
+#### Verification
+- `go build ./...` OK, `go vet ./...` clean, `go test ./...` 9 packages ok / 0
+  FAIL, `e2e` + `wsl_smoke` compile-only green, `govulncheck`: no vulnerabilities,
+  `templ generate`: no diff.
+
 ## [v0.3.1] — 2026-07-06
 
 ### Architecture follow-ups (deferred from v0.3.0) + UI fixes + patches safety
