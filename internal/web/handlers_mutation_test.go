@@ -44,16 +44,6 @@ func (ts *testServer) createUser(id, name string) {
 	}
 }
 
-// createProfile helper.
-func (ts *testServer) createProfile(name string) {
-	ts.t.Helper()
-	form := url.Values{"name": {name}, "client_type": {"user"}, "server_role": {"any"}}
-	w := ts.post("/ui/profiles", form)
-	if w.Code != http.StatusSeeOther {
-		ts.t.Fatalf("createProfile %s: got %d, want 303", name, w.Code)
-	}
-}
-
 // ─── Nodes ──────────────────────────────────────────────────────────────────
 
 // TestHandler_DeleteNode_Ok verifies deleting an existing node returns 200 + empty.
@@ -170,44 +160,6 @@ func TestHandler_UserConfig_NotFound(t *testing.T) {
 	ts := newTestServer(t)
 	w := ts.get("/ui/users/ghost/config")
 	ts.assertStatus(w, http.StatusNotFound)
-}
-
-// ─── Profiles ───────────────────────────────────────────────────────────────
-
-// TestHandler_DeleteProfile verifies deleting a profile returns 200.
-func TestHandler_DeleteProfile(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createProfile("p1")
-	pid := ts.profileID("p1")
-	w := ts.delete("/ui/profiles/" + pid)
-	ts.assertStatus(w, http.StatusOK)
-}
-
-// TestHandler_EditProfileForm verifies the edit-profile modal renders.
-func TestHandler_EditProfileForm(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createProfile("p2")
-	pid := ts.profileID("p2")
-	w := ts.get("/ui/profiles/" + pid + "/edit")
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "p2")
-}
-
-// TestHandler_EditProfileForm_NotFound verifies a missing profile's edit 404s.
-func TestHandler_EditProfileForm_NotFound(t *testing.T) {
-	ts := newTestServer(t)
-	w := ts.get("/ui/profiles/ghost/edit")
-	ts.assertStatus(w, http.StatusNotFound)
-}
-
-// TestHandler_UpdateProfile verifies a profile can be renamed.
-func TestHandler_UpdateProfile(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createProfile("p3")
-	pid := ts.profileID("p3")
-	form := url.Values{"name": {"p3-renamed"}, "client_type": {"user"}, "server_role": {"any"}}
-	w := ts.post("/ui/profiles/"+pid+"/edit", form)
-	ts.assertStatus(w, http.StatusSeeOther)
 }
 
 // ─── Chains ─────────────────────────────────────────────────────────────────

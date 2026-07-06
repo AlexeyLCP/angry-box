@@ -149,19 +149,6 @@ func TestHandler_UserQR_Ok(t *testing.T) {
 	ts.assertStatus(w, http.StatusOK)
 }
 
-// TestHandler_DeleteAssignment verifies deleting an existing assignment 200s.
-func TestHandler_DeleteAssignment(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createProfile("p1")
-	pid := ts.profileID("p1")
-	// Create an assignment first.
-	ts.post("/ui/profiles/"+pid+"/assignments", url.Values{"client_type": {"user"}, "client_id": {"u1"}})
-	// Resolve the assignment id from the store.
-	aid := ts.assignmentID(pid, "user", "u1")
-	w := ts.delete("/ui/profiles/" + pid + "/assignments/" + aid)
-	ts.assertStatus(w, http.StatusOK)
-}
-
 // TestHandler_Takeover_NodeNotFound verifies takeover on a missing node renders
 // the error alert (not a 500).
 func TestHandler_Takeover_NodeNotFound(t *testing.T) {

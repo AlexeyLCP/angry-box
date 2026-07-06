@@ -52,42 +52,6 @@ func TestStore_AuditLog_Cap(t *testing.T) {
 	}
 }
 
-func TestStore_Profile_UniqueName(t *testing.T) {
-	s := newTestStore(t)
-	if err := s.SaveProfile(&model.Profile{Name: "alpha", ClientType: "user"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SaveProfile(&model.Profile{Name: "alpha", ClientType: "user"}); err == nil {
-		t.Error("expected duplicate-name error")
-	}
-}
-
-func TestStore_Profile_DeleteCascadesAssignments(t *testing.T) {
-	s := newTestStore(t)
-	p := &model.Profile{Name: "p1", ClientType: "user"}
-	_ = s.SaveProfile(p)
-	_ = s.SaveAssignment(&model.ClientAssignment{ProfileID: p.ID, ClientType: "user", ClientID: "u1"})
-	if err := s.DeleteProfile(p.ID); err != nil {
-		t.Fatal(err)
-	}
-	assigns, _ := s.ListAssignmentsForProfile(p.ID)
-	if len(assigns) != 0 {
-		t.Errorf("assignments should cascade-delete with profile, got %d", len(assigns))
-	}
-}
-
-func TestStore_Assignment_Unique(t *testing.T) {
-	s := newTestStore(t)
-	a1 := &model.ClientAssignment{ProfileID: "p1", ClientType: "user", ClientID: "u1"}
-	a2 := &model.ClientAssignment{ProfileID: "p1", ClientType: "user", ClientID: "u1"}
-	if err := s.SaveAssignment(a1); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SaveAssignment(a2); err == nil {
-		t.Error("expected uniqueness error for duplicate assignment")
-	}
-}
-
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	return NewStore(tempStoreFile(t))

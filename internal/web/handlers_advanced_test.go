@@ -333,15 +333,3 @@ func TestHandler_DetectVPN_ConnectFails(t *testing.T) {
 	ts.assertStatus(w, http.StatusOK)
 	ts.assertContains(w, "Detect failed")
 }
-
-// ─── Assignments ────────────────────────────────────────────────────────────
-
-// TestHandler_CreateAssignment verifies a client assignment can be created.
-func TestHandler_CreateAssignment(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createProfile("p1")
-	pid := ts.profileID("p1")
-	form := url.Values{"client_type": {"user"}, "client_id": {"u1"}}
-	w := ts.post("/ui/profiles/"+pid+"/assignments", form)
-	ts.assertStatus(w, http.StatusCreated)
-}

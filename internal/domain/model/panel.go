@@ -252,36 +252,6 @@ type AuditLog struct {
 	TS          time.Time `json:"ts"`
 }
 
-// ─── Profiles / Services (client↔server mediation) ──────────────────────────
-
-// Profile (a.k.a. Service) bundles a client type with a server role and an
-// optional list of node IDs, decoupling clients from specific nodes (modelled
-// after Marzneshin/Xboard). ClientType values: "user", "awg-peer",
-// "exit-node", "mtproxy". ServerRole: "proxy_node", "awg_balancer",
-// "mtproxy_server", "any".
-type Profile struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"` // unique
-	Description string    `json:"description,omitempty"`
-	ClientType  string    `json:"client_type"`
-	ServerRole  string    `json:"server_role,omitempty"` // default "any"
-	AutoApply   bool      `json:"auto_apply,omitempty"`  // intent flag (per-resource set is the real gate)
-	ServerIDs   []string  `json:"server_ids,omitempty"`  // empty = all matching role
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-// ClientAssignment is the polymorphic many-to-many link between a Profile and a
-// client entity (User / MtproxyUser / AWG peer / exit node). ClientID refers to
-// the client entity's ID by ClientType; there is no DB-level FK.
-type ClientAssignment struct {
-	ID         string    `json:"id"`
-	ProfileID  string    `json:"profile_id"`
-	ClientType string    `json:"client_type"` // user|mtproxy|awg-peer|exit-node
-	ClientID   string    `json:"client_id"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
 // ─── Per-node route rules ────────────────────────────────────────────────────
 
 // RouteRule is an operator-editable routing rule scoped to a node. MatchType

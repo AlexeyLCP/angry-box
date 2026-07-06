@@ -246,16 +246,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// Deploy status (pending-changes)
 	mux.HandleFunc("GET /ui/deploy-status", s.auth(s.handleDeployStatus))
 
-	// Profiles + ClientAssignments
-	mux.HandleFunc("GET /ui/profiles", s.auth(s.handleProfiles))
-	mux.HandleFunc("POST /ui/profiles", s.auth(s.handleCreateProfile))
-	mux.HandleFunc("GET /ui/profiles/new", s.auth(s.handleNewProfileForm))
-	mux.HandleFunc("GET /ui/profiles/{id}/edit", s.auth(s.handleEditProfileForm))
-	mux.HandleFunc("POST /ui/profiles/{id}/edit", s.auth(s.handleUpdateProfile))
-	mux.HandleFunc("DELETE /ui/profiles/{id}", s.auth(s.handleDeleteProfile))
-	mux.HandleFunc("POST /ui/profiles/{id}/assignments", s.auth(s.handleCreateAssignment))
-	mux.HandleFunc("DELETE /ui/profiles/{id}/assignments/{aid}", s.auth(s.handleDeleteAssignment))
-
 	// Unified clients page
 	mux.HandleFunc("GET /ui/clients", s.auth(s.handleClients))
 }

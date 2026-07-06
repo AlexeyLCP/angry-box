@@ -18,7 +18,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
@@ -166,43 +165,6 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
-
-// profileID looks up the auto-generated ID of a profile by its name. Needed
-// because SaveProfile assigns a random ID — handlers edit/delete by ID, not by
-// name, so tests must resolve the name -> ID after creating.
-func (ts *testServer) profileID(name string) string {
-	ts.t.Helper()
-	st := chain.NewStore(ts.storePath)
-	profiles, err := st.ListProfiles()
-	if err != nil {
-		ts.t.Fatalf("ListProfiles: %v", err)
-	}
-	for _, p := range profiles {
-		if p.Name == name {
-			return p.ID
-		}
-	}
-	ts.t.Fatalf("profile %q not found in store", name)
-	return ""
-}
-
-// assignmentID looks up the auto-generated ID of a client assignment by its
-// (profileID, clientType, clientID) tuple. SaveAssignment assigns a random ID.
-func (ts *testServer) assignmentID(profileID, clientType, clientID string) string {
-	ts.t.Helper()
-	st := chain.NewStore(ts.storePath)
-	assignments, err := st.ListAssignments()
-	if err != nil {
-		ts.t.Fatalf("ListAssignments: %v", err)
-	}
-	for _, a := range assignments {
-		if a.ProfileID == profileID && a.ClientType == clientType && a.ClientID == clientID {
-			return a.ID
-		}
-	}
-	ts.t.Fatalf("assignment (%s,%s,%s) not found in store", profileID, clientType, clientID)
-	return ""
 }
 
 // keep bytes imported (used in rawBody below).
