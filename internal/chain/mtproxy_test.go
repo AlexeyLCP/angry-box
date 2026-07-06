@@ -11,10 +11,10 @@ import (
 // TestBuildMTProxyInbound verifies the mtproxy inbound carries the extended
 // "ee"+hex secret for each enabled user and the canonical FakeTLS options.
 func TestBuildMTProxyInbound(t *testing.T) {
-	users := []*model.MtproxyUser{
-		{ID: "u1", Name: "alice", SecretHex: "83b231c9ccf32ef09f48c8f63765ab4f", FakeTLSDomain: "disk.yandex.ru", Enabled: true},
-		{ID: "u2", Name: "bob", SecretHex: "00112233445566778899aabbccddeeff", FakeTLSDomain: "www.bing.com", Enabled: true},
-		{ID: "u3", Name: "off", SecretHex: "abc", FakeTLSDomain: "x.com", Enabled: false}, // disabled -> skipped
+	users := []*model.User{
+		{ID: "u1", Name: "alice", MTProxySecret: "83b231c9ccf32ef09f48c8f63765ab4f", MTProxyDomain: "disk.yandex.ru", Active: true},
+		{ID: "u2", Name: "bob", MTProxySecret: "00112233445566778899aabbccddeeff", MTProxyDomain: "www.bing.com", Active: true},
+		{ID: "u3", Name: "off", MTProxySecret: "abc", MTProxyDomain: "x.com", Active: false}, // disabled -> skipped
 	}
 	raw := buildMTProxyInbound(443, "mtp-in", users)
 	if raw == nil {
@@ -71,11 +71,11 @@ func TestBuildMTProxyInbound(t *testing.T) {
 func TestBuildMTProxyInbound_NoEnabledUsersReturnsNil(t *testing.T) {
 	cases := []struct {
 		name  string
-		users []*model.MtproxyUser
+		users []*model.User
 	}{
 		{"nil", nil},
-		{"all-disabled", []*model.MtproxyUser{{Name: "x", SecretHex: "ab", Enabled: false}}},
-		{"no-secret", []*model.MtproxyUser{{Name: "x", SecretHex: "", Enabled: true, FakeTLSDomain: "d.com"}}},
+		{"all-disabled", []*model.User{{Name: "x", MTProxySecret: "ab", Active: false}}},
+		{"no-secret", []*model.User{{Name: "x", MTProxySecret: "", Active: true, MTProxyDomain: "d.com"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,8 +95,8 @@ func TestBuildMergedNodeConfig_MTProxyStandalone(t *testing.T) {
 			{Protocol: "mtproxy", Port: 443, Tag: "sa-mtp"},
 		},
 	}
-	users := []*model.MtproxyUser{
-		{ID: "u1", Name: "alice", SecretHex: "83b231c9ccf32ef09f48c8f63765ab4f", FakeTLSDomain: "disk.yandex.ru", Enabled: true},
+	users := []*model.User{
+		{ID: "u1", Name: "alice", MTProxySecret: "83b231c9ccf32ef09f48c8f63765ab4f", MTProxyDomain: "disk.yandex.ru", Active: true},
 	}
 	cfg, _, err := buildMergedNodeConfig(nodeInfo, nil, nil, nil, users)
 	if err != nil {
@@ -126,8 +126,8 @@ func TestBuildMergedNodeConfig_MTProxyChainEntry(t *testing.T) {
 		},
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "mtp-node"}}
-	users := []*model.MtproxyUser{
-		{ID: "u1", Name: "alice", SecretHex: "83b231c9ccf32ef09f48c8f63765ab4f", FakeTLSDomain: "disk.yandex.ru", Enabled: true},
+	users := []*model.User{
+		{ID: "u1", Name: "alice", MTProxySecret: "83b231c9ccf32ef09f48c8f63765ab4f", MTProxyDomain: "disk.yandex.ru", Active: true},
 	}
 	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil, users)
 	if err != nil {

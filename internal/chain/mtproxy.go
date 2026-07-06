@@ -19,17 +19,17 @@ import (
 )
 
 // buildMTProxyInbound renders a sing-box MTProxy inbound from the node's MTProxy
-// users. Each enabled user becomes a users[] entry with the extended "ee"+hex
-// secret. Returns nil (no inbound) when there are no enabled users — a node
-// with no MTProxy users should not emit an empty inbound (sing-box rejects an
-// mtproxy inbound with an empty users[]).
-func buildMTProxyInbound(port int, tag string, users []*model.MtproxyUser) json.RawMessage {
+// users. Each active user becomes a users[] entry with the extended "ee"+hex
+// secret. Returns nil (no inbound) when there are no active users with a
+// non-empty secret — a node with no MTProxy users should not emit an empty
+// inbound (sing-box rejects an mtproxy inbound with an empty users[]).
+func buildMTProxyInbound(port int, tag string, users []*model.User) json.RawMessage {
 	mtUsers := make([]config.MTProxyUser, 0, len(users))
 	for _, u := range users {
-		if !u.Enabled {
+		if !u.Active {
 			continue
 		}
-		secret, err := MTProxyFullSecret(u.SecretHex, u.FakeTLSDomain)
+		secret, err := MTProxyFullSecret(u.MTProxySecret, u.MTProxyDomain)
 		if err != nil {
 			// A malformed secret would make sing-box reject the whole config.
 			// Skip the user rather than fail the deploy — the operator can fix
@@ -65,16 +65,16 @@ func buildMTProxyInbound(port int, tag string, users []*model.MtproxyUser) json.
 	return data
 }
 
-// mtproxyUsersForNode filters the node's MTProxy users down to the enabled ones
-// with a non-empty secret. Returns nil when none qualify (so the caller skips
+// mtproxyUsersForNode filters users down to active ones with a non-empty
+// MTProxySecret. Returns nil when none qualify (so the caller skips
 // emitting an inbound). Used by the deploy path to feed buildMTProxyInbound.
-func mtproxyUsersForNode(users []*model.MtproxyUser) []*model.MtproxyUser {
+func mtproxyUsersForNode(users []*model.User) []*model.User {
 	if len(users) == 0 {
 		return nil
 	}
-	out := make([]*model.MtproxyUser, 0, len(users))
+	out := make([]*model.User, 0, len(users))
 	for _, u := range users {
-		if u.Enabled && u.SecretHex != "" {
+		if u.Active && u.MTProxySecret != "" {
 			out = append(out, u)
 		}
 	}

@@ -350,7 +350,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 
 		// Fetch this node's MTProxy users (the node-level MTProxy inbound is
 		// built from them in buildMergedNodeConfig). Empty for non-MTProxy nodes.
-		mtproxyUsers, _ := store.ListMtproxyUsersForNode(node.ID)
+		mtproxyUsers := store.ListMTProxyUsersForNode(node.ID)
 		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains), usersByInboundMap(store, nodeInfo.Inbounds), mtproxyUsers)
 		if buildErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "build config: " + buildErr.Error()})
@@ -1831,7 +1831,7 @@ func (a *Applier) applyMergedNodeLocked(
 
 	// Fetch this node's MTProxy users (the node-level MTProxy inbound is built
 	// from them in buildMergedNodeConfig). Empty for non-MTProxy nodes.
-	mtproxyUsers, _ := store.ListMtproxyUsersForNode(info.ID)
+	mtproxyUsers := store.ListMTProxyUsersForNode(info.ID)
 	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains), usersByInboundMap(store, info.Inbounds), mtproxyUsers)
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("build merged config: %w", err)

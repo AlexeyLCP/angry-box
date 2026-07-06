@@ -51,7 +51,7 @@ type chainRole struct {
 func RenderMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
-	mtproxyUsers []*model.MtproxyUser,
+	mtproxyUsers []*model.User,
 ) (*config.SingboxConfig, *MergeReport, error) {
 	return buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil, mtproxyUsers)
 }
@@ -67,7 +67,7 @@ func buildMergedNodeConfig(
 	nodeChains []*model.Chain,
 	usersByChain map[string][]model.User,
 	usersByInbound map[string][]model.User,
-	mtproxyUsers []*model.MtproxyUser,
+	mtproxyUsers []*model.User,
 ) (*config.SingboxConfig, *MergeReport, error) {
 
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
