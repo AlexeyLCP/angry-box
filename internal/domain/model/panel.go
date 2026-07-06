@@ -88,6 +88,12 @@ type PanelSettings struct {
 	CustomPresets           json.RawMessage   `json:"custom_presets,omitempty"`             // user-created obfuscation presets (JSON array of ConnectionPreset)
 	DefaultPresetByProtocol map[string]string `json:"default_preset_by_protocol,omitempty"` // optional per-protocol default override
 	DefaultSSHKeyID         string            `json:"default_ssh_key_id,omitempty"`
+	// DefaultRealitySNI is the global default SNI domain for REALITY / TUIC
+	// inbounds when no preset specifies one (ResolveServerName fallback).
+	// Empty = the built-in const (www.cloudflare.com). Setting this lets the
+	// operator pick a regional SNI (e.g. www.bing.com for CN) without editing
+	// every preset.
+	DefaultRealitySNI string `json:"default_reality_sni,omitempty"`
 }
 
 // Source of an SSHKeyEntry. Stored as a JSON string (no iota) so the registry

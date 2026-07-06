@@ -712,7 +712,7 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			np.Port = defaultTransportPort
 		}
 		if np.ServerName == "" {
-			np.ServerName = DefaultRealitySNI
+			np.ServerName = EffectiveDefaultSNI()
 		}
 
 		var outTag string
@@ -793,7 +793,7 @@ func ensureHopParams(role *chainRole) *hopParams {
 		p.ShortID = hex.EncodeToString(b)
 	}
 	if p.ServerName == "" {
-		p.ServerName = DefaultRealitySNI
+		p.ServerName = EffectiveDefaultSNI()
 	}
 	return p
 }
@@ -805,7 +805,7 @@ func ResolveServerName(preset *ConnectionPreset) string {
 	if preset.XHTTP != nil && len(preset.XHTTP.Hosts) > 0 {
 		return preset.XHTTP.Hosts[0]
 	}
-	return DefaultRealitySNI
+	return EffectiveDefaultSNI()
 }
 
 func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User) (inbounds, endpoints []json.RawMessage) {

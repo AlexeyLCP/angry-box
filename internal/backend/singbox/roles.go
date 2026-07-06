@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
 	"golang.org/x/crypto/curve25519"
 )
@@ -62,7 +63,7 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 	}
 	sni := p.SNIDomain
 	if sni == "" {
-		sni = defaultRealitySNI
+		sni = chain.EffectiveDefaultSNI()
 	}
 	if p.UUID == "" {
 		p.UUID = generateUUID()

@@ -815,6 +815,10 @@ func serveCmd() {
 	// Start background metrics collection based on panel settings
 	settings, _ := chain.NewStore(storePath).GetSettings()
 	ui.StartBackgroundMetrics(settings.MetricsInterval)
+	// Apply the operator's global default REALITY/TUIC SNI (if set) so
+	// ResolveServerName + the standalone singbox renderers use it as the
+	// fallback instead of the built-in const (CTO-review §2 Reality SNI drift).
+	chain.SetDefaultSNI(settings.DefaultRealitySNI)
 
 	// Existing API routes
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

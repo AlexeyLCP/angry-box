@@ -7,10 +7,33 @@ package chain
 
 import "strings"
 
-// DefaultRealitySNI is the fallback REALITY handshake + TLS server_name. Akamai-
-// fronted microsoft SNI breaks REALITY camouflage handshakes on several VPS/NAT
-// paths; cloudflare/google targets validate reliably in sing-box 1.13+.
+// DefaultRealitySNI is the built-in fallback REALITY handshake + TLS server_name
+// when no preset specifies one AND the operator hasn't set a global default
+// (PanelSettings.DefaultRealitySNI). An operator can override it globally via
+// the Settings page (regional SNI, e.g. www.bing.com for CN) without editing
+// every preset — see SetDefaultSNI / EffectiveDefaultSNI.
 const DefaultRealitySNI = "www.cloudflare.com"
+
+// globalDefaultSNI is the operator-set global default SNI (from
+// PanelSettings.DefaultRealitySNI), applied by ResolveServerName as the
+// fallback before the built-in const. Set once at startup via SetDefaultSNI;
+// empty = use the built-in const (no behavior change for existing stores).
+var globalDefaultSNI string
+
+// SetDefaultSNI sets the operator's global default REALITY/TUIC SNI (read from
+// PanelSettings at startup / on settings save). Empty falls back to the
+// built-in const DefaultRealitySNI.
+func SetDefaultSNI(sni string) { globalDefaultSNI = sni }
+
+// EffectiveDefaultSNI returns the active default SNI: the operator's global
+// override if set, else the built-in const. Used by ResolveServerName + the
+// standalone singbox renderers.
+func EffectiveDefaultSNI() string {
+	if globalDefaultSNI != "" {
+		return globalDefaultSNI
+	}
+	return DefaultRealitySNI
+}
 
 // REALITY_SNI_DOMAINS — vetted REALITY handshake targets (TLS 1.3 + H2, popular,
 // not DPI-blocked). Used as the default SNI pool for VLESS-REALITY.

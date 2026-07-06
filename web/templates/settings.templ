@@ -105,6 +105,14 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 						</select>
 					</div>
 
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Default Reality SNI") }</span></label>
+						<input type="text" name="reality_sni" class="input input-bordered max-w-sm font-mono text-sm"
+							if settings.DefaultRealitySNI != "" { value={ settings.DefaultRealitySNI } } else { value="www.cloudflare.com" }
+							placeholder="www.cloudflare.com" />
+						<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "SNI domain for REALITY/TUIC inbounds when no preset specifies one") }</span></label>
+					</div>
+
 					<!-- SSH Keys -->
 					<div class="border-t border-base-300 pt-4 mt-4">
 						<h4 class="font-medium mb-2">{ i18n.T(ctx, "SSH Keys") }</h4>

@@ -134,6 +134,11 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if intervalStr := strings.TrimSpace(r.FormValue("metrics_interval")); intervalStr != "" {
 		settings.MetricsInterval, _ = strconv.Atoi(intervalStr)
 	}
+	// Default REALITY/TUIC SNI (global fallback when no preset specifies one).
+	settings.DefaultRealitySNI = strings.TrimSpace(r.FormValue("reality_sni"))
+	// Apply immediately so subsequent renders use the new default without a restart.
+	chain.SetDefaultSNI(settings.DefaultRealitySNI)
+
 	if dp := strings.TrimSpace(r.FormValue("default_protocol")); dp != "" {
 		if err := chain.ValidateChainUserProtocol(model.UserProtocol(dp)); err != nil && settings.DefaultProtocol != dp {
 			http.Error(w, err.Error(), http.StatusBadRequest)

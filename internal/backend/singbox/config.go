@@ -115,7 +115,7 @@ func (b *Backend) renderStandaloneFromParams(params model.ConfigParams) (*model.
 			Heartbeat:         "10s",
 			TLS: &config.InboundTLSOptions{
 				Enabled:         true,
-				ServerName:      defaultRealitySNI,
+				ServerName:      chain.EffectiveDefaultSNI(),
 				CertificatePath: "/etc/sing-box/cert.pem",
 				KeyPath:         "/etc/sing-box/key.pem",
 			},
@@ -146,7 +146,7 @@ func (b *Backend) renderStandaloneFromParams(params model.ConfigParams) (*model.
 		return &model.Config{Content: string(content), Format: "json", Version: b.Version()}, nil
 
 	default: // vless-reality
-		sni := defaultRealitySNI
+		sni := chain.EffectiveDefaultSNI()
 		if p := chain.GetDefaultPreset(); p.Reality != nil && len(p.Reality.ServerNames) > 0 {
 			sni = p.Reality.ServerNames[0]
 		}
