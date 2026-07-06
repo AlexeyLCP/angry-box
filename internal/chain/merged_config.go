@@ -39,36 +39,78 @@ type chainRole struct {
 	Preset      ConnectionPreset
 }
 
+// MergedNodeConfigParams carries everything buildMergedNodeConfig needs.
+// Required: NodeInfo and NodeChains. The three user maps are optional:
+// nil/empty falls back to the single-user/legacy behavior (mirrors the
+// ClientConfigParams "derive defaults inside" idiom in this package). Production
+// callers should prefer NewMergedNodeConfigParams, which derives the three user
+// collections from the store so the per-client routing plumbing (usersByChain,
+// usersByInbound) and the node-level MTProxy user list are populated uniformly.
+type MergedNodeConfigParams struct {
+	// ── node-level (required) ──
+	NodeInfo *model.NodeInfo
+	// ── chain-level (required; only consumed by resolveChainRoles) ──
+	NodeChains []*model.Chain
+	// ── users (all optional; nil → legacy single-user fallback) ──
+	// UsersByChain maps chain name -> users assigned to that chain (via
+	// User.ChainNames); the chain's user-entry inbound is rendered multi-user.
+	UsersByChain map[string][]model.User
+	// UsersByInbound maps standalone inbound Tag -> users (per-peer AWG).
+	UsersByInbound map[string][]model.User
+	// MtproxyUsers drives the node-level MTProxy inbound (one inbound per user).
+	MtproxyUsers []*model.User
+}
+
+// NewMergedNodeConfigParams builds a MergedNodeConfigParams from the store,
+// deriving the three user collections (usersByChain, usersByInbound, and the
+// node's MTProxy users) the same way every deploy caller used to do inline.
+// This is the single source of truth for the per-client routing plumbing —
+// callers no longer repeat the usersByChainMap/usersByInboundMap/
+// ListMTProxyUsersForNode trio (CTO-review §4: the 5-param assembly was a
+// 7-arg-smell because of this repeated derivation).
+func NewMergedNodeConfigParams(store *Store, nodeInfo *model.NodeInfo, chains []*model.Chain) MergedNodeConfigParams {
+	return MergedNodeConfigParams{
+		NodeInfo:       nodeInfo,
+		NodeChains:     chains,
+		UsersByChain:   usersByChainMap(store, chains),
+		UsersByInbound: usersByInboundMap(store, nodeInfo.Inbounds),
+		MtproxyUsers:   store.ListMTProxyUsersForNode(nodeInfo.ID),
+	}
+}
+
 // RenderMergedNodeConfig is the exported variant of buildMergedNodeConfig for
 // callers that need to preview/dry-run a node's merged config without pushing
 // it (e.g. the Deploy Status hash comparison and config preview endpoint).
 // mtproxyUsers, when non-nil, drives the node-level MTProxy inbound emission
-// (same as the deploy path's ListMtproxyUsersForNode); pass nil for nodes with
+// (same as the deploy path's ListMTProxyUsersForNode); pass nil for nodes with
 // no MTProxy users. It does not know about per-chain users, so chain entry
 // inbounds fall back to the chain-wide shared credentials (single-user),
 // matching the pre-per-user behavior. Use buildMergedNodeConfig with a
-// usersByChain map to emit multi-user inbounds.
+// UsersByChain map to emit multi-user inbounds.
 func RenderMergedNodeConfig(
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
 	mtproxyUsers []*model.User,
 ) (*config.SingboxConfig, *MergeReport, error) {
-	return buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil, mtproxyUsers)
+	return buildMergedNodeConfig(MergedNodeConfigParams{
+		NodeInfo:     nodeInfo,
+		NodeChains:   nodeChains,
+		MtproxyUsers: mtproxyUsers,
+	})
 }
 
 // buildMergedNodeConfig renders a node's merged sing-box config from its
-// standalone inbounds plus every chain that includes it. usersByChain, when
+// standalone inbounds plus every chain that includes it. UsersByChain, when
 // non-nil, maps chain name -> users assigned to that chain (via User.ChainNames);
 // the chain's user-entry inbound is then rendered multi-user (one Users[] entry
 // per user with their per-user creds). When nil/empty for a chain, the entry
 // inbound falls back to the chain-wide shared credentials (single-user, legacy).
-func buildMergedNodeConfig(
-	nodeInfo *model.NodeInfo,
-	nodeChains []*model.Chain,
-	usersByChain map[string][]model.User,
-	usersByInbound map[string][]model.User,
-	mtproxyUsers []*model.User,
-) (*config.SingboxConfig, *MergeReport, error) {
+func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *MergeReport, error) {
+	nodeInfo := p.NodeInfo
+	nodeChains := p.NodeChains
+	usersByChain := p.UsersByChain
+	usersByInbound := p.UsersByInbound
+	mtproxyUsers := p.MtproxyUsers
 
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
 	report := &MergeReport{NodeID: nodeInfo.ID}

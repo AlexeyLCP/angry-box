@@ -58,7 +58,7 @@ func TestBuildMergedNodeConfig_Success(t *testing.T) {
 	nodeChains := []*model.Chain{chainA, chainB}
 
 	// 3. Build merged config
-	cfg, report, err := buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil, nil)
+	cfg, report, err := buildMergedNodeConfig(MergedNodeConfigParams{NodeInfo: nodeInfo, NodeChains: nodeChains})
 	if err != nil {
 		t.Fatalf("Failed to build merged config: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestBuildMergedNodeConfig_Conflict(t *testing.T) {
 	nodeChains := []*model.Chain{chainA}
 
 	// Build merged config -> Expect conflict error
-	_, _, err := buildMergedNodeConfig(nodeInfo, nodeChains, nil, nil, nil)
+	_, _, err := buildMergedNodeConfig(MergedNodeConfigParams{NodeInfo: nodeInfo, NodeChains: nodeChains})
 	if err == nil {
 		t.Fatalf("Expected port conflict error, but got nil")
 	}

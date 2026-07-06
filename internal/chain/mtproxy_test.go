@@ -98,7 +98,7 @@ func TestBuildMergedNodeConfig_MTProxyStandalone(t *testing.T) {
 	users := []*model.User{
 		{ID: "u1", Name: "alice", MTProxySecret: "83b231c9ccf32ef09f48c8f63765ab4f", MTProxyDomain: "disk.yandex.ru", Active: true},
 	}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, nil, nil, nil, users)
+	cfg, _, err := buildMergedNodeConfig(MergedNodeConfigParams{NodeInfo: nodeInfo, MtproxyUsers: users})
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestBuildMergedNodeConfig_MTProxyChainEntry(t *testing.T) {
 	users := []*model.User{
 		{ID: "u1", Name: "alice", MTProxySecret: "83b231c9ccf32ef09f48c8f63765ab4f", MTProxyDomain: "disk.yandex.ru", Active: true},
 	}
-	cfg, _, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{c}, nil, nil, users)
+	cfg, _, err := buildMergedNodeConfig(MergedNodeConfigParams{NodeInfo: nodeInfo, NodeChains: []*model.Chain{c}, MtproxyUsers: users})
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig: %v", err)
 	}

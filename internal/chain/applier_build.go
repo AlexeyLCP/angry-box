@@ -349,10 +349,9 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			nodeChains = append(nodeChains, chain)
 		}
 
-		// Fetch this node's MTProxy users (the node-level MTProxy inbound is
-		// built from them in buildMergedNodeConfig). Empty for non-MTProxy nodes.
-		mtproxyUsers := store.ListMTProxyUsersForNode(node.ID)
-		cfg, _, buildErr := buildMergedNodeConfig(nodeInfo, nodeChains, usersByChainMap(store, nodeChains), usersByInboundMap(store, nodeInfo.Inbounds), mtproxyUsers)
+		// buildMergedNodeConfig derives the per-chain/standalone user maps and
+		// the node's MTProxy users from the store via NewMergedNodeConfigParams.
+		cfg, _, buildErr := buildMergedNodeConfig(NewMergedNodeConfigParams(store, nodeInfo, nodeChains))
 		if buildErr != nil {
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "build config: " + buildErr.Error()})
 			continue
@@ -1597,10 +1596,9 @@ func (a *Applier) applyMergedNodeLocked(
 		}
 	}
 
-	// Fetch this node's MTProxy users (the node-level MTProxy inbound is built
-	// from them in buildMergedNodeConfig). Empty for non-MTProxy nodes.
-	mtproxyUsers := store.ListMTProxyUsersForNode(info.ID)
-	cfg, mergeReport, err := buildMergedNodeConfig(info, chains, usersByChainMap(store, chains), usersByInboundMap(store, info.Inbounds), mtproxyUsers)
+	// buildMergedNodeConfig derives the per-chain/standalone user maps and the
+	// node's MTProxy users from the store via NewMergedNodeConfigParams.
+	cfg, mergeReport, err := buildMergedNodeConfig(NewMergedNodeConfigParams(store, info, chains))
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("build merged config: %w", err)
 	}

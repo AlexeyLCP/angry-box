@@ -278,7 +278,7 @@ func TestMergedNodeConfigParity(t *testing.T) {
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "node0", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"}}
 
-	cfg, report, err := buildMergedNodeConfig(nodeInfo, []*model.Chain{chain}, nil, nil, nil)
+	cfg, report, err := buildMergedNodeConfig(MergedNodeConfigParams{NodeInfo: nodeInfo, NodeChains: []*model.Chain{chain}})
 	if err != nil {
 		t.Fatalf("buildMergedNodeConfig failed: %v", err)
 	}
