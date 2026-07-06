@@ -1,0 +1,71 @@
+# angry-box CI — minimal regression gate (CTO-review §6 finding: CI was absent).
+# Runs on every push/PR to main: templ-generate no-diff check, build, vet, unit
+# tests, and govulncheck. E2E tests (build tag `e2e`) are NOT run here — they
+# need live GCloud VPSes (see AGENTS.md "E2E Testing Infrastructure").
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ (no-diff check)
+        run: |
+          templ generate ./web/templates
+          # The Makefile generate target also strips duplicate templ imports
+          # (a templ v0.3.x quirk). Replicate that here so the no-diff check
+          # does not false-positive on the duplicated-import line.
+          cd web/templates
+          for f in *_templ.go; do
+            awk 'BEGIN{seen=0} /^import "github.com\/a-h\/templ"$/ {if(++seen>1) next} {print}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+          cd ../..
+          # Fail if generating templ produced any change — the committed
+          # *_templ.go must be in sync with the .templ sources.
+          if ! git diff --exit-code -- web/templates; then
+            echo "::error::templ generate produced unsynced *_templ.go — run 'make generate' and commit the result"
+            git diff -- web/templates
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests (non-e2e)
+        run: go test ./internal/... ./cmd/... -count=1
+
+      - name: Verify e2e + wsl_smoke compile
+        run: |
+          go build -tags e2e ./...
+          go build -tags wsl_smoke ./...
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
