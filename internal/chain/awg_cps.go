@@ -10,6 +10,7 @@ package chain
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"math/big"
@@ -364,8 +365,44 @@ func BuildAmneziaSection(awg *AWGPreset, preset *ConnectionPreset, material *AWG
 		section.I3 = strs[2]
 		section.I4 = strs[3]
 		section.I5 = strs[4]
+
+		// I1Packet override (AWGPreset.I1Packet): when the preset specifies an
+		// explicit I1 packet, it replaces the generated I1. Supported forms:
+		//   "quic-1200" → a 1200-byte QUIC Initial (Chrome-shaped)
+		//   "dns-1232"  → a 1232-byte DNS query (icloud.com)
+		//   any other non-empty string → base64-decoded literal bytes
+		// AGENTS.md Known Issue #10 open gap: I1Packet was parsed but never
+		// emitted — the override never reached the rendered .conf. This closes it.
+		if awg != nil && awg.I1Packet != "" {
+			if pkt, ok := resolveI1Packet(awg.I1Packet); ok {
+				section.I1 = CPSMaterialString(pkt)
+			}
+		}
 	}
 	return section
+}
+
+// resolveI1Packet turns an AWGPreset.I1Packet value into the raw I1 payload
+// bytes. Recognized keywords produce a realistic QUIC Initial (1200B) or DNS
+// query (1232B) matching the level-3 mimicry shapes; any other non-empty value
+// is base64-decoded as a literal. Returns (bytes, true) on success, (nil, false)
+// if the literal could not be decoded (the caller keeps the generated I1).
+func resolveI1Packet(v string) ([]byte, bool) {
+	switch v {
+	case "quic-1200":
+		return GenerateQUICInitial(), true
+	case "dns-1232":
+		return GenerateDNS("icloud.com", 1232), true
+	default:
+		// Literal: base64 (standard or URL-safe) → raw bytes.
+		if b, err := base64.StdEncoding.DecodeString(v); err == nil && len(b) > 0 {
+			return b, true
+		}
+		if b, err := base64.URLEncoding.DecodeString(v); err == nil && len(b) > 0 {
+			return b, true
+		}
+		return nil, false
+	}
 }
 
 // EnsureChainAWGMaterial populates c.AWGCPSI1..I5 (and level/mimicry) once,

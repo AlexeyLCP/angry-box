@@ -85,6 +85,68 @@ detect_platform() {
 do_uninstall() {
     echo "==> Uninstalling Angry-BOX..."
 
+    # The angry-box data dir holds store.json (SSH private keys for the whole
+    # VPS fleet, AWG/Reality/TLS secrets, audit logs) + the at-rest encryption
+    # key (store.json.key). rm -rf'ing it is irreversible — prompt and back it
+    # up first so a misfired --uninstall does not wipe the fleet (AGENTS.md #6:
+    # no silent failures; the old behavior wiped store with no confirmation).
+    if [ "$IS_KEENETIC" = true ]; then
+        DATA_DIR="/opt/etc/angry-box"
+    else
+        DATA_DIR="/etc/angry-box"
+    fi
+
+    if [ -d "$DATA_DIR" ]; then
+        echo ""
+        echo "WARNING: $DATA_DIR contains store.json (SSH private keys + secrets +"
+        echo "audit logs) and possibly store.json.key (the at-rest encryption key)."
+        echo "Removing it is IRREVERSIBLE — without a backup you lose access to every"
+        echo "node the orchestrator manages."
+        echo ""
+        printf "Backup store.json + store.json.key to ~/angry-box-backup-*.tar.gz before removal? [Y/n] "
+        BACKUP_ANSWER=""
+        read -r BACKUP_ANSWER < /dev/tty 2>/dev/null || {
+            echo ""
+            echo "ERROR: Cannot read from terminal (piped install?)."
+            echo "To uninstall non-interactively, remove $DATA_DIR manually after backing it up:"
+            echo "  tar czf ~/angry-box-backup-\$(date +%s).tar.gz -C \$(dirname $DATA_DIR) \$(basename $DATA_DIR)"
+            exit 1
+        }
+        case "$BACKUP_ANSWER" in
+            [nN]*)
+                echo "==> Skipping backup (per user choice)."
+                ;;
+            *)
+                BACKUP="$HOME/angry-box-backup-$(date +%s).tar.gz"
+                if tar czf "$BACKUP" -C "$(dirname "$DATA_DIR")" "$(basename "$DATA_DIR")" 2>/dev/null; then
+                    echo "==> Backed up $DATA_DIR → $BACKUP"
+                else
+                    echo "ERROR: backup failed — aborting uninstall to avoid data loss."
+                    echo "Back up $DATA_DIR manually and re-run."
+                    exit 1
+                fi
+                ;;
+        esac
+
+        echo ""
+        printf "Proceed with uninstall (deletes $DATA_DIR)? [y/N] "
+        CONFIRM=""
+        read -r CONFIRM < /dev/tty 2>/dev/null || {
+            echo ""
+            echo "ERROR: Cannot read from terminal — aborting to avoid data loss."
+            exit 1
+        }
+        case "$CONFIRM" in
+            [yY]*)
+                echo "==> Confirmed. Proceeding with uninstall."
+                ;;
+            *)
+                echo "==> Aborted. $DATA_DIR left intact."
+                exit 0
+                ;;
+        esac
+    fi
+
     if [ "$IS_KEENETIC" = true ]; then
         /opt/etc/init.d/S99angry-box stop 2>/dev/null || true
         rm -f /opt/etc/init.d/S99angry-box
@@ -102,6 +164,10 @@ do_uninstall() {
     fi
 
     echo "Angry-BOX removed."
+    if [ -n "${BACKUP:-}" ] && [ -f "$BACKUP" ]; then
+        echo "A backup of the old store was saved at: $BACKUP"
+        echo "Keep it somewhere safe — it contains your fleet's SSH private keys + secrets."
+    fi
     exit 0
 }
 

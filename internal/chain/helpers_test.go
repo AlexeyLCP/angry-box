@@ -453,6 +453,72 @@ func TestBuildAmneziaSection_NilPreset(t *testing.T) {
 	}
 }
 
+// TestBuildAmneziaSection_I1PacketOverride verifies the I1Packet preset field
+// overrides the generated I1 (AGENTS.md Known Issue #10 open gap: I1Packet was
+// parsed but never emitted). Covers the "quic-1200" / "dns-1232" keywords and
+// the base64 literal form.
+func TestBuildAmneziaSection_I1PacketOverride(t *testing.T) {
+	preset := ConnectionPreset{CPSLevel: 3, AWGMimicry: "quic"}
+
+	// quic-1200 keyword → I1 must come from a 1200-byte QUIC Initial. The
+	// generator uses crypto/rand, so compare the byte length via the CPS string
+	// hex payload (strip the "<b 0x...>" wrapper) rather than exact bytes.
+	awg := &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, S1: 1, S2: 2, H1: 1, H2: 2, H3: 3, H4: 4, I1Packet: "quic-1200"}
+	section := BuildAmneziaSection(awg, &preset, nil)
+	if section == nil || section.I1 == "" {
+		t.Fatal("section/I1 empty for quic-1200")
+	}
+	if hexLen := cpsHexPayloadLen(section.I1); hexLen != 1200 {
+		t.Errorf("quic-1200 override: I1 payload = %d bytes, want 1200", hexLen)
+	}
+
+	// dns-1232 keyword → I1 must be a 1232-byte DNS query.
+	awg.I1Packet = "dns-1232"
+	section2 := BuildAmneziaSection(awg, &preset, nil)
+	if hexLen := cpsHexPayloadLen(section2.I1); hexLen != 1232 {
+		t.Errorf("dns-1232 override: I1 payload = %d bytes, want 1232", hexLen)
+	}
+
+	// base64 literal → I1 must be the decoded literal's CPS string (deterministic
+	// — no randomness, so exact comparison works here).
+	literal := []byte{0xde, 0xad, 0xbe, 0xef}
+	awg.I1Packet = base64.StdEncoding.EncodeToString(literal)
+	section3 := BuildAmneziaSection(awg, &preset, nil)
+	wantLit := CPSMaterialString(literal)
+	if section3.I1 != wantLit {
+		t.Errorf("base64 literal override: I1 = %q, want %q", section3.I1, wantLit)
+	}
+
+	// Invalid literal → keep the generated I1 (no override, no panic). The
+	// generated I1 is random, so just assert it's non-empty and a QUIC-shape
+	// (1200 bytes for level-3 quic mimicry).
+	awg.I1Packet = "!!!not-base64!!!"
+	section4 := BuildAmneziaSection(awg, &preset, nil)
+	if section4.I1 == "" {
+		t.Error("invalid I1Packet should fall back to a non-empty generated I1")
+	}
+	if hexLen := cpsHexPayloadLen(section4.I1); hexLen != 1200 {
+		t.Errorf("invalid I1Packet fallback: generated I1 = %d bytes, want 1200 (level-3 quic)", hexLen)
+	}
+}
+
+// cpsHexPayloadLen extracts the byte length of the payload inside a CPS string
+// of the form "<b 0x{hex}>" (the format CPSMaterialString produces).
+func cpsHexPayloadLen(s string) int {
+	// "<b 0x" prefix, ">" suffix; the hex is what's between.
+	const prefix = "<b 0x"
+	i := strings.Index(s, prefix)
+	if i < 0 {
+		return 0
+	}
+	rest := s[i+len(prefix):]
+	j := strings.Index(rest, ">")
+	if j < 0 {
+		return 0
+	}
+	return len(rest[:j]) / 2 // 2 hex chars per byte
+}
+
 // ─── GenerateSelfSignedCert ───────────────────────────────────────────────────
 
 func TestGenerateSelfSignedCert(t *testing.T) {
