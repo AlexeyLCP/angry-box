@@ -197,6 +197,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// Chains (existing)
 	mux.HandleFunc("GET /ui/chains", s.auth(s.handleChains))
 	mux.HandleFunc("POST /ui/chains", s.auth(s.handleCreateChain))
+	mux.HandleFunc("POST /ui/chains/capture-preview", s.auth(s.handleCaptureQUICPreview))
 	mux.HandleFunc("DELETE /ui/chains/{name}", s.auth(s.handleDeleteChain))
 	mux.HandleFunc("POST /ui/chains/{name}/apply", s.auth(s.handleApplyChain))
 	mux.HandleFunc("GET /ui/chains/new", s.auth(s.handleNewChainForm))

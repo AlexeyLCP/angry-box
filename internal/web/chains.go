@@ -55,6 +55,30 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// AWG CPS mimicry + QUIC capture domain (chain-level override; preset only
+	// ever sets "quic", so "quic-live" must be chosen explicitly here).
+	awgCPSMimicry := strings.TrimSpace(r.FormValue("awg_cps_mimicry"))
+	awgCPSCaptureDomain := strings.TrimSpace(r.FormValue("awg_cps_capture_domain"))
+	if userProto == model.UserProtocol("awg") {
+		switch awgCPSMimicry {
+		case "", "quic-live", "quic", "sip", "dns", "none":
+			// ok
+		default:
+			http.Error(w, i18n.T(r.Context(), "Invalid CPS mimicry mode"), http.StatusBadRequest)
+			return
+		}
+		if awgCPSMimicry == "quic-live" && awgCPSCaptureDomain != "" {
+			awgCPSCaptureDomain = chain.NormalizeDomain(awgCPSCaptureDomain)
+			if !chain.IsValidDomain(awgCPSCaptureDomain) {
+				http.Error(w, i18n.T(r.Context(), "Invalid capture domain"), http.StatusBadRequest)
+				return
+			}
+		}
+	} else {
+		// Non-AWG: ignore any CPS fields silently (they shouldn't be sent).
+		awgCPSMimicry = ""
+		awgCPSCaptureDomain = ""
+	}
 	profile := strings.TrimSpace(r.FormValue("profile"))
 
 	nodeIDs := r.Form["nodes"]
@@ -101,12 +125,14 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := &model.Chain{
-		Name:               name,
-		Nodes:              nodes,
-		Strategy:           model.Strategy(strategy),
-		Transport:          transport,
-		UserProtocol:       userProto,
-		ObfuscationProfile: profile,
+		Name:                name,
+		Nodes:               nodes,
+		Strategy:            model.Strategy(strategy),
+		Transport:           transport,
+		UserProtocol:        userProto,
+		ObfuscationProfile:  profile,
+		AWGCPSMimicry:       awgCPSMimicry,
+		AWGCPSCaptureDomain: awgCPSCaptureDomain,
 	}
 
 	// Generate stable AWG/TUIC creds at creation time
@@ -182,6 +208,46 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		c.UserProtocol = userProto
+	}
+	// AWG CPS mimicry + QUIC capture domain.
+	awgCPSMimicry := strings.TrimSpace(r.FormValue("awg_cps_mimicry"))
+	awgCPSCaptureDomain := strings.TrimSpace(r.FormValue("awg_cps_capture_domain"))
+	if c.UserProtocol == model.UserProtocol("awg") {
+		switch awgCPSMimicry {
+		case "", "quic-live", "quic", "sip", "dns", "none":
+			// ok
+		default:
+			http.Error(w, i18n.T(r.Context(), "Invalid CPS mimicry mode"), http.StatusBadRequest)
+			return
+		}
+		if awgCPSMimicry == "quic-live" && awgCPSCaptureDomain != "" {
+			awgCPSCaptureDomain = chain.NormalizeDomain(awgCPSCaptureDomain)
+			if !chain.IsValidDomain(awgCPSCaptureDomain) {
+				http.Error(w, i18n.T(r.Context(), "Invalid capture domain"), http.StatusBadRequest)
+				return
+			}
+		}
+		// Cache reset: changing the capture domain invalidates the prior capture.
+		if awgCPSCaptureDomain != c.AWGCPSCaptureDomain {
+			c.AWGCPSCapturedDomain = ""
+			c.AWGCPSCaptureFailedDomain = ""
+		}
+		// Leaving quic-live: capture is irrelevant, drop all capture fields.
+		if awgCPSMimicry != "quic-live" {
+			c.AWGCPSCaptureDomain = ""
+			c.AWGCPSCapturedDomain = ""
+			c.AWGCPSCaptureFailedDomain = ""
+		} else {
+			c.AWGCPSCaptureDomain = awgCPSCaptureDomain
+		}
+		c.AWGCPSMimicry = awgCPSMimicry
+	} else {
+		// Non-AWG chain: clear any stale CPS fields (e.g. protocol switched away
+		// from AWG in this same edit).
+		c.AWGCPSMimicry = ""
+		c.AWGCPSCaptureDomain = ""
+		c.AWGCPSCapturedDomain = ""
+		c.AWGCPSCaptureFailedDomain = ""
 	}
 	c.ObfuscationProfile = strings.TrimSpace(r.FormValue("profile"))
 
@@ -346,4 +412,40 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 		resultMsg = strings.Join(parts, " | ")
 	}
 	s.render(w, r, templates.ApplyResult(id, true, report, resultMsg))
+}
+
+// handleCaptureQUICPreview runs chain.CaptureQUICSignature against the
+// domain entered in the chain form and returns an inline I1-I5 preview (or a
+// failure warning). It does NOT save anything — pure preview. The actual
+// persist happens on ApplyChain via EnsureChainAWGMaterial.
+func (s *Server) handleCaptureQUICPreview(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	domain := strings.TrimSpace(r.FormValue("awg_cps_capture_domain"))
+	if domain == "" {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid capture domain") + `</span></div>`})
+		return
+	}
+	domain = chain.NormalizeDomain(domain)
+	if !chain.IsValidDomain(domain) {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid capture domain") + `</span></div>`})
+		return
+	}
+	res := chain.CaptureQUICSignature(domain, 0)
+	if res.OK && len(res.Packets) >= 5 {
+		var b strings.Builder
+		b.WriteString(`<div class="alert alert-success"><div class="text-xs space-y-1"><div><strong>` + i18n.T(r.Context(), "Capture OK") + `</strong> — ` + escHTML(res.Source) + `</div>`)
+		for i, p := range res.Packets {
+			b.WriteString(fmt.Sprintf(`<div>I%d: <code>%s</code></div>`, i+1, escHTML(shortHex(p, 40))))
+		}
+		if res.Warning != "" {
+			b.WriteString(`<div class="text-warning">` + escHTML(res.Warning) + `</div>`)
+		}
+		b.WriteString(`</div></div>`)
+		s.render(w, r, &simpleHTML{html: b.String()})
+		return
+	}
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-warning"><div class="text-xs space-y-1"><div><strong>` + i18n.T(r.Context(), "Capture failed, fell back to synthesized QUIC packets") + `</strong></div><div>` + escHTML(res.Warning) + `</div></div></div>`})
 }
