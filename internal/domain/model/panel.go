@@ -52,6 +52,15 @@ type User struct {
 	AWGPublicKey  string `json:"awg_public_key,omitempty"`
 	AWGAddress    string `json:"awg_address,omitempty"`
 
+	// MTProxy (Telegram FakeTLS) credentials. Optional — set when the user is
+	// also an MTProxy client. Empty MTProxySecret = user is not an MTProxy
+	// client on any node. MTProxyNodes lists the node IDs this user is an
+	// MTProxy client on (replaces the old per-node MtproxyUser.NodeID).
+	MTProxySecret     string   `json:"mtproxy_secret,omitempty"` // 32 hex chars (16 random bytes)
+	MTProxyDomain     string   `json:"mtproxy_domain,omitempty"` // FakeTLS SNI, default "disk.yandex.ru"
+	MTProxyOrderIndex int      `json:"mtproxy_order_index,omitempty"`
+	MTProxyNodes      []string `json:"mtproxy_nodes,omitempty"` // node IDs this user is an MTProxy client on
+
 	// ChainExit optionally pins a user to a specific exit node per chain. The
 	// map key is the chain name; the value is the ChainNode.ID of the exit.
 	// When set and the chain's route section is enabled (AB_ROUTE_DNS=1), a
