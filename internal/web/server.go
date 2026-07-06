@@ -219,7 +219,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /ui/users/{id}", s.auth(s.handleDeleteUser))
 	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
 	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
-		mux.HandleFunc("GET /ui/qr-image", s.auth(s.handleQRImage))
+	mux.HandleFunc("POST /ui/users/generate-mtproxy-secret", s.auth(s.handleGenerateMTProxySecret))
+	mux.HandleFunc("GET /ui/qr-image", s.auth(s.handleQRImage))
 
 	// MTProxy users
 	mux.HandleFunc("GET /ui/mtproxy", s.auth(s.handleMtproxyUsers))

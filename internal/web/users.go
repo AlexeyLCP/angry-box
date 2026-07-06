@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +57,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	chainNames := r.Form["chains"]
 	importedSecret := strings.TrimSpace(r.FormValue("imported_secret"))
 	secretType := strings.TrimSpace(r.FormValue("secret_type"))
+	mtproxyEnabled := r.FormValue("mtproxy_enabled") == "on"
+	mtproxySecret := strings.TrimSpace(r.FormValue("mtproxy_secret"))
+	mtproxyDomain := strings.TrimSpace(r.FormValue("mtproxy_domain"))
+	mtproxyOrderStr := strings.TrimSpace(r.FormValue("mtproxy_order_index"))
+	mtproxyNodes := r.Form["mtproxy_nodes"]
 
 	if id == "" || name == "" {
 		http.Error(w, i18n.T(r.Context(), "id and name are required"), http.StatusBadRequest)
@@ -85,6 +91,21 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		u.Protocols = []string{"awg"}
 	}
 
+	// MTProxy (Telegram FakeTLS) credentials. Set only when the form enables the
+	// MTProxy section or supplies a secret; otherwise the user is not an MTProxy
+	// client on any node.
+	if mtproxyEnabled || mtproxySecret != "" {
+		u.MTProxySecret = mtproxySecret
+		if mtproxyDomain == "" {
+			mtproxyDomain = "disk.yandex.ru"
+		}
+		u.MTProxyDomain = mtproxyDomain
+		if n, err := strconv.Atoi(mtproxyOrderStr); err == nil && n != 0 {
+			u.MTProxyOrderIndex = n
+		}
+		u.MTProxyNodes = mtproxyNodes
+	}
+
 	// Generate per-user credentials for the selected protocols so this user
 	// can authenticate to a multi-user inbound with its own identity (the basis
 	// for per-client routing). Existing creds are preserved.
@@ -100,6 +121,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := st.SaveUser(u); err != nil {
+		if strings.Contains(err.Error(), "mtproxy secret already used") {
+			http.Error(w, i18n.T(r.Context(), "mtproxy secret already used on node %s"), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
@@ -146,6 +171,33 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	u.SecretType = strings.TrimSpace(r.FormValue("secret_type"))
 	u.Active = r.FormValue("active") == "on"
 
+	// MTProxy (Telegram FakeTLS) credentials. On edit, the form is authoritative:
+	// when the MTProxy section is off (and no secret supplied) we clear the
+	// fields so a user that was previously an MTProxy client is removed from the
+	// MTProxy inbounds on the next deploy.
+	mtproxyEnabled := r.FormValue("mtproxy_enabled") == "on"
+	mtproxySecret := strings.TrimSpace(r.FormValue("mtproxy_secret"))
+	mtproxyDomain := strings.TrimSpace(r.FormValue("mtproxy_domain"))
+	mtproxyOrderStr := strings.TrimSpace(r.FormValue("mtproxy_order_index"))
+	mtproxyNodes := r.Form["mtproxy_nodes"]
+	if mtproxyEnabled || mtproxySecret != "" {
+		u.MTProxySecret = mtproxySecret
+		if mtproxyDomain == "" {
+			mtproxyDomain = "disk.yandex.ru"
+		}
+		u.MTProxyDomain = mtproxyDomain
+		if n, err := strconv.Atoi(mtproxyOrderStr); err == nil && n != 0 {
+			u.MTProxyOrderIndex = n
+		}
+		u.MTProxyNodes = mtproxyNodes
+	} else {
+		// MTProxy disabled in edit → clear the fields.
+		u.MTProxySecret = ""
+		u.MTProxyDomain = ""
+		u.MTProxyOrderIndex = 0
+		u.MTProxyNodes = nil
+	}
+
 	if len(u.Protocols) == 0 {
 		u.Protocols = []string{"awg"}
 	}
@@ -160,7 +212,14 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		chain.EnsureUserAWGAddress(u, existingAWGIPs)
 	}
 
-	st.SaveUser(u)
+	if err := st.SaveUser(u); err != nil {
+		if strings.Contains(err.Error(), "mtproxy secret already used") {
+			http.Error(w, i18n.T(r.Context(), "mtproxy secret already used on node %s"), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
+		return
+	}
 	chain.WriteAudit(st, "update", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
 	s.scheduleAutoApplyForUser(st, u, "user update")
 	if isHTMXRequest(r) {
@@ -212,6 +271,13 @@ func (s *Server) scheduleAutoApplyForUser(st *chain.Store, u *model.User, reason
 				break // one schedule per node is enough
 			}
 		}
+	}
+
+	// MTProxy nodes: redeploy every node this user is an MTProxy client on.
+	// (On update/delete, nodes it used to be on still appear in u.MTProxyNodes
+	// because the caller passes the user it just loaded.)
+	for _, n := range u.MTProxyNodes {
+		chain.ScheduleAutoApply(n, reason+":mtproxy")
 	}
 }
 
@@ -275,6 +341,44 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 					Description: fmt.Sprintf(i18n.T(r.Context(), "Standalone inbound on %s (port %d)"), node.ID, ib.Port),
 				})
 			}
+		}
+	}
+
+	// MTProxy client links: one per node in u.MTProxyNodes that this user is an
+	// MTProxy client on. Each becomes a tg://proxy?server=...&port=...&secret=...
+	// entry using the node's mtproxy inbound port (443 if no mtproxy inbound is
+	// configured on that node yet) and the user's full ("ee"+hex) secret.
+	if u.MTProxySecret != "" && len(u.MTProxyNodes) > 0 {
+		for _, nodeID := range u.MTProxyNodes {
+			host, err := st.GetHost(nodeID)
+			if err != nil {
+				continue
+			}
+			addr := host.Addr
+			if i := strings.Index(addr, ":"); i > 0 {
+				addr = addr[:i] // strip the SSH port — MTProxy listens on its own port
+			}
+			port := 443
+			// Prefer the port of an existing mtproxy inbound on this node.
+			if info, err := st.GetNodeInfo(nodeID); err == nil {
+				for _, ib := range info.Inbounds {
+					if ib.Protocol == "mtproxy" && ib.Port > 0 {
+						port = ib.Port
+						break
+					}
+				}
+			}
+			fullSecret, err := chain.MTProxyFullSecret(u.MTProxySecret, u.MTProxyDomain)
+			if err != nil {
+				continue
+			}
+			link := fmt.Sprintf("tg://proxy?server=%s&port=%d&secret=%s", addr, port, fullSecret)
+			configs = append(configs, templates.UserChainConfig{
+				ChainName:   "mtproxy: " + nodeID,
+				Protocol:    "mtproxy",
+				ConfigLink:  link,
+				Description: fmt.Sprintf(i18n.T(r.Context(), "MTProxy on %s (port %d)"), nodeID, port),
+			})
 		}
 	}
 
@@ -576,4 +680,12 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, templates.UserQRView(u, links))
+}
+
+// handleGenerateMTProxySecret renders an <input> prefilled with a fresh 32-hex
+// MTProxy secret. HTMX swaps the empty secret field with this fragment.
+func (s *Server) handleGenerateMTProxySecret(w http.ResponseWriter, r *http.Request) {
+	secret := chain.GenerateMTProxySecret()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<input type="text" name="mtproxy_secret" class="input input-bordered join-item font-mono" value="%s" maxlength="32" />`, secret)
 }
