@@ -113,6 +113,11 @@ func TestE2E_Heavy_Protocol_VLESSRealityXHTTP_Advanced(t *testing.T) {
 }
 
 func TestE2E_Heavy_Protocol_TUIC(t *testing.T) {
+	// TUIC is FROZEN (AGENTS.md #6): "do NOT run TUIC E2E tests". This test is
+	// kept for historical reference but skipped unconditionally to comply with
+	// the frozen-policy. Re-enable only after an explicit user request AND
+	// core stack (AWG, Reality+XHTTP, MTProxy) stabilization.
+	t.Skip("TUIC is FROZEN (AGENTS.md #6) — e2e test skipped per frozen policy")
 	e2eHeavy(t)
 	store := newStore(t)
 	nodes := buildChainNodes(e2eRoleMiddle)

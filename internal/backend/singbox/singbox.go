@@ -836,5 +836,3 @@ func (b *bytesJS) Unmarshal(data []byte) error {
 	*b = bytesJS(s)
 	return nil
 }
-
-var _ = os.DevNull // keep os import if future code uses it; removed if linter complains

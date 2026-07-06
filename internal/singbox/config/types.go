@@ -350,22 +350,16 @@ type WireGuardPeer struct {
 	PersistentKeepaliveInterval int    `json:"persistent_keepalive_interval,omitempty"`
 }
 
-// WireGuardOutbound represents a sing-box wireguard OUTBOUND (the client side
-// of a WireGuard link — dials a remote server endpoint). Used for inter-node
-// AWG chain transport: the previous node's outbound dialing the next node's
-// transit endpoint. Distinct from WireGuardEndpoint, which is the server side.
-type WireGuardOutbound struct {
-	Type           string          `json:"type"` // "wireguard"
-	Tag            string          `json:"tag"`
-	Server         string          `json:"server"`
-	ServerPort     int             `json:"server_port"`
-	LocalAddresses []string        `json:"local_addresses"` // this client's tunnel IPs
-	PrivateKey     string          `json:"private_key"`     // client's WG private key
-	PeerPublicKey  string          `json:"peer_public_key"` // server's WG public key
-	PreSharedKey   string          `json:"pre_shared_key,omitempty"`
-	MTU            int             `json:"mtu,omitempty"`
-	Amnezia        *AmneziaOptions `json:"amnezia,omitempty"`
-}
+// WireGuardOutbound is intentionally NOT defined here. sing-box 1.13 removed
+// the wireguard OUTBOUND (deprecated in 1.11); sing-box-extended 1.13.14
+// rejects `outbounds[].server`/`local_addresses` with "json: unknown field"
+// (AGENTS.md Known Issue #9, confirmed by real `sing-box check`). The client
+// side of a WireGuard/AWG link is therefore a WireGuardEndpoint with a
+// `peers[]` entry carrying `address`+`port`+`public_key` (the shape
+// RenderAWGHop uses), NOT a wireguard outbound. A legacy struct shape lived
+// here as an unused reference; it has been removed because golangci `unused`
+// flagged it and it misled readers into thinking the chain path could emit a
+// wireguard outbound. See AGENTS.md #9 for the full rationale.
 
 // AmneziaOptions represents AWG specific extensions for wireguard in
 // sing-box-extended. JSON keys are lowercase (matching awg_presets'

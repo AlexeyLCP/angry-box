@@ -12,7 +12,6 @@ package chain
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
@@ -93,6 +92,3 @@ func mtproxyInboundPort(port int) int {
 	}
 	return 443
 }
-
-// ensure the fmt import is used (placeholder for future per-user debug logging).
-var _ = fmt.Sprintf
