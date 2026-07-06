@@ -4,6 +4,92 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.3.0] — 2026-07-06
+
+### Architecture — CTO-review §4/§8 + CI release automation + operational debt
+
+Minor bump: the deploy-path SSH plumbing, the config-struct refactor, and the
+route split are architectural (not just fixes). No protocol changes, no store
+schema change — configs and store.json from v0.2.5 are forward-compatible.
+
+#### `buildMergedNodeConfig` 5-param → `MergedNodeConfigParams` struct (CTO-review §4)
+- The 5-param signature (`nodeInfo, nodeChains, usersByChain, usersByInbound,
+  mtproxyUsers`) was a 7-arg-smell: both production callers assembled params 3/4/5
+  identically via `usersByChainMap` + `usersByInboundMap` + `ListMTProxyUsersForNode`.
+- New `MergedNodeConfigParams` struct (mirrors existing `ProxyNodeParams` /
+  `ClientConfigParams` idiom: optional user maps default to legacy single-user).
+- `NewMergedNodeConfigParams(store, nodeInfo, chains)` constructor derives the
+  three user collections from the store — single source of truth for the
+  per-client routing plumbing. 11 test call sites updated.
+
+#### `web/server.go` Register (~60 routes) split per resource (CTO-review §4)
+- Register was a ~60-route monolith mixing every resource. Routes unchanged;
+  only organization. Each resource handler file now owns a
+  `register<Resource>Routes(mux)` method (11 files), called from a thin
+  top-level Register that keeps only the static FS + `/` redirect.
+- Routes grouped by path prefix; handlers stay where they are. Middleware
+  (`s.auth`) uniform — no per-route variation.
+
+#### SSH intra-deploy connection collapse (CTO-review §8)
+- A merged deploy to one host opened **3 separate SSH connections**
+  (applier client + `backend.DeployWithOptions` + `backend.InstallAWGModuleWithOptions`);
+  ApplyChain per-node was ~4 (pre-flight + the 3). A true connection POOL was
+  deferred (TOFU-staleness risk — a pooled connection never re-verifies the host
+  key after dial; `x/crypto/ssh` doesn't expose the negotiated key cleanly).
+- The right win is **plumbing**: a new optional `ports.ClientBackend` interface
+  (`DeployOptsAndClient` + `InstallAWGModuleWithClient`) lets the chain/merged
+  applier pass its already-open client into the backend methods so they don't
+  dial. singbox.Backend implements it (compile-time assert); callers type-assert
+  and fall back to the dialing variants for backends that don't.
+- Result: merged deploy = 1 Connect (was 3); ApplyChain per-node = 2 (pre-flight
+  + collapsed deploy, was ~4). Tests:
+  `TestApplyMergedNode_OpensOneConnection`, `TestApplyChain_OpensOneConnectionPerNode`.
+- The autoapply concurrency cap (v0.2.5) bounds the global fan-out; this collapse
+  removes the intra-deploy 3× redundancy. A true cross-deploy connection POOL
+  remains a v1.0 follow-up.
+
+#### CI release automation (CTO-review §4 infra)
+- New `.github/workflows/release.yml`: triggered by `v*` tag push, builds the
+  full artifact set on ubuntu-latest (has `ar`/GNU `tar`/`gzip`) and uploads to
+  a GitHub release via `softprops/action-gh-release@v2`. Produces the same
+  artifact set as the manual v0.2.5 release: 4 linux tarballs + windows zip +
+  2 .ipk + checksums-sha256.txt, with `git describe` version injection.
+- Makefile fixes the audit found: removed dead duplicate opkg targets; fixed
+  `build-arm64-opkg` arg order (`build-opkg.sh` signature is `<binary> <arch>
+  <version> <outdir>` — was passing version as arch); dropped the broken
+  `build-keenetic-opkg.sh` wrapper; restored `GOMIPS=softfloat` on the mipsel
+  build (lost in the canonical block — Keenetic soft-float targets would SIGILL
+  without it); added `-trimpath` to every cross-build; added
+  `build-windows-amd64` target; `build-all` now produces 5 binaries.
+
+#### Operational debt (5-min tweaks)
+- **install.sh `--uninstall`** (AGENTS.md #6): wiped `store.json` (SSH private
+  keys for the whole fleet + secrets + audit logs + the at-rest encryption key)
+  with `rm -rf` and NO confirmation. Now prompts to back up to
+  `~/angry-box-backup-<ts>.tar.gz` first (default Yes), then a separate [y/N]
+  confirm before the rm (default No). Piped `curl|sh` exits 1 with
+  manual-backup instructions.
+- **AWG `I1Packet` override** (AGENTS.md Known Issue #10): the preset field was
+  parsed but never emitted — the override never reached the rendered .conf.
+  `BuildAmneziaSection` now applies it: `"quic-1200"` → 1200-byte QUIC Initial,
+  `"dns-1232"` → 1232-byte DNS query, any other non-empty value → base64-decoded
+  literal. Invalid literals fall back to the generated I1 (no panic).
+
+#### Verification
+- `go build ./...` OK, `go vet ./...` clean, `go test ./...` 9 packages ok /
+  0 FAIL, `e2e` + `wsl_smoke` compile-only green, `govulncheck`: no
+  vulnerabilities, `templ generate`: no diff.
+
+#### Known follow-ups (NOT in this release — explicitly deferred)
+- SSH connection POOL (reuse across distinct deploys with idle eviction + TOFU
+  re-verify on borrow) — v1.0.
+- AWG per-inbound server IP allocation (B.3 — model + migration).
+- Takeover'd AWG peers → `model.User` materialization (B.4 — rollback symmetry).
+- Audit log write-amplification split (B.1 — optimization; the 5000 cap is in place).
+- `ip rule 10.8.0.0/24 → table 2022` (B.7 — gated on a real-VPS verdict).
+- per-client `source_ip_cidr` under TUN-overlay real-VPS verify (needs GCloud).
+- deps/sing-box mirror/backup (infra).
+
 ## [v0.2.5] — 2026-07-06
 
 ### Hardening — CTO-review cycle (all 10 Top-10 blockers closed properly)
