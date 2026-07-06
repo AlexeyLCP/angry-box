@@ -43,7 +43,7 @@
 
 ## 1. Что сделано (committed)
 
-> **Ниже — большой заход kernel-AWG rework (2026-07-03), В РАБОЧЕМ ДЕРЕВЕ, ещё НЕ закоммичен.** См. раздел 1.A для деталей. Все 7 подсистем собраны, `go build ./...` + полный non-e2e `go test` зелёные.
+> **Ниже — большой заход kernel-AWG rework (2026-07-03), закоммичен в main (см. коммиты вокруг 2026-07-03).** См. раздел 1.A для деталей. Все 7 подсистем собраны, `go build ./...` + полный non-e2e `go test` зелёные.
 
 - **#5 standalone multi-peer** — committed+pushed. `buildAWGUserInboundMulti` (multi-peer WG endpoint per-user). ~~ВАЖНО: это userspace endpoint — архитектурно неверен, будет переделан в п.3.1 ниже.~~ → **ПЕРЕДЕЛАНО** в разделе 1.A: standalone AWG больше не эмитит userspace endpoint (kernel awg0.conf + TUN-overlay).
 - **#4 AWG takeover** — committed+pushed. `renderAWGTakeoverConfig` + Takeover AWG branch. ВАЖНО: takeover сейчас **убивает `awg-quick@awg0`** чтобы освободить порт под userspace endpoint — архитектурно неверно, будет переделан в п.3.8 (takeover — ещё pending, не трогали в этом заходе).
@@ -58,7 +58,7 @@
 
 ---
 
-## 1.A. Kernel-AWG rework (2026-07-03, В РАБОЧЕМ ДЕРЕВЕ — НЕ закоммичен)
+## 1.A. Kernel-AWG rework (2026-07-03, закоммичен в main)
 
 Большой заход: AWG-сервер с userspace `WireGuardEndpoint` → **kernel `awg-quick@awg0` + sing-box TUN-overlay**. + multi-exit balancer (`NodeRoleExit` + `ExitTargets`). + deploy-флоу с двухфайловым пушем и atomic rollback. Все тесты зелёные.
 

@@ -124,12 +124,11 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 │   │   └── store.go     # JSON persistence layer (single source of truth)
 │   ├── takeover/        # VPN takeover (detect/convert/cutover + rollback-to-old)
 │   ├── domain/
-│   │   ├── model/       # Core data structures (Chain, NodeInfo, User, PanelSettings, Profile, AuditLog)
+│   │   ├── model/       # Core data structures (Chain, NodeInfo, User, PanelSettings, AuditLog)
 │   │   └── ports/       # Interfaces (Factory, Backend, SSHClient)
 │   ├── i18n/            # Translations (en/ru) — i18n.T(ctx, "key")
-│   ├── sshclient/       # SSH connection handling, file pushing, service control
-│   └── web/
-│       └── ui.go        # HTTP/HTMX handlers, routing
+│   ├── ssh/             # SSH connection handling, file pushing, service control, TOFU
+│   └── web/             # HTTP/HTMX handlers (server.go + chains/nodes/users/settings/spider/presets/profiles/takeover/dashboard/auth/csrf/...)
 ├── web/
 │   ├── static/          # CSS, JS, assets
 │   └── templates/       # .templ files for the UI
