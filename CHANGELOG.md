@@ -4,6 +4,124 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.3.1] — 2026-07-06
+
+### Architecture follow-ups (deferred from v0.3.0) + UI fixes + patches safety
+
+Patch bump: no protocol/store-schema changes that break clients. NodeInbound
+gains an optional field (omitempty); TakeoverState gains an optional field;
+audit log splits to a sibling file (legacy inline preserved read-only). All
+backward compatible.
+
+#### Audit log write-amplification split (CTO-review §12 D1)
+- Every `SaveAuditLog` used to rewrite the ENTIRE store.json (O(file) per entry —
+  write amplification growing with the store). Now appends ONE json line to a
+  sibling `<store>.audit.jsonl` file under a separate `auditMu` (O(1) per entry,
+  no readStore/writeStore of the main store). `ListAuditLogs` merges the legacy
+  inline `storeFile.AuditLogs` (read-only, for pre-split stores) + the jsonl tail,
+  dedupes by ID, returns newest-first capped to 5000. Periodic compaction
+  (rewrite to last 5000 lines) when the jsonl exceeds 2×cap. Migration-safe:
+  store.json's inline AuditLogs left untouched; a future schema bump can drain.
+- Tests: `TestStore_AuditLog_WritesJsonlNotStore` (store.json mtime unchanged
+  across appends while jsonl grows), `_MergesLegacyInline`, `_DedupByID`.
+
+#### AWG per-inbound server IP allocation (AGENTS.md Known Issue #10)
+- A node hosting BOTH a chain AWG entry (10.8.0.1/24) AND a standalone AWG
+  inbound (also 10.8.0.1/24) collided on the single awg0 interface. The old
+  `if len(files)==0` guard in `RenderNodeAWGConfs` silently dropped the
+  standalone — the operator never saw the collision. Now:
+  `model.NodeInbound.AWGServerAddress` (omitempty, default 10.8.0.1/24) is the
+  per-inbound server tunnel address; `allocateAWGPeerIPInSubnet(prefix, taken)`
+  allocates peers in the inbound's own /24; `RenderNodeAWGConfs` returns
+  warnings (chain entry + standalone collide → loud warning + skip, not silent
+  drop). applyMergedNodeLocked adds warnings to mergeReport.Warnings.
+- Migration-safe: existing inbounds have empty AWGServerAddress → 10.8.0.1/24
+  default → no behavior change for current stores.
+- Multi-AWG-interface (awg1) on one node is the deferred follow-up (needs
+  interface naming + include_interface list + awg-quick@awgN services).
+
+#### Takeover'd AWG peers → model.User materialization (AGENTS.md #10)
+- Takeover'd AWG imported the peers (PublicKey + AllowedIPs) but created no
+  `model.User` records → `source_ip_cidr` per-client routing was unavailable on
+  a takeover'd AWG inbound. Now `MaterializeAWGPeersAsUsers` (internal/chain/
+  awg_takeover_users.go) creates a User per peer (deterministic ID
+  `takeover-<nodeID>-<pubKeyPrefix8>`, dedup by ID + by AWGPublicKey, idempotent)
+  on the takeover success path; IDs recorded on `TakeoverState.SynthesizedUserIDs`
+  for rollback symmetry (`DeleteSynthesizedAWGUsers` on rollback). The kernel
+  awg0.conf is left untouched; materialized users become visible in the UI and,
+  on the next ApplyMergedNode re-apply with a real chain/inbound, render into a
+  fresh awg0.conf (switching the takeover to pushing that fresh conf is a
+  follow-up — materialization is the prerequisite).
+
+#### SSH cross-deploy connection POOL (CTO-review §8 follow-up)
+- The v0.3.0 intra-deploy collapse (3 dials/merged-deploy → 1) was the big win;
+  this adds the second-order win — a node re-deployed by autoapply every ~5 min
+  reuses its already-open connection instead of re-dialing. `internal/ssh/pool.go`
+  `Pool` wraps `ports.SSHConnector`, keyed by (addr|user|keyPath); borrow-time
+  Ping (keepalive@openssh.com via the new `ports.Pinger` capability) + stored
+  known-host fingerprint re-check (TOFU staleness — operator key rotation caught
+  cheaply) + key-resolution re-check (PEM change evicts). `pooledClient.Close()`
+  returns to pool (not real close). Idle sweeper (60s, > 5min TTL); `pool.Close()`
+  on graceful shutdown (after WaitAutoApply). Wired only at the composition root
+  in serveCmd (NOT baked into DefaultConnector — keeps test dial counts stable).
+- Tests: TestPool_ReusesConnection (1 dial), _EvictsOnPingFail,
+  _EvictsOnHostKeyFingerprintChange, _CloseTearsDown, _IdleEviction.
+- A true connection pool's residual TOFU risk (a pooled connection never
+  re-runs the full HostKeyCallback — x/crypto/ssh doesn't expose the negotiated
+  key post-dial) is mitigated by the stored-fingerprint re-check; a live MITM
+  between pool-misses is bounded by the autoapply interval. Documented in
+  internal/ssh/pool.go.
+
+#### UI fixes (user-reported)
+- **Language switch (ru) not applying:** `<html lang="en">` was hardcoded → now
+  dynamic via `i18n.Lang(ctx)`. UI pages now send `Cache-Control: no-store` (auth
+  middleware) so a post-save HX-Refresh reloads from the server, not a stale
+  browser cache (the most likely root cause). TestHandler_SaveSettings_LanguagePersists
+  saves language=ru, asserts HX-Refresh + re-GET shows the ru option selected + a
+  ru i18n string.
+- **User create import-secret block:** the secret_type dropdown offered
+  AWG/TUIC/VLESS/SS/Trojan/VMess/Hysteria2 imports (complex, error-prone, not
+  product targets; TUIC/Hysteria2 FROZEN). Now only None + Telemt (MTProto); a
+  legacy non-telemt SecretType on an existing user shows as a disabled "Legacy
+  import (edit-only)" option. handleCreateUser rejects a forged POST with a
+  non-telemt type (400); handleUpdateUser preserves an existing legacy type
+  (disabled option not submitted → empty form value must NOT wipe it), rejects
+  switching TO a non-telemt type.
+
+#### CLI standalone-AWG deprecate (AGENTS.md #11)
+- `config --protocol awg` / `apply --protocol awg` now print a deprecation
+  warning: the path uses the legacy userspace RenderAWGHop endpoint (diverges
+  from the kernel-AWG rework the web UI deploys). Points operators to the web UI
+  / apply-chain. Path still works (no break); conversion to kernel mode is a
+  follow-up (needs a Host-shaped TUN-overlay renderer).
+
+#### Patches rebasing safety (C2)
+- `internal/backend/singbox/patchcheck_test.go` (`//go:build patchcheck`): a
+  gated regression test that clones the pinned upstream sing-box-extended +
+  wireguard-go at their tags and runs `git apply --check` on each patch. Fails
+  loudly on context drift (an upstream bump that breaks patch applicability is
+  caught BEFORE a broken tarball is built). `TestPatchcheckVersionsMatchSingBoxConst`
+  asserts the patchcheck version consts match the deploy-time `singBoxVersion`
+  const. CI gains a `patchcheck` job (network + git, ~300s, separate from
+  build-test).
+- `docs/PATCHES.md`: the law for rebasing — the two patches + upstream targets,
+  the build-singbox.sh flow, the THREE-place version pin, the rebase procedure,
+  the Reality SNI drift note. Pointer in AGENTS.md.
+
+#### Verification
+- `go build ./...` OK, `go vet ./...` clean, `go test ./...` 9 packages ok / 0
+  FAIL, `e2e` + `wsl_smoke` compile-only green, `govulncheck`: no vulnerabilities,
+  `templ generate`: no diff, `go vet -tags=patchcheck` clean.
+
+#### Known follow-ups (NOT in this release — explicitly deferred)
+- Multi-AWG-interface (awg1) on one node (A1 follow-up — interface naming +
+  include_interface list + awg-quick@awgN services).
+- Takeover re-render of a fresh awg0.conf from materialized users (A2 follow-up
+  — the kernel awg0.conf is currently left untouched by takeover).
+- per-client `source_ip_cidr` under TUN-overlay real-VPS verify (needs GCloud).
+- deps/sing-box mirror/backup (infra).
+- `ip rule 10.8.0.0/24 → table 2022` (gated on a real-VPS verdict).
+
 ## [v0.3.0] — 2026-07-06
 
 ### Architecture — CTO-review §4/§8 + CI release automation + operational debt
