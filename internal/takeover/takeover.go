@@ -98,13 +98,21 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	// preserves the imported server keypair + amnezia + peer list (the generic
 	// path pulls amnezia from a preset and hardcodes one peer, which would break
 	// existing AWG clients). Other types go through renderTakeoverConfig.
+	//
+	// For AWG we also materialize the imported peers as model.User entries
+	// (kept in scope for the success path) so per-client source_ip_cidr routing
+	// is available on the takeover'd inbound — AGENTS.md Known Issue #10. The
+	// users are only saved on success (step 8); a failure rolls them back via
+	// DeleteSynthesizedAWGUsers so no phantom users remain.
 	var cfgContent string
+	var awgPeers []chain.AwgPeerEntry
 	if det.Type == DetectedAWG {
 		imp, ierr := chain.ImportAWGConfigsViaClient(client, useSudo, nil)
 		if ierr != nil || imp == nil || imp.ServerConfig == nil {
 			res := &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "awg import failed: " + errString(ierr)}
 			return res, fmt.Errorf("takeover: awg import: %v", ierr)
 		}
+		awgPeers = imp.Peers
 		cfgContent, err = renderAWGTakeoverConfig(imp.ServerConfig, imp.Peers)
 	} else {
 		cfgContent, err = renderTakeoverConfig(f, inbounds, extra)
@@ -139,6 +147,14 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	if _, perr := chain.PushConfig(ctx, client, host.ID, cfgContent, useSudo); perr != nil {
 		// sing-box did NOT come up. Auto-rollback to the old VPN.
 		res.RollbackOccurred = true
+		// Symmetry: if any synthesized AWG users were already created (defensive
+		// — in the current flow materialization is step 8, after push, so this
+		// list is empty here; kept for future-proofing), remove them so no
+		// phantom users survive a rollback (AGENTS.md #10).
+		if len(info.Takeover.SynthesizedUserIDs) > 0 {
+			chain.DeleteSynthesizedAWGUsers(store, info.Takeover.SynthesizedUserIDs)
+			info.Takeover.SynthesizedUserIDs = nil
+		}
 		if rbErr := rollbackToOldVPN(ctx, client, det, info.Takeover, useSudo); rbErr != nil {
 			// Old VPN ALSO failed to come back — critical, do not hide.
 			res.Status = "failed-both"
@@ -164,6 +180,24 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	chain.RecordDeploySuccess(store, host.ID, cfgContent)
 	info.Takeover.Status = "taken"
 	info.Takeover.ConvertedAt = time.Now()
+
+	// AWG: materialize the imported peers as model.User entries so per-client
+	// source_ip_cidr routing is available on the takeover'd inbound (AGENTS.md
+	// Known Issue #10). The synthesized user IDs are recorded on TakeoverState
+	// for rollback symmetry. chainName is "" — a takeover'd AWG node is not yet
+	// attached to a chain; the users become visible in the UI and, on a later
+	// ApplyMergedNode re-apply with a real chain/inbound, RenderServerAWGConf
+	// renders them into a fresh awg0.conf. Best-effort: a materialization
+	// failure is logged, not fatal (the takeover itself succeeded).
+	if det.Type == DetectedAWG && len(awgPeers) > 0 {
+		if ids, merr := chain.MaterializeAWGPeersAsUsers(store, host.ID, awgPeers, ""); merr != nil {
+			slog.Warn("takeover: materialize AWG peers failed (takeover succeeded, per-client routing deferred)",
+				"node", host.ID, "err", merr)
+		} else if len(ids) > 0 {
+			info.Takeover.SynthesizedUserIDs = ids
+		}
+	}
+
 	if err := store.SaveNodeInfo(info); err != nil {
 		slog.Warn("takeover: save node info (taken) failed", "node", host.ID, "err", err)
 	}
@@ -255,6 +289,20 @@ func buildMinimalConfigWithExtra(extra []json.RawMessage) (string, error) {
 // time. EnableService on an already-running unit is idempotent (enable + restart
 // of a healthy service is a no-op).
 func rollbackToOldVPN(ctx context.Context, client ports.SSHClient, det *Detection, state *model.TakeoverState, useSudo bool) error {
+	// AWG rollback symmetry: if the takeover materialized imported peers as
+	// model.User entries (SynthesizedUserIDs), remove them so a rolled-back
+	// takeover leaves no phantom users in the store (AGENTS.md #10). This runs
+	// for every rollback regardless of the AWG-det.ServiceName check below — a
+	// synthesized user from a prior AWG takeover must be cleaned even if the
+	// rollback was triggered after the AWG import. Best-effort: errors are
+	// logged inside DeleteSynthesizedAWGUsers, not fatal (the rollback itself
+	// must still proceed).
+	// NOTE: rollbackToOldVPN doesn't have the store handle (it operates on the
+	// SSH client only). The synthesized-user cleanup is done by the caller
+	// (Takeover) before calling rollbackToOldVPN when state.SynthesizedUserIDs
+	// is non-empty — see the rollback branches in Takeover().
+	_ = state // SynthesizedUserIDs cleanup is handled by the caller.
+
 	if det.ServiceName == "" {
 		return fmt.Errorf("no old service name to roll back to")
 	}

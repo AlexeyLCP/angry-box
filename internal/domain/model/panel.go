@@ -197,6 +197,13 @@ type TakeoverState struct {
 	ConvertedAt time.Time `json:"converted_at,omitempty"`
 	// Status: "taken" | "rolled-back" | "failed-both" | "detected".
 	Status string `json:"status,omitempty"`
+
+	// SynthesizedUserIDs holds the IDs of model.User entries the AWG takeover
+	// materialized from the imported awg0 peers (so per-client source_ip_cidr
+	// routing is available on the takeover'd inbound — AGENTS.md Known Issue
+	// #10). Populated on the success path; rollback deletes these users so a
+	// rolled-back takeover does not leave phantom users in the store.
+	SynthesizedUserIDs []string `json:"synthesized_user_ids,omitempty"`
 }
 
 // NodeInbound describes a user-facing inbound on a node.
