@@ -436,7 +436,10 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// kernel-AWG architecture (user-entry awg0, multi-exit awg-exit-nX, exit
 		// server awg0, or standalone awg0). Empty for non-AWG nodes —
 		// pushConfigWithAWG then falls through to the plain pushConfig path.
-		awgFiles := renderAWGConfsForDeploy(store, nodeInfo, nodeChains)
+		awgFiles, awgWarns := renderAWGConfsForDeploy(store, nodeInfo, nodeChains)
+		for _, w := range awgWarns {
+			log.Printf("deploy: %s", w)
+		}
 
 		_, pushErr := pushConfigWithAWG(ctx, client, node.ID, string(cfgJSON), awgFiles, nodeInfo.UseSudo)
 		client.Close()
@@ -1698,7 +1701,8 @@ func (a *Applier) applyMergedNodeLocked(
 	// Render the kernel awg-quick .conf files this node needs (standalone awg0,
 	// chain entry/transit/exit). Empty for non-AWG nodes — pushConfigWithAWG
 	// then falls through to the plain pushConfig path.
-	awgFiles := renderAWGConfsForDeploy(store, info, chains)
+	awgFiles, awgWarns := renderAWGConfsForDeploy(store, info, chains)
+	mergeReport.Warnings = append(mergeReport.Warnings, awgWarns...)
 
 	_, pushErr := pushConfigWithAWG(ctx, client, info.ID, string(cfgJSON), awgFiles, info.UseSudo)
 	if pushErr != nil {

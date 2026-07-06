@@ -231,6 +231,16 @@ type NodeInbound struct {
 	// For full multi-user, client keys can be imported per user.
 	AWGClientPub  string `json:"awg_client_pub,omitempty"`
 	AWGClientPriv string `json:"awg_client_priv,omitempty"` // corresponding private for sample client config
+
+	// AWGServerAddress is the per-inbound kernel AWG server tunnel address
+	// (e.g. "10.8.1.1/24"). Empty = "10.8.0.1/24" (the legacy default, shared
+	// with chain AWG entries — a node hosting BOTH a chain AWG entry and a
+	// standalone AWG inbound with the default collides on awg0; the deploy
+	// emits a MergeReport warning in that case). Setting a distinct /24 here
+	// (10.8.1.0/24, 10.8.2.0/24, ...) is the per-inbound subnet allocation that
+	// avoids the collision — peers for this inbound then get IPs in the same
+	// /24 via allocateAWGPeerIPInSubnet. AGENTS.md Known Issue #10 follow-up.
+	AWGServerAddress string `json:"awg_server_address,omitempty"`
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).

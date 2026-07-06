@@ -281,18 +281,51 @@ func EnsureUserAWGAddress(u *model.User, existing []string) {
 // 2..254; .1 is the server, .255 is broadcast). taken is the list of currently
 // occupied addresses (any form — with or without /32 suffix). Returns "" only
 // when the /24 is exhausted (unlikely for a single chain).
+//
+// This is the chain-entry allocator (10.8.0.0/24 is the user-entry subnet by
+// convention). Standalone AWG inbounds with a per-inbound AWGServerAddress use
+// allocateAWGPeerIPInSubnet instead so their peers land in the inbound's own
+// /24 (AGENTS.md Known Issue #10: per-inbound server IP allocation).
 func allocateAWGPeerIP(taken []string) string {
+	return allocateAWGPeerIPInSubnet("10.8.0", taken)
+}
+
+// allocateAWGPeerIPInSubnet returns the first free address in <prefix>.0/24
+// (host part 2..254; .1 is the server, .255 is broadcast). prefix is the first
+// three octets without the host part, e.g. "10.8.1" → 10.8.1.2..254. taken is the
+// list of currently occupied addresses (any form). Returns "" only when the /24
+// is exhausted. Used by the per-inbound server IP scheme so a standalone AWG
+// inbound on (say) 10.8.1.1/24 allocates peers in 10.8.1.0/24, disjoint from the
+// chain entry's 10.8.0.0/24 (AGENTS.md #10).
+func allocateAWGPeerIPInSubnet(prefix string, taken []string) string {
 	occupied := make(map[string]bool, len(taken))
 	for _, a := range taken {
 		occupied[awgIPKey(a)] = true
 	}
 	for host := 2; host <= 254; host++ {
-		ip := fmt.Sprintf("10.8.0.%d/32", host)
+		ip := fmt.Sprintf("%s.%d/32", prefix, host)
 		if !occupied[awgIPKey(ip)] {
 			return ip
 		}
 	}
 	return ""
+}
+
+// awgServerPrefix extracts the first three octets from a server tunnel CIDR
+// like "10.8.1.1/24" or "10.8.0.1/24", returning "10.8.1" / "10.8.0". Used to
+// derive the peer-IP allocation subnet from a NodeInbound.AWGServerAddress.
+// Falls back to "10.8.0" (the chain-entry default) for empty/malformed input,
+// preserving the legacy behavior for inbounds created before AWGServerAddress.
+func awgServerPrefix(serverAddr string) string {
+	a := serverAddr
+	if i := strings.IndexByte(a, '/'); i >= 0 {
+		a = a[:i] // strip the /24
+	}
+	parts := strings.Split(a, ".")
+	if len(parts) < 3 {
+		return "10.8.0"
+	}
+	return parts[0] + "." + parts[1] + "." + parts[2]
 }
 
 // awgIPKey normalizes an AWG address to its bare IPv4 (strip /32 etc.) so that

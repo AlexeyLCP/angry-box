@@ -770,6 +770,48 @@ func TestAllocateAWGPeerIP(t *testing.T) {
 	}
 }
 
+// TestAllocateAWGPeerIPInSubnet verifies the per-inbound subnet allocator
+// (AGENTS.md #10): a standalone AWG inbound on 10.8.1.0/24 allocates peers in
+// its own /24, disjoint from the chain entry's 10.8.0.0/24.
+func TestAllocateAWGPeerIPInSubnet(t *testing.T) {
+	// 10.8.1.0/24 — first free is .2.
+	if got := allocateAWGPeerIPInSubnet("10.8.1", nil); got != "10.8.1.2/32" {
+		t.Errorf("10.8.1 empty: got %s, want 10.8.1.2/32", got)
+	}
+	// Skip taken within the subnet.
+	got := allocateAWGPeerIPInSubnet("10.8.1", []string{"10.8.1.2/32", "10.8.1.3/32"})
+	if got != "10.8.1.4/32" {
+		t.Errorf("10.8.1 after 2,3: got %s, want 10.8.1.4/32", got)
+	}
+	// A taken address in a DIFFERENT subnet (10.8.0.x) must not block this /24.
+	got = allocateAWGPeerIPInSubnet("10.8.1", []string{"10.8.0.2/32"})
+	if got != "10.8.1.2/32" {
+		t.Errorf("10.8.1 with only 10.8.0 taken: got %s, want 10.8.1.2/32 (subnets are disjoint)", got)
+	}
+	// The legacy chain-entry allocator still uses 10.8.0 (unchanged behavior).
+	if got := allocateAWGPeerIP(nil); got != "10.8.0.2/32" {
+		t.Errorf("legacy chain-entry allocator changed: got %s, want 10.8.0.2/32", got)
+	}
+}
+
+// TestAWGServerPrefix verifies the server-address → subnet-prefix extractor
+// used to derive the peer-IP allocation subnet from NodeInbound.AWGServerAddress.
+func TestAWGServerPrefix(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"10.8.1.1/24", "10.8.1"},
+		{"10.8.0.1/24", "10.8.0"},
+		{"10.8.1.1", "10.8.1"}, // no /24 suffix
+		{"", "10.8.0"},        // empty → legacy default
+		{"garbage", "10.8.0"}, // malformed → legacy default
+		{"10.9.0.1/24", "10.9.0"},
+	}
+	for _, c := range cases {
+		if got := awgServerPrefix(c.in); got != c.want {
+			t.Errorf("awgServerPrefix(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestEnsureUserCreds_AWG_Keypair verifies AWG users get a WireGuard keypair
 // (but no address — that needs the store via EnsureUserAWGAddress).
 func TestEnsureUserCreds_AWG_Keypair(t *testing.T) {

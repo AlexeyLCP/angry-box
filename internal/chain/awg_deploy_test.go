@@ -27,7 +27,7 @@ func TestRenderNodeAWGConfs_ChainEntry(t *testing.T) {
 		{Name: "nocreds", Active: true}, // no AWG creds -> skipped
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "n1"}}
-	files := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{"ce": users}, nil)
+	files, _ := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{"ce": users}, nil)
 	if len(files) != 1 {
 		t.Fatalf("want 1 file (awg0.conf), got %d", len(files))
 	}
@@ -77,7 +77,7 @@ func TestRenderNodeAWGConfs_MultiExitBalancer(t *testing.T) {
 		},
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "bal"}}
-	files := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{}, nil)
+	files, _ := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{}, nil)
 	// awg0.conf (user entry) + awg-exit-n1.conf + awg-exit-n2.conf.
 	if len(files) != 3 {
 		t.Fatalf("want 3 files (awg0 + 2 exits), got %d: %+v", len(files), files)
@@ -130,7 +130,7 @@ func TestRenderNodeAWGConfs_ExitServer(t *testing.T) {
 		{TargetID: "exit1", InterfaceName: "awg-exit-n1", ClientPriv: "cpriv", ClientPub: "BALCLIENTPUB", Address: "10.10.0.2/32", ClientPort: 51901},
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "exit1"}}
-	files := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{}, nil)
+	files, _ := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{}, nil)
 	if len(files) != 1 {
 		t.Fatalf("want 1 file (exit awg0.conf), got %d", len(files))
 	}
@@ -244,7 +244,7 @@ func TestRenderNodeAWGConfs_Standalone(t *testing.T) {
 			{Protocol: "awg", Port: 51820, Tag: "sa-awg", ServerPrivKey: ibPriv},
 		},
 	}
-	files := RenderNodeAWGConfs(nodeInfo, nil, nil, nil)
+	files, _ := RenderNodeAWGConfs(nodeInfo, nil, nil, nil)
 	if len(files) != 1 {
 		t.Fatalf("want 1 file, got %d", len(files))
 	}
@@ -272,7 +272,7 @@ func TestRenderNodeAWGConfs_NoAWG(t *testing.T) {
 		},
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "n1"}}
-	files := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, nil, nil)
+	files, _ := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, nil, nil)
 	if len(files) != 0 {
 		t.Errorf("non-AWG node must render no kernel .conf files, got %d: %+v", len(files), files)
 	}
@@ -292,4 +292,94 @@ func genPub(t *testing.T) string {
 func genPriv(t *testing.T) (string, string) {
 	t.Helper()
 	return genAWGKeypair(t)
+}
+
+// TestRenderNodeAWGConfs_StandalonePerInboundSubnet verifies a standalone AWG
+// inbound with a distinct AWGServerAddress renders an awg0.conf carrying that
+// subnet (the per-inbound server IP allocation, AGENTS.md #10).
+func TestRenderNodeAWGConfs_StandalonePerInboundSubnet(t *testing.T) {
+	ibPriv, _ := genPriv(t)
+	nodeInfo := &model.NodeInfo{
+		Host: model.Host{ID: "solo-sub"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", Port: 51820, Tag: "sa-awg-sub", ServerPrivKey: ibPriv, AWGServerAddress: "10.8.1.1/24"},
+		},
+	}
+	files, _ := RenderNodeAWGConfs(nodeInfo, nil, nil, nil)
+	if len(files) != 1 {
+		t.Fatalf("want 1 file, got %d", len(files))
+	}
+	if !strings.Contains(files[0].Content, "Address = 10.8.1.1/24") {
+		t.Errorf("awg0.conf missing per-inbound server address; got:\n%s", files[0].Content)
+	}
+	// The default 10.8.0.1/24 must NOT appear when a distinct subnet is set.
+	if strings.Contains(files[0].Content, "10.8.0.1/24") {
+		t.Errorf("awg0.conf used the default 10.8.0.1/24 instead of the per-inbound 10.8.1.1/24")
+	}
+}
+
+// TestRenderNodeAWGConfs_StandaloneDefaultSubnet verifies a standalone AWG
+// inbound with an EMPTY AWGServerAddress falls back to the legacy default
+// 10.8.0.1/24 (backward compat for inbounds created before the field existed).
+func TestRenderNodeAWGConfs_StandaloneDefaultSubnet(t *testing.T) {
+	ibPriv, _ := genPriv(t)
+	nodeInfo := &model.NodeInfo{
+		Host: model.Host{ID: "solo-def"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", Port: 51820, Tag: "sa-awg-def", ServerPrivKey: ibPriv},
+		},
+	}
+	files, _ := RenderNodeAWGConfs(nodeInfo, nil, nil, nil)
+	if len(files) != 1 {
+		t.Fatalf("want 1 file, got %d", len(files))
+	}
+	if !strings.Contains(files[0].Content, "Address = 10.8.0.1/24") {
+		t.Errorf("awg0.conf missing default 10.8.0.1/24; got:\n%s", files[0].Content)
+	}
+}
+
+// TestRenderNodeAWGConfs_CollisionWarning verifies the AGENTS.md #10 collision
+// case: a node hosting BOTH a chain AWG entry (10.8.0.1/24) AND a standalone AWG
+// inbound with the default (empty → 10.8.0.1/24) → the standalone is skipped
+// with a loud warning in the returned warnings slice (was silently dropped
+// before this change; now the operator sees the collision).
+func TestRenderNodeAWGConfs_CollisionWarning(t *testing.T) {
+	chainPriv, _ := genPriv(t)
+	ibPriv, _ := genPriv(t)
+	c := &model.Chain{
+		Name:             "ce",
+		UserProtocol:      model.UserProtocolAWG,
+		Transport:        model.TransportXHTTP,
+		AWGEntryServerPriv: chainPriv,
+		Nodes: []model.ChainNode{
+			{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry, Port: 51820},
+		},
+	}
+	nodeInfo := &model.NodeInfo{
+		Host: model.Host{ID: "n1"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", Port: 51821, Tag: "sa-awg-collide", ServerPrivKey: ibPriv}, // default → 10.8.0.1/24, collides
+		},
+	}
+	files, warns := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{"ce": nil}, nil)
+	// Chain entry always produces awg0.conf.
+	if len(files) != 1 {
+		t.Fatalf("want 1 file (chain entry only), got %d", len(files))
+	}
+	if !strings.Contains(files[0].Content, "10.8.0.1/24") {
+		t.Error("chain entry awg0.conf missing its 10.8.0.1/24")
+	}
+	// The standalone must be skipped (it would collide on awg0).
+	if len(warns) == 0 {
+		t.Fatal("expected a collision warning, got none (the old behavior silently dropped the standalone)")
+	}
+	found := false
+	for _, w := range warns {
+		if strings.Contains(w, "collides") && strings.Contains(w, "sa-awg-collide") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("collision warning not in %v", warns)
+	}
 }

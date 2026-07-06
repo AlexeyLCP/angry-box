@@ -40,18 +40,21 @@ func RenderNodeAWGConfs(
 	nodeChains []*model.Chain,
 	usersByChain map[string][]model.User,
 	usersByInbound map[string][]model.User,
-) []AWGConfFile {
+) ([]AWGConfFile, []string) {
 	if nodeInfo == nil {
-		return nil
+		return nil, nil
 	}
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
 	var files []AWGConfFile
+	var warnings []string
 
 	// 1. Chain AWG user-entry → kernel awg0.conf with one [Peer] per user.
+	chainEntryPresent := false
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
 			users := usersForChain(usersByChain, r.Chain.Name)
 			files = append(files, renderChainEntryAWG0Conf(r, users))
+			chainEntryPresent = true
 			break // one awg0.conf per node
 		}
 	}
@@ -74,24 +77,49 @@ func RenderNodeAWGConfs(
 		}
 	}
 
-	// 4. Standalone AWG inbound → kernel awg0.conf (only when no chain AWG
-	//    entry already produced one — a node has exactly one awg0).
-	if len(files) == 0 {
-		for i := range nodeInfo.Inbounds {
-			ib := &nodeInfo.Inbounds[i]
-			if ib.Protocol != "awg" {
-				continue
-			}
-			tag := ib.Tag
-			if tag == "" {
-				tag = fmt.Sprintf("sa-%d-awg", i)
-			}
-			files = append(files, renderStandaloneAWG0Conf(ib, tag, usersByInbound))
-			break
+	// 4. Standalone AWG inbound → kernel awg0.conf. A node has exactly one awg0
+	//    interface, so a standalone AWG inbound co-located with a chain AWG
+	//    entry (both default to 10.8.0.1/24) collides. AGENTS.md Known Issue #10:
+	//    rather than silently dropping the standalone (the old `if len(files)==0`
+	//    guard did that), emit a loud warning when the collision is unavoidable
+	//    (chain entry present + standalone with empty AWGServerAddress = default
+	//    10.8.0.1/24). A standalone with a distinct AWGServerAddress (10.8.1.1/24,
+	//    ...) would need a separate interface (awg1) — that multi-interface
+	//    support is a follow-up; for now we warn and skip to keep awg0 consistent.
+	standaloneAdded := false
+	for i := range nodeInfo.Inbounds {
+		ib := &nodeInfo.Inbounds[i]
+		if ib.Protocol != "awg" {
+			continue
 		}
+		tag := ib.Tag
+		if tag == "" {
+			tag = fmt.Sprintf("sa-%d-awg", i)
+		}
+		if chainEntryPresent && ib.AWGServerAddress == "" {
+			// Default 10.8.0.1/24 collides with the chain entry's 10.8.0.1/24.
+			// Skip + warn (the old behavior silently dropped it; now the
+			// operator sees the collision in the MergeReport / deploy log).
+			warnings = append(warnings, fmt.Sprintf(
+				"node %q: standalone AWG inbound %q collides with the chain AWG entry on awg0 (both default to 10.8.0.1/24); the standalone is skipped. Set a distinct NodeInbound.AWGServerAddress (e.g. 10.8.1.1/24) — multi-AWG-interface (awg1) support is a follow-up (AGENTS.md #10).",
+				nodeInfo.ID, tag))
+			continue
+		}
+		if len(files) > 0 && chainEntryPresent {
+			// Distinct subnet but awg0 is taken by the chain entry — would need
+			// awg1. Not supported yet; warn and skip.
+			warnings = append(warnings, fmt.Sprintf(
+				"node %q: standalone AWG inbound %q has a distinct subnet %s but awg0 is already claimed by the chain AWG entry; multi-AWG-interface (awg1) support is a follow-up — the standalone is skipped (AGENTS.md #10).",
+				nodeInfo.ID, tag, ib.AWGServerAddress))
+			continue
+		}
+		files = append(files, renderStandaloneAWG0Conf(ib, tag, usersByInbound))
+		standaloneAdded = true
+		break
 	}
+	_ = standaloneAdded
 
-	return files
+	return files, warnings
 }
 
 // renderChainEntryAWG0Conf renders the user-entry awg0.conf for a chain AWG
@@ -240,13 +268,21 @@ func renderStandaloneAWG0Conf(ib *model.NodeInbound, tag string, usersByInbound 
 	if awg.CPSLevel > 0 || preset.CPSLevel > 0 {
 		amnezia = BuildAWGAmnezia(awg, &preset, nil)
 	}
+	// Per-inbound server tunnel address (AGENTS.md #10): default 10.8.0.1/24 for
+	// backward compat (existing standalone inbounds stay on the chain-entry
+	// subnet); a distinct AWGServerAddress (10.8.1.1/24, ...) is the per-inbound
+	// subnet that avoids colliding with a co-located chain entry.
+	tunnelAddr := ib.AWGServerAddress
+	if tunnelAddr == "" {
+		tunnelAddr = "10.8.0.1/24"
+	}
 	return AWGConfFile{
 		Path:        awg0ConfPath,
 		ServiceName: "awg-quick@awg0",
 		Content: RenderServerAWGConf(AWGServerConfParams{
 			ServerPrivateKey: ib.ServerPrivKey,
 			ListenPort:       ib.Port,
-			TunnelAddress:    "10.8.0.1/24",
+			TunnelAddress:    tunnelAddr,
 			MTU:              1420,
 			Amnezia:          amnezia,
 			Peers:            peers,

@@ -212,12 +212,14 @@ func pushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgC
 
 // renderAWGConfsForDeploy is the thin adapter from the deploy path's inputs to
 // RenderNodeAWGConfs. It exists so ApplyChain/ApplyMergedNode can call it
-// without each re-deriving the users-by-chain/inbound maps.
+// without each re-deriving the users-by-chain/inbound maps. Returns the .conf
+// files plus any warnings (e.g. a chain AWG entry + standalone AWG inbound
+// colliding on awg0 — AGENTS.md #10).
 func renderAWGConfsForDeploy(
 	store *Store,
 	nodeInfo *model.NodeInfo,
 	nodeChains []*model.Chain,
-) []AWGConfFile {
+) ([]AWGConfFile, []string) {
 	return RenderNodeAWGConfs(
 		nodeInfo,
 		nodeChains,
