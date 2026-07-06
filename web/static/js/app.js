@@ -173,3 +173,24 @@ function toggleAWGCPSSection() {
 }
 document.addEventListener('DOMContentLoaded', toggleAWGCPSSection);
 document.addEventListener('htmx:afterSettle', toggleAWGCPSSection);
+
+
+// initPresetFormSections reveals the per-protocol field section matching the
+// selected protocol in the preset create/edit modal (#preset-modal). Runs on
+// initial DOMContentLoaded and after each htmx:afterSettle so an EDIT of an
+// existing preset shows the right section on load.
+function initPresetFormSections() {
+	var modal = document.getElementById('preset-modal');
+	if (!modal) return;
+	var sel = modal.querySelector('select[name="protocol"]');
+	if (!sel) return;
+	var map = {awg:'.awg-fields','vless-reality':'.reality-fields',xhttp:'.xhttp-fields'};
+	['.awg-fields','.reality-fields','.xhttp-fields'].forEach(function(c){
+		var el = modal.querySelector(c);
+		if (el) el.style.display = 'none';
+	});
+	var m = map[sel.value];
+	if (m) { var el = modal.querySelector(m); if (el) el.style.display = 'block'; }
+}
+document.addEventListener('DOMContentLoaded', initPresetFormSections);
+document.addEventListener('htmx:afterSettle', initPresetFormSections);

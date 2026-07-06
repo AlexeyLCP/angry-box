@@ -1,17 +1,243 @@
 package templates
 
-import "github.com/alexeylcp/angry-box/internal/chain"
+import (
+	"fmt"
+	"strings"
 
-// presets.templ — custom obfuscation preset CRUD UI.
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
+
+// presets.templ — custom obfuscation preset CRUD UI (replaces the dead
+// Profiles page). Built-in presets are read-only; custom presets live in
+// PanelSettings.CustomPresets and are merged into the chain registry via
+// LoadPresets.
 //
-// Task 5 ships minimal stubs so the handlers compile + the page-render test
-// (which asserts the body contains "Presets") passes. The full UI
-// (PresetsPage table + PresetForm modal with per-protocol fields) is Task 7.
+// Reveal-on-edit: the per-protocol field sections (.awg-fields /
+// .reality-fields / .xhttp-fields) start display:none. The protocol <select>
+// onchange toggles them. For an EDIT of an existing preset the matching
+// section is shown on load by initPresetFormSections() in app.js (no inline
+// <script> here — templ rejects braces in JS blocks).
+
+// presetInt returns an int field from the matching protocol sub-struct of p,
+// or 0 when p is nil / the sub-struct is nil / the field is unknown. Used to
+// populate the numeric inputs when editing an existing preset.
+func presetInt(p *chain.ConnectionPreset, section, field string) int {
+	if p == nil {
+		return 0
+	}
+	switch section {
+	case "awg":
+		if p.AWG == nil {
+			return 0
+		}
+		switch field {
+		case "JC":
+			return p.AWG.JC
+		case "JMIN":
+			return p.AWG.JMIN
+		case "JMAX":
+			return p.AWG.JMAX
+		case "S1":
+			return p.AWG.S1
+		case "S2":
+			return p.AWG.S2
+		case "S3":
+			return p.AWG.S3
+		case "S4":
+			return p.AWG.S4
+		case "ITime":
+			return p.AWG.ITime
+		case "H1":
+			return p.AWG.H1
+		case "H2":
+			return p.AWG.H2
+		case "H3":
+			return p.AWG.H3
+		case "H4":
+			return p.AWG.H4
+		case "CPSLevel":
+			return p.AWG.CPSLevel
+		}
+	case "reality":
+		if p.Reality == nil {
+			return 0
+		}
+		if field == "ShortIDLen" {
+			return p.Reality.ShortIDLen
+		}
+	}
+	return 0
+}
 
 templ PresetsPage(builtins []chain.ConnectionPreset, customs []chain.ConnectionPreset) {
-	<div>Presets page (stub)</div>
+	<div class="space-y-4">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Presets") }</h2>
+			<button class="btn btn-primary btn-sm" hx-get="/ui/presets/new" hx-target="#modal-container">{ i18n.T(ctx, "Create custom preset") }</button>
+		</div>
+		<div class="card bg-base-100/50 border border-base-content/5">
+			<div class="card-body">
+				<h3 class="font-semibold">{ i18n.T(ctx, "Custom presets") }</h3>
+				if len(customs) == 0 {
+					<span class="text-sm text-base-content/50">{ i18n.T(ctx, "No custom presets.") }</span>
+				}
+				for _, c := range customs {
+					<div class="flex items-center gap-2 border border-base-300 rounded-lg p-2">
+						<div class="flex-1">
+							<span class="font-mono text-sm">{ c.Name }</span>
+							<span class="badge badge-xs ml-2">{ c.Protocol }</span>
+							if c.Description != "" {
+								<span class="text-xs text-base-content/50 ml-2">{ c.Description }</span>
+							}
+						</div>
+						<button class="btn btn-ghost btn-xs" hx-get={ "/ui/presets/" + c.Name + "/edit" } hx-target="#modal-container">{ i18n.T(ctx, "Edit") }</button>
+						<button class="btn btn-ghost btn-xs text-error" hx-delete={ "/ui/presets/" + c.Name } hx-confirm={ i18n.T(ctx, "Delete preset %s?") } hx-target="closest div" hx-swap="outerHTML">{ i18n.T(ctx, "Delete") }</button>
+					</div>
+				}
+			</div>
+		</div>
+		<div class="card bg-base-100/50 border border-base-content/5">
+			<div class="card-body">
+				<h3 class="font-semibold">{ i18n.T(ctx, "Built-in presets") }</h3>
+				<div class="overflow-x-auto">
+					<table class="table table-sm">
+						<thead><tr><th>{ i18n.T(ctx, "Name") }</th><th>{ i18n.T(ctx, "Protocol") }</th><th>{ i18n.T(ctx, "Description") }</th></tr></thead>
+						<tbody>
+							for _, b := range builtins {
+								<tr>
+									<td class="font-mono">{ b.Name }</td>
+									<td>
+										if b.Protocol == "" {
+											<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "global") }</span>
+										} else {
+											<span class="badge badge-xs">{ b.Protocol }</span>
+										}
+									</td>
+									<td class="text-xs text-base-content/60">{ b.Description }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+		<div id="modal-container"></div>
+	</div>
 }
 
 templ PresetForm(p *chain.ConnectionPreset) {
-	<div>Preset form (stub)</div>
+	<dialog id="preset-modal" class="modal" open>
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-4">
+				if p != nil {
+					{ i18n.T(ctx, "Edit preset") }
+				} else {
+					{ i18n.T(ctx, "Create custom preset") }
+				}
+			</h3>
+			<form class="space-y-4"
+				if p != nil {
+					hx-post={ "/ui/presets/" + p.Name + "/edit" }
+				} else {
+					hx-post="/ui/presets"
+				}
+				hx-target="#modal-container"
+				hx-swap="innerHTML">
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Preset name") }</span></label>
+					<input type="text" name="name" class="input input-bordered" required?={ p == nil } if p != nil { value={ p.Name } } />
+				</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Protocol") }</span></label>
+					<select name="protocol" class="select select-bordered" onchange="var f=this.closest('form');['.awg-fields','.reality-fields','.xhttp-fields'].forEach(function(c){var e=f.querySelector(c);if(e)e.style.display='none'});var m={awg:'.awg-fields','vless-reality':'.reality-fields',xhttp:'.xhttp-fields'}[this.value];if(m){var e=f.querySelector(m);if(e)e.style.display='block'}">
+						<option value="" if p == nil || p.Protocol == "" { selected }>{ i18n.T(ctx, "Select protocol...") }</option>
+						<option value="awg" if p != nil && p.Protocol == "awg" { selected }>AWG</option>
+						<option value="vless-reality" if p != nil && p.Protocol == "vless-reality" { selected }>VLESS + Reality</option>
+						<option value="xhttp" if p != nil && p.Protocol == "xhttp" { selected }>XHTTP</option>
+					</select>
+				</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Description") }</span></label>
+					<input type="text" name="description" class="input input-bordered" if p != nil { value={ p.Description } } />
+				</div>
+				@awgFields(p)
+				@realityFields(p)
+				@xhttpFields(p)
+				<div class="modal-action">
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>{ i18n.T(ctx, "Close") }</button></form>
+	</dialog>
+}
+
+templ awgFields(p *chain.ConnectionPreset) {
+	<div class="awg-fields space-y-2" style={ templ.KV("display", "none") }>
+		@presetNumRow(p, "awg_jc", "JC", presetInt(p, "awg", "JC"))
+		@presetNumRow(p, "awg_jmin", "JMIN", presetInt(p, "awg", "JMIN"))
+		@presetNumRow(p, "awg_jmax", "JMAX", presetInt(p, "awg", "JMAX"))
+		@presetNumRow(p, "awg_s1", "S1", presetInt(p, "awg", "S1"))
+		@presetNumRow(p, "awg_s2", "S2", presetInt(p, "awg", "S2"))
+		@presetNumRow(p, "awg_s3", "S3", presetInt(p, "awg", "S3"))
+		@presetNumRow(p, "awg_s4", "S4", presetInt(p, "awg", "S4"))
+		@presetNumRow(p, "awg_itime", "ITime", presetInt(p, "awg", "ITime"))
+		@presetNumRow(p, "awg_h1", "H1", presetInt(p, "awg", "H1"))
+		@presetNumRow(p, "awg_h2", "H2", presetInt(p, "awg", "H2"))
+		@presetNumRow(p, "awg_h3", "H3", presetInt(p, "awg", "H3"))
+		@presetNumRow(p, "awg_h4", "H4", presetInt(p, "awg", "H4"))
+		@presetNumRow(p, "awg_cps_level", "CPS Level", presetInt(p, "awg", "CPSLevel"))
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Mimicry") }</span></label>
+			<select name="awg_mimicry" class="select select-bordered">
+				<option value="" if p == nil || p.AWG == nil || p.AWG.Mimicry == "" { selected }></option>
+				<option value="quic" if p != nil && p.AWG != nil && p.AWG.Mimicry == "quic" { selected }>quic</option>
+				<option value="sip" if p != nil && p.AWG != nil && p.AWG.Mimicry == "sip" { selected }>sip</option>
+				<option value="dns" if p != nil && p.AWG != nil && p.AWG.Mimicry == "dns" { selected }>dns</option>
+				<option value="none" if p != nil && p.AWG != nil && p.AWG.Mimicry == "none" { selected }>none</option>
+			</select>
+		</div>
+	</div>
+}
+
+templ realityFields(p *chain.ConnectionPreset) {
+	<div class="reality-fields space-y-2" style={ templ.KV("display", "none") }>
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Server names (comma or repeated)") }</span></label>
+			<input type="text" name="reality_server_names" class="input input-bordered" if p != nil && p.Reality != nil { value={ strings.Join(p.Reality.ServerNames, ", ") } } placeholder="discord.com, www.microsoft.com" />
+		</div>
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Fingerprints") }</span></label>
+			<input type="text" name="reality_fingerprints" class="input input-bordered" if p != nil && p.Reality != nil { value={ strings.Join(p.Reality.Fingerprints, ", ") } } placeholder="chrome, firefox" />
+		</div>
+		@presetNumRow(p, "reality_short_id_len", i18n.T(ctx, "Short ID len"), presetInt(p, "reality", "ShortIDLen"))
+	</div>
+}
+
+templ xhttpFields(p *chain.ConnectionPreset) {
+	<div class="xhttp-fields space-y-2" style={ templ.KV("display", "none") }>
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Methods") }</span></label>
+			<input type="text" name="xhttp_methods" class="input input-bordered" if p != nil && p.XHTTP != nil { value={ strings.Join(p.XHTTP.Methods, ", ") } } placeholder="POST" />
+		</div>
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Paths") }</span></label>
+			<input type="text" name="xhttp_paths" class="input input-bordered" if p != nil && p.XHTTP != nil { value={ strings.Join(p.XHTTP.Paths, ", ") } } placeholder="/api/v3/, /graphql" />
+		</div>
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "Hosts") }</span></label>
+			<input type="text" name="xhttp_hosts" class="input input-bordered" if p != nil && p.XHTTP != nil { value={ strings.Join(p.XHTTP.Hosts, ", ") } } placeholder="discord.com" />
+		</div>
+		@presetNumRow(p, "xhttp_idle_timeout", i18n.T(ctx, "Idle timeout"), 0)
+		@presetNumRow(p, "xhttp_ping_timeout", i18n.T(ctx, "Ping timeout"), 0)
+	</div>
+}
+
+templ presetNumRow(p *chain.ConnectionPreset, name string, label string, value int) {
+	<div class="form-control">
+		<label class="label"><span class="label-text">{ label }</span></label>
+		<input type="number" name={ name } class="input input-bordered" value={ fmt.Sprintf("%d", value) } />
+	</div>
 }
