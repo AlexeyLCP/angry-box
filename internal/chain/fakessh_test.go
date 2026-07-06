@@ -147,13 +147,17 @@ func (f *fakeSSHClient) SawCommand(needle string) bool {
 }
 
 // fakeConnector is a ports.SSHConnector that hands out a fixed fakeSSHClient (or
-// refuses to connect). Tests inject this into NewApplier.
+// refuses to connect). Tests inject this into NewApplier. Connects counts every
+// Connect call so the connection-collapse tests can assert a merged deploy opens
+// exactly one SSH connection per node (CTO-review §8).
 type fakeConnector struct {
-	client *fakeSSHClient
-	err    error // when set, Connect returns this error
+	client    *fakeSSHClient
+	err       error // when set, Connect returns this error
+	Connects  int   // number of Connect calls (for the collapse test)
 }
 
 func (c *fakeConnector) Connect(addr, user, keyPath string) (ports.SSHClient, error) {
+	c.Connects++
 	if c.err != nil {
 		return nil, c.err
 	}

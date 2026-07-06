@@ -379,13 +379,24 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		}
 
 		backend := a.factory.Create()
+		deployOpts := model.DeployOptions{UseSudo: nodeInfo.UseSudo}
+		// Reuse the already-open client for InstallAWG + Deploy when the backend
+		// supports it (sing-box via ClientBackend) — collapses per-node SSH dials
+		// (CTO-review §8). Fall back to the dialing variants otherwise.
+		cb, isClientBackend := backend.(ports.ClientBackend)
 
 		// Install AWG kernel module when AWG is the user-entry protocol OR the
 		// inter-node transport. The transport case covers transit nodes that
 		// carry an AWG link (chain.Transport == AWG) even when the user entry is
 		// TUIC/VLESS — without this the transit AWG endpoint has no module.
 		if chain.UserProtocol == model.UserProtocolAWG || chain.Transport == model.TransportAWG {
-			if awgErr := backend.InstallAWGModuleWithOptions(ctx, node.Host(), model.DeployOptions{UseSudo: nodeInfo.UseSudo}); awgErr != nil {
+			var awgErr error
+			if isClientBackend {
+				awgErr = cb.InstallAWGModuleWithClient(ctx, deployOpts, client)
+			} else {
+				awgErr = backend.InstallAWGModuleWithOptions(ctx, node.Host(), deployOpts)
+			}
+			if awgErr != nil {
 				client.Close()
 				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
 				continue
@@ -409,7 +420,13 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// root and cannot reinstall a root-owned binary on a non-root sudoer
 		// node (CTO-review follow-up to H5: the chain apply path also needs the
 		// options-aware deploy, not just the CLI).
-		if _, deployErr := backend.DeployWithOptions(ctx, node.Host(), model.DeployOptions{UseSudo: nodeInfo.UseSudo}); deployErr != nil {
+		var deployErr error
+		if isClientBackend {
+			_, deployErr = cb.DeployOptsAndClient(ctx, node.Host(), deployOpts, client)
+		} else {
+			_, deployErr = backend.DeployWithOptions(ctx, node.Host(), deployOpts)
+		}
+		if deployErr != nil {
 			client.Close()
 			results = append(results, NodeResult{ID: node.ID, Success: false, Error: "deploy sing-box: " + deployErr.Error()})
 			continue
@@ -1619,8 +1636,19 @@ func (a *Applier) applyMergedNodeLocked(
 	defer client.Close()
 
 	backend := a.factory.Create()
-	if _, deployErr := backend.DeployWithOptions(ctx, info.Host, model.DeployOptions{UseSudo: info.UseSudo}); deployErr != nil {
-		return nil, mergeReport, fmt.Errorf("deploy sing-box: %w", deployErr)
+	// Reuse the already-open client for Deploy + InstallAWG when the backend
+	// supports it (sing-box does via ClientBackend). This collapses 3 SSH dials
+	// per merged deploy → 1 (CTO-review §8). Fall back to the dialing variants
+	// if the backend doesn't implement ClientBackend (future xray backend).
+	deployOpts := model.DeployOptions{UseSudo: info.UseSudo}
+	if cb, ok := backend.(ports.ClientBackend); ok {
+		if _, deployErr := cb.DeployOptsAndClient(ctx, info.Host, deployOpts, client); deployErr != nil {
+			return nil, mergeReport, fmt.Errorf("deploy sing-box: %w", deployErr)
+		}
+	} else {
+		if _, deployErr := backend.DeployWithOptions(ctx, info.Host, deployOpts); deployErr != nil {
+			return nil, mergeReport, fmt.Errorf("deploy sing-box: %w", deployErr)
+		}
 	}
 
 	// Install the AWG kernel module when the node runs a kernel AWG interface
@@ -1645,8 +1673,14 @@ func (a *Applier) applyMergedNodeLocked(
 		}
 	}
 	if needsAWGModule {
-		if awgErr := backend.InstallAWGModuleWithOptions(ctx, info.Host, model.DeployOptions{UseSudo: info.UseSudo}); awgErr != nil {
-			return nil, mergeReport, fmt.Errorf("install awg module: %w", awgErr)
+		if cb, ok := backend.(ports.ClientBackend); ok {
+			if awgErr := cb.InstallAWGModuleWithClient(ctx, deployOpts, client); awgErr != nil {
+				return nil, mergeReport, fmt.Errorf("install awg module: %w", awgErr)
+			}
+		} else {
+			if awgErr := backend.InstallAWGModuleWithOptions(ctx, info.Host, deployOpts); awgErr != nil {
+				return nil, mergeReport, fmt.Errorf("install awg module: %w", awgErr)
+			}
 		}
 		// Enable IPv4 forwarding for every AWG node (same pairing as ApplyChain):
 		// transit nodes get a userspace transport endpoint (no awg0.conf) but still

@@ -53,6 +53,10 @@ var singBoxChecksums = map[string]string{
 
 var _ ports.Backend = (*Backend)(nil)
 
+// Compile-time assert that *Backend also implements the optional ClientBackend
+// capability (deploy/install over an already-open SSH client). CTO-review §8.
+var _ ports.ClientBackend = (*Backend)(nil)
+
 // DefaultConnector returns the production SSH connector. Exposed so the factory
 // (which must not import the ssh package directly to avoid an import cycle)
 // can fall back to it when no connector is injected.
@@ -120,14 +124,33 @@ func (b *Backend) DeployWithOptions(ctx context.Context, host model.Host, opts m
 	return b.DeployOpts(ctx, host, opts)
 }
 
-// DeployOpts is the options-aware variant of Deploy.
+// DeployOpts is the options-aware variant of Deploy. It opens its own SSH
+// connection and closes it on return. Use DeployOptsAndClient to reuse an
+// already-open connection (the chain/merged deploy paths open one client per
+// host and pass it to every backend method — collapsing what used to be 3 SSH
+// dials per merged deploy into 1; CTO-review §8 follow-up).
 func (b *Backend) DeployOpts(ctx context.Context, host model.Host, opts DeployOptions) (*model.DeployResult, error) {
 	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("singbox: deploy: %w", err)
 	}
 	defer client.Close()
+	return b.deployOptsAndClient(ctx, host, opts, client)
+}
 
+// DeployOptsAndClient runs the same deploy sequence as DeployOpts but reuses an
+// already-open SSH client. The caller owns the client's lifecycle (do NOT
+// Close it here — the caller's defer does that). This is the seam that lets the
+// chain/merged applier share one connection across Deploy + InstallAWG + the
+// config push, instead of dialing three times (CTO-review §8).
+func (b *Backend) DeployOptsAndClient(ctx context.Context, host model.Host, opts DeployOptions, client ports.SSHClient) (*model.DeployResult, error) {
+	return b.deployOptsAndClient(ctx, host, opts, client)
+}
+
+// deployOptsAndClient is the actual deploy body. client is provided by the
+// caller (either DeployOpts which dials+closes, or DeployOptsAndClient which
+// reuses). It does NOT close the client.
+func (b *Backend) deployOptsAndClient(ctx context.Context, host model.Host, opts DeployOptions, client ports.SSHClient) (*model.DeployResult, error) {
 	sshHost := hostAddr(host.Addr)
 
 	// 0. Ensure config dir + log dir + self-signed cert (best-effort, before
@@ -429,12 +452,20 @@ func (b *Backend) InstallAWGModule(ctx context.Context, host model.Host) error {
 
 // InstallAWGModuleWithOptions installs the AmneziaWG kernel module, wrapping
 // privileged commands in sudo when opts.UseSudo is set (non-root sudoer VPS).
+// Opens its own SSH connection. Use InstallAWGModuleWithClient to reuse an
+// already-open connection (CTO-review §8: collapse 3 dials/merged-deploy → 1).
 func (b *Backend) InstallAWGModuleWithOptions(ctx context.Context, host model.Host, opts model.DeployOptions) error {
 	client, err := b.connector.Connect(host.Addr, host.User, host.KeyPath)
 	if err != nil {
 		return fmt.Errorf("singbox: InstallAWGModule: %w", err)
 	}
 	defer client.Close()
+	return b.installAWGModule(ctx, client, opts.UseSudo)
+}
+
+// InstallAWGModuleWithClient runs the same install as InstallAWGModuleWithOptions
+// but reuses an already-open SSH client. The caller owns the client's lifecycle.
+func (b *Backend) InstallAWGModuleWithClient(ctx context.Context, opts model.DeployOptions, client ports.SSHClient) error {
 	return b.installAWGModule(ctx, client, opts.UseSudo)
 }
 

@@ -132,6 +132,15 @@ func (autoNoopBackend) DeployWithOptions(context.Context, model.Host, model.Depl
 }
 func (autoNoopBackend) InstallAWGModule(context.Context, model.Host) error { return nil }
 func (autoNoopBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error { return nil }
+
+// autoNoopBackend implements the optional ClientBackend capability so the
+// merged-deploy connection-collapse path is exercised (CTO-review §8 test).
+func (autoNoopBackend) DeployOptsAndClient(context.Context, model.Host, model.DeployOptions, ports.SSHClient) (*model.DeployResult, error) {
+	return &model.DeployResult{Success: true}, nil
+}
+func (autoNoopBackend) InstallAWGModuleWithClient(context.Context, model.DeployOptions, ports.SSHClient) error {
+	return nil
+}
 func (autoNoopBackend) ApplyConfig(context.Context, model.Host, model.ConfigType, model.ConfigParams) error {
 	return nil
 }

@@ -6,6 +6,19 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
+// ClientBackend is an OPTIONAL capability a Backend may implement: running the
+// deploy/install sequence over an ALREADY-OPEN SSH client instead of dialing
+// its own. The chain/merged deploy paths open one client per host and pass it
+// to every backend method, collapsing what used to be 3 SSH dials per merged
+// deploy into 1 (CTO-review §8). Backends that don't support this (e.g. a
+// future xray backend) just don't implement ClientBackend; callers type-assert
+// `backend.(ClientBackend)` and fall back to the dialing DeployWithOptions /
+// InstallAWGModuleWithOptions when the assertion fails.
+type ClientBackend interface {
+	DeployOptsAndClient(ctx context.Context, host model.Host, opts model.DeployOptions, client SSHClient) (*model.DeployResult, error)
+	InstallAWGModuleWithClient(ctx context.Context, opts model.DeployOptions, client SSHClient) error
+}
+
 // Backend is the contract every proxy implementation must satisfy.
 // All methods accept context.Context as the first parameter for cancellation and timeouts.
 type Backend interface {

@@ -455,6 +455,63 @@ func TestApplyMergedNode_HappyPath(t *testing.T) {
 	}
 }
 
+// TestApplyMergedNode_OpensOneConnection verifies the connection-collapse
+// plumbing: a merged deploy opens EXACTLY ONE SSH connection per node, even
+// though it runs Deploy + (optionally) InstallAWG + the config push. Before the
+// CTO-review §8 fix the applier's client + backend.DeployWithOptions's client +
+// backend.InstallAWGModuleWithOptions's client were three separate dials.
+func TestApplyMergedNode_OpensOneConnection(t *testing.T) {
+	st := newTestStore(t)
+	info := &model.NodeInfo{
+		Host: model.Host{ID: "n-conn", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", Port: 51820, Tag: "sa-awg-test"}, // AWG → triggers InstallAWG path too
+		},
+	}
+	st.SaveNodeInfo(info)
+	client := newFakeSSH(deployRules()...)
+	conn := newFakeConnector(client)
+	applier := NewApplier(&fakeFactory{noopBackend{}}, conn)
+	_, _, err := applier.ApplyMergedNode(context.Background(), st, info)
+	if err != nil {
+		t.Fatalf("ApplyMergedNode: %v", err)
+	}
+	if conn.Connects != 1 {
+		t.Errorf("merged deploy opened %d SSH connection(s), want 1 (connection collapse)", conn.Connects)
+	}
+}
+
+// TestApplyChain_OpensOneConnectionPerNode verifies the per-node connection
+// collapse on the ApplyChain path: each node gets one Connect for the deploy
+// (InstallAWG + Deploy + config push all share it) plus one throwaway Connect
+// for the pre-flight reachability check. Pre-collapse this was ~4 Connects per
+// node (pre-flight + applier + backend.Deploy + backend.InstallAWG); now 2.
+// (CTO-review §8.)
+func TestApplyChain_OpensOneConnectionPerNode(t *testing.T) {
+	st := newTestStore(t)
+	c := &model.Chain{
+		Name:         "conn-chain",
+		Transport:    model.TransportXHTTP,
+		UserProtocol: model.UserProtocolAWG, // AWG → InstallAWG runs per node
+		Nodes: []model.ChainNode{
+			{ID: "n-a", Addr: "1.1.1.1:22", User: "root", KeyPath: "/k", Port: 443},
+		},
+	}
+	st.SaveChain(c)
+	client := newFakeSSH(deployRules()...)
+	conn := newFakeConnector(client)
+	applier := NewApplier(&fakeFactory{noopBackend{}}, conn)
+	_, err := applier.ApplyChain(context.Background(), st, c, "")
+	if err != nil {
+		t.Fatalf("ApplyChain: %v", err)
+	}
+	// 1 node → 2 Connects: 1 pre-flight (throwaway) + 1 deploy (shared across
+	// InstallAWG + Deploy + push). Pre-collapse this was ~4.
+	if conn.Connects != 2 {
+		t.Errorf("ApplyChain (1 node) opened %d SSH connection(s), want 2 (1 pre-flight + 1 collapsed deploy)", conn.Connects)
+	}
+}
+
 // TestNewApplier_NilConnectorDefaults verifies NewApplier with a nil connector
 // falls back to the production default (non-nil, doesn't panic).
 func TestNewApplier_NilConnectorDefaults(t *testing.T) {
@@ -484,6 +541,15 @@ func (noopBackend) DeployWithOptions(context.Context, model.Host, model.DeployOp
 }
 func (noopBackend) InstallAWGModule(context.Context, model.Host) error { return nil }
 func (noopBackend) InstallAWGModuleWithOptions(context.Context, model.Host, model.DeployOptions) error {
+	return nil
+}
+
+// noopBackend implements the optional ClientBackend capability so the
+// connection-collapse path is exercised (CTO-review §8 test).
+func (noopBackend) DeployOptsAndClient(context.Context, model.Host, model.DeployOptions, ports.SSHClient) (*model.DeployResult, error) {
+	return &model.DeployResult{Success: true}, nil
+}
+func (noopBackend) InstallAWGModuleWithClient(context.Context, model.DeployOptions, ports.SSHClient) error {
 	return nil
 }
 func (noopBackend) ApplyConfig(context.Context, model.Host, model.ConfigType, model.ConfigParams) error {
