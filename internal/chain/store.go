@@ -3,6 +3,7 @@ package chain
 import (
 	cryptoRand "crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -1055,6 +1056,30 @@ func (s *Store) readStore() (*storeFile, error) {
 		return nil, err
 	}
 
+	// At-rest encryption (CTO-review §6 CRITICAL): if a master-key file is
+	// present next to the store AND the on-disk data starts with the encMagic
+	// header, decrypt before JSON-unmarshalling. If the key is present but
+	// the data is NOT encrypted (legacy store first written in plaintext,
+	// operator later added the key), treat it as plaintext so the store can
+	// be read; the next writeStore will encrypt it (seamless upgrade). If the
+	// data IS encrypted but no key is present, fall through to json.Unmarshal
+	// which will fail with a clear "not a valid JSON" error (the operator
+	// deleted the key without decrypting first).
+	if isEncrypted(data) {
+		key, kerr := loadMasterKey(masterKeyPath(s.path))
+		if kerr != nil {
+			return nil, fmt.Errorf("store: encrypted but master key unavailable: %w", kerr)
+		}
+		if key == nil {
+			return nil, fmt.Errorf("store: data is encrypted but master key file %s is missing", masterKeyPath(s.path))
+		}
+		plain, derr := decryptStore(data, key)
+		if derr != nil {
+			return nil, fmt.Errorf("store: decrypt: %w", derr)
+		}
+		data = plain
+	}
+
 	var sf storeFile
 	if err := json.Unmarshal(data, &sf); err != nil {
 		return nil, fmt.Errorf("store: parse: %w", err)
@@ -1066,6 +1091,22 @@ func (s *Store) writeStore(sf *storeFile) error {
 	data, err := json.MarshalIndent(sf, "", "  ")
 	if err != nil {
 		return fmt.Errorf("store: marshal: %w", err)
+	}
+
+	// At-rest encryption: if a master-key file is present, encrypt the whole
+	// payload before the atomic write. Absence of the key = legacy plaintext
+	// mode (no behaviour change). The key file is operator-opt-in (see
+	// store_crypto.go header for the rationale).
+	if key, kerr := loadMasterKey(masterKeyPath(s.path)); kerr == nil && key != nil {
+		enc, eerr := encryptStore(data, key)
+		if eerr != nil {
+			return fmt.Errorf("store: encrypt: %w", eerr)
+		}
+		data = enc
+	} else if kerr != nil && !errors.Is(kerr, os.ErrNotExist) {
+		// A present-but-invalid key file is a hard error (do not silently
+		// write plaintext and leak the secrets).
+		return fmt.Errorf("store: master key invalid: %w", kerr)
 	}
 
 	// Atomic write (temp + rename) so a crash mid-write cannot truncate the
