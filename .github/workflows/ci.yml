@@ -69,3 +69,21 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+
+  # patchcheck — verifies the patches/ still apply cleanly against the pinned
+  # upstream sing-box-extended + wireguard-go tags. Gated to run only when a
+  # patch file, deps/, or the version consts change (workflow_dispatch for
+  # manual runs). NOT in the build-test job because it needs network + git
+  # clones (~300s). See docs/PATCHES.md.
+  patchcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: patchcheck (patches apply cleanly)
+        run: |
+          go test -tags=patchcheck -run TestPatches_ApplyCleanly ./internal/backend/singbox/ -v -timeout=300s
+          go test -tags=patchcheck -run TestPatchcheckVersionsMatchSingBoxConst ./internal/backend/singbox/ -v

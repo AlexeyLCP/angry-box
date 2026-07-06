@@ -182,6 +182,9 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 
 - Project uses **sing-box-extended** (`1.13.14-extended-2.5.0-patched`) — NOT official sing-box.
   This is a patched build (see `patches/`: wireguard-go chacha20poly1305 overlap fix + fallback round-robin).
+  The full rebasing procedure + the `patchcheck` regression test (gated by the
+  `patchcheck` build tag) are documented in **`docs/PATCHES.md`** — that is the
+  law for bumping the upstream sing-box-extended / wireguard-go tags.
 - Binary in `deps/sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz`
 - Installed by `angry-box deploy` which downloads from the project's GitHub deps (weak VPSes never compile Go — they just download).
 - Supports: amnezia field on wireguard endpoints, CPS/I1-I5 packets, MTProto, XHTTP max obfuscation.

@@ -643,6 +643,16 @@ func nodeCmd(cmd string) {
 		}
 
 	case "config":
+		// Deprecation notice: standalone AWG via the CLI uses the legacy
+		// userspace WireGuardEndpoint (RenderAWGHop), which diverges from the
+		// kernel-AWG rework the web UI / ApplyMergedNode deploy (kernel
+		// awg-quick@awg0 + sing-box TUN-overlay — AGENTS.md Known Issue #11).
+		// Conversion to kernel mode is a follow-up (needs a Host-shaped TUN-
+		// overlay renderer). The path still works but is not the product target.
+		if protocol == "awg" {
+			fmt.Fprintln(os.Stderr, "warning: `config --protocol awg` uses the legacy userspace AWG endpoint (deprecated).")
+			fmt.Fprintln(os.Stderr, "         Use the web UI / `apply-chain` which deploy the kernel awg-quick + TUN-overlay architecture (AGENTS.md #11).")
+		}
 		ct := parseConfigType(configType)
 		// Apply profile override for this generation if provided
 		if profile != "" {
@@ -692,6 +702,11 @@ func nodeCmd(cmd string) {
 
 	case "apply":
 		requireHostFlags()
+		// Deprecation notice: see the `config` case above.
+		if protocol == "awg" {
+			fmt.Fprintln(os.Stderr, "warning: `apply --protocol awg` uses the legacy userspace AWG endpoint (deprecated).")
+			fmt.Fprintln(os.Stderr, "         Use the web UI / `apply-chain` which deploy the kernel awg-quick + TUN-overlay architecture (AGENTS.md #11).")
+		}
 		ct := parseConfigType(configType)
 		host := model.Host{Addr: addr, User: user, KeyPath: keyPath}
 		if err := b.ApplyConfig(ctx, host, ct, model.ConfigParams{
