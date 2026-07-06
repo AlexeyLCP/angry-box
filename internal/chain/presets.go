@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -150,17 +151,21 @@ func ListPresets() []string {
 	return names
 }
 
-// ListPresetsForProtocol returns preset names filtered by protocol support.
+// ListPresetsForProtocol returns preset names tagged with the given protocol.
+// Legacy/global presets (Protocol == "") are EXCLUDED from the dropdown — they
+// are resolvable by name (for existing chains) but not offered for new
+// selection. The dropdown shows only protocol-scoped presets.
 func ListPresetsForProtocol(protocol string) []string {
 	presetsMu.RLock()
 	defer presetsMu.RUnlock()
 
 	names := make([]string, 0, len(presets))
 	for name, p := range presets {
-		if presetSupportsProtocol(p, protocol) {
+		if p.Protocol == protocol {
 			names = append(names, name)
 		}
 	}
+	sort.Strings(names)
 	return names
 }
 
@@ -213,13 +218,46 @@ func GetDefaultPresetName() string {
 	return defaultPresetName
 }
 
+// GetDefaultPresetForProtocol returns the default preset for a protocol. If
+// PanelSettings.DefaultPresetByProtocol is set (via the caller — this function
+// does not read the store), the caller should pass that name in via
+// SetDefaultProfile; here we use a built-in per-protocol default that the
+// caller can override. Falls back to the global default for unknown protocols.
+func GetDefaultPresetForProtocol(protocol string) ConnectionPreset {
+	if name := defaultPresetForProtocol(protocol); name != "" {
+		if p, ok := GetPreset(name); ok {
+			return p
+		}
+	}
+	return GetDefaultPreset()
+}
+
+// defaultPresetForProtocol returns the built-in default preset name for a
+// protocol. The caller (applier) may override via PanelSettings.
+func defaultPresetForProtocol(protocol string) string {
+	switch protocol {
+	case "awg":
+		return "maximum_stealth_2026_awg"
+	case "vless-reality":
+		return "maximum_stealth_2026_reality"
+	case "xhttp", "":
+		return "xhttp_max_stealth_2026"
+	default:
+		return "" // fall back to global default
+	}
+}
+
 // GetEffectivePreset возвращает пресет, который следует использовать для данной цепочки.
-// Приоритет: явный override на цепочке (chain.ObfuscationProfile) > глобальный дефолт из конфига.
+// Приоритет: явный override на цепочке (chain.ObfuscationProfile) > per-protocol
+// default (when UserProtocol is non-empty) > глобальный дефолт из конфига.
 func GetEffectivePreset(c *model.Chain) ConnectionPreset {
 	if c != nil && c.ObfuscationProfile != "" {
 		if p, ok := GetPreset(c.ObfuscationProfile); ok {
 			return p
 		}
+	}
+	if c != nil && c.UserProtocol != "" {
+		return GetDefaultPresetForProtocol(string(c.UserProtocol))
 	}
 	return GetDefaultPreset()
 }

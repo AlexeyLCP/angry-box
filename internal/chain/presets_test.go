@@ -112,3 +112,74 @@ func TestAWGPresetValuesFromProfiles(t *testing.T) {
 		}
 	}
 }
+
+func TestListPresetsForProtocol_StrictFilter(t *testing.T) {
+	awgNames := ListPresetsForProtocol("awg")
+	for _, name := range awgNames {
+		p, ok := GetPreset(name)
+		if !ok {
+			t.Errorf("ListPresetsForProtocol returned unknown preset %q", name)
+			continue
+		}
+		if p.Protocol != "awg" {
+			t.Errorf("preset %q listed for awg but has Protocol=%q (legacy/kitchen-sink should be excluded)", name, p.Protocol)
+		}
+	}
+	// legacy kitchen-sink presets must NOT appear
+	for _, legacy := range []string{"russia_2026", "maximum_stealth_2026"} {
+		if containsStr(awgNames, legacy) {
+			t.Errorf("legacy preset %q should NOT be listed for awg (Protocol=\"\")", legacy)
+		}
+	}
+	// there should be at least one awg variant
+	if len(awgNames) == 0 {
+		t.Errorf("expected awg-tagged presets, got none")
+	}
+}
+
+func TestListPresetsForProtocol_LegacyExcluded(t *testing.T) {
+	for _, proto := range []string{"awg", "vless-reality", "xhttp"} {
+		names := ListPresetsForProtocol(proto)
+		for _, legacy := range []string{"russia_2026", "iran_2026", "china_2026", "maximum_stealth_2026", "pro_2026"} {
+			if containsStr(names, legacy) {
+				t.Errorf("legacy preset %q listed for protocol %q — should be excluded", legacy, proto)
+			}
+		}
+	}
+}
+
+func TestGetDefaultPresetForProtocol(t *testing.T) {
+	p := GetDefaultPresetForProtocol("awg")
+	if p.Name == "" {
+		t.Fatal("expected non-empty default preset for awg")
+	}
+	if p.Protocol != "awg" {
+		t.Errorf("default-for-awg preset has Protocol=%q, want awg", p.Protocol)
+	}
+	// unknown protocol falls back to the global default
+	p2 := GetDefaultPresetForProtocol("bogus")
+	if p2.Name == "" {
+		t.Error("expected fallback to global default for unknown protocol")
+	}
+}
+
+func TestGetEffectivePreset_PerProtocolDefault(t *testing.T) {
+	c := &model.Chain{UserProtocol: model.UserProtocolAWG} // no ObfuscationProfile
+	eff := GetEffectivePreset(c)
+	if eff.Name == "" {
+		t.Fatal("expected non-empty effective preset")
+	}
+	// Should be an awg-tagged preset (the per-protocol default), not the global kitchen-sink
+	if eff.Protocol != "awg" {
+		t.Errorf("effective preset for AWG chain has Protocol=%q, want awg", eff.Protocol)
+	}
+}
+
+func containsStr(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
