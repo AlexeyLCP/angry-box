@@ -131,3 +131,53 @@ func TestListMTProxyUsersForNode(t *testing.T) {
 	// silence unused import
 	_ = os.Stat
 }
+
+// TestStore_SchemaVersion_FreshStoreAtCurrent verifies a fresh store is
+// written at currentSchemaVersion after the first save + migrateOnce.
+func TestStore_SchemaVersion_FreshStoreAtCurrent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.json")
+	st := NewStore(path)
+	_ = st.SaveHost(&model.Host{ID: "h1", Addr: "1.1.1.1:22"})
+	// Re-open and read raw JSON to check schema_version.
+	st2 := NewStore(path)
+	st2.mu.Lock()
+	sf, err := st2.readStore()
+	st2.mu.Unlock()
+	if err != nil {
+		t.Fatalf("readStore: %v", err)
+	}
+	if sf.SchemaVersion != currentSchemaVersion {
+		t.Errorf("fresh store schema_version = %d, want %d", sf.SchemaVersion, currentSchemaVersion)
+	}
+}
+
+// TestStore_SchemaVersion_LegacyMigratesUp verifies a legacy store written at
+// schema version 0 (with MtproxyUsers) is migrated up to currentSchemaVersion
+// and the version is persisted.
+func TestStore_SchemaVersion_LegacyMigratesUp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.json")
+	st := NewStore(path)
+	// Write a legacy v0 store with one MtproxyUser.
+	st.mu.Lock()
+	sf := &storeFile{MtproxyUsers: []*model.MtproxyUser{
+		{ID: "m1", NodeID: "n1", Name: "alice", SecretHex: "83b231c9ccf32ef09f48c8f63765ab4f", FakeTLSDomain: "disk.yandex.ru", Enabled: true},
+	}}
+	if err := st.writeStore(sf); err != nil {
+		t.Fatalf("writeStore: %v", err)
+	}
+	st.mu.Unlock()
+	st.migrateOnce()
+	// Re-read raw: schema_version should now be currentSchemaVersion.
+	st2 := NewStore(path)
+	st2.mu.Lock()
+	sf2, _ := st2.readStore()
+	st2.mu.Unlock()
+	if sf2.SchemaVersion != currentSchemaVersion {
+		t.Errorf("after migration schema_version = %d, want %d", sf2.SchemaVersion, currentSchemaVersion)
+	}
+	if len(sf2.MtproxyUsers) != 0 {
+		t.Errorf("legacy MtproxyUsers not cleared after migration: %d", len(sf2.MtproxyUsers))
+	}
+}

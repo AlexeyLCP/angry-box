@@ -4,6 +4,7 @@ import (
 	cryptoRand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -36,20 +37,37 @@ func NewStore(path string) *Store {
 	return s
 }
 
-// migrateOnce runs the one-shot legacy MtproxyUser → User migration. Idempotent:
-// no-op when the store has no MtproxyUsers (already migrated or fresh). Holds
-// the lock, reads the store, migrates if needed, and writes it back.
+// migrateOnce runs the forward migration chain to bring the on-disk store up
+// to currentSchemaVersion. Idempotent: a store already at the current version
+// is a no-op; a store at a lower version runs each missing migration in order,
+// bumping the schema_version on disk after each step. Holds the lock, reads
+// the store, migrates, and writes it back. CTO-review §8 (no schema versioning
+// finding): previously each schema change was a one-shot ad-hoc migration with
+// no version tracking — this makes the chain explicit and extensible.
 func (s *Store) migrateOnce() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sf, err := s.readStore()
-	if err != nil || len(sf.MtproxyUsers) == 0 {
+	if err != nil {
 		return
 	}
-	if err := s.migrateMtproxyUsers(sf); err != nil {
-		return
+	// migrations[i] brings the store from version i to i+1. Add new migrations
+	// here in order and bump currentSchemaVersion.
+	migrations := []func(*storeFile) error{
+		s.migrateMtproxyUsers, // v0 -> v1: legacy MtproxyUser -> User (subproject B)
 	}
-	_ = s.writeStore(sf)
+	changed := false
+	for i := sf.SchemaVersion; i < len(migrations) && i < currentSchemaVersion; i++ {
+		if err := migrations[i](sf); err != nil {
+			log.Printf("store: migration to schema v%d failed: %v", i+1, err)
+			return
+		}
+		sf.SchemaVersion = i + 1
+		changed = true
+	}
+	if changed {
+		_ = s.writeStore(sf)
+	}
 }
 
 // migrateMtproxyUsers converts legacy storeFile.MtproxyUsers into Users with
@@ -130,18 +148,30 @@ func (s *Store) ListMTProxyUsersForNode(nodeID string) []*model.User {
 }
 
 type storeFile struct {
-	Hosts        []*model.Host           `json:"hosts"`
-	Chains       []*model.Chain          `json:"chains"`
-	Users        []*model.User           `json:"users,omitempty"`
-	Settings     *model.PanelSettings    `json:"settings,omitempty"`
-	NodeInfos    []*model.NodeInfo       `json:"node_infos,omitempty"`
-	Metrics      []*model.NodeMetrics    `json:"metrics,omitempty"`
-	KnownHosts   []*model.KnownHost      `json:"known_hosts,omitempty"`
-	RouteRules   []*model.RouteRule      `json:"route_rules,omitempty"`
-	AuditLogs    []*model.AuditLog       `json:"audit_logs,omitempty"`
-	MtproxyUsers []*model.MtproxyUser    `json:"mtproxy_users,omitempty"`
-	Links        []*model.ConnectionLink `json:"links,omitempty"`
+	// SchemaVersion tracks the store.json schema version for forward
+	// migrations. 0 = legacy store written before schema versioning was
+	// introduced; the migrateOnce chain runs each missing migration in order
+	// and bumps the version on disk. New stores are written at the current
+	// schemaVersion constant. CTO-review §8 (no schema versioning finding).
+	SchemaVersion int                        `json:"schema_version,omitempty"`
+	Hosts         []*model.Host              `json:"hosts"`
+	Chains        []*model.Chain             `json:"chains"`
+	Users         []*model.User              `json:"users,omitempty"`
+	Settings      *model.PanelSettings       `json:"settings,omitempty"`
+	NodeInfos     []*model.NodeInfo          `json:"node_infos,omitempty"`
+	Metrics       []*model.NodeMetrics       `json:"metrics,omitempty"`
+	KnownHosts    []*model.KnownHost         `json:"known_hosts,omitempty"`
+	RouteRules    []*model.RouteRule         `json:"route_rules,omitempty"`
+	AuditLogs     []*model.AuditLog          `json:"audit_logs,omitempty"`
+	MtproxyUsers  []*model.MtproxyUser       `json:"mtproxy_users,omitempty"`
+	Links         []*model.ConnectionLink    `json:"links,omitempty"`
 }
+
+// currentSchemaVersion is the schema version the orchestrator writes. New
+// stores are created at this version; existing stores at a lower version are
+// migrated up to it by migrateOnce. Bump this constant when adding a new
+// migration to the chain below.
+const currentSchemaVersion = 1
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────
 
