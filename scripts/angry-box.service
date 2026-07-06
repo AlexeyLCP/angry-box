@@ -1,17 +1,37 @@
 [Unit]
 Description=Angry-BOX proxy orchestrator
 Documentation=https://github.com/alexeylcp/angry-box
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-ExecStart=/usr/local/bin/angry-box serve --listen 0.0.0.0:9080 --file /etc/angry-box/store.json
+# Run as a dedicated non-root user. The control plane carries SSH private
+# keys and can push configs that become RCE on the VPS fleet, so the process
+# must not run as root (CTO-review §7 finding: User=root + 0.0.0.0 bind was
+# the worst-case exposure). The install script creates this user with a
+# home dir for the store + config (DATADIR=/var/lib/angry-box).
+User=angry-box
+Group=angry-box
+
+# Bind loopback only — the control plane is plain HTTP (Basic Auth, no TLS by
+# default). Remote access MUST be fronted by a TLS-terminating reverse proxy
+# (nginx/caddy). Operators who insist on direct remote access can override
+# --listen in a drop-in override unit, but they then own the exposure.
+ExecStart=/usr/local/bin/angry-box serve --listen 127.0.0.1:9080 --file /var/lib/angry-box/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
 StateDirectory=angry-box
-WorkingDirectory=/etc/angry-box
+WorkingDirectory=/var/lib/angry-box
+
+# Hardening (CTO-review §7). The panel does not need to write outside its
+# state dir, execute new binaries, or access the kernel keyring.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/angry-box
 
 [Install]
 WantedBy=multi-user.target

@@ -266,7 +266,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_PATH serve -listen 0.0.0.0:9080 -file $CONFIG_DIR/store.json
+ExecStart=$INSTALL_PATH serve -listen 127.0.0.1:9080 -file $CONFIG_DIR/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -279,19 +279,37 @@ UNIT_EOF
             systemctl --user enable angry-box
         else
             echo "==> Installing systemd service..."
+            # Create a dedicated non-root user for the control plane. The
+            # panel carries SSH private keys and can push RCE configs, so it
+            # must not run as root. CTO-review §7 finding.
+            if ! id -u angry-box >/dev/null 2>&1; then
+                useradd --system --no-create-home --shell /usr/sbin/nologin angry-box
+            fi
+            # Ensure the data dir is owned by the service user so it can read
+            # the store + write the config backup.
+            mkdir -p "$DATA_DIR"
+            chown -R angry-box:angry-box "$DATA_DIR"
             cat > /etc/systemd/system/angry-box.service << UNIT_EOF
 [Unit]
 Description=Angry-BOX proxy orchestrator
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-ExecStart=/usr/local/bin/angry-box serve -listen 0.0.0.0:9080 -file /etc/angry-box/store.json
+User=angry-box
+Group=angry-box
+ExecStart=$INSTALL_PATH serve --listen 127.0.0.1:9080 --file $DATA_DIR/store.json
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
-WorkingDirectory=/etc/angry-box
+StateDirectory=angry-box
+WorkingDirectory=$DATA_DIR
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=$DATA_DIR
 
 [Install]
 WantedBy=multi-user.target
