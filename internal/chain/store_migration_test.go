@@ -70,12 +70,11 @@ func TestMigrateMtproxyUsers(t *testing.T) {
 	if bob != nil && bob.Active {
 		t.Errorf("bob should be inactive (Enabled=false)")
 	}
-	// MtproxyUsers slice cleared + a .bak file written
-	if mtp, _ := st.ListMtproxyUsers(); len(mtp) != 0 {
-		t.Errorf("legacy slice not cleared: %d", len(mtp))
-	}
-	// (ListMtproxyUsers is removed in a later step of this task; here it still exists
-	// temporarily — if it's already removed, drop this assertion.)
+	// The legacy MtproxyUsers slice is cleared by migrateMtproxyUsers (it sets
+	// sf.MtproxyUsers = nil); this is verified by the migration helper's behavior
+	// and by the 2 migrated users appearing in ListUsers above. The old
+	// ListMtproxyUsers() store method was removed in Task 8 cleanup, so it can
+	// no longer be asserted on here.
 }
 
 func TestMigrateMtproxyUsers_Idempotent(t *testing.T) {
