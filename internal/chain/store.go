@@ -29,7 +29,26 @@ import (
 type Store struct {
 	mu   sync.RWMutex
 	path string
+
+	// auditMu guards the append-only audit-jsonl file (s.path + ".audit.jsonl").
+	// It is separate from mu so audit appends (O(1)) never contend with the
+	// main store's full-file rewrites (O(file)) — the audit-log
+	// write-amplification fix (CTO-review §12 D1: every SaveAuditLog used to
+	// rewrite the ENTIRE store.json via writeStore; now it appends one line).
+	auditMu sync.Mutex
 }
+
+// auditLogPath is the append-only JSONL file next to the store (sibling to
+// store.json, like the .prebmigrate.bak and master-key sibling files). Each
+// line is one json-marshaled *model.AuditLog. O(1) append per audit entry.
+func (s *Store) auditLogPath() string {
+	return s.path + ".audit.jsonl"
+}
+
+// auditCap is the maximum number of audit entries returned by ListAuditLogs
+// (preserves the pre-split behavior where the in-memory slice was capped to
+// 5000; the jsonl file is read-tail to this cap, with periodic compaction).
+const auditCap = 5000
 
 // NewStore creates a store backed by the given JSON file.
 func NewStore(path string) *Store {
@@ -889,17 +908,19 @@ func (s *Store) DeleteRouteRule(id string) error {
 // ─── AuditLogs (append-mostly) ───────────────────────────────────────────────
 
 // SaveAuditLog appends an audit entry. ID/TS are filled if empty.
+// SaveAuditLog appends one audit entry as a single JSON line to the append-only
+// audit-jsonl file (s.path + ".audit.jsonl"). This is O(1) per entry — the
+// pre-split implementation rewrote the ENTIRE store.json (O(file) per audit
+// entry, write-amplification growing with the store) (CTO-review §12 D1).
+//
+// The legacy inline storeFile.AuditLogs array is left untouched (read-only) so
+// existing stores keep their history; ListAuditLogs merges both sources. A
+// future migration can drain+clear the inline array once the jsonl is trusted.
+//
+// The 5000-entry cap is enforced on read (ListAuditLogs read-tails to auditCap)
+// plus a periodic compaction when the jsonl exceeds 2×auditCap, so the file
+// stays bounded without per-entry rewrites.
 func (s *Store) SaveAuditLog(a *model.AuditLog) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	sf, err := s.readStore()
-	if os.IsNotExist(err) {
-		sf = &storeFile{}
-	} else if err != nil {
-		return fmt.Errorf("store: read: %w", err)
-	}
-
 	if a.ID == "" {
 		a.ID = newID()
 	}
@@ -909,33 +930,137 @@ func (s *Store) SaveAuditLog(a *model.AuditLog) error {
 	if a.Actor == "" {
 		a.Actor = "operator"
 	}
-	sf.AuditLogs = append(sf.AuditLogs, a)
-	// Cap the log to the most recent 5000 entries to avoid unbounded growth.
-	if len(sf.AuditLogs) > 5000 {
-		sf.AuditLogs = sf.AuditLogs[len(sf.AuditLogs)-5000:]
+	line, err := json.Marshal(a)
+	if err != nil {
+		return fmt.Errorf("store: marshal audit log: %w", err)
 	}
-	return s.writeStore(sf)
+
+	s.auditMu.Lock()
+	defer s.auditMu.Unlock()
+
+	// O_APPEND makes each write atomic at the OS level for small writes; we
+	// hold auditMu across the open+write+close so concurrent audit appends
+	// never interleave partial lines.
+	f, err := os.OpenFile(s.auditLogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("store: open audit log: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		return fmt.Errorf("store: write audit log: %w", err)
+	}
+
+	// Periodic compaction: when the file exceeds 2×auditCap lines, rewrite it
+	// to the most recent auditCap lines. This is an occasional O(file)
+	// compaction (rare — only when the file is large), not a per-entry rewrite,
+	// so it does not reintroduce the write-amplification the split fixed.
+	if fi, err := f.Stat(); err == nil && fi.Size() > int64(auditCap*2*512) {
+		// Best-effort; a failure here just means compaction is deferred to the
+		// next append — the file keeps growing until a future compaction
+		// succeeds. Logged, not fatal.
+		if err := s.compactAuditLogsLocked(); err != nil {
+			log.Printf("store: audit log compaction failed (will retry next append): %v", err)
+		}
+	}
+	return nil
 }
 
-// ListAuditLogs returns audit entries newest-first, capped to limit.
-func (s *Store) ListAuditLogs(limit int) ([]*model.AuditLog, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	sf, err := s.readStore()
+// compactAuditLogsLocked rewrites the audit-jsonl file to its most recent
+// auditCap lines. Caller must hold s.auditMu.
+func (s *Store) compactAuditLogsLocked() error {
+	data, err := os.ReadFile(s.auditLogPath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []*model.AuditLog{}, nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
-	if limit <= 0 || limit > len(sf.AuditLogs) {
-		limit = len(sf.AuditLogs)
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) <= auditCap {
+		return nil // already within cap
 	}
-	// newest-first (reverse over the slice)
-	out := make([]*model.AuditLog, 0, limit)
-	for i := len(sf.AuditLogs) - 1; i >= 0 && len(out) < limit; i-- {
-		out = append(out, sf.AuditLogs[i])
+	keep := lines[len(lines)-auditCap:]
+	var buf strings.Builder
+	for _, l := range keep {
+		buf.WriteString(l)
+		buf.WriteByte('\n')
+	}
+	return os.WriteFile(s.auditLogPath(), []byte(buf.String()), 0o600)
+}
+
+// ListAuditLogs returns audit entries newest-first, capped to limit. It merges
+// the legacy inline storeFile.AuditLogs (read-only, for stores created before
+// the split) with the new append-only audit-jsonl file, dedupes by ID, and
+// returns the most recent min(limit, auditCap) entries (limit<=0 → auditCap).
+func (s *Store) ListAuditLogs(limit int) ([]*model.AuditLog, error) {
+	if limit <= 0 || limit > auditCap {
+		limit = auditCap
+	}
+
+	// Read legacy inline entries (under s.mu.RLock — read-only).
+	s.mu.RLock()
+	var legacy []*model.AuditLog
+	sf, err := s.readStore()
+	if err == nil {
+		legacy = sf.AuditLogs
+	} else if !os.IsNotExist(err) {
+		s.mu.RUnlock()
+		return nil, fmt.Errorf("store: read: %w", err)
+	}
+	s.mu.RUnlock()
+
+	// Read the jsonl tail (under s.auditMu).
+	s.auditMu.Lock()
+	data, err := os.ReadFile(s.auditLogPath())
+	s.auditMu.Unlock()
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("store: read audit log: %w", err)
+	}
+
+	// Parse jsonl entries, newest-first (file is append-order = oldest-first,
+	// so iterate in reverse).
+	var jsonl []*model.AuditLog
+	if len(data) > 0 {
+		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimSpace(lines[i])
+			if line == "" {
+				continue
+			}
+			e := &model.AuditLog{}
+			if err := json.Unmarshal([]byte(line), e); err != nil {
+				// Skip a malformed line rather than failing the whole read —
+				// a single corrupt line should not hide the rest of the log.
+				continue
+			}
+			jsonl = append(jsonl, e)
+		}
+	}
+
+	// Merge: jsonl (newest-first) + legacy (reverse to newest-first), dedup by ID.
+	seen := make(map[string]bool, len(jsonl)+len(legacy))
+	out := make([]*model.AuditLog, 0, len(jsonl)+len(legacy))
+	for _, e := range jsonl {
+		if e.ID != "" && seen[e.ID] {
+			continue
+		}
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+		out = append(out, e)
+	}
+	for i := len(legacy) - 1; i >= 0; i-- {
+		e := legacy[i]
+		if e.ID != "" && seen[e.ID] {
+			continue
+		}
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+		out = append(out, e)
+	}
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
