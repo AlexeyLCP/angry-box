@@ -214,9 +214,34 @@ func exitInterfacesForNode(node *model.ChainNode) []string {
 // re-capture egress traffic and loop") was WRONG — include_interface captures
 // INCOMING traffic on those interfaces (responses), not the outgoing egress
 // (which goes via bind_interface sockets, not the TUN). No loop occurs.
+// tunIncludeInterfaces returns the kernel AWG interface names the sing-box TUN
+// overlay must capture (include_interface). Always includes awg0 (the chain
+// entry / first standalone); appends awg1 when a standalone AWG inbound with a
+// distinct AWGServerAddress coexists with a chain entry (the multi-AWG-interface
+// scheme — AGENTS.md #10), so sing-box captures traffic arriving on BOTH kernel
+// AWG interfaces. Also appends the exit interfaces (awg-exit-nX) on a balancer.
 func tunIncludeInterfaces(node *model.ChainNode) []string {
 	ifaces := []string{"awg0"}
 	ifaces = append(ifaces, exitInterfacesForNode(node)...)
+	return ifaces
+}
+
+// tunIncludeInterfacesForNode is the nodeInfo-aware variant: it also appends awg1
+// when nodeInfo has a standalone AWG inbound with a distinct subnet (co-located
+// with a chain entry that claimed awg0). Used by the merged-config builder where
+// both the chain node and the nodeInfo are in scope.
+func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo) []string {
+	ifaces := tunIncludeInterfaces(node)
+	if nodeInfo != nil {
+		for _, ib := range nodeInfo.Inbounds {
+			if ib.Protocol == "awg" && ib.AWGServerAddress != "" {
+				// A standalone AWG inbound with a distinct subnet → deployed on
+				// awg1 (see RenderNodeAWGConfs). The TUN overlay must include it.
+				ifaces = append(ifaces, "awg1")
+				break
+			}
+		}
+	}
 	return ifaces
 }
 

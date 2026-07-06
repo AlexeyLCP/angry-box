@@ -23,8 +23,23 @@ import (
 const (
 	awgConfDir       = "/etc/amnezia/amneziawg"
 	awg0ConfPath     = "/etc/amnezia/amneziawg/awg0.conf"
+	awg1ConfPath     = "/etc/amnezia/amneziawg/awg1.conf"
 	awgPeersListPath = "/etc/amnezia/amneziawg/awg0-peers.list"
 )
+
+// awgConfPath returns the kernel awg-quick .conf path for a given interface
+// name (awg0, awg1, ...). Used by the multi-AWG-interface scheme where a node
+// hosting a chain AWG entry (awg0) + a standalone AWG inbound with a distinct
+// subnet gets the standalone on awg1 (AGENTS.md Known Issue #10 follow-up).
+func awgConfPath(ifaceName string) string {
+	return awgConfDir + "/" + ifaceName + ".conf"
+}
+
+// awgServiceName returns the awg-quick systemd unit for a given interface name
+// (awg0 → awg-quick@awg0, awg1 → awg-quick@awg1).
+func awgServiceName(ifaceName string) string {
+	return "awg-quick@" + ifaceName
+}
 
 // AwgServerConfig is the parsed awg0.conf ([Interface] with ListenPort).
 type AwgServerConfig struct {

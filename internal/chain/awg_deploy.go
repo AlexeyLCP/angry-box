@@ -101,19 +101,20 @@ func RenderNodeAWGConfs(
 			// Skip + warn (the old behavior silently dropped it; now the
 			// operator sees the collision in the MergeReport / deploy log).
 			warnings = append(warnings, fmt.Sprintf(
-				"node %q: standalone AWG inbound %q collides with the chain AWG entry on awg0 (both default to 10.8.0.1/24); the standalone is skipped. Set a distinct NodeInbound.AWGServerAddress (e.g. 10.8.1.1/24) — multi-AWG-interface (awg1) support is a follow-up (AGENTS.md #10).",
+				"node %q: standalone AWG inbound %q collides with the chain AWG entry on awg0 (both default to 10.8.0.1/24); the standalone is skipped. Set a distinct NodeInbound.AWGServerAddress (e.g. 10.8.1.1/24) to deploy it on a second interface awg1 (AGENTS.md #10).",
 				nodeInfo.ID, tag))
 			continue
 		}
-		if len(files) > 0 && chainEntryPresent {
-			// Distinct subnet but awg0 is taken by the chain entry — would need
-			// awg1. Not supported yet; warn and skip.
-			warnings = append(warnings, fmt.Sprintf(
-				"node %q: standalone AWG inbound %q has a distinct subnet %s but awg0 is already claimed by the chain AWG entry; multi-AWG-interface (awg1) support is a follow-up — the standalone is skipped (AGENTS.md #10).",
-				nodeInfo.ID, tag, ib.AWGServerAddress))
+		if chainEntryPresent && ib.AWGServerAddress != "" {
+			// Distinct subnet + a chain entry already claimed awg0 → deploy the
+			// standalone on a SECOND kernel AWG interface (awg1) so the two
+			// coexist on one node. Each gets its own awg-quick unit + subnet +
+			// PostUp FORWARD rules. The TUN overlay must include BOTH awg0 and
+			// awg1 (handled in tunIncludeInterfaces). AGENTS.md #10.
+			files = append(files, renderStandaloneAWGConf(ib, tag, usersByInbound, "awg1"))
 			continue
 		}
-		files = append(files, renderStandaloneAWG0Conf(ib, tag, usersByInbound))
+		files = append(files, renderStandaloneAWGConf(ib, tag, usersByInbound, "awg0"))
 		standaloneAdded = true
 		break
 	}
@@ -244,7 +245,9 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 // (no chain): kernel AWG server with one [Peer] per credentialed user. Amnezia
 // comes from the inbound's preset (nil material → degenerate H1-H4, fresh
 // I1-I5 — the standalone path has no chain to persist material on).
-func renderStandaloneAWG0Conf(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User) AWGConfFile {
+// ifaceName is the kernel AWG interface name (awg0 / awg1) — a standalone
+// co-located with a chain entry uses awg1 with a distinct subnet (AGENTS.md #10).
+func renderStandaloneAWGConf(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User, ifaceName string) AWGConfFile {
 	preset := GetDefaultPreset()
 	if ib.Obfuscation != "" {
 		if p, ok := GetPreset(ib.Obfuscation); ok {
@@ -277,8 +280,8 @@ func renderStandaloneAWG0Conf(ib *model.NodeInbound, tag string, usersByInbound 
 		tunnelAddr = "10.8.0.1/24"
 	}
 	return AWGConfFile{
-		Path:        awg0ConfPath,
-		ServiceName: "awg-quick@awg0",
+		Path:        awgConfPath(ifaceName),
+		ServiceName: awgServiceName(ifaceName),
 		Content: RenderServerAWGConf(AWGServerConfParams{
 			ServerPrivateKey: ib.ServerPrivKey,
 			ListenPort:       ib.Port,
@@ -287,8 +290,15 @@ func renderStandaloneAWG0Conf(ib *model.NodeInbound, tag string, usersByInbound 
 			Amnezia:          amnezia,
 			Peers:            peers,
 			TUNInterface:     tunInterfaceName, // sing-box-tun: PostUp/PostDown FORWARD rules
+			InterfaceName:    ifaceName,        // awg0 / awg1 — PostUp references this
 		}),
 	}
+}
+
+// renderStandaloneAWG0Conf is kept for backward-compat with any caller that
+// hardcodes awg0 (tests); it delegates to renderStandaloneAWGConf with awg0.
+func renderStandaloneAWG0Conf(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User) AWGConfFile {
+	return renderStandaloneAWGConf(ib, tag, usersByInbound, "awg0")
 }
 
 // balancerLinkTargetingExit finds the balancer node's ExitAWGLinks entry that

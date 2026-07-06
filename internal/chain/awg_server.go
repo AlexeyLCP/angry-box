@@ -55,12 +55,18 @@ type AWGServerConfParams struct {
 	// TUNInterface is the sing-box TUN overlay interface name to forward
 	// traffic to/from. When non-empty (the kernel-AWG + sing-box-TUN-overlay
 	// architecture), PostUp/PostDown lines are emitted with iptables FORWARD
-	// rules between awg0 and the TUN interface — without these the kernel
-	// routes awg0→TUN via policy routing (table 2022) but the FORWARD chain
-	// drops return traffic, so egress through the tunnel silently fails
+	// rules between the AWG interface and the TUN interface — without these the
+	// kernel routes AWG→TUN via policy routing (table 2022) but the FORWARD
+	// chain drops return traffic, so egress through the tunnel silently fails
 	// (verified: the working dns.idoctor.mom reference has exactly these rules).
 	// Empty = no PostUp/PostDown (non-overlay use, e.g. plain AWG without sing-box).
 	TUNInterface string
+	// InterfaceName is the kernel AWG interface name (awg0, awg1, ...). Empty
+	// defaults to "awg0". Used in PostUp/PostDown rp_filter/FORWARD rules so a
+	// second standalone AWG inbound (awg1, distinct subnet) gets its own rules
+	// coexisting with the chain entry's awg0 (AGENTS.md Known Issue #10
+	// multi-AWG-interface follow-up).
+	InterfaceName string
 }
 
 // RenderServerAWGConf renders a kernel awg-quick .conf for the AWG server
@@ -76,6 +82,10 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	if p.MTU == 0 {
 		p.MTU = 1420
 	}
+	if p.InterfaceName == "" {
+		p.InterfaceName = "awg0"
+	}
+	iface := p.InterfaceName
 	var b strings.Builder
 	b.WriteString("[Interface]\n")
 	b.WriteString(fmt.Sprintf("Address = %s\n", p.TunnelAddress))
@@ -93,31 +103,31 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	}
 
 	// PostUp/PostDown: when a TUN overlay interface is specified, add iptables
-	// FORWARD rules between awg0 and the TUN so the kernel's policy routing
-	// (table 2022, set by sing-box auto_route) actually delivers traffic. Without
-	// these the FORWARD chain can drop return traffic and egress through the
-	// tunnel silently fails. Mirrors the dns.idoctor.mom reference awg0.conf
-	// PostUp/PostDown. Also sets ip_forward=1 (belt-and-braces — the deploy flow
-	// sets it via sysctl too, but awg-quick restarting without it would break).
-	// Also disables rp_filter on awg0 — the kernel's strict reverse-path check
+	// FORWARD rules between the AWG interface and the TUN so the kernel's policy
+	// routing (table 2022, set by sing-box auto_route) actually delivers traffic.
+	// Without these the FORWARD chain can drop return traffic and egress through
+	// the tunnel silently fails. Mirrors the dns.idoctor.mom reference awg0.conf.
+	// Also sets ip_forward=1 (belt-and-braces — the deploy flow sets it via
+	// sysctl too, but awg-quick restarting without it would break). Also disables
+	// rp_filter on the AWG interface — the kernel's strict reverse-path check
 	// drops tunneled packets whose source IP (10.8.0.x) would route back via a
-	// different interface than the one they arrived on, silently breaking
-	// egress through the TUN overlay (live-verified 2026-07-04: with rp_filter=1
-	// on awg0, return traffic from sing-box-tun to the client was dropped).
-	// awg-quick recreates the interface on every restart, so the sysctl must be
-	// re-applied in PostUp (a one-shot sysctl at install time is not enough).
+	// different interface than the one they arrived on, silently breaking egress
+	// through the TUN overlay (live-verified 2026-07-04). awg-quick recreates
+	// the interface on every restart, so the sysctl must be re-applied in PostUp.
+	// The AWG interface name (awg0/awg1) is parameterized so a second standalone
+	// AWG inbound on awg1 gets its own rules coexisting with awg0.
 	if p.TUNInterface != "" {
 		tun := p.TUNInterface
 		b.WriteString(fmt.Sprintf(
 			"PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward; "+
-				"sysctl -w net.ipv4.conf.awg0.rp_filter=0 2>/dev/null; "+
-				"iptables -C FORWARD -i awg0 -o %s -j ACCEPT 2>/dev/null || iptables -A FORWARD -i awg0 -o %s -j ACCEPT; "+
-				"iptables -C FORWARD -i %s -o awg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %s -o awg0 -j ACCEPT\n",
-			tun, tun, tun, tun))
+				"sysctl -w net.ipv4.conf.%s.rp_filter=0 2>/dev/null; "+
+				"iptables -C FORWARD -i %s -o %s -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %s -o %s -j ACCEPT; "+
+				"iptables -C FORWARD -i %s -o %s -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %s -o %s -j ACCEPT\n",
+			iface, iface, tun, iface, tun, tun, iface, tun, iface))
 		b.WriteString(fmt.Sprintf(
-			"PostDown = iptables -D FORWARD -i awg0 -o %s -j ACCEPT 2>/dev/null || true; "+
-				"iptables -D FORWARD -i %s -o awg0 -j ACCEPT 2>/dev/null || true\n",
-			tun, tun))
+			"PostDown = iptables -D FORWARD -i %s -o %s -j ACCEPT 2>/dev/null || true; "+
+				"iptables -D FORWARD -i %s -o %s -j ACCEPT 2>/dev/null || true\n",
+			iface, tun, tun, iface))
 	}
 
 	for _, peer := range p.Peers {

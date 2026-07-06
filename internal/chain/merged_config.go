@@ -210,7 +210,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	if overlay := awgTUNOverlayNeeded(roles, nodeInfo); overlay {
 		node := awgOverlayNode(roles, nodeInfo)
 		ins, outs, rts := BuildAWGTUNOverlay(AWGTUNOverlayParams{
-			IncludeInterfaces: tunIncludeInterfaces(node),
+			IncludeInterfaces: tunIncludeInterfacesForNode(node, nodeInfo),
 			ExitInterfaces:    exitInterfacesForNode(node),
 			BalancerTag:       balancerTagForNode(node),
 			FinalOutbound:     "direct",

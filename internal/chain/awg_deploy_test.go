@@ -383,3 +383,100 @@ func TestRenderNodeAWGConfs_CollisionWarning(t *testing.T) {
 		t.Errorf("collision warning not in %v", warns)
 	}
 }
+
+// TestRenderNodeAWGConfs_MultiInterface verifies a chain AWG entry (awg0) +
+// a standalone AWG inbound with a DISTINCT subnet (AWGServerAddress) coexist:
+// the chain entry gets awg0.conf, the standalone gets awg1.conf (AGENTS.md #10
+// multi-AWG-interface follow-up).
+func TestRenderNodeAWGConfs_MultiInterface(t *testing.T) {
+	chainPriv, _ := genPriv(t)
+	ibPriv, _ := genPriv(t)
+	c := &model.Chain{
+		Name:                "mi",
+		UserProtocol:         model.UserProtocolAWG,
+		Transport:           model.TransportXHTTP,
+		AWGEntryServerPriv:   chainPriv,
+		Nodes: []model.ChainNode{
+			{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry, Port: 51820},
+		},
+	}
+	nodeInfo := &model.NodeInfo{
+		Host: model.Host{ID: "n1"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", Port: 51821, Tag: "sa-awg-standalone", ServerPrivKey: ibPriv, AWGServerAddress: "10.8.1.1/24"},
+		},
+	}
+	files, warns := RenderNodeAWGConfs(nodeInfo, []*model.Chain{c}, map[string][]model.User{"mi": nil}, nil)
+	// Two files: chain entry awg0 + standalone awg1.
+	if len(files) != 2 {
+		t.Fatalf("want 2 files (awg0 + awg1), got %d", len(files))
+	}
+	// Chain entry on awg0.
+	if files[0].ServiceName != "awg-quick@awg0" {
+		t.Errorf("chain entry service = %q, want awg-quick@awg0", files[0].ServiceName)
+	}
+	if !strings.Contains(files[0].Content, "Address = 10.8.0.1/24") {
+		t.Error("chain entry missing 10.8.0.1/24")
+	}
+	// Standalone on awg1 with the distinct subnet.
+	if files[1].ServiceName != "awg-quick@awg1" {
+		t.Errorf("standalone service = %q, want awg-quick@awg1", files[1].ServiceName)
+	}
+	if !strings.Contains(files[1].Content, "Address = 10.8.1.1/24") {
+		t.Error("standalone missing 10.8.1.1/24")
+	}
+	// PostUp on awg1 must reference awg1 (not awg0).
+	if !strings.Contains(files[1].Content, "conf.awg1.rp_filter=0") {
+		t.Error("awg1 conf PostUp missing rp_filter on awg1")
+	}
+	if strings.Contains(files[1].Content, "conf.awg0.rp_filter") {
+		t.Error("awg1 conf PostUp incorrectly references awg0")
+	}
+	// No warnings — the multi-interface path is silent (distinct subnet is fine).
+	if len(warns) != 0 {
+		t.Errorf("expected no warnings for multi-interface, got %v", warns)
+	}
+}
+
+// TestRenderServerAWGConf_InterfaceName verifies InterfaceName parameterizes the
+// PostUp/PostDown rp_filter + FORWARD rules (awg0 vs awg1).
+func TestRenderServerAWGConf_InterfaceName(t *testing.T) {
+	awg := RenderServerAWGConf(AWGServerConfParams{
+		ServerPrivateKey: "test",
+		ListenPort:       51820,
+		TunnelAddress:    "10.8.1.1/24",
+		TUNInterface:     "sing-box-tun",
+		InterfaceName:    "awg1",
+	})
+	if !strings.Contains(awg, "conf.awg1.rp_filter=0") {
+		t.Error("InterfaceName=awg1 → PostUp must reference awg1.rp_filter")
+	}
+	if !strings.Contains(awg, "FORWARD -i awg1 -o sing-box-tun") {
+		t.Error("InterfaceName=awg1 → PostUp FORWARD must reference -i awg1")
+	}
+	if !strings.Contains(awg, "FORWARD -i sing-box-tun -o awg1") {
+		t.Error("InterfaceName=awg1 → PostUp FORWARD must reference -o awg1")
+	}
+}
+
+// TestTunIncludeInterfacesForNode_MultiAWG verifies the include list grows to
+// [awg0, awg1] when a standalone AWG inbound with a distinct subnet coexists
+// with a chain entry (AGENTS.md #10).
+func TestTunIncludeInterfacesForNode_MultiAWG(t *testing.T) {
+	nodeInfo := &model.NodeInfo{
+		Host: model.Host{ID: "n1"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", AWGServerAddress: "10.8.1.1/24"}, // standalone → awg1
+		},
+	}
+	got := tunIncludeInterfacesForNode(nil, nodeInfo)
+	if len(got) != 2 || got[0] != "awg0" || got[1] != "awg1" {
+		t.Errorf("want [awg0, awg1], got %v", got)
+	}
+	// No standalone with distinct subnet → only awg0.
+	nodeInfo2 := &model.NodeInfo{Host: model.Host{ID: "n2"}, Inbounds: []model.NodeInbound{{Protocol: "awg"}}}
+	got2 := tunIncludeInterfacesForNode(nil, nodeInfo2)
+	if len(got2) != 1 || got2[0] != "awg0" {
+		t.Errorf("want [awg0] (no distinct subnet), got %v", got2)
+	}
+}
