@@ -211,7 +211,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/spider/apply/{name}", s.auth(s.handleApplyChain))
 
 	// Users
-	mux.HandleFunc("GET /ui/users", s.auth(s.handleUsers))
+	mux.HandleFunc("GET /ui/users", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/clients", http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("POST /ui/users", s.auth(s.handleCreateUser))
 	mux.HandleFunc("GET /ui/users/new", s.auth(s.handleNewUserForm))
 	mux.HandleFunc("GET /ui/users/{id}/edit", s.auth(s.handleEditUserForm))
@@ -221,15 +223,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
 	mux.HandleFunc("POST /ui/users/generate-mtproxy-secret", s.auth(s.handleGenerateMTProxySecret))
 	mux.HandleFunc("GET /ui/qr-image", s.auth(s.handleQRImage))
-
-	// MTProxy users
-	mux.HandleFunc("GET /ui/mtproxy", s.auth(s.handleMtproxyUsers))
-	mux.HandleFunc("POST /ui/mtproxy", s.auth(s.handleCreateMtproxyUser))
-	mux.HandleFunc("GET /ui/mtproxy/new", s.auth(s.handleNewMtproxyUserForm))
-	mux.HandleFunc("GET /ui/mtproxy/{id}/edit", s.auth(s.handleEditMtproxyUserForm))
-	mux.HandleFunc("POST /ui/mtproxy/{id}/edit", s.auth(s.handleUpdateMtproxyUser))
-	mux.HandleFunc("DELETE /ui/mtproxy/{id}", s.auth(s.handleDeleteMtproxyUser))
-	mux.HandleFunc("GET /ui/mtproxy/generate-secret", s.auth(s.handleGenerateMtproxySecret))
 
 	// Settings
 	mux.HandleFunc("GET /ui/settings", s.auth(s.handleSettings))

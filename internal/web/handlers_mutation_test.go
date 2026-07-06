@@ -120,22 +120,10 @@ func TestHandler_NodeInboundsForm(t *testing.T) {
 
 // ─── Users ──────────────────────────────────────────────────────────────────
 
-// TestHandler_UsersList_Empty verifies the users page renders 200 on an empty store.
-func TestHandler_UsersList_Empty(t *testing.T) {
-	ts := newTestServer(t)
-	w := ts.get("/ui/users")
-	ts.assertStatus(w, http.StatusOK)
-}
-
-// TestHandler_CreateUser_ThenList verifies a user is created (inline row) and
-// appears in the list.
-func TestHandler_CreateUser_ThenList(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createUser("user-1", "Alice")
-	w := ts.get("/ui/users")
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "Alice")
-}
+// NOTE: The /ui/users LIST route now 301-redirects to /ui/clients (Task 6 of the
+// client unification plan). The list-rendering behavior it used to verify is
+// covered by TestHandler_ClientsPage_Renders / TestHandler_ClientsPage_ShowsMTProxyBadge
+// in handlers_clients_test.go.
 
 // TestHandler_CreateUser_MissingFields verifies id+name are required.
 func TestHandler_CreateUser_MissingFields(t *testing.T) {
