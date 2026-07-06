@@ -296,7 +296,7 @@ templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 
 // ─── Node Inbounds Form ─────────────────────────────────────────────────────────
 
-templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []string, protocolPresetsJSON string) {
+templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, protocolPresetsJSON string) {
 	<dialog id="inbounds-modal" class="modal" open>
 		<span id="protocol-presets-data" style="display:none">{ protocolPresetsJSON }</span>
 		<div class="modal-box max-w-2xl">
@@ -358,9 +358,6 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
 									<select name="obfuscation" class="select select-bordered select-sm">
 										<option value="">{ i18n.T(ctx, "None") }</option>
-										for _, p := range presets {
-											<option value={ p }>{ p }</option>
-										}
 									</select>
 								</div>
 							</div>
@@ -426,8 +423,8 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
 									<select name={ templ.KV("obfuscation", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" }>
 										<option value="">{ i18n.T(ctx, "None") }</option>
-										for _, p := range presets {
-											<option value={ p } if ib.Obfuscation == p { selected }>{ p }</option>
+										if ib.Obfuscation != "" {
+											<option value={ ib.Obfuscation } selected>{ ib.Obfuscation }</option>
 										}
 									</select>
 								</div>
@@ -503,9 +500,6 @@ templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, presets []stri
 					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
 					<select name="obfuscation" class="select select-bordered select-sm">
 						<option value="">{ i18n.T(ctx, "None") }</option>
-						for _, p := range presets {
-							<option value={ p }>{ p }</option>
-						}
 					</select>
 				</div>
 			</div>

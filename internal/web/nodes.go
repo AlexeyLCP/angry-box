@@ -412,22 +412,25 @@ func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	users, _ := s.store().ListUsers()
-	presets := chain.ListPresets()
 
-	// Build protocol→presets JSON for client-side filtering (embedded in dialog data attribute)
+	// Build protocol→presets JSON for client-side filtering (embedded in
+	// dialog data attribute). Only protocol-scoped presets are offered (legacy
+	// kitchen-sink presets with Protocol == "" are excluded by the strict
+	// filter). SS/Trojan/VMess/Telemt reuse the XHTTP preset set. TUIC/Hysteria2
+	// are frozen and omitted from new-selection dropdowns.
 	protocolPresets := map[string][]string{
 		"awg":           chain.ListPresetsForProtocol("awg"),
-		"tuic":          chain.ListPresetsForProtocol("tuic"),
 		"vless-reality": chain.ListPresetsForProtocol("vless-reality"),
-		"shadowsocks":   chain.ListPresetsForProtocol("shadowsocks"),
-		"trojan":        chain.ListPresetsForProtocol("trojan"),
-		"vmess":         chain.ListPresetsForProtocol("vmess"),
-		"hysteria2":     chain.ListPresetsForProtocol("hysteria2"),
-		"telemt":        chain.ListPresetsForProtocol("telemt"),
+		"xhttp":         chain.ListPresetsForProtocol("xhttp"),
+		"shadowsocks":   chain.ListPresetsForProtocol("xhttp"), // SS uses XHTTP presets
+		"trojan":        chain.ListPresetsForProtocol("xhttp"),
+		"vmess":         chain.ListPresetsForProtocol("xhttp"),
+		"telemt":        chain.ListPresetsForProtocol("xhttp"),
+		// tuic/hysteria2 frozen — omitted from new-selection dropdowns
 	}
 	presetsJSON, _ := json.Marshal(protocolPresets)
 
-	s.render(w, r, templates.NodeInboundsForm(info, users, presets, string(presetsJSON)))
+	s.render(w, r, templates.NodeInboundsForm(info, users, string(presetsJSON)))
 }
 
 func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) {
