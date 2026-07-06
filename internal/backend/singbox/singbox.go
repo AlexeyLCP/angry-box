@@ -654,11 +654,11 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, systemdService)
 			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: check failed (exit %d): %s | AND rollback failed: %v", exit, stderr, rbErr)
+				return fmt.Errorf("singbox: applyConfig: check failed (exit %d): %s | AND rollback failed: %w (check err: %v)", exit, stderr, rbErr, err)
 			}
-			return fmt.Errorf("singbox: applyConfig: rolled back — check failed (exit %d): %s", exit, stderr)
+			return fmt.Errorf("singbox: applyConfig: rolled back — check failed (exit %d): %s (check err: %w)", exit, stderr, err)
 		}
-		return fmt.Errorf("singbox: applyConfig: check failed (exit %d, no backup): %s", exit, stderr)
+		return fmt.Errorf("singbox: applyConfig: check failed (exit %d, no backup): %s (check err: %w)", exit, stderr, err)
 	}
 
 	// 4. Restart.
@@ -666,11 +666,11 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, systemdService)
 			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: restart failed: %v | AND rollback failed: %v", err, rbErr)
+				return fmt.Errorf("singbox: applyConfig: restart failed: %v | AND rollback failed: %w", err, rbErr)
 			}
-			return fmt.Errorf("singbox: applyConfig: rolled back — restart failed: %v", err)
+			return fmt.Errorf("singbox: applyConfig: rolled back — restart failed: %w", err)
 		}
-		return fmt.Errorf("singbox: applyConfig: restart failed (no backup): %v", err)
+		return fmt.Errorf("singbox: applyConfig: restart failed (no backup): %w", err)
 	}
 
 	// 5. Health-probe (real, not just restart exit 0).
@@ -678,7 +678,7 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		if backupPath != "" {
 			_ = performRollback(client, configFile, backupPath, systemdService)
 		}
-		return fmt.Errorf("singbox: applyConfig: service not active after restart: %v", err)
+		return fmt.Errorf("singbox: applyConfig: service not active after restart: %w", err)
 	}
 
 	cleanupBackups(client, configFile)
