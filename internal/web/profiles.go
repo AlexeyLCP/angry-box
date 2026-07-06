@@ -11,6 +11,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
+	"github.com/alexeylcp/angry-box/web/templates"
 )
 
 func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
@@ -155,62 +156,12 @@ func (s *Server) handleDeleteAssignment(w http.ResponseWriter, r *http.Request) 
 
 // ─── Unified clients page ───────────────────────────────────────────────────
 
-// unifiedClientRow is one row of the unified clients view.
-type unifiedClientRow struct {
-	ClientType string `json:"client_type"`
-	ClientID   string `json:"client_id"`
-	Name       string `json:"name"`
-	NodeID     string `json:"node_id"`
-	NodeName   string `json:"node_name"`
-	Enabled    bool   `json:"enabled"`
-	Link       string `json:"link"`
-}
-
 func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	users, _ := st.ListUsers()
-	mtp, _ := st.ListMtproxyUsers()
-	infos, _ := st.ListNodeInfos()
-	infoByID := map[string]*model.NodeInfo{}
-	for _, info := range infos {
-		infoByID[info.ID] = info
+	chains, _ := st.ListChains()
+	if users == nil {
+		users = []*model.User{}
 	}
-
-	var rows []unifiedClientRow
-	// Users (proxy clients on chains/standalone inbounds).
-	for _, u := range users {
-		rows = append(rows, unifiedClientRow{ClientType: "user", ClientID: u.ID, Name: u.Name, Enabled: u.Active})
-	}
-	// MTProxy users.
-	for _, m := range mtp {
-		nodeName := m.NodeID
-		if info, ok := infoByID[m.NodeID]; ok {
-			nodeName = info.ID
-		}
-		rows = append(rows, unifiedClientRow{ClientType: "mtproxy", ClientID: m.ID, Name: m.Name, NodeID: m.NodeID, NodeName: nodeName, Enabled: m.Enabled})
-	}
-
-	// Sort by name.
-	for i := 1; i < len(rows); i++ {
-		for j := i; j > 0 && rows[j].Name < rows[j-1].Name; j-- {
-			rows[j], rows[j-1] = rows[j-1], rows[j]
-		}
-	}
-
-	var b strings.Builder
-	b.WriteString(`<div class="space-y-4"><h2 class="text-2xl font-semibold">` + i18n.T(r.Context(), "Clients") + `</h2>`)
-	b.WriteString(`<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Type") + `</th><th>` + i18n.T(r.Context(), "Name") + `</th><th>` + i18n.T(r.Context(), "Node") + `</th><th>` + i18n.T(r.Context(), "Enabled") + `</th></tr></thead><tbody>`)
-	for _, row := range rows {
-		en := `<span class="badge badge-success badge-sm">` + i18n.T(r.Context(), "active") + `</span>`
-		if !row.Enabled {
-			en = `<span class="badge badge-ghost badge-sm">` + i18n.T(r.Context(), "disabled") + `</span>`
-		}
-		node := row.NodeName
-		if node == "" {
-			node = "—"
-		}
-		b.WriteString(fmt.Sprintf(`<tr><td><span class="badge badge-sm">%s</span></td><td>%s</td><td>%s</td><td>%s</td></tr>`, escHTML(row.ClientType), escHTML(row.Name), escHTML(node), en))
-	}
-	b.WriteString(`</tbody></table></div></div>`)
-	s.renderContent(w, r, i18n.T(r.Context(), "Clients"), &simpleHTML{html: b.String()})
+	s.render(w, r, templates.Users(users, chains))
 }
