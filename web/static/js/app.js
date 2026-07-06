@@ -149,3 +149,27 @@ document.body.addEventListener('htmx:afterSettle', function() {
         });
     }
 });
+
+// Show the AWG CPS section only when user_protocol == "awg", and initialize
+// the capture-domain wrap visibility based on the mimicry select's value.
+// The capture-domain wrap is always in the DOM (so hx-include="closest form"
+// always sends the input); we only toggle its display here.
+function toggleAWGCPSSection() {
+    document.querySelectorAll('select[name="user_protocol"]').forEach(function(sel) {
+        var form = sel.closest('form');
+        if (!form) return;
+        var section = form.querySelector('#awg-cps-section');
+        if (section) {
+            section.style.display = (sel.value === 'awg') ? 'block' : 'none';
+            if (sel.value === 'awg') {
+                var mimicry = section.querySelector('select[name="awg_cps_mimicry"]');
+                var wrap = section.querySelector('.capture-domain-wrap');
+                if (wrap && mimicry) {
+                    wrap.style.display = (mimicry.value === 'quic-live') ? 'block' : 'none';
+                }
+            }
+        }
+    });
+}
+document.addEventListener('DOMContentLoaded', toggleAWGCPSSection);
+document.addEventListener('htmx:afterSettle', toggleAWGCPSSection);

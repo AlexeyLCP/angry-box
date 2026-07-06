@@ -9,6 +9,15 @@ import (
 	"github.com/alexeylcp/angry-box/internal/i18n"
 )
 
+// shortHex returns s if its length is within n bytes, else s truncated to n
+// bytes followed by an ellipsis. Used to preview long AWG CPS I1-I5 hex strings.
+func shortHex(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 // Chains is the main content for /ui/chains.
 // It shows existing chains and a button to open the creation modal.
 templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
@@ -122,6 +131,67 @@ templ ChainRow(c *model.Chain) {
 	</tr>
 }
 
+// awgCPSSection renders the AWG CPS mimicry + QUIC capture-domain controls.
+// c may be nil (new chain). Shown/hidden by JS based on user_protocol=="awg".
+// The capture-domain wrap is always in the DOM (so hx-include="closest form"
+// always sends the input); its visibility is toggled by the mimicry select's
+// onchange and initialized by app.js toggleAWGCPSSection.
+templ awgCPSSection(c *model.Chain) {
+	<div id="awg-cps-section" class="space-y-3 hidden">
+		<div class="form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "CPS Mimicry mode") }</span></label>
+			<select name="awg_cps_mimicry" class="select select-bordered" onchange="var sec=this.closest('#awg-cps-section');var w=sec.querySelector('.capture-domain-wrap');if(w){w.style.display=this.value==='quic-live'?'block':'none'}">
+				<option value="" if c == nil || c.AWGCPSMimicry == "" { selected }>{ i18n.T(ctx, "Default (from preset)") }</option>
+				<option value="quic-live" if c != nil && c.AWGCPSMimicry == "quic-live" { selected }>{ i18n.T(ctx, "quic-live (capture)") }</option>
+				<option value="quic" if c != nil && c.AWGCPSMimicry == "quic" { selected }>{ i18n.T(ctx, "quic") }</option>
+				<option value="sip" if c != nil && c.AWGCPSMimicry == "sip" { selected }>{ i18n.T(ctx, "sip") }</option>
+				<option value="dns" if c != nil && c.AWGCPSMimicry == "dns" { selected }>{ i18n.T(ctx, "dns") }</option>
+				<option value="none" if c != nil && c.AWGCPSMimicry == "none" { selected }>{ i18n.T(ctx, "none") }</option>
+			</select>
+		</div>
+		<div class="capture-domain-wrap form-control">
+			<label class="label"><span class="label-text">{ i18n.T(ctx, "QUIC Capture Domain") }</span></label>
+			<div class="join">
+				<input type="text" name="awg_cps_capture_domain" class="input input-bordered join-item"
+					if c != nil { value={ c.AWGCPSCaptureDomain } } placeholder="disk.yandex.ru" />
+				<button type="button" class="btn join-item"
+					hx-post="/ui/chains/capture-preview"
+					hx-target="#capture-preview-result"
+					hx-include="closest form">
+					{ i18n.T(ctx, "Capture now") }
+				</button>
+			</div>
+			<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "When set to quic-live, the orchestrator dials the domain over UDP 443, sends a real QUIC Initial, and captures the server's response packets as the AWG CPS silhouette (I1-I5). Falls back to synthesized QUIC packets if the domain is unreachable or doesn't speak QUIC. Capture runs once per domain and is cached; changing the domain re-captures.") }</span></label>
+		</div>
+		<div id="capture-preview-result" class="mt-2"></div>
+		if c != nil && c.AWGCPSCapturedDomain != "" {
+			@cpsStatus(c)
+		}
+	</div>
+}
+
+// cpsStatus renders a read-only summary of the chain's persisted AWG CPS
+// capture state (shown only on the Edit form for an existing chain).
+templ cpsStatus(c *model.Chain) {
+	<div class="alert alert-info">
+		<div class="text-xs space-y-1">
+			<div><strong>{ i18n.T(ctx, "Captured from") }:</strong> { c.AWGCPSCapturedDomain }</div>
+			if c.AWGCPSCaptureFailedDomain != "" {
+				<div class="text-warning"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { c.AWGCPSCaptureFailedDomain }</div>
+			}
+			if c.AWGCPSI1 != "" {
+				<div><strong>I1-I5:</strong>
+					<code class="text-[10px]">{ shortHex(c.AWGCPSI1, 40) }</code>
+					<code class="text-[10px]">{ shortHex(c.AWGCPSI2, 40) }</code>
+					<code class="text-[10px]">{ shortHex(c.AWGCPSI3, 40) }</code>
+					<code class="text-[10px]">{ shortHex(c.AWGCPSI4, 40) }</code>
+					<code class="text-[10px]">{ shortHex(c.AWGCPSI5, 40) }</code>
+				</div>
+			}
+		</div>
+	</div>
+}
+
 // NewChainForm is the modal for creating a new chain.
 templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 	<dialog id="chain-modal" class="modal" open>
@@ -152,7 +222,7 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 
 					<div class="form-control">
 						<label class="label"><span class="label-text">{ i18n.T(ctx, "User Protocol (entry)") }</span></label>
-						<select name="user_protocol" class="select select-bordered">
+						<select name="user_protocol" class="select select-bordered" onchange="toggleAWGCPSSection()">
 							<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 							<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
 							<option value="vless-reality">{ i18n.T(ctx, "VLESS + Reality") }</option>
@@ -170,6 +240,8 @@ templ NewChainForm(availableHosts []*model.Host, profiles []string) {
 						<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Leave empty to use the global profile from config") }</span></div>
 					</div>
 				</div>
+
+				@awgCPSSection(nil)
 
 				<div class="form-control">
 					<label class="label"><span class="label-text">{ i18n.T(ctx, "Routing Strategy") }</span></label>
@@ -239,7 +311,7 @@ templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []str
 
 					<div class="form-control">
 						<label class="label"><span class="label-text">{ i18n.T(ctx, "User Protocol (entry)") }</span></label>
-						<select name="user_protocol" class="select select-bordered">
+						<select name="user_protocol" class="select select-bordered" onchange="toggleAWGCPSSection()">
 							<option value="telemt" if c.UserProtocol == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto)") }</option>
 							<option value="awg" if c.UserProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
 							if c.UserProtocol == "tuic" {
@@ -249,16 +321,18 @@ templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []str
 						</select>
 					</div>
 
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation Profile") }</span></label>
-						<select name="profile" class="select select-bordered">
-							<option value="" if c.ObfuscationProfile == "" { selected }>{ i18n.T(ctx, "Use global default") }</option>
-							for _, p := range profiles {
-								<option value={p} if c.ObfuscationProfile == p { selected }>{p}</option>
-							}
-						</select>
+						<div class="form-control">
+							<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation Profile") }</span></label>
+							<select name="profile" class="select select-bordered">
+								<option value="" if c.ObfuscationProfile == "" { selected }>{ i18n.T(ctx, "Use global default") }</option>
+								for _, p := range profiles {
+									<option value={p} if c.ObfuscationProfile == p { selected }>{p}</option>
+								}
+							</select>
+						</div>
 					</div>
-				</div>
+
+				@awgCPSSection(c)
 
 				<div class="form-control">
 					<label class="label"><span class="label-text">{ i18n.T(ctx, "Routing Strategy") }</span></label>
