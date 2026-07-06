@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alexeylcp/angry-box/internal/backend/factory"
 	"github.com/alexeylcp/angry-box/internal/chain"
@@ -837,7 +838,20 @@ func serveCmd() {
 	// can otherwise be submitted in an admin's session (e.g. the historical
 	// /ui/settings "auth_enabled" toggle that opened the whole panel).
 	handler := web.CSRSMiddleware(mux)
-	srv := &http.Server{Addr: *listen, Handler: handler}
+	srv := &http.Server{
+		Addr: *listen,
+		Handler: handler,
+		// Timeouts protect against Slowloris-style slow-read attacks and
+		// unbounded keep-alive connections. ReadHeaderTimeout is the tight
+		// Slowloris guard; ReadTimeout/WriteTimeout are generous because
+		// ApplyChain / ApplyMergedNode blocks the request for the whole SSH
+		// deploy (probe floor ~7-9s/node, multi-node chains run to minutes).
+		// CTO-review §3/§7 finding: previously no timeouts at all.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       10 * time.Minute,
+		WriteTimeout:      15 * time.Minute,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	// Graceful shutdown: on SIGINT/SIGTERM drain the HTTP server, stop the
 	// background metrics collector, and wait for in-flight background SSH
