@@ -39,7 +39,7 @@ func deployRules() []fakeRule {
 // and the config is uploaded to the real path (no sudo tmp dance).
 func TestPushConfig_HappyPath_NonSudo(t *testing.T) {
 	client := newFakeSSH(deployRules()...)
-	out, err := pushConfig(client, "", validCfg, false)
+	out, err := pushConfig(context.Background(), client, "", validCfg, false)
 	if err != nil {
 		t.Fatalf("pushConfig: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestPushConfig_HappyPath_NonSudo(t *testing.T) {
 // then cp's into place (UploadText can't sudo the cat for a root-owned target).
 func TestPushConfig_HappyPath_Sudo(t *testing.T) {
 	client := newFakeSSH(deployRules()...)
-	out, err := pushConfig(client, "", validCfg, true)
+	out, err := pushConfig(context.Background(), client, "", validCfg, true)
 	if err != nil {
 		t.Fatalf("pushConfig: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestPushConfig_HappyPath_Sudo(t *testing.T) {
 // TestPushConfig_InvalidJSON short-circuits before any SSH command.
 func TestPushConfig_InvalidJSON(t *testing.T) {
 	client := newFakeSSH(deployRules()...)
-	_, err := pushConfig(client, "", "not json", false)
+	_, err := pushConfig(context.Background(), client, "", "not json", false)
 	if err == nil {
 		t.Fatal("expected invalid-JSON error")
 	}
@@ -109,7 +109,7 @@ func TestPushConfig_CheckFails_RollsBack(t *testing.T) {
 	// Override sing-box check to fail with a diagnostics stderr.
 	rules[1] = fakeRule{substring: "sing-box check", out: "", errOut: "unknown field foo", exit: 1, err: errExitOne}
 	client := newFakeSSH(rules...)
-	_, err := pushConfig(client, "", validCfg, false)
+	_, err := pushConfig(context.Background(), client, "", validCfg, false)
 	if err == nil {
 		t.Fatal("expected check-failure error")
 	}
@@ -130,6 +130,38 @@ func TestPushConfig_CheckFails_RollsBack(t *testing.T) {
 	}
 }
 
+// TestPushConfig_CheckFails_RollbackAlsoFails verifies the critical "node left
+// broken" path: when sing-box check fails AND the rollback (cp backup back into
+// place) ALSO fails, the error must wrap ErrRollbackFailed (manual intervention
+// needed) — NOT ErrDeployFailed (which would imply the node is back on the old
+// config and retry-able). CTO-review §6: this path was previously untested.
+func TestPushConfig_CheckFails_RollbackAlsoFails(t *testing.T) {
+	rules := deployRules()
+	// sing-box check fails → triggers rollback.
+	rules[1] = fakeRule{substring: "sing-box check", out: "", errOut: "unknown field foo", exit: 1, err: errExitOne}
+	// The rollback command is `test -f <bak> && cp <bak> <file>; systemctl
+	// restart sing-box; sleep 2; ...`. Insert a rule (FIRST match wins, so it
+	// must precede the "systemctl restart sing-box" rule) that matches the
+	// rollback command uniquely via "test -f" and forces Run to error — the
+	// normal restart command ("systemctl restart sing-box") does NOT contain
+	// "test -f", so this rule only matches the rollback invocation.
+	rules = append([]fakeRule{{substring: "test -f", out: "", err: errors.New("ssh: cp: no such file")}}, rules...)
+	client := newFakeSSH(rules...)
+	_, err := pushConfig(context.Background(), client, "", validCfg, false)
+	if err == nil {
+		t.Fatal("expected check-failure + rollback-failure error")
+	}
+	if !strings.Contains(err.Error(), "rollback failed") {
+		t.Errorf("got %q, want 'rollback failed' in message", err.Error())
+	}
+	if !errors.Is(err, ErrRollbackFailed) {
+		t.Errorf("got %q, want errors.Is(err, ErrRollbackFailed) (node left broken)", err.Error())
+	}
+	if errors.Is(err, ErrDeployFailed) {
+		t.Errorf("got %q, want !errors.Is(err, ErrDeployFailed) on rollback-also-failed", err.Error())
+	}
+}
+
 // TestPushConfig_CheckFails_NoBackup verifies the no-backup branch (first deploy
 // with no prior config): backup path is empty so rollback is skipped.
 func TestPushConfig_CheckFails_NoBackup(t *testing.T) {
@@ -137,7 +169,7 @@ func TestPushConfig_CheckFails_NoBackup(t *testing.T) {
 	rules[0] = fakeRule{substring: "sing-box-orch-backup", out: ""} // empty backup path
 	rules[1] = fakeRule{substring: "sing-box check", out: "", errOut: "bad", exit: 1, err: errExitOne}
 	client := newFakeSSH(rules...)
-	_, err := pushConfig(client, "", validCfg, false)
+	_, err := pushConfig(context.Background(), client, "", validCfg, false)
 	if err == nil {
 		t.Fatal("expected check-failure error")
 	}
@@ -152,7 +184,7 @@ func TestPushConfig_RestartFails_RollsBack(t *testing.T) {
 	rules := deployRules()
 	rules[2] = fakeRule{substring: "systemctl restart sing-box", out: "", err: errExitOne}
 	client := newFakeSSH(rules...)
-	_, err := pushConfig(client, "", validCfg, false)
+	_, err := pushConfig(context.Background(), client, "", validCfg, false)
 	if err == nil {
 		t.Fatal("expected restart-failure error")
 	}
@@ -168,7 +200,7 @@ func TestPushConfig_HealthProbeFails_RollsBack(t *testing.T) {
 	rules[3] = fakeRule{substring: "is-active", out: "DOWN"} // never UP
 	rules[4] = fakeRule{substring: "journalctl", out: "FATAL: bind: address already in use"}
 	client := newFakeSSH(rules...)
-	_, err := pushConfig(client, "", validCfg, false)
+	_, err := pushConfig(context.Background(), client, "", validCfg, false)
 	if err == nil {
 		t.Fatal("expected health-probe failure")
 	}
@@ -186,7 +218,7 @@ func TestPushConfig_UploadFails(t *testing.T) {
 	// Make the upload to the config path fail.
 	rules = append(rules, fakeRule{substring: "upload:/etc/sing-box/config.json", err: errors.New("scp: permission denied")})
 	client := newFakeSSH(rules...)
-	_, err := pushConfig(client, "", validCfg, false)
+	_, err := pushConfig(context.Background(), client, "", validCfg, false)
 	if err == nil {
 		t.Fatal("expected upload failure")
 	}
@@ -199,7 +231,7 @@ func TestPushConfig_UploadFails(t *testing.T) {
 // per-host lock (the same mutex identity as withHostLock). CTO-review C2.
 func TestPushConfig_LockingUsesHostLock(t *testing.T) {
 	client := newFakeSSH(deployRules()...)
-	if _, err := pushConfig(client, "node-X", validCfg, false); err != nil {
+	if _, err := pushConfig(context.Background(), client, "node-X", validCfg, false); err != nil {
 		t.Fatalf("pushConfig: %v", err)
 	}
 	// The host lock for node-X must now exist (withHostLock created it lazily).
@@ -287,7 +319,7 @@ func TestCreateBackup_BasenamePerFile(t *testing.T) {
 // TestProbeServiceUp_UP verifies the probe returns nil when is-active prints UP.
 func TestProbeServiceUp_UP(t *testing.T) {
 	client := newFakeSSH(fakeRule{substring: "is-active", out: "UP"})
-	if err := probeServiceUp(client, "sing-box", false); err != nil {
+	if err := probeServiceUp(context.Background(), client, "sing-box", false); err != nil {
 		t.Fatalf("probe: %v", err)
 	}
 }
@@ -298,7 +330,7 @@ func TestProbeServiceUp_Down(t *testing.T) {
 		fakeRule{substring: "is-active", out: "DOWN"},
 		fakeRule{substring: "journalctl", out: "boom"},
 	)
-	err := probeServiceUp(client, "sing-box", false)
+	err := probeServiceUp(context.Background(), client, "sing-box", false)
 	if err == nil {
 		t.Fatal("expected probe failure")
 	}

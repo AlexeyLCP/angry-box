@@ -6,8 +6,11 @@ package chain
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -209,4 +212,77 @@ func TestScheduleAutoApply_Deploys(t *testing.T) {
 	if !found {
 		t.Error("expected a deploy audit entry for n2")
 	}
+}
+
+// TestScheduleAutoApply_ConcurrencyCap verifies the semaphore bounds the number
+// of concurrent background deploys (CTO-review §9: no unbounded goroutine
+// fan-out on a large pending fleet). We schedule N>cap deploys against a
+// connector that blocks inside Connect until released; a counter tracks the
+// high-water mark of simultaneously-running Connect calls and asserts it never
+// exceeds the cap.
+func TestScheduleAutoApply_ConcurrencyCap(t *testing.T) {
+	const capN = 3
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "store.json")
+	st := NewStore(storePath)
+	for i := 0; i < 10; i++ {
+		st.SaveNodeInfo(&model.NodeInfo{
+			Host:      model.Host{ID: fmt.Sprintf("n%d", i), Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"},
+			AutoApply: true,
+		})
+	}
+
+	var inFlight, highWater int32
+	var mu sync.Mutex
+	release := make(chan struct{})
+	conn := &countingConnector{
+		enter: func() {
+			cur := atomic.AddInt32(&inFlight, 1)
+			mu.Lock()
+			if cur > highWater {
+				highWater = cur
+			}
+			mu.Unlock()
+			<-release // block until the test releases all
+			atomic.AddInt32(&inFlight, -1)
+		},
+	}
+	SetAutoApplyConcurrency(capN)
+	InitAutoApply(autoNoopFactory{}, conn, storePath)
+	defer func() { autoApplyCtx = autoApplyContext{} }()
+
+	if got := AutoApplyMaxConcurrent(); got != capN {
+		t.Fatalf("AutoApplyMaxConcurrent=%d, want %d", got, capN)
+	}
+	for i := 0; i < 10; i++ {
+		ScheduleAutoApply(fmt.Sprintf("n%d", i), "cap-test")
+	}
+	// Wait until the semaphore is saturated (capN goroutines are past the
+	// enter hook and blocked on <-release). The remaining 7 are queued on the
+	// semaphore and have NOT entered the connector yet.
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	hw := highWater
+	mu.Unlock()
+	if hw > int32(capN) {
+		t.Errorf("high-water concurrent deploys = %d, exceeded cap %d", hw, capN)
+	}
+	if hw < int32(capN) {
+		t.Errorf("high-water = %d, want saturation at cap %d (semaphore not acquired)", hw, capN)
+	}
+	close(release) // unblock all — Connect returns an error so deploys fail fast
+	WaitAutoApply()
+}
+
+// countingConnector is an SSHConnector whose Connect delegates to an enter hook
+// (used to count/limit concurrency in the autoapply cap test). After the enter
+// hook unblocks it returns an error so the deploy aborts at Connect (no
+// push/probe/audit churn) — keeping the test fast and the store quiet.
+type countingConnector struct {
+	enter func()
+}
+
+func (c *countingConnector) Connect(addr, user, keyPath string) (ports.SSHClient, error) {
+	c.enter()
+	return nil, errExitOne
 }

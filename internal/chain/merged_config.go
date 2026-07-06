@@ -605,7 +605,12 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			_ = inTag
 
 		case model.UserProtocolTUIC:
-			tuicUsers := chainTUICUsers(c, users)
+			tuicUsers, err := chainTUICUsers(c, users)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"chain %q: failed to generate TUIC entry password: %v", cn, err))
+				break
+			}
 			inb := buildTUICInboundWithUsers(userPort, tuicUsers, inTag, &role.Preset, p)
 			inbounds = append(inbounds, inb)
 
@@ -921,9 +926,11 @@ func tuicUUID(c *model.Chain) string {
 
 // tuicPassword returns the chain's TUIC entry password, generating an
 // INDEPENDENT one if empty (must not fall back to the UUID — CTO-review M7).
-func tuicPassword(c *model.Chain) string {
+// Returns an error if the generator fails instead of panicking in the deploy
+// path (CTO-review #3: no panics in the request/deploy path).
+func tuicPassword(c *model.Chain) (string, error) {
 	if c.TUICEntryUserPassword != "" {
-		return c.TUICEntryUserPassword
+		return c.TUICEntryUserPassword, nil
 	}
 	return GenerateTUICPassword()
 }

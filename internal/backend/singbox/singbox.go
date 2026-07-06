@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
@@ -654,11 +655,14 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, systemdService)
 			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: check failed (exit %d): %s | AND rollback failed: %w (check err: %v)", exit, stderr, rbErr, err)
+				// Rollback failed → node left in a broken state → not retry-able.
+				return fmt.Errorf("singbox: applyConfig: check failed (exit %d): %s | AND rollback failed: %v: %w", exit, stderr, rbErr, chain.ErrRollbackFailed)
 			}
-			return fmt.Errorf("singbox: applyConfig: rolled back — check failed (exit %d): %s (check err: %w)", exit, stderr, err)
+			// Rollback succeeded → node still running old config → retry-able.
+			return fmt.Errorf("singbox: applyConfig: rolled back — check failed (exit %d): %s: %w", exit, stderr, chain.ErrDeployFailed)
 		}
-		return fmt.Errorf("singbox: applyConfig: check failed (exit %d, no backup): %s (check err: %w)", exit, stderr, err)
+		// No backup (first deploy) → nothing to roll back to → deploy-failed.
+		return fmt.Errorf("singbox: applyConfig: check failed (exit %d, no backup): %s: %w", exit, stderr, chain.ErrDeployFailed)
 	}
 
 	// 4. Restart.
@@ -666,19 +670,23 @@ func (b *Backend) ApplyConfig(ctx context.Context, host model.Host, cfgType mode
 		if backupPath != "" {
 			rbErr := performRollback(client, configFile, backupPath, systemdService)
 			if rbErr != nil {
-				return fmt.Errorf("singbox: applyConfig: restart failed: %v | AND rollback failed: %w", err, rbErr)
+				return fmt.Errorf("singbox: applyConfig: restart failed: %v | AND rollback failed: %w", err, chain.ErrRollbackFailed)
 			}
-			return fmt.Errorf("singbox: applyConfig: rolled back — restart failed: %w", err)
+			return fmt.Errorf("singbox: applyConfig: rolled back — restart failed: %v: %w", err, chain.ErrDeployFailed)
 		}
-		return fmt.Errorf("singbox: applyConfig: restart failed (no backup): %w", err)
+		return fmt.Errorf("singbox: applyConfig: restart failed (no backup): %v: %w", err, chain.ErrDeployFailed)
 	}
 
 	// 5. Health-probe (real, not just restart exit 0).
 	if err := verifyServiceUp(ctx, client, systemdService, false); err != nil {
 		if backupPath != "" {
-			_ = performRollback(client, configFile, backupPath, systemdService)
+			if rbErr := performRollback(client, configFile, backupPath, systemdService); rbErr != nil {
+				slog.Error("singbox: applyConfig: health-probe rollback also failed",
+					"file", configFile, "backup", backupPath, "err", rbErr)
+				return fmt.Errorf("singbox: applyConfig: service not active after restart: %v | AND rollback failed: %v: %w", err, rbErr, chain.ErrRollbackFailed)
+			}
 		}
-		return fmt.Errorf("singbox: applyConfig: service not active after restart: %w", err)
+		return fmt.Errorf("singbox: applyConfig: service not active after restart: %v: %w", err, chain.ErrDeployFailed)
 	}
 
 	cleanupBackups(client, configFile)

@@ -28,12 +28,12 @@ import (
 
 // awgConfDirExists ensures /etc/amnezia/amneziawg exists (awg-quick refuses to
 // bring up an interface whose conf dir is missing). Idempotent.
-func awgConfDirExists(client ports.SSHClient, useSudo bool) error {
+func awgConfDirExists(ctx context.Context, client ports.SSHClient, useSudo bool) error {
 	cmd := "mkdir -p " + awgConfDir
 	if useSudo {
 		cmd = "sudo " + cmd
 	}
-	_, _, _, err := client.RunWithOutput(context.Background(), cmd, 30*time.Second)
+	_, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("ensure %s: %w", awgConfDir, err)
 	}
@@ -49,7 +49,7 @@ func awgConfDirExists(client ports.SSHClient, useSudo bool) error {
 // open item). Idempotent: a /etc/sysctl.d file is written once; `sysctl -w`
 // applies it live. No MASQUERADE (that would bypass sing-box — see
 // nuances-bugs-patches.md §source_ip_cidr vs inbound).
-func ensureIPForward(client ports.SSHClient, useSudo bool) error {
+func ensureIPForward(ctx context.Context, client ports.SSHClient, useSudo bool) error {
 	sudoB := func(cmd string) string {
 		if !useSudo {
 			return cmd
@@ -62,7 +62,7 @@ func ensureIPForward(client ports.SSHClient, useSudo bool) error {
 net.ipv4.ip_forward = 1
 EOF
 sysctl -w net.ipv4.ip_forward=1 >/dev/null`)
-	if _, _, _, err := client.RunWithOutput(context.Background(), cmd, 30*time.Second); err != nil {
+	if _, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second); err != nil {
 		return fmt.Errorf("enable ip_forward: %w", err)
 	}
 	return nil
@@ -70,13 +70,13 @@ sysctl -w net.ipv4.ip_forward=1 >/dev/null`)
 
 // pushAWGConfFile uploads one kernel awg-quick .conf to its remote path with
 // mode 0600, mirroring pushConfigLocked's useSudo temp-file-then-sudo-cp dance.
-func pushAWGConfFile(client ports.SSHClient, file AWGConfFile, useSudo bool) error {
+func pushAWGConfFile(ctx context.Context, client ports.SSHClient, file AWGConfFile, useSudo bool) error {
 	if useSudo {
 		tmp := "/tmp/angry-awg-" + fmt.Sprintf("%d", time.Now().UnixNano()) + ".conf"
-		if err := client.UploadText(context.Background(), file.Content, tmp, 0o600); err != nil {
+		if err := client.UploadText(ctx, file.Content, tmp, 0o600); err != nil {
 			return fmt.Errorf("write %s (tmp): %w", file.Path, err)
 		}
-		_, _, _, err := client.RunWithOutput(context.Background(),
+		_, _, _, err := client.RunWithOutput(ctx,
 			fmt.Sprintf("sudo bash -c 'cp %s %s && chmod 600 %s && rm -f %s'",
 				tmp, file.Path, file.Path, tmp), 30*time.Second)
 		if err != nil {
@@ -84,7 +84,7 @@ func pushAWGConfFile(client ports.SSHClient, file AWGConfFile, useSudo bool) err
 		}
 		return nil
 	}
-	if err := client.UploadText(context.Background(), file.Content, file.Path, 0o600); err != nil {
+	if err := client.UploadText(ctx, file.Content, file.Path, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", file.Path, err)
 	}
 	return nil
@@ -94,7 +94,7 @@ func pushAWGConfFile(client ports.SSHClient, file AWGConfFile, useSudo bool) err
 // sing-box enable/start idiom (daemon-reload && enable && reset-failed &&
 // restart). Returns an error if the unit fails to come up (probeServiceUp
 // retries is-active with a journalctl tail on failure).
-func enableAWGService(client ports.SSHClient, service string, useSudo bool) error {
+func enableAWGService(ctx context.Context, client ports.SSHClient, service string, useSudo bool) error {
 	sudoB := func(cmd string) string {
 		if !useSudo {
 			return cmd
@@ -103,10 +103,10 @@ func enableAWGService(client ports.SSHClient, service string, useSudo bool) erro
 	}
 	cmd := sudoB("systemctl daemon-reload && systemctl enable " + service +
 		" && systemctl reset-failed " + service + " ; systemctl restart " + service)
-	if _, _, _, err := client.RunWithOutput(context.Background(), cmd, 60*time.Second); err != nil {
+	if _, _, _, err := client.RunWithOutput(ctx, cmd, 60*time.Second); err != nil {
 		return fmt.Errorf("enable/restart %s: %w", service, err)
 	}
-	if err := probeServiceUp(client, service, useSudo); err != nil {
+	if err := probeServiceUp(ctx, client, service, useSudo); err != nil {
 		return fmt.Errorf("%s not active after restart: %w", service, err)
 	}
 	return nil
@@ -116,17 +116,17 @@ func enableAWGService(client ports.SSHClient, service string, useSudo bool) erro
 // their services up. Returns the list of (service, backupPath) pairs it created
 // so the caller can roll them back on a sing-box check/restart/probe failure.
 // Backups use createBackup per file (each in its own timestamped dir).
-func pushAWGConfs(client ports.SSHClient, files []AWGConfFile, useSudo bool) ([]awgPushRecord, error) {
+func pushAWGConfs(ctx context.Context, client ports.SSHClient, files []AWGConfFile, useSudo bool) ([]awgPushRecord, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
-	if err := awgConfDirExists(client, useSudo); err != nil {
+	if err := awgConfDirExists(ctx, client, useSudo); err != nil {
 		return nil, err
 	}
 	// Enable IPv4 forwarding before bringing up awg0 — without it the kernel
 	// drops tunneled packets between awg0 and sing-box-tun (the egress-routing
 	// polish: the reference deploy sets this; a missed step in the rework).
-	if err := ensureIPForward(client, useSudo); err != nil {
+	if err := ensureIPForward(ctx, client, useSudo); err != nil {
 		return nil, err
 	}
 	var records []awgPushRecord
@@ -136,7 +136,7 @@ func pushAWGConfs(client ports.SSHClient, files []AWGConfFile, useSudo bool) ([]
 			log.Printf("pushAWGConfs: backup warning for %s: %v", f.Path, backupErr)
 		}
 		records = append(records, awgPushRecord{file: f, backupPath: backupPath})
-		if err := pushAWGConfFile(client, f, useSudo); err != nil {
+		if err := pushAWGConfFile(ctx, client, f, useSudo); err != nil {
 			// Roll back the files already written this round, then return.
 			rollbackAWGConfs(client, records[:len(records)-1], useSudo)
 			return nil, err
@@ -145,7 +145,7 @@ func pushAWGConfs(client ports.SSHClient, files []AWGConfFile, useSudo bool) ([]
 	// All files written — now enable+restart each service. If one fails, roll
 	// back all of them (the sing-box config push hasn't happened yet).
 	for _, rec := range records {
-		if err := enableAWGService(client, rec.file.ServiceName, useSudo); err != nil {
+		if err := enableAWGService(ctx, client, rec.file.ServiceName, useSudo); err != nil {
 			rollbackAWGConfs(client, records, useSudo)
 			return nil, err
 		}
@@ -181,9 +181,9 @@ func rollbackAWGConfs(client ports.SSHClient, records []awgPushRecord, useSudo b
 // nodeID drives the per-host lock; the whole AWG+sing-box sequence runs under a
 // single withHostLock so concurrent applies can't interleave (mirrors
 // pushConfig's single-chokepoint invariant — CTO-review C2).
-func pushConfigWithAWG(client ports.SSHClient, nodeID, cfgContent string, awgFiles []AWGConfFile, useSudo bool) (string, error) {
+func pushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, awgFiles []AWGConfFile, useSudo bool) (string, error) {
 	if len(awgFiles) == 0 {
-		return pushConfig(client, nodeID, cfgContent, useSudo)
+		return pushConfig(ctx, client, nodeID, cfgContent, useSudo)
 	}
 	type result struct {
 		out string
@@ -192,13 +192,13 @@ func pushConfigWithAWG(client ports.SSHClient, nodeID, cfgContent string, awgFil
 	r := withHostLock(nodeID, func() result {
 		// 1. Push kernel AWG .confs + enable services (under the lock so the
 		//    sing-box push below sees awg0/awg-exit-nX already up).
-		awgRecords, awgErr := pushAWGConfs(client, awgFiles, useSudo)
+		awgRecords, awgErr := pushAWGConfs(ctx, client, awgFiles, useSudo)
 		if awgErr != nil {
 			return result{err: fmt.Errorf("awg push: %w", awgErr)}
 		}
 		// 2. Push sing-box config directly via pushConfigLocked (we already hold
 		//    the lock — calling pushConfig would re-acquire it and deadlock).
-		out, cfgErr := pushConfigLocked(client, cfgContent, useSudo)
+		out, cfgErr := pushConfigLocked(ctx, client, cfgContent, useSudo)
 		if cfgErr != nil {
 			// 3. sing-box failed — roll back the kernel AWG .confs too so the
 			//    node returns to its pre-deploy state for both layers.

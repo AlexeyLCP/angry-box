@@ -485,3 +485,42 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 
 - **Client-side rp_filter** (#4) — `RenderClientAWGConf` PostUp rp_filter=0. Не блокер (production клиенты не страдают).
 - **ip rule `10.8.0.0/24 → table 2022` на entry** — в live-тесте добавлял вручную (`ip rule add from 10.8.0.0/24 lookup 2022`). На balancer-конфиге ip rules от sing-box auto_route имеют `9000: from all iif awg0 goto 9002 → nop`, что НЕ направляет в table 2022. Нужно проверить: должен ли deploy-флоу добавлять этот ip rule, или sing-box `include_interface: awg0` должен сам перехватывать (через TUN) без ip rule. Follow-up — возможно ещё один баг routing между awg0 и sing-box-tun.
+## 12. CTO review fixes (2026-07-06) — Top-10 blockers closed properly
+
+9-agent CTO review (`docs/CTO_REVIEW.md`) → все 10 Top-10 блокеров закрыты. Ниже — migration/UX-заметка для операторов live-деплоев (НЕ код-файнд, а операционная заметка).
+
+### 12.1. handleTrustHostKey — UX migration note (CTO-review §6)
+
+`NodeInfo.PendingHostKeyFingerprint` (поле добавлено в `model/panel.go`, `json:"pending_host_key_fingerprint,omitempty"`) хранит фактически наблюдённый SSH fingerprint, чтобы `/trust` POST мог сверить submitted fingerprint с реальным (anti-MITM/CSRF, CTO-review §6 HIGH).
+
+**Migration impact для live-деплоев, обновлённых с pre-fix версии:**
+- У существующих (pre-fix) `NodeInfo` этого поля НЕТ → `PendingHostKeyFingerprint == ""`.
+- Нормальный flow **НЕ сломан**: capture (`handleCaptureNode` в `web/nodes.go`) при `HostKeyError` устанавливает `PendingHostKeyFingerprint` и рендерит `HostKeyWarning` модалку → пользователь жмёт "trust" → `/trust` сверяет с pending. Поле пустое ТОЛЬКО до первого capture после обновления.
+- Единственный edge case: оператор открыл `HostKeyWarning` модалку в СТАРОЙ версии (где pending не сохранялся), затем обновился и жмёт "trust" в уже-открытой модалке → `/trust` вернёт 400 "No pending host key fingerprint — re-capture the node first." **Fix:** перезапустите capture (Status кнопка) — модалка перерендерится с pending, trust пройдёт.
+- Никакой schema-migration не требуется: `omitempty` + zero-value = empty = "нет pending" = корректное безопасное поведение (refuse-to-trust-blindly).
+
+### 12.2. At-rest encryption default-on (CTO-review §2)
+
+`store.json` теперь шифруется AES-256-GCM при наличии `store.json.key` (32 байта, генерируется `install.sh` во ВСЕХ 3 ветках: systemd / user-mode / Keenetic inline + `S99angry-box`). Legacy plaintext `store.json` читается как раньше (`isEncrypted` auto-detect). Операторы с pre-fix `store.json` (plaintext): при первом запуске с auto-keygen файл остаётся plaintext (шифрование применяется на следующей WRITE). Чтобы зашифровать немедленно: `angry-box` запускается под новым ключом → любое `Save*` перезапишет файл зашифрованным. Ручной fallback: скопируйте `store.json` в `store.json.plaintext.bak` перед первым запуском под key.
+
+### 12.3. Sentinel errors wired (CTO-review §6)
+
+`ErrHostNotFound`/`ErrChainNotFound`/`ErrUserNotFound`/`ErrDeployFailed`/`ErrRollbackFailed` (`internal/chain/errors.go`) теперь реально потребляются:
+- `handleCreateChain` (`web/chains.go`): `errors.Is(err, chain.ErrHostNotFound)` → 400 (vs 500 для store I/O failure).
+- `pushConfig` (`chain/applier.go`) + `singbox.ApplyConfig` (`backend/singbox/singbox.go`): check/restart/health-probe-fail пути оборачивают `ErrDeployFailed` (rollback OK → retry-able) или `ErrRollbackFailed` (rollback ALSO failed → node broken, manual).
+- Покрыто тестами: `TestPushConfig_CheckFails_RollsBack` (ErrDeployFailed), `TestPushConfig_CheckFails_RollbackAlsoFails` (ErrRollbackFailed), `TestBackend_ApplyConfig_CheckFails` + `TestBackend_ApplyConfig_CheckFails_RollbackAlsoFails`.
+
+### 12.4. No-panics-in-request-path (CTO-review #3)
+
+`mustMarshal` (singbox) → `marshal` returning `(json.RawMessage, error)`, propagated through all `Render*` functions. `cryptogen.GenerateInboundTag/GenerateTUICPassword/GenerateProxyPassword/GenerateStableTUICUserCreds/EnsureUserCreds` → `(value, error)` signatures, errors propagated through `ApplyChain`/`RenderClientConfig`/`buildChainRoleInOut` (becomes a deploy-failing roleError)/handlers (500 with i18n message). `presets.go` external `_ = LoadPresets` → logged via `slog.Warn`. The `recover()` middleware in `web/auth` remains as the safety net.
+
+### 12.5. Takeover silent failures fixed (CTO-review §6)
+
+`_ = RestoreFile` in `rollbackToOldVPN` → propagated (rollback failure now surfaces, marks "failed-both"). `_ = SaveNodeInfo` ×4 → `slog.Warn`. `_ = json.Unmarshal` ×12 in `convert.go` → `partialUnmarshal` helper with explicit rationale (foreign-config lenient extraction is by-design; callers' presence checks handle the "no match" case).
+
+### 12.6. applier.go split + context.Context + autoapply cap (CTO-review §4/§8/§9)
+
+- **applier.go split**: `applier.go` (1986 строк) → `applier_build.go` (1739 строк, pure config-gen + ApplyChain orchestrator) + `applier_push.go` (276 строк, SSH I/O: pushConfig/rollback/probe/cert). AGENTS.md #4 layering restored (config-gen ≠ SSH I/O).
+- **context.Context threaded into SSH-push**: `pushConfig`/`pushConfigLocked`/`pushConfigWithAWG`/`probeServiceUp`/`ensureCertForTLSInbounds`/`ensureIPForward`/`pushAWGConfFile`/`enableAWGService`/`pushAWGConfs`/`awgConfDirExists` now take `ctx context.Context`; the `context.Background()` calls inside the deploy sequence replaced with `ctx`. Exported wrappers (`PushConfig`/`ProbeServiceUp`/`DisableService`/`EnableService`/`RestoreFile`/`PushConfigForTest`) updated; all callers (ApplyChain, applyMergedNodeLocked, takeover, tests) pass ctx through. A cancelled UI deploy now cancels in-flight SSH commands instead of waiting out the timeout (CTO-review §8).
+- **autoapply concurrency cap**: `ScheduleAutoApply` now acquires a slot on a counting semaphore (`autoApplyMaxConcurrent=8`) before the SSH deploy, so a 100-node all-pending fleet fans out to at most 8 concurrent SSH deploys, not 100. `SetAutoApplyConcurrency(n)` lets operators/tests override the cap before `InitAutoApply`. Covered by `TestScheduleAutoApply_ConcurrencyCap` (schedules 10 deploys against a blocking connector, asserts high-water ≤ cap=3 and saturates the cap). The per-host `withHostLock` still serializes same-node re-entrancy; the semaphore bounds the global fan-out.
+- **SSH connection pool (deferred)**: connection REUSE across deploys (buffering live SSH sessions per host with idle TTL) is a deeper change to the `SSHConnector` interface + lifecycle (the current `connector.Connect` returns a fresh client each deploy; `client.Close()` drops it). The concurrency cap (above) bounds the worst-case fan-out; a true connection pool is a v1.0 follow-up (needs idle-eviction, host-key cache invalidation on TOFU change, and a redesign of the `defer client.Close()` pattern across ApplyChain/ApplyMergedNode/takeover). Tracked but NOT implemented this cycle.

@@ -67,7 +67,14 @@ func (s *Store) migrateOnce() {
 		changed = true
 	}
 	if changed {
-		_ = s.writeStore(sf)
+		if err := s.writeStore(sf); err != nil {
+			// Migration ran in-memory but the versioned store could not be
+			// persisted. The migration is idempotent, so the next start will
+			// re-run it — but if the write keeps failing the store is stuck
+			// re-migrating forever, so surface the failure loudly instead of
+			// silently dropping it (AGENTS.md #6).
+			log.Printf("store: migration to schema v%d applied but persist failed (will retry next start): %v", sf.SchemaVersion, err)
+		}
 	}
 }
 
@@ -82,7 +89,12 @@ func (s *Store) migrateMtproxyUsers(sf *storeFile) error {
 	bakPath := s.path + ".prebmigrate.bak"
 	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
 		if data, err := os.ReadFile(s.path); err == nil {
-			_ = os.WriteFile(bakPath, data, 0o600)
+			if werr := os.WriteFile(bakPath, data, 0o600); werr != nil {
+				// Pre-migration backup is best-effort; its failure does not block
+				// the migration (the in-memory migrate is idempotent), but log it
+				// so an operator can see there is no rollback snapshot (AGENTS #6).
+				log.Printf("store: pre-migration backup write failed (%s): %v", bakPath, werr)
+			}
 		}
 	}
 	existingNames := map[string]bool{}
@@ -735,7 +747,12 @@ func (s *Store) CheckHostKey(addr string, remoteKey ssh.PublicKey) error {
 			FirstSeen:   timeNow(),
 			Trusted:     true,
 		}
-		_ = s.SaveKnownHost(newKH)
+		if err := s.SaveKnownHost(newKH); err != nil {
+			// TOFU trust-on-first-use: the host is accepted this run, but if the
+			// known-hosts table can't be persisted the next connection will
+			// re-trigger TOFU. Log so the operator sees the state isn't sticky.
+			log.Printf("store: TOFU save known-host failed for %s: %v", addr, err)
+		}
 		return nil // trust on first use
 	}
 

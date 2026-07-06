@@ -2,9 +2,10 @@ package web
 
 // recover_test.go — verifies the auth-middleware recover wrapper prevents a
 // handler panic from crashing the test process / orchestrator and returns a
-// 500. CTO-review finding: mustMarshal / cryptogen.Generate* panic in the
-// request path could take down the process; the recover in auth() is the
-// safety net.
+// 500. CTO-review finding: generator panics (mustMarshal /
+// cryptogen.Generate*) in the request path could take down the process; those
+// generators now return errors (CTO-review #3), and the recover in auth()
+// remains the safety net for any residual panic.
 
 import (
 	"net/http"

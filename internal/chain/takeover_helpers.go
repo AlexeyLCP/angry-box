@@ -27,9 +27,11 @@ func HostLock(nodeID string) *sync.Mutex {
 // /etc/sing-box/config.json with the reliable deploy sequence (backup → cert →
 // upload → check → restart → health-probe → rollback on failure). useSudo wraps
 // privileged commands for non-root SSH users. nodeID drives per-host
-// serialization of the critical section (CTO-review C2).
-func PushConfig(client ports.SSHClient, nodeID, cfgContent string, useSudo bool) (string, error) {
-	return pushConfig(client, nodeID, cfgContent, useSudo)
+// serialization of the critical section (CTO-review C2). ctx is threaded to
+// every SSH call so a cancelled UI deploy cancels in-flight commands
+// (CTO-review §8).
+func PushConfig(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, useSudo bool) (string, error) {
+	return pushConfig(ctx, client, nodeID, cfgContent, useSudo)
 }
 
 // CreateBackup is the exported wrapper around createBackup: copies file to a
@@ -47,19 +49,19 @@ func RecordDeploySuccess(store *Store, nodeID, cfgJSON string) {
 
 // ProbeServiceUp is the exported wrapper around probeServiceUp: waits ~7s for
 // the unit to become active, returns journalctl tail on failure.
-func ProbeServiceUp(client ports.SSHClient, service string, useSudo bool) error {
-	return probeServiceUp(client, service, useSudo)
+func ProbeServiceUp(ctx context.Context, client ports.SSHClient, service string, useSudo bool) error {
+	return probeServiceUp(ctx, client, service, useSudo)
 }
 
 // DisableService stops + disables a systemd unit WITHOUT deleting its unit file
 // or config (contrast with Backend.Remove which deletes). Used by takeover to
 // disable the old VPN while keeping it recoverable. useSudo via sudoBash.
-func DisableService(client ports.SSHClient, service string, useSudo bool) error {
+func DisableService(ctx context.Context, client ports.SSHClient, service string, useSudo bool) error {
 	cmd := "systemctl stop " + service + " && systemctl disable " + service
 	if useSudo {
 		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
 	}
-	_, _, _, err := client.RunWithOutput(context.Background(), cmd, 30*time.Second)
+	_, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("disable %s: %w", service, err)
 	}
@@ -68,12 +70,12 @@ func DisableService(client ports.SSHClient, service string, useSudo bool) error 
 
 // EnableService enables + starts a systemd unit (rollback path: re-enable the
 // old VPN). useSudo via sudoBash.
-func EnableService(client ports.SSHClient, service string, useSudo bool) error {
+func EnableService(ctx context.Context, client ports.SSHClient, service string, useSudo bool) error {
 	cmd := "systemctl enable " + service + " && systemctl start " + service
 	if useSudo {
 		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
 	}
-	_, _, _, err := client.RunWithOutput(context.Background(), cmd, 30*time.Second)
+	_, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("enable %s: %w", service, err)
 	}
@@ -81,7 +83,7 @@ func EnableService(client ports.SSHClient, service string, useSudo bool) error {
 }
 
 // RestoreFile copies a backed-up file back to its original path (rollback).
-func RestoreFile(client ports.SSHClient, backupPath, destPath string, useSudo bool) error {
+func RestoreFile(ctx context.Context, client ports.SSHClient, backupPath, destPath string, useSudo bool) error {
 	if backupPath == "" {
 		return fmt.Errorf("no backup path")
 	}
@@ -89,7 +91,7 @@ func RestoreFile(client ports.SSHClient, backupPath, destPath string, useSudo bo
 	if useSudo {
 		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
 	}
-	_, _, _, err := client.RunWithOutput(context.Background(), cmd, 30*time.Second)
+	_, _, _, err := client.RunWithOutput(ctx, cmd, 30*time.Second)
 	return err
 }
 

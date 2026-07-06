@@ -153,7 +153,11 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if userProto == model.UserProtocol("tuic") {
-		uuid, password := chain.GenerateStableTUICUserCreds()
+		uuid, password, err := chain.GenerateStableTUICUserCreds()
+		if err != nil {
+			http.Error(w, i18n.T(r.Context(), "failed to generate TUIC creds"), http.StatusInternalServerError)
+			return
+		}
 		c.TUICEntryUserUUID = uuid
 		c.TUICEntryUserPassword = password
 	}

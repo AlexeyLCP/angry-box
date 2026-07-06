@@ -105,7 +105,10 @@ func TestE2E_WireGuardKeypair(t *testing.T) {
 	if priv == "" || pub == "" || priv == pub {
 		t.Fatalf("bad keypair: priv=%q pub=%q", priv, pub)
 	}
-	uuid, pass := chain.GenerateStableTUICUserCreds()
+	uuid, pass, err := chain.GenerateStableTUICUserCreds()
+	if err != nil {
+		t.Fatalf("GenerateStableTUICUserCreds: %v", err)
+	}
 	if uuid == "" || pass == "" {
 		t.Fatal("empty TUIC creds")
 	}

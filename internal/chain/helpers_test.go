@@ -328,7 +328,10 @@ func TestGenerateWireGuardKeypair_Unique(t *testing.T) {
 // ─── GenerateStableTUICUserCreds ──────────────────────────────────────────────
 
 func TestGenerateStableTUICUserCreds(t *testing.T) {
-	uuid, password := GenerateStableTUICUserCreds()
+	uuid, password, err := GenerateStableTUICUserCreds()
+	if err != nil {
+		t.Fatalf("GenerateStableTUICUserCreds: %v", err)
+	}
 	if uuid == "" || password == "" {
 		t.Fatal("empty creds")
 	}
@@ -548,7 +551,10 @@ func TestBackendMethods(t *testing.T) {
 		t.Fatalf("GenerateWireGuardKeypair: %v", err)
 	}
 
-	uuid, pass := GenerateStableTUICUserCreds()
+	uuid, pass, err := GenerateStableTUICUserCreds()
+	if err != nil {
+		t.Fatalf("GenerateStableTUICUserCreds: %v", err)
+	}
 	if uuid == "" || pass == "" {
 		t.Fatal("GenerateStableTUICUserCreds returned empty")
 	}

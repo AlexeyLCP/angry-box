@@ -8,6 +8,7 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -137,7 +138,9 @@ func (s *Server) handleDeletePreset(w http.ResponseWriter, r *http.Request) {
 		settings.CustomPresets = b
 	}
 	st.SaveSettings(settings)
-	_ = chain.LoadPresets(filtered) // reload registry without the deleted one
+	if err := chain.LoadPresets(filtered); err != nil { // reload registry without the deleted one
+		slog.Warn("preset delete: reload registry failed", "err", err)
+	}
 	chain.WriteAudit(st, "delete", "preset", name, nil, "operator")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(""))
@@ -236,7 +239,9 @@ func (s *Server) saveCustomPreset(p chain.ConnectionPreset, isUpdate bool) error
 	}
 	settings.CustomPresets = b
 	st.SaveSettings(settings)
-	_ = chain.LoadPresets(customs) // reload registry
+	if err := chain.LoadPresets(customs); err != nil { // reload registry
+		slog.Warn("preset save: reload registry failed", "err", err)
+	}
 	return nil
 }
 

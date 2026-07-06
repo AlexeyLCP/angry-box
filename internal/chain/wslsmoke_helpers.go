@@ -8,6 +8,7 @@ package chain
 // Guarded by the wsl_smoke build tag — never in production.
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,8 +20,8 @@ import (
 // PushConfigForTest wraps the unexported pushConfig for the WSL smoke tests.
 // nodeID drives per-host serialization; pass "" to skip locking for throwaway
 // test hosts. useSudo mirrors NodeInfo.UseSudo (true for non-root SSH users).
-func PushConfigForTest(client ports.SSHClient, nodeID, cfgContent string, useSudo bool) (string, error) {
-	return pushConfig(client, nodeID, cfgContent, useSudo)
+func PushConfigForTest(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, useSudo bool) (string, error) {
+	return pushConfig(ctx, client, nodeID, cfgContent, useSudo)
 }
 
 // RecordDeploySuccessForTest wraps recordDeploySuccess for the smoke tests.

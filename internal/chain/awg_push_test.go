@@ -7,6 +7,7 @@ package chain
 // config and the awg0.conf. No real network.
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -37,7 +38,7 @@ func awgDeployRules() []fakeRule {
 // awg-quick commands, no mkdir, just the sing-box deploy).
 func TestPushConfigWithAWG_NoAWGFiles_Passthrough(t *testing.T) {
 	client := newFakeSSH(deployRules()...)
-	out, err := pushConfigWithAWG(client, "node-x", validCfg, nil, false)
+	out, err := pushConfigWithAWG(context.Background(), client, "node-x", validCfg, nil, false)
 	if err != nil {
 		t.Fatalf("pushConfigWithAWG: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestPushConfigWithAWG_AWGFiles_PushesAndEnables(t *testing.T) {
 	awgFiles := []AWGConfFile{
 		{Path: awg0ConfPath, ServiceName: "awg-quick@awg0", Content: "[Interface]\nPrivateKey = K\n"},
 	}
-	out, err := pushConfigWithAWG(client, "node-awg", validCfg, awgFiles, false)
+	out, err := pushConfigWithAWG(context.Background(), client, "node-awg", validCfg, awgFiles, false)
 	if err != nil {
 		t.Fatalf("pushConfigWithAWG: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestPushConfigWithAWG_SingBoxCheckFails_RollsBackBoth(t *testing.T) {
 	awgFiles := []AWGConfFile{
 		{Path: awg0ConfPath, ServiceName: "awg-quick@awg0", Content: "[Interface]\nPrivateKey = K\n"},
 	}
-	_, err := pushConfigWithAWG(client, "node-awg", validCfg, awgFiles, false)
+	_, err := pushConfigWithAWG(context.Background(), client, "node-awg", validCfg, awgFiles, false)
 	if err == nil {
 		t.Fatal("expected sing-box check failure")
 	}
@@ -174,7 +175,7 @@ func TestPushConfigWithAWG_AWGEnableFails(t *testing.T) {
 	awgFiles := []AWGConfFile{
 		{Path: awg0ConfPath, ServiceName: "awg-quick@awg0", Content: "[Interface]\nPrivateKey = K\n"},
 	}
-	_, err := pushConfigWithAWG(client, "node-awg", validCfg, awgFiles, false)
+	_, err := pushConfigWithAWG(context.Background(), client, "node-awg", validCfg, awgFiles, false)
 	if err == nil {
 		t.Fatal("expected awg enable failure")
 	}

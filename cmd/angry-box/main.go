@@ -349,7 +349,11 @@ func chainCmd(action string) {
 		}
 		if userProtocol == "tuic" {
 			// Stable UUID + password for the single TUIC user on the entry node
-			uuid, _ := chain.GenerateStableTUICUserCreds()
+			uuid, _, err := chain.GenerateStableTUICUserCreds()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: generate TUIC creds: %v\n", err)
+				os.Exit(1)
+			}
 			c.TUICEntryUserUUID = uuid
 			c.TUICEntryUserPassword = uuid
 		}

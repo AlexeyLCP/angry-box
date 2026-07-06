@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -79,7 +80,9 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 		backupPath, berr := chain.CreateBackup(client, det.ConfigPath)
 		if berr == nil && backupPath != "" {
 			info.Takeover.OldConfigBackup = backupPath
-			_ = store.SaveNodeInfo(info)
+			if err := store.SaveNodeInfo(info); err != nil {
+				slog.Warn("takeover: save node info (backup path) failed", "node", host.ID, "err", err)
+			}
 		}
 	}
 
@@ -123,7 +126,7 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	// untouched and let sing-box route on top of it. The old config backup is
 	// still taken (step 3) so rollback can restore it if sing-box fails.
 	if det.Type != DetectedAWG && det.ServiceName != "" {
-		if err := chain.DisableService(client, det.ServiceName, useSudo); err != nil {
+		if err := chain.DisableService(ctx, client, det.ServiceName, useSudo); err != nil {
 			// Couldn't disable old — abort before pushing (leave old running).
 			res.Status = "rolled-back"
 			res.Message = "failed to disable old VPN " + det.ServiceName + ": " + err.Error()
@@ -133,7 +136,7 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 
 	// 7. Push the sing-box config (backup → check → restart → health-probe, with
 	// its own rollback to the previous /etc/sing-box/config.json on failure).
-	if _, perr := chain.PushConfig(client, host.ID, cfgContent, useSudo); perr != nil {
+	if _, perr := chain.PushConfig(ctx, client, host.ID, cfgContent, useSudo); perr != nil {
 		// sing-box did NOT come up. Auto-rollback to the old VPN.
 		res.RollbackOccurred = true
 		if rbErr := rollbackToOldVPN(ctx, client, det, info.Takeover, useSudo); rbErr != nil {
@@ -141,14 +144,18 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 			res.Status = "failed-both"
 			res.Message = fmt.Sprintf("sing-box failed: %v; AND rollback to %s also failed: %v", perr, det.ServiceName, rbErr)
 			info.Takeover.Status = "failed-both"
-			_ = store.SaveNodeInfo(info)
+			if err := store.SaveNodeInfo(info); err != nil {
+				slog.Warn("takeover: save node info (failed-both) failed", "node", host.ID, "err", err)
+			}
 			chain.WriteTakeoverAudit(store, host.ID, string(det.Type), "failed-both", res.ConvertedInbounds)
 			return res, fmt.Errorf("takeover: %s", res.Message)
 		}
 		res.Status = "rolled-back"
 		res.Message = fmt.Sprintf("takeover failed (sing-box did not come up: %v); rolled back to %s — old VPN restored and active", perr, det.ServiceName)
 		info.Takeover.Status = "rolled-back"
-		_ = store.SaveNodeInfo(info)
+		if err := store.SaveNodeInfo(info); err != nil {
+			slog.Warn("takeover: save node info (rolled-back) failed", "node", host.ID, "err", err)
+		}
 		chain.WriteTakeoverAudit(store, host.ID, string(det.Type), "rolled-back", res.ConvertedInbounds)
 		return res, fmt.Errorf("takeover: %s", res.Message)
 	}
@@ -157,7 +164,9 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	chain.RecordDeploySuccess(store, host.ID, cfgContent)
 	info.Takeover.Status = "taken"
 	info.Takeover.ConvertedAt = time.Now()
-	_ = store.SaveNodeInfo(info)
+	if err := store.SaveNodeInfo(info); err != nil {
+		slog.Warn("takeover: save node info (taken) failed", "node", host.ID, "err", err)
+	}
 	chain.WriteTakeoverAudit(store, host.ID, string(det.Type), "taken", res.ConvertedInbounds)
 	res.Status = "taken"
 	oldMsg := ""
@@ -249,13 +258,17 @@ func rollbackToOldVPN(ctx context.Context, client ports.SSHClient, det *Detectio
 	if det.ServiceName == "" {
 		return fmt.Errorf("no old service name to roll back to")
 	}
-	// Restore the old config from backup if we have one.
+	// Restore the old config from backup if we have one. Swallowing this error
+	// would leave the old VPN running with the post-takeover config (or none),
+	// defeating the rollback — surface it so the caller marks "failed-both".
 	if state.OldConfigBackup != "" && state.OldConfigPath != "" {
-		_ = chain.RestoreFile(client, state.OldConfigBackup, state.OldConfigPath, useSudo)
+		if err := chain.RestoreFile(ctx, client, state.OldConfigBackup, state.OldConfigPath, useSudo); err != nil {
+			return fmt.Errorf("restore old config %s from %s: %w", state.OldConfigPath, state.OldConfigBackup, err)
+		}
 	}
 	// Re-enable + start the old service (only re-enable if it was enabled before).
 	if state.OldEnabled {
-		if err := chain.EnableService(client, det.ServiceName, useSudo); err != nil {
+		if err := chain.EnableService(ctx, client, det.ServiceName, useSudo); err != nil {
 			return fmt.Errorf("re-enable %s: %w", det.ServiceName, err)
 		}
 	} else {
@@ -267,7 +280,7 @@ func rollbackToOldVPN(ctx context.Context, client ports.SSHClient, det *Detectio
 		_, _, _, _ = client.RunWithOutput(ctx, cmd, 30*time.Second)
 	}
 	// Verify the old VPN came back.
-	if err := chain.ProbeServiceUp(client, det.ServiceName, useSudo); err != nil {
+	if err := chain.ProbeServiceUp(ctx, client, det.ServiceName, useSudo); err != nil {
 		return fmt.Errorf("old VPN %s did not come back: %w", det.ServiceName, err)
 	}
 	return nil

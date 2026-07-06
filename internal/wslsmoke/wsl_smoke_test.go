@@ -134,7 +134,7 @@ func TestWSL_ApplyRealityXHTTP(t *testing.T) {
 	}
 	c := wslConnect(t)
 	defer c.Close()
-	if _, err := chain.PushConfigForTest(c, "", string(content), true); err != nil {
+	if _, err := chain.PushConfigForTest(context.Background(), c, "", string(content), true); err != nil {
 		t.Fatalf("pushConfig REALITY+XHTTP: %v", err)
 	}
 	active := runOn(t, c, "systemctl is-active sing-box", 15*time.Second)
@@ -155,13 +155,13 @@ func TestWSL_RollbackOnBadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chain.PushConfigForTest(c, "", string(good), true); err != nil {
+	if _, err := chain.PushConfigForTest(context.Background(), c, "", string(good), true); err != nil {
 		t.Fatalf("seed good config: %v", err)
 	}
 	// 2. Push a bad config that sing-box check will reject (unknown inbound type
 	// is a hard schema error, unlike a malformed UUID which sing-box tolerates).
 	bad := `{"inbounds":[{"type":"invalid_protocol","listen_port":8443}],"outbounds":[]}`
-	_, err = chain.PushConfigForTest(c, "", bad, true)
+	_, err = chain.PushConfigForTest(context.Background(), c, "", bad, true)
 	if err == nil {
 		t.Fatal("expected pushConfig to fail on bad config")
 	}
@@ -179,7 +179,7 @@ func TestWSL_FirstDeployNoRollback(t *testing.T) {
 	defer c.Close()
 	runOn(t, c, "sudo rm -f /etc/sing-box/config.json && sudo rm -rf ~/sing-box-orch-backup-* /etc/sing-box/config.json.bak.*", 15*time.Second)
 	bad := `{"inbounds":[{"type":"invalid_protocol"}],"outbounds":[]}`
-	_, err := chain.PushConfigForTest(c, "", bad, true)
+	_, err := chain.PushConfigForTest(context.Background(), c, "", bad, true)
 	if err == nil {
 		t.Fatal("expected pushConfig to fail with no backup available")
 	}

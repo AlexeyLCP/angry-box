@@ -101,7 +101,11 @@ func RenderClientConfig(params ClientConfigParams) (string, error) {
 			uuid = tuicUUID(c)
 		}
 		if password == "" {
-			password = tuicPassword(c)
+			pw, err := tuicPassword(c)
+			if err != nil {
+				return "", fmt.Errorf("tuic client config: %w", err)
+			}
+			password = pw
 		}
 		serverName := DefaultRealitySNI
 		if p := resolveChainPreset(c); p.Reality != nil && len(p.Reality.ServerNames) > 0 {

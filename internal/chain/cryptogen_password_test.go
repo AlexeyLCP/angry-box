@@ -20,7 +20,10 @@ func TestGenerateProxyPassword_LengthAndAlphabet(t *testing.T) {
 		return false
 	}
 	for i := 0; i < 200; i++ {
-		p := GenerateProxyPassword()
+		p, err := GenerateProxyPassword()
+		if err != nil {
+			t.Fatalf("GenerateProxyPassword: %v", err)
+		}
 		if len(p) != 16 {
 			t.Fatalf("password length = %d, want 16 (%q)", len(p), p)
 		}
@@ -42,7 +45,10 @@ func TestGenerateProxyPassword_NoModuloBiasSkew(t *testing.T) {
 	const samples = 62 * 200 // ~200 per symbol
 	counts := make(map[byte]int)
 	for i := 0; i < samples; i++ {
-		p := GenerateProxyPassword()
+		p, err := GenerateProxyPassword()
+		if err != nil {
+			t.Fatalf("GenerateProxyPassword: %v", err)
+		}
 		for j := 0; j < len(p); j++ {
 			counts[p[j]]++
 		}

@@ -62,7 +62,8 @@ Remote connections use SSH.
 ### 4. Config Generation Separation
 - `internal/backend/singbox/config.go`: Defines the base sing-box config structures and standalone generation.
 - `internal/backend/singbox/roles.go`: Role-based renderers (`RenderProxyNode`, `RenderAWGBalancer`, `RenderAWGHop`) — NO amnezia/ECH/curve_preferences on REALITY inbound, XHTTP headers as `map[string]string`.
-- `internal/chain/applier.go`: Contains the complex logic for building multi-hop chain configurations, transit keys, and strategy routing.
+- `internal/chain/applier_build.go`: Contains the complex logic for building multi-hop chain configurations, transit keys, and strategy routing (pure config generation + the `ApplyChain` orchestrator).
+- `internal/chain/applier_push.go`: The SSH I/O layer of the deploy pipeline only (`createBackup`/`performRollback`/`pushConfig`/`probeServiceUp`/`ensureCertForTLSInbounds`) — split out of the old `applier.go` so config generation and remote I/O are not mixed in one file (AGENTS.md #4 layering).
 - `internal/chain/merged_config.go`: `RenderMergedNodeConfig` builds the merged single-node config (standalone + chain roles).
 - `internal/takeover/`: VPN takeover (detect existing AWG/sing-box/Xray/MTProxy → convert → cutover with rollback-to-old-VPN).
 - Do not mix UI logic with config generation logic.
@@ -115,7 +116,8 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 │   │   ├── singbox/     # sing-box config generation (config.go, roles.go, singbox.go)
 │   │   └── xray/        # Xray backend (dual-core support)
 │   ├── chain/           # Core business logic
-│   │   ├── applier.go   # Applies configs to remote nodes via SSH (with rollback)
+│   │   ├── applier_build.go # Pure config-gen + ApplyChain orchestrator
+│   │   ├── applier_push.go  # SSH I/O deploy pipeline (pushConfig + rollback)
 │   │   ├── merged_config.go  # Role-based merged config builder
 │   │   ├── presets.go / protocolpresets.go / routingpresets.go
 │   │   ├── awgpresets_gen.go / awg_cps.go / awgcapture.go / awgimport.go

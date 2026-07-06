@@ -205,7 +205,7 @@ func TestEnsureCertForTLSInbounds_NeedsCert(t *testing.T) {
 		fakeRule{substring: "", out: ""},
 	)
 	cfg := `{"inbounds":[{"type":"tuic"}]}`
-	ensureCertForTLSInbounds(fake, cfg)
+	ensureCertForTLSInbounds(context.Background(), fake, cfg)
 	if !fake.SawCommand("openssl") {
 		t.Error("expected the openssl cert-generation command to run for a TUIC config")
 	}
@@ -216,7 +216,7 @@ func TestEnsureCertForTLSInbounds_NeedsCert(t *testing.T) {
 func TestEnsureCertForTLSInbounds_NoTLS(t *testing.T) {
 	fake := newFakeSSH(fakeRule{substring: "", out: ""})
 	cfg := `{"inbounds":[{"type":"vless"}]}`
-	ensureCertForTLSInbounds(fake, cfg)
+	ensureCertForTLSInbounds(context.Background(), fake, cfg)
 	if len(fake.commands) != 0 {
 		t.Errorf("expected no SSH command for a non-TLS config, got %d", len(fake.commands))
 	}
@@ -229,7 +229,7 @@ func TestEnsureCertForTLSInbounds_Hysteria2(t *testing.T) {
 		fakeRule{substring: "", out: ""},
 	)
 	cfg := `{"inbounds":[{"type":"hysteria2"}]}`
-	ensureCertForTLSInbounds(fake, cfg)
+	ensureCertForTLSInbounds(context.Background(), fake, cfg)
 	if !fake.SawCommand("openssl") {
 		t.Error("expected cert generation for hysteria2 config")
 	}
@@ -243,7 +243,7 @@ func TestEnsureCertForTLSInbounds_CertPath(t *testing.T) {
 		fakeRule{substring: "", out: ""},
 	)
 	cfg := `{"inbounds":[{"certificate_path":"/etc/sing-box/cert.pem"}]}`
-	ensureCertForTLSInbounds(fake, cfg)
+	ensureCertForTLSInbounds(context.Background(), fake, cfg)
 	if !fake.SawCommand("openssl") {
 		t.Error("expected cert generation when cert_path is referenced")
 	}

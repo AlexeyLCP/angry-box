@@ -288,7 +288,10 @@ func TestChainTUICUsers_MultiUser(t *testing.T) {
 		{ID: "u4", Name: "inactive", Active: false, TUICUUID: "i-uuid", TUICPassword: "i-pass"},
 		{ID: "u5", Name: "nofallback", Active: true}, // no per-user creds -> uses chain-wide
 	}
-	got := chainTUICUsers(c, users)
+	got, err := chainTUICUsers(c, users)
+	if err != nil {
+		t.Fatalf("chainTUICUsers: %v", err)
+	}
 	if len(got) != 3 {
 		t.Fatalf("want 3 active non-expired users, got %d (%+v)", len(got), got)
 	}
@@ -312,7 +315,10 @@ func TestChainTUICUsers_NoUsers_FallsBackToChainCreds(t *testing.T) {
 		TUICEntryUserUUID:     "chain-uuid",
 		TUICEntryUserPassword: "chain-pass",
 	}
-	got := chainTUICUsers(c, nil)
+	got, err := chainTUICUsers(c, nil)
+	if err != nil {
+		t.Fatalf("chainTUICUsers: %v", err)
+	}
 	if len(got) != 1 {
 		t.Fatalf("want single fallback user, got %d", len(got))
 	}
@@ -768,7 +774,9 @@ func TestAllocateAWGPeerIP(t *testing.T) {
 // (but no address — that needs the store via EnsureUserAWGAddress).
 func TestEnsureUserCreds_AWG_Keypair(t *testing.T) {
 	u := &model.User{Name: "alice", Active: true, Protocols: []string{"awg"}}
-	EnsureUserCreds(u)
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatalf("EnsureUserCreds: %v", err)
+	}
 	if u.AWGPrivateKey == "" || u.AWGPublicKey == "" {
 		t.Fatalf("AWG user should get a keypair, got priv=%q pub=%q", u.AWGPrivateKey, u.AWGPublicKey)
 	}
@@ -777,7 +785,9 @@ func TestEnsureUserCreds_AWG_Keypair(t *testing.T) {
 	}
 	// idempotent: second call preserves existing creds
 	priv, pub := u.AWGPrivateKey, u.AWGPublicKey
-	EnsureUserCreds(u)
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatalf("EnsureUserCreds (2nd): %v", err)
+	}
 	if u.AWGPrivateKey != priv || u.AWGPublicKey != pub {
 		t.Error("EnsureUserCreds overwrote existing AWG keypair")
 	}

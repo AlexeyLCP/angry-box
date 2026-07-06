@@ -439,11 +439,11 @@ func performRollbackTest(t *testing.T, role int, nodeID string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chain.PushConfig(client, nodeID, string(good), true); err != nil {
+	if _, err := chain.PushConfig(context.Background(), client, nodeID, string(good), true); err != nil {
 		t.Fatalf("seed good config: %v", err)
 	}
 	bad := `{"inbounds":[{"type":"invalid_protocol","listen_port":8443}],"outbounds":[]}`
-	_, err = chain.PushConfig(client, nodeID, bad, true)
+	_, err = chain.PushConfig(context.Background(), client, nodeID, bad, true)
 	if err == nil {
 		t.Fatal("expected push to fail on invalid config")
 	}
@@ -558,7 +558,7 @@ func deploySocksBackend(t *testing.T, role int, nodeID string) {
   "route": {"final": "direct"}
 }`, e2eBackendSocksPort)
 	client := e2eConnect(t, role)
-	if _, err := chain.PushConfig(client, nodeID, cfg, true); err != nil {
+	if _, err := chain.PushConfig(context.Background(), client, nodeID, cfg, true); err != nil {
 		t.Fatalf("deploy socks backend role=%d: %v", role, err)
 	}
 }
@@ -604,7 +604,7 @@ func deployURLTestBalancer(t *testing.T, entryRole int, nodeID string, backendRo
 	}
 	b, _ := json.MarshalIndent(cfg, "", "  ")
 	client := e2eConnect(t, entryRole)
-	if _, err := chain.PushConfig(client, nodeID, string(b), true); err != nil {
+	if _, err := chain.PushConfig(context.Background(), client, nodeID, string(b), true); err != nil {
 		t.Fatalf("deploy urltest balancer: %v", err)
 	}
 }
@@ -655,7 +655,7 @@ func deploySelectorBalancer(t *testing.T, entryRole int, nodeID string, defaultI
 	}
 	b, _ := json.MarshalIndent(cfg, "", "  ")
 	client := e2eConnect(t, entryRole)
-	if _, err := chain.PushConfig(client, nodeID, string(b), true); err != nil {
+	if _, err := chain.PushConfig(context.Background(), client, nodeID, string(b), true); err != nil {
 		t.Fatalf("deploy selector balancer: %v", err)
 	}
 }

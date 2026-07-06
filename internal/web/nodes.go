@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -31,7 +32,9 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	if len(settings.CustomPresets) > 0 {
 		var customs []chain.ConnectionPreset
 		if json.Unmarshal(settings.CustomPresets, &customs) == nil && len(customs) > 0 {
-			_ = chain.LoadPresets(customs)
+			if err := chain.LoadPresets(customs); err != nil {
+				slog.Warn("handleNodes: load custom presets failed", "err", err)
+			}
 		}
 	}
 	activeChains := make(map[string]string)
@@ -232,13 +235,17 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 			if hkErr.RemoteFingerprint != "" {
 				if info, err := st.GetNodeInfo(id); err == nil {
 					info.PendingHostKeyFingerprint = hkErr.RemoteFingerprint
-					_ = st.SaveNodeInfo(info)
+					if err := st.SaveNodeInfo(info); err != nil {
+						slog.Warn("capture: persist pending fingerprint failed (existing node)", "node", id, "err", err)
+					}
 				} else {
 					// New node: create a NodeInfo to carry the pending fp.
-					_ = st.SaveNodeInfo(&model.NodeInfo{
-						Host:                       model.Host{ID: id},
-						PendingHostKeyFingerprint: hkErr.RemoteFingerprint,
-					})
+					if err := st.SaveNodeInfo(&model.NodeInfo{
+						Host:                        model.Host{ID: id},
+						PendingHostKeyFingerprint:   hkErr.RemoteFingerprint,
+					}); err != nil {
+						slog.Warn("capture: persist pending fingerprint failed (new node)", "node", id, "err", err)
+					}
 				}
 			}
 			s.render(w, r, templates.HostKeyWarning(*host, hkErr.RemoteFingerprint, hkErr.Changed))
@@ -424,7 +431,9 @@ func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) 
 	if len(settings.CustomPresets) > 0 {
 		var customs []chain.ConnectionPreset
 		if json.Unmarshal(settings.CustomPresets, &customs) == nil && len(customs) > 0 {
-			_ = chain.LoadPresets(customs)
+			if err := chain.LoadPresets(customs); err != nil {
+				slog.Warn("load custom presets failed", "err", err)
+			}
 		}
 	}
 	users, _ := s.store().ListUsers()
@@ -575,7 +584,12 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 		// Stable inbound tag (used as the sing-box inbound/endpoint tag + the
 		// users-by-inbound map key). Generated once, preserved across re-saves.
 		if newIb.Tag == "" {
-			newIb.Tag = chain.GenerateInboundTag(newIb.Protocol)
+			tag, err := chain.GenerateInboundTag(newIb.Protocol)
+			if err != nil {
+				http.Error(w, i18n.T(r.Context(), "failed to generate inbound tag"), http.StatusInternalServerError)
+				return
+			}
+			newIb.Tag = tag
 		}
 
 		// Hysteria2: generate a per-node obfs password once and persist it, so

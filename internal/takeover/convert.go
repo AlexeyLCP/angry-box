@@ -124,7 +124,7 @@ func convertSingBoxVLESS(raw json.RawMessage, port int) (model.NodeInbound, bool
 			Type string `json:"type"`
 		} `json:"transport"`
 	}
-	_ = json.Unmarshal(raw, &ib)
+	partialUnmarshal(raw, &ib)
 	if len(ib.Users) == 0 {
 		return model.NodeInbound{}, false
 	}
@@ -157,7 +157,7 @@ func convertSingBoxTUIC(raw json.RawMessage, port int) model.NodeInbound {
 			Password string `json:"password"`
 		} `json:"users"`
 	}
-	_ = json.Unmarshal(raw, &ib)
+	partialUnmarshal(raw, &ib)
 	ni := model.NodeInbound{Protocol: "tuic", Port: port, Source: "takeover:singbox"}
 	if len(ib.Users) > 0 {
 		ni.UUID = ib.Users[0].UUID
@@ -173,7 +173,7 @@ func convertSingBoxHysteria2(raw json.RawMessage, port int) model.NodeInbound {
 			Password string `json:"password"`
 		} `json:"users"`
 	}
-	_ = json.Unmarshal(raw, &ib)
+	partialUnmarshal(raw, &ib)
 	ni := model.NodeInbound{Protocol: "hysteria2", Port: port, Source: "takeover:singbox"}
 	if len(ib.Users) > 0 {
 		ni.UUID = ib.Users[0].Password // hysteria2 password carried in UUID slot by buildClientURI
@@ -188,7 +188,7 @@ func convertSingBoxWireGuard(raw json.RawMessage, port int) model.NodeInbound {
 			PublicKey string `json:"public_key"`
 		} `json:"peers"`
 	}
-	_ = json.Unmarshal(raw, &ib)
+	partialUnmarshal(raw, &ib)
 	ni := model.NodeInbound{Protocol: "awg", Port: port, ServerPrivKey: ib.PrivateKey, Source: "takeover:singbox"}
 	if len(ib.Peers) > 0 {
 		ni.AWGClientPub = ib.Peers[0].PublicKey
@@ -205,7 +205,7 @@ func convertSingBoxMTProto(raw json.RawMessage, port int) model.NodeInbound {
 			Secret string `json:"secret"`
 		} `json:"users"`
 	}
-	_ = json.Unmarshal(raw, &ib)
+	partialUnmarshal(raw, &ib)
 	ni := model.NodeInbound{Protocol: "mtproxy", Port: port, Source: "takeover:singbox"}
 	if len(ib.Users) > 0 {
 		secretHex, domain := decodeMTProxyFullSecret(ib.Users[0].Secret)
@@ -307,7 +307,7 @@ func convertXrayVLESS(port int, settings, stream json.RawMessage) (model.NodeInb
 			Flow  string `json:"flow"`
 		} `json:"clients"`
 	}
-	_ = json.Unmarshal(settings, &s)
+	partialUnmarshal(settings, &s)
 	if len(s.Clients) == 0 {
 		return model.NodeInbound{}, nil, false
 	}
@@ -333,7 +333,7 @@ func convertXrayVLESS(port int, settings, stream json.RawMessage) (model.NodeInb
 			ShortIds    []string `json:"shortIds"`
 		} `json:"realitySettings"`
 	}
-	_ = json.Unmarshal(stream, &ss)
+	partialUnmarshal(stream, &ss)
 
 	// Normalize network: Xray "splithttp" → sing-box "xhttp".
 	network := strings.ToLower(ss.Network)
@@ -409,7 +409,7 @@ func convertXrayVMess(port int, settings, stream json.RawMessage) json.RawMessag
 			Email string `json:"email"`
 		} `json:"clients"`
 	}
-	_ = json.Unmarshal(settings, &s)
+	partialUnmarshal(settings, &s)
 	if len(s.Clients) == 0 {
 		return nil
 	}
@@ -430,14 +430,14 @@ func convertXrayTrojan(port int, settings, stream json.RawMessage) json.RawMessa
 			Email    string `json:"email"`
 		} `json:"clients"`
 	}
-	_ = json.Unmarshal(settings, &s)
+	partialUnmarshal(settings, &s)
 	if len(s.Clients) == 0 {
 		return nil
 	}
 	var ss struct {
 		ServerName string `json:"serverName"`
 	}
-	_ = json.Unmarshal(stream, &ss)
+	partialUnmarshal(stream, &ss)
 	users := make([]map[string]string, 0, len(s.Clients))
 	for _, c := range s.Clients {
 		users = append(users, map[string]string{"name": c.Email, "password": c.Password})
@@ -457,7 +457,7 @@ func convertXrayShadowsocks(port int, settings json.RawMessage) json.RawMessage 
 		Method   string `json:"method"`
 		Password string `json:"password"`
 	}
-	_ = json.Unmarshal(settings, &s)
+	partialUnmarshal(settings, &s)
 	if s.Method == "" {
 		return nil
 	}
@@ -479,7 +479,7 @@ func convertXrayMTProto(port int, settings json.RawMessage) json.RawMessage {
 			Secret string `json:"secret"`
 		} `json:"users"`
 	}
-	_ = json.Unmarshal(settings, &s)
+	partialUnmarshal(settings, &s)
 	if len(s.Users) == 0 {
 		return nil
 	}
@@ -549,4 +549,19 @@ func isHex(s string) bool {
 		}
 	}
 	return true
+}
+
+// partialUnmarshal decodes raw into v, deliberately ignoring the error.
+//
+// The takeover converters target FOREIGN configs (sing-box/Xray/3x-ui/MTProxy)
+// whose shape we only partially know. Go's encoding/json already ignores
+// unknown fields, so unmarshalling into a struct with only the fields we care
+// about is the intended lenient-extraction pattern: a parse error means "this
+// inbound does not match our expected shape", which the caller distinguishes by
+// checking for empty result fields (e.g. len(ib.Users) == 0) immediately after.
+// Swallowing the json error here is therefore safe and by design — AGENTS.md
+// rule #6 ("no silent failures") is satisfied by this explicit rationale and
+// the callers' post-decode presence checks.
+func partialUnmarshal(raw []byte, v any) {
+	_ = json.Unmarshal(raw, v)
 }

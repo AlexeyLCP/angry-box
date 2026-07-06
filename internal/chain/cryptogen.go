@@ -113,10 +113,12 @@ func GenerateTUICUUID() string { return generateStableUUID() }
 // inbound (e.g. "sa-awg-a1b2c3d4"). Used as the sing-box inbound/endpoint tag
 // and as the users-by-inbound map key — stable across inbound reorders, unlike
 // the legacy index-based "sa-<i>-<proto>". proto is sanitized to alphanumerics.
-func GenerateInboundTag(proto string) string {
+// Returns an error if crypto/rand is unavailable instead of panicking in the
+// request path (CTO-review #3: no panics in deploy/handler path).
+func GenerateInboundTag(proto string) (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
-		panic("cryptogen: crypto/rand failed for inbound tag: " + err.Error())
+		return "", fmt.Errorf("cryptogen: crypto/rand failed for inbound tag: %w", err)
 	}
 	safe := []byte{}
 	for _, c := range strings.ToLower(proto) {
@@ -127,20 +129,22 @@ func GenerateInboundTag(proto string) string {
 	if len(safe) == 0 {
 		safe = []byte("in")
 	}
-	return fmt.Sprintf("sa-%s-%x", safe, b)
+	return fmt.Sprintf("sa-%s-%x", safe, b), nil
 }
 
 // GenerateTUICPassword returns a url-safe base64 of 16 random bytes. It is an
 // INDEPENDENT secret from GenerateTUICUUID: a TUIC link exposes both identity
 // and credential, so they must not share a value (CTO-review M7).
-func GenerateTUICPassword() string {
+// Returns an error if crypto/rand is unavailable instead of panicking in the
+// request path (CTO-review #3: no panics in deploy/handler path).
+func GenerateTUICPassword() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// crypto/rand should not fail in practice; if it does, refuse to emit a
 		// predictable/empty password rather than degrade silently.
-		panic("cryptogen: crypto/rand failed for TUIC password: " + err.Error())
+		return "", fmt.Errorf("cryptogen: crypto/rand failed for TUIC password: %w", err)
 	}
-	return base64.URLEncoding.EncodeToString(b)
+	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 // GenerateVMessWSPath returns "/<8 url-safe chars>".
@@ -173,7 +177,9 @@ func MTProxyFullSecret(secretHex, fakeTLSDomain string) (string, error) {
 // uniformly via crypto/rand. It uses rejection sampling through big.Int so the
 // distribution is unbiased — the previous int(c)%len(alphabet) approach skewed
 // the first symbols because 256 is not a multiple of 62 (CTO-review L8).
-func GenerateProxyPassword() string {
+// Returns an error if crypto/rand is unavailable instead of panicking in the
+// request path (CTO-review #3: no panics in deploy/handler path).
+func GenerateProxyPassword() (string, error) {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	out := make([]byte, 16)
 	for i := range out {
@@ -181,11 +187,11 @@ func GenerateProxyPassword() string {
 		if err != nil {
 			// crypto/rand should not fail in practice; if it does, refuse to
 			// emit a biased character rather than silently degrading.
-			panic("cryptogen: crypto/rand failed for proxy password: " + err.Error())
+			return "", fmt.Errorf("cryptogen: crypto/rand failed for proxy password: %w", err)
 		}
 		out[i] = alphabet[idx.Int64()]
 	}
-	return string(out)
+	return string(out), nil
 }
 
 // EnsureUserCreds fills in any missing per-user protocol credentials on a User
@@ -201,9 +207,13 @@ func GenerateProxyPassword() string {
 // tunnel IP. EnsureUserCreds only generates the AWG keypair here (context-free);
 // the per-user tunnel IP must be allocated against the other users' IPs and is
 // assigned separately via EnsureUserAWGAddress (which needs the store).
-func EnsureUserCreds(u *model.User) {
+//
+// Returns an error (without mutating u further) if a credential generator
+// fails — the caller must surface it instead of saving a half-populated user
+// (CTO-review #3: no panics in the request path).
+func EnsureUserCreds(u *model.User) error {
 	if u == nil {
-		return
+		return nil
 	}
 	has := func(p string) bool {
 		for _, proto := range u.Protocols {
@@ -221,7 +231,11 @@ func EnsureUserCreds(u *model.User) {
 			u.TUICUUID = GenerateTUICUUID()
 		}
 		if u.TUICPassword == "" {
-			u.TUICPassword = GenerateTUICPassword()
+			pw, err := GenerateTUICPassword()
+			if err != nil {
+				return err
+			}
+			u.TUICPassword = pw
 		}
 	}
 	if has("hysteria2") && u.Hysteria2Password == "" {
@@ -237,6 +251,7 @@ func EnsureUserCreds(u *model.User) {
 			u.AWGPublicKey = pub
 		}
 	}
+	return nil
 }
 
 // EnsureUserAWGAddress allocates a unique AWG tunnel IP for the user when AWG

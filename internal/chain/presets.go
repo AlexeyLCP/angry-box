@@ -195,8 +195,13 @@ func MustGetPreset(name string) ConnectionPreset {
 var defaultPresetName = "maximum_stealth_2026"
 
 func init() {
+	// The embedded default_presets.json is fixed at compile time, so a parse
+	// failure here is a build-time bug, not a runtime condition. Panic keeps the
+	// generator honest: shipping an orchestrator with an unparseable preset base
+	// would silently degrade every deploy. The recover middleware in web/auth
+	// does NOT cover init(), so this panic does abort startup — by design.
 	if err := LoadPresets(nil); err != nil {
-		panic("failed to load default obfuscation presets: " + err.Error())
+		panic(fmt.Sprintf("angry-box: failed to load embedded default obfuscation presets (build-time bug, fix default_presets.json): %v", err))
 	}
 }
 

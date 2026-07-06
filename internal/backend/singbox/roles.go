@@ -116,6 +116,15 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 		return nil, fmt.Errorf("marshal inbound: %w", err)
 	}
 
+	direct, err := marshal(config.DirectOutbound{Type: "direct", Tag: "direct"})
+	if err != nil {
+		return nil, err
+	}
+	block, err := marshal(config.BlockOutbound{Type: "block", Tag: "block"})
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := config.SingboxConfig{
 		Log: &config.LogOptions{Level: "info", Timestamp: true},
 		DNS: &config.DNSConfig{
@@ -124,10 +133,7 @@ func RenderProxyNode(p ProxyNodeParams) ([]byte, error) {
 		},
 		Endpoints: []json.RawMessage{},
 		Inbounds:  []json.RawMessage{inboundJSON},
-		Outbounds: []json.RawMessage{
-			mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),
-			mustMarshal(config.BlockOutbound{Type: "block", Tag: "block"}),
-		},
+		Outbounds: []json.RawMessage{direct, block},
 		Route: &config.RoutingSection{
 			Rules: []config.RouteRuleEntry{
 				{Action: "sniff"},
@@ -232,22 +238,34 @@ func RenderAWGBalancer(p AWGBalancerParams) ([]byte, error) {
 		IncludeInterface: includeIfaces,
 		StrictRoute:      false,
 	}
-	tunJSON := mustMarshal(tun)
-
-	outbounds := []json.RawMessage{
-		mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),
-		mustMarshal(config.BlockOutbound{Type: "block", Tag: "block"}),
+	tunJSON, err := marshal(tun)
+	if err != nil {
+		return nil, err
 	}
+	direct, err := marshal(config.DirectOutbound{Type: "direct", Tag: "direct"})
+	if err != nil {
+		return nil, err
+	}
+	block, err := marshal(config.BlockOutbound{Type: "block", Tag: "block"})
+	if err != nil {
+		return nil, err
+	}
+
+	outbounds := []json.RawMessage{direct, block}
 
 	// One direct outbound per exit interface, bound to the kernel AWG iface.
 	exitTags := make([]string, 0, len(p.ExitInterfaces))
 	for _, iface := range p.ExitInterfaces {
 		tag := "exit-" + iface // awg-exit-n1 -> exit-awg-exit-n1 (stable, route-referenced)
-		outbounds = append(outbounds, mustMarshal(config.DirectOutbound{
+		ob, err := marshal(config.DirectOutbound{
 			Type:          "direct",
 			Tag:           tag,
 			BindInterface: iface,
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
+		outbounds = append(outbounds, ob)
 		exitTags = append(exitTags, tag)
 	}
 
@@ -256,12 +274,16 @@ func RenderAWGBalancer(p AWGBalancerParams) ([]byte, error) {
 	// there is more than one exit — a single exit routes directly.
 	routeOut := "direct"
 	if len(exitTags) > 1 {
-		outbounds = append(outbounds, mustMarshal(config.FallbackOutbound{
+		fb, err := marshal(config.FallbackOutbound{
 			Type:             "fallback",
 			Tag:              p.BalancerTag,
 			Outbounds:        exitTags,
 			BlacklistTimeout: "30s",
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
+		outbounds = append(outbounds, fb)
 		routeOut = p.BalancerTag
 	} else if len(exitTags) == 1 {
 		routeOut = exitTags[0]
@@ -361,13 +383,19 @@ func RenderAWGHop(p AWGHopParams) ([]byte, error) {
 		return nil, fmt.Errorf("marshal wireguard endpoint: %w", err)
 	}
 
+	direct, err := marshal(config.DirectOutbound{Type: "direct", Tag: "direct"})
+	if err != nil {
+		return nil, err
+	}
+	block, err := marshal(config.BlockOutbound{Type: "block", Tag: "block"})
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := config.SingboxConfig{
 		Log:       &config.LogOptions{Level: "info", Timestamp: true},
 		Endpoints: []json.RawMessage{epJSON},
-		Outbounds: []json.RawMessage{
-			mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),
-			mustMarshal(config.BlockOutbound{Type: "block", Tag: "block"}),
-		},
+		Outbounds: []json.RawMessage{direct, block},
 		Route: &config.RoutingSection{
 			Rules:               []config.RouteRuleEntry{{Action: "sniff"}},
 			Final:               "direct",
@@ -379,14 +407,17 @@ func RenderAWGHop(p AWGHopParams) ([]byte, error) {
 
 // ─── shared helpers ─────────────────────────────────────────────────────────
 
-func mustMarshal(v any) json.RawMessage {
+// marshal serializes v to a json.RawMessage, returning an error instead of
+// panicking. Marshal of our typed structs should never fail in practice, but a
+// future field change (e.g. a non-string Key with omitempty) could make one
+// un-marshalable — returning the error keeps the deploy path from crashing the
+// orchestrator (CTO-review #3: no panics in the request/deploy path).
+func marshal(v any) (json.RawMessage, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		// marshal of our typed structs should never fail; panic keeps the
-		// generator honest if a field becomes un-marshalable.
-		panic(fmt.Sprintf("singbox: mustMarshal: %v", err))
+		return nil, fmt.Errorf("singbox: marshal: %w", err)
 	}
-	return b
+	return b, nil
 }
 
 // generateRealityPrivateKey returns a base64-url X25519 key pair's private half

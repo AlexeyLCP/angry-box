@@ -3,6 +3,7 @@
 package chain_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -624,7 +625,9 @@ func TestE2E_Heavy_PerClientRouting(t *testing.T) {
 		Protocols:  []string{"awg"},
 		ChainNames: []string{c.Name},
 	}
-	chain.EnsureUserCreds(alice)
+	if err := chain.EnsureUserCreds(alice); err != nil {
+		t.Fatalf("EnsureUserCreds alice: %v", err)
+	}
 	chain.EnsureUserAWGAddress(alice, nil)
 	if err := store.SaveUser(alice); err != nil {
 		t.Fatalf("SaveUser alice: %v", err)
@@ -1031,7 +1034,7 @@ func TestE2E_Heavy_ConcurrentDeploy_Serialized(t *testing.T) {
 				return
 			}
 			defer client.Close()
-			_, errs[idx] = chain.PushConfig(client, host.ID, content, true)
+			_, errs[idx] = chain.PushConfig(context.Background(), client, host.ID, content, true)
 		}(i, cfg)
 	}
 	close(start)

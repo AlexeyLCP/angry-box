@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
@@ -265,6 +266,37 @@ func TestBackend_ApplyConfig_CheckFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rolled back") {
 		t.Errorf("got %q, want rolled back", err.Error())
+	}
+	// Rollback succeeded → retry-able deploy failure, NOT a node-broken state.
+	if !errors.Is(err, chain.ErrDeployFailed) {
+		t.Errorf("got %q, want errors.Is(err, ErrDeployFailed)", err.Error())
+	}
+	if errors.Is(err, chain.ErrRollbackFailed) {
+		t.Errorf("got %q, want !errors.Is(err, ErrRollbackFailed) on successful rollback", err.Error())
+	}
+}
+
+// TestBackend_ApplyConfig_CheckFails_RollbackAlsoFails verifies the node-broken
+// path: check fails AND rollback ALSO fails → ErrRollbackFailed (manual
+// intervention needed). CTO-review §6: matches the chain.pushConfig test.
+func TestBackend_ApplyConfig_CheckFails_RollbackAlsoFails(t *testing.T) {
+	fake := newFakeSSH(
+		fakeRule{substring: "test -f", out: "", err: errors.New("ssh: cp: no such file")}, // rollback cmd
+		fakeRule{substring: "bak=", out: "/etc/sing-box/config.json.bak.1"},
+		fakeRule{substring: "check", out: "", err: errAny},
+		fakeRule{substring: "systemctl restart", out: ""},
+		fakeRule{substring: "is-active", out: "UP"},
+	)
+	b := New(&fakeConnector{client: fake})
+	err := b.ApplyConfig(context.Background(), hostA, model.ConfigTransport, model.ConfigParams{Port: 443})
+	if err == nil {
+		t.Fatal("expected check-failure + rollback-failure")
+	}
+	if !errors.Is(err, chain.ErrRollbackFailed) {
+		t.Errorf("got %q, want errors.Is(err, ErrRollbackFailed)", err.Error())
+	}
+	if errors.Is(err, chain.ErrDeployFailed) {
+		t.Errorf("got %q, want !errors.Is(err, ErrDeployFailed) on rollback-also-failed", err.Error())
 	}
 }
 

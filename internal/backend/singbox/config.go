@@ -72,6 +72,13 @@ func (b *Backend) renderStandaloneFromParams(params model.ConfigParams) (*model.
 
 	switch protocol {
 	case "awg":
+		// LEGACY CLI standalone-AWG path — uses a userspace WireGuardEndpoint
+		// (RenderAWGHop). The web UI / ApplyMergedNode path uses the kernel-AWG
+		// rework (awg-quick@awg0 + sing-box TUN-overlay, RenderServerAWGConf),
+		// which is the documented stable architecture (AGENTS.md #10/#11).
+		// Converting this CLI path to pushConfigWithAWG / kernel mode is a known
+		// follow-up (AGENTS.md Known Issue #11). Until then this remains the only
+		// userspace AWG surface; do NOT use it as a precedent for new AWG paths.
 		priv, pub, err := generateWGKeypair()
 		if err != nil {
 			return nil, fmt.Errorf("singbox: generate AWG keys: %w", err)
@@ -114,13 +121,18 @@ func (b *Backend) renderStandaloneFromParams(params model.ConfigParams) (*model.
 			},
 		}
 		inbJSON, _ := json.Marshal(inb)
+		direct, err := marshal(config.DirectOutbound{Type: "direct", Tag: "direct"})
+		if err != nil {
+			return nil, err
+		}
+		block, err := marshal(config.BlockOutbound{Type: "block", Tag: "block"})
+		if err != nil {
+			return nil, err
+		}
 		cfg := config.SingboxConfig{
 			Log:      &config.LogOptions{Level: "info", Timestamp: true},
 			Inbounds: []json.RawMessage{inbJSON},
-			Outbounds: []json.RawMessage{
-				mustMarshal(config.DirectOutbound{Type: "direct", Tag: "direct"}),
-				mustMarshal(config.BlockOutbound{Type: "block", Tag: "block"}),
-			},
+			Outbounds: []json.RawMessage{direct, block},
 			Route: &config.RoutingSection{
 				Rules:               []config.RouteRuleEntry{{Action: "sniff"}, {Protocol: []string{"dns"}, Action: "hijack-dns"}},
 				Final:               "direct",

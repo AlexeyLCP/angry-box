@@ -56,7 +56,10 @@ func TestGenerateTUICUUID(t *testing.T) {
 
 // TestGenerateTUICPassword verifies a url-safe base64 of 16 bytes.
 func TestGenerateTUICPassword(t *testing.T) {
-	p := GenerateTUICPassword()
+	p, err := GenerateTUICPassword()
+	if err != nil {
+		t.Fatalf("GenerateTUICPassword: %v", err)
+	}
 	b, err := base64.URLEncoding.DecodeString(p)
 	if err != nil {
 		t.Fatalf("not valid url-safe base64: %v", err)
@@ -106,12 +109,47 @@ func TestGenerateSSPassword_Legacy(t *testing.T) {
 		t.Fatal("expected non-empty password")
 	}
 }
+
+// TestGenerateInboundTag verifies the standalone inbound tag shape and the
+// (value, error) contract — the generator must NOT panic on a crypto/rand
+// failure, it must return an error (CTO-review #3: no panics in request path).
+func TestGenerateInboundTag(t *testing.T) {
+	tag, err := GenerateInboundTag("awg")
+	if err != nil {
+		t.Fatalf("GenerateInboundTag: %v", err)
+	}
+	if !strings.HasPrefix(tag, "sa-awg-") {
+		t.Errorf("tag %q must start with sa-awg-", tag)
+	}
+	// proto is sanitized to alphanumerics; garbage input falls back to "in".
+	tag2, err := GenerateInboundTag("!!! @#$")
+	if err != nil {
+		t.Fatalf("GenerateInboundTag: %v", err)
+	}
+	if !strings.HasPrefix(tag2, "sa-in-") {
+		t.Errorf("garbage proto must fall back to sa-in-, got %q", tag2)
+	}
+}
+
+// TestGenerateProxyPassword_ReturnsError verifies the (value, error) contract
+// rather than a panic (CTO-review #3).
+func TestGenerateProxyPassword_ReturnsError(t *testing.T) {
+	p, err := GenerateProxyPassword()
+	if err != nil {
+		t.Fatalf("GenerateProxyPassword: %v", err)
+	}
+	if len(p) != 16 {
+		t.Fatalf("len=%d, want 16", len(p))
+	}
+}
 // TestEnsureUserCreds_GeneratesPerProtocol verifies EnsureUserCreds fills the
 // per-user credentials for each selected protocol and leaves existing creds
 // untouched (stable across applies).
 func TestEnsureUserCreds_GeneratesPerProtocol(t *testing.T) {
 	u := &model.User{ID: "u1", Name: "alice", Protocols: []string{"tuic", "hysteria2", "vless-reality"}}
-	EnsureUserCreds(u)
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatalf("EnsureUserCreds: %v", err)
+	}
 	if u.TUICUUID == "" {
 		t.Error("TUICUUID not generated")
 	}
@@ -139,7 +177,9 @@ func TestEnsureUserCreds_PreservesExisting(t *testing.T) {
 		TUICPassword:    "fixed-password",
 		Hysteria2Password: "existing-hy2",
 	}
-	EnsureUserCreds(u)
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatalf("EnsureUserCreds: %v", err)
+	}
 	if u.TUICUUID != "fixed-uuid" {
 		t.Errorf("TUICUUID overwritten: got %q want fixed-uuid", u.TUICUUID)
 	}
@@ -153,9 +193,13 @@ func TestEnsureUserCreds_PreservesExisting(t *testing.T) {
 }
 
 func TestEnsureUserCreds_NilSafeAndEmptyProtocols(t *testing.T) {
-	EnsureUserCreds(nil) // must not panic
+	if err := EnsureUserCreds(nil); err != nil {
+		t.Fatalf("EnsureUserCreds(nil): %v", err)
+	}
 	u := &model.User{ID: "u3", Name: "empty", Protocols: nil}
-	EnsureUserCreds(u)
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatalf("EnsureUserCreds: %v", err)
+	}
 	if u.TUICUUID != "" || u.VLESSUUID != "" || u.Hysteria2Password != "" {
 		t.Error("empty Protocols must not generate any creds")
 	}
