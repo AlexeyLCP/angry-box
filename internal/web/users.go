@@ -57,6 +57,15 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	chainNames := r.Form["chains"]
 	importedSecret := strings.TrimSpace(r.FormValue("imported_secret"))
 	secretType := strings.TrimSpace(r.FormValue("secret_type"))
+	// Only Telemt (MTProto) imports are offered in the UI — the other protocol
+	// secrets (AWG/VLESS/SS/Trojan/VMess/Hysteria2/TUIC) are complex, error-
+	// prone, and not a product target. TUIC/Hysteria2 are additionally FROZEN
+	// (AGENTS.md #6/#11). Reject a forged POST that sets a non-telemt type on a
+	// NEW user (existing users keep their legacy SecretType for display/edit).
+	if secretType != "" && secretType != "telemt" {
+		http.Error(w, i18n.T(r.Context(), "only Telemt (MTProto) secret imports are supported"), http.StatusBadRequest)
+		return
+	}
 	mtproxyEnabled := r.FormValue("mtproxy_enabled") == "on"
 	mtproxySecret := strings.TrimSpace(r.FormValue("mtproxy_secret"))
 	mtproxyDomain := strings.TrimSpace(r.FormValue("mtproxy_domain"))
@@ -168,7 +177,28 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	u.Protocols = r.Form["protocols"]
 	u.ChainNames = r.Form["chains"]
 	u.ImportedSecret = strings.TrimSpace(r.FormValue("imported_secret"))
-	u.SecretType = strings.TrimSpace(r.FormValue("secret_type"))
+	// Only Telemt imports are offered (UI); preserve an existing legacy SecretType
+	// when the form sends it back unchanged (the legacy option is disabled and
+	// not submitted, so an empty form value here would otherwise WIPE it). A
+	// forged POST switching TO a non-telemt type is rejected.
+	existingSecretType := u.SecretType
+	newSecretType := strings.TrimSpace(r.FormValue("secret_type"))
+	if newSecretType == "" {
+		// Form cleared it — keep the existing type (legacy edit path; the UI's
+		// "None" option is only selectable for new users). This preserves a
+		// legacy AWG/etc import that's still in use.
+		// EXCEPTION: if the user is being re-saved with no imported secret at
+		// all (ImportedSecret empty), dropping the type is correct.
+		if u.ImportedSecret == "" {
+			u.SecretType = ""
+		}
+		// else: keep existingSecretType (already on u).
+	} else if newSecretType != "telemt" && newSecretType != existingSecretType {
+		http.Error(w, i18n.T(r.Context(), "only Telemt (MTProto) secret imports are supported"), http.StatusBadRequest)
+		return
+	} else {
+		u.SecretType = newSecretType
+	}
 	u.Active = r.FormValue("active") == "on"
 
 	// MTProxy (Telegram FakeTLS) credentials. On edit, the form is authoritative:

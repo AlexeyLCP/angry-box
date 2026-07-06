@@ -171,6 +171,11 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 		if lang == "" {
 			lang = "en"
 		}
+		// UI pages must not be cached by the browser — the language can change
+		// at runtime (settings → language → HX-Refresh reloads the page), and a
+		// cached page would show the old language after the reload. no-store
+		// (stronger than no-cache) forbids the browser from keeping a copy.
+		w.Header().Set("Cache-Control", "no-store")
 		ctx := context.WithValue(r.Context(), i18n.LangKey, lang)
 		h(w, r.WithContext(ctx))
 	}), s.cfg)

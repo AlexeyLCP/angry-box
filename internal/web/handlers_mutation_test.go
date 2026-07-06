@@ -7,6 +7,7 @@ package web
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
@@ -228,4 +229,58 @@ func TestHandler_SaveNodePosition(t *testing.T) {
 	form := url.Values{"x": {"100"}, "y": {"200"}}
 	w := ts.post("/ui/spider/nodes/node-H/position", form)
 	ts.assertStatus(w, http.StatusOK)
+}
+// TestHandler_SaveSettings_LanguagePersists verifies a saved language change
+// is actually persisted AND applied on the next request — the settings page
+// re-rendered shows the new language's option selected, and i18n.T renders the
+// ru string for a known key (catches a regression where the save silently no-
+// op'd or the auth middleware didn't re-read the language).
+func TestHandler_SaveSettings_LanguagePersists(t *testing.T) {
+	ts := newTestServer(t)
+	// Save with language=ru.
+	form := url.Values{
+		"language":         {"ru"},
+		"panel_country":    {"RU"},
+		"metrics_interval": {"15"},
+		"default_protocol": {"awg"},
+	}
+	w := ts.post("/ui/settings", form)
+	ts.assertStatus(w, http.StatusOK)
+	// HX-Refresh must be set so the browser reloads to pick up the new language.
+	if got := w.Header().Get("HX-Refresh"); got != "true" {
+		t.Errorf("HX-Refresh header = %q, want \"true\" (language changed → page must reload)", got)
+	}
+	// Re-render the settings page: the ru option must now be selected.
+	w2 := ts.get("/ui/settings")
+	ts.assertStatus(w2, http.StatusOK)
+	body := w2.Body.String()
+	if !strings.Contains(body, `value="ru" selected>Русский`) {
+		t.Errorf("settings page did not reflect saved language=ru; ru option not selected.\nbody excerpt:\n%s", excerpt(body, `language`))
+	}
+	// A known ru translation key must render the ru string on the page (proves
+	// i18n.T picked up the language from the auth middleware).
+	if !strings.Contains(w2.Body.String(), "Настройки") && !strings.Contains(w2.Body.String(), "Сохранить") {
+		// Some settings-page titles may not be in ru dict; check the page title
+		// "Settings" → ru. If neither ru string appears, the language wasn't
+		// applied to i18n.T at all.
+		t.Errorf("settings page body has no ru i18n strings — language not applied to i18n.T")
+	}
+}
+
+// excerpt returns a small window of body around the first occurrence of needle
+// (for readable test failure messages without dumping the whole page).
+func excerpt(body, needle string) string {
+	i := strings.Index(body, needle)
+	if i < 0 {
+		return "(needle not found)"
+	}
+	start := i - 80
+	if start < 0 {
+		start = 0
+	}
+	end := i + 120
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[start:end]
 }
