@@ -4,6 +4,80 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.4.0] — 2026-07-07
+
+### Architecture — multi-AWG-interface + takeover re-render + Reality SNI + tests
+
+Minor bump: multi-AWG-interface (awg0/awg1) + takeover re-render are
+architectural, but backward compatible (new fields omitempty, default behavior
+unchanged — existing stores/deployments are forward-compatible).
+
+#### Reality SNI configurable (AGENTS.md #10 / CTO-review §2)
+- `PanelSettings.DefaultRealitySNI` — global default SNI for REALITY/TUIC
+  inbounds when no preset specifies one. Empty = built-in const (no behavior
+  change for existing stores). `chain.SetDefaultSNI` / `EffectiveDefaultSNI`
+  accessors set at startup + on settings save. `ResolveServerName` + the
+  singbox `RenderProxyNode` / `renderStandaloneFromParams` fallbacks now call
+  `EffectiveDefaultSNI()` instead of the bare const — the operator's override
+  applies everywhere via one central accessor. Settings UI input + i18n (en+ru).
+
+#### Multi-AWG-interface awg0/awg1 (AGENTS.md Known Issue #10)
+- A chain AWG entry (awg0, 10.8.0.1/24) + a standalone AWG inbound with a
+  distinct subnet (`NodeInbound.AWGServerAddress`, e.g. 10.8.1.1/24) now
+  COEXIST: the chain entry keeps awg0, the standalone deploys on a SECOND
+  kernel AWG interface (awg1) with its own `awg-quick@awg1` unit + subnet +
+  PostUp FORWARD rules. Previously (v0.3.1) the standalone was skipped with a
+  loud warning; now it deploys.
+- `AWGServerConfParams.InterfaceName` (default awg0) — `RenderServerAWGConf`
+  PostUp/PostDown use `p.InterfaceName` for rp_filter + FORWARD rules, so awg1
+  gets its own rules coexisting with awg0. `renderStandaloneAWGConf`
+  parameterized by interface name. `tunIncludeInterfacesForNode(node, nodeInfo)`
+  appends awg1 to the TUN overlay `include_interface` list when a standalone
+  with a distinct subnet coexists with a chain entry. Tests: multi-interface
+  render, InterfaceName PostUp, include list.
+
+#### Takeover re-render fresh awg0.conf (AGENTS.md #10 follow-up)
+- The AWG takeover now OWNS the kernel awg0.conf after success, instead of
+  leaving the imported one untouched. A fresh `awg0.conf` is rendered from the
+  imported server config + materialized `model.User` peers via
+  `chain.RenderTakeoverAWGConf`, pushed atomically with the sing-box TUN-overlay
+  config via the exported `chain.PushConfigWithAWG` (rollback of both on
+  sing-box failure + synthesized-user cleanup). `chain.AwgServerConfigToAmnezia`
+  adapts the imported server config to `*config.AmneziaOptions`.
+- The takeover constructs a `model.NodeInbound` (Protocol=awg, ForUsers wired
+  to the synthesized user IDs) so `usersByInboundMap` finds the peers on future
+  `ApplyMergedNode` re-applies — per-client `source_ip_cidr` routing is
+  available immediately, not deferred to a later re-apply. Materialization moved
+  BEFORE the push (was step 8, now step 5) so the fresh conf can render peers.
+
+#### Table-driven tests (CTO-review §13)
+- `TestGenerateSSPassword` (replaces 3 funcs), `TestStore_GetNotFound`
+  (replaces 4 funcs), `TestChecksumForArch` (replaces 3 funcs) — table-driven
+  with `t.Run` subtests, matching the existing idiom.
+
+#### Benchmarks (CTO-review §13)
+- `BenchmarkSaveAuditLog` (jsonl O(1) append), `BenchmarkStoreReadStore` /
+  `BenchmarkStoreWriteStore` (full-file marshal, 50-host store),
+  `BenchmarkGenerateProxyPassword` (rejection sampling). `make bench` target.
+  CI does not run `-bench` (zero risk).
+
+#### Coverage baseline in CI
+- `ci.yml` build-test job: a "Coverage summary" step prints
+  `go tool cover -func=coverage.out` per-package so coverage regressions are
+  visible in the CI log. `docs/COVERAGE.md` regenerated (2026-07-07): notable
+  ssh 11.2% → 42.7% (pool tests), takeover 64.4% → 60.0% (re-render path added).
+
+#### Verification
+- `go build ./...` OK, `go vet ./...` clean, `go test ./...` 9 packages ok / 0
+  FAIL, `e2e` + `wsl_smoke` compile-only green, `govulncheck`: no vulnerabilities,
+  `templ generate`: no diff.
+
+#### Known follow-ups (NOT in this release — deferred)
+- per-client `source_ip_cidr` real-VPS verify (needs GCloud).
+- `ip rule 10.8.0.0/24 → table 2022` (gated on a real-VPS verdict).
+- deps/sing-box mirror (infra).
+- CLI standalone-AWG kernel conversion (needs Host-shaped TUN renderer).
+
 ## [v0.3.2] — 2026-07-06
 
 ### UI redesign — Tokyo Night theme (ported from hoaxisr/awg-manager, MIT)

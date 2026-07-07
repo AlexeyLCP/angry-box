@@ -553,10 +553,10 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 
 **Multi-AWG-interface awg0/awg1 (done):** chain entry (awg0) + standalone с distinct subnet (AWGServerAddress) → awg1 (second kernel interface). `AWGServerConfParams.InterfaceName` (PostUp/PostDown parameterized). `RenderNodeAWGConfs` multi-file emit. `tunIncludeInterfacesForNode(node, nodeInfo)` appends awg1. Tests: multi-interface render, InterfaceName PostUp, include list.
 
-**Takeover re-render fresh awg0.conf (in progress):** export `PushConfigWithAWG` + `AwgServerConfigToAmnezia` adapter + NodeInbound wiring (ForUsers) + switch takeover to `PushConfigWithAWG` (atomic push awg0.conf + sing-box, rollback both). Materialize BEFORE push. Set `OldConfigPath` for rollback.
+**Takeover re-render fresh awg0.conf (done):** export `PushConfigWithAWG` + `AwgServerConfigToAmnezia` adapter + NodeInbound wiring (ForUsers) + switch takeover to `PushConfigWithAWG` (atomic push awg0.conf + sing-box, rollback both). Materialize BEFORE push. Set `OldConfigPath` for rollback.
 
-**Table-driven tests (pending):** convert SSPassword/GetNotFound/ChecksumForArch to table-driven.
+**Table-driven tests (done):** convert SSPassword/GetNotFound/ChecksumForArch to table-driven.
 
-**Benchmarks (pending):** SaveAuditLog/StoreRead/Write/RenderMerged/ProxyPassword + Makefile bench target.
+**Benchmarks (done):** SaveAuditLog/StoreRead/Write/RenderMerged/ProxyPassword + Makefile bench target.
 
-**Coverage baseline in CI (pending):** ci.yml coverage step + docs/COVERAGE.md regenerate.
+**Coverage baseline in CI (done):** ci.yml coverage step + docs/COVERAGE.md regenerate.
