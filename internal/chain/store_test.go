@@ -43,19 +43,26 @@ func TestSaveAndGetHost(t *testing.T) {
 	}
 }
 
-func TestGetHost_NotFound(t *testing.T) {
-	s := tempStore(t)
-	_, err := s.GetHost("nobody")
-	if err == nil {
-		t.Fatal("expected error for missing host")
+// TestStore_GetNotFound is a table-driven test covering GetHost/GetChain/
+// GetUser on a missing entity (replaces the three separate _NotFound funcs +
+// GetHost_EmptyStore — CTO-review §13 table-driven).
+func TestStore_GetNotFound(t *testing.T) {
+	cases := []struct {
+		name string
+		fn   func(*Store) error
+	}{
+		{"GetHost not found", func(s *Store) error { _, err := s.GetHost("nobody"); return err }},
+		{"GetHost empty store", func(s *Store) error { _, err := s.GetHost("any"); return err }},
+		{"GetChain not found", func(s *Store) error { _, err := s.GetChain("no-chain"); return err }},
+		{"GetUser not found", func(s *Store) error { _, err := s.GetUser("nobody"); return err }},
 	}
-}
-
-func TestGetHost_EmptyStore(t *testing.T) {
-	s := tempStore(t)
-	_, err := s.GetHost("any")
-	if err == nil {
-		t.Fatal("expected error for empty store")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tempStore(t)
+			if err := tc.fn(s); err == nil {
+				t.Fatal("expected error for missing entity")
+			}
+		})
 	}
 }
 
@@ -163,14 +170,6 @@ func TestSaveAndGetChain(t *testing.T) {
 	}
 	if got.Name != c.Name || len(got.Nodes) != 2 {
 		t.Errorf("got %+v, want %+v", got, c)
-	}
-}
-
-func TestGetChain_NotFound(t *testing.T) {
-	s := tempStore(t)
-	_, err := s.GetChain("no-chain")
-	if err == nil {
-		t.Fatal("expected error")
 	}
 }
 
@@ -340,14 +339,6 @@ func TestSaveAndGetUser(t *testing.T) {
 	}
 	if got.Name != "Alice" || !got.Active {
 		t.Errorf("got %+v", got)
-	}
-}
-
-func TestGetUser_NotFound(t *testing.T) {
-	s := tempStore(t)
-	_, err := s.GetUser("nobody")
-	if err == nil {
-		t.Fatal("expected error")
 	}
 }
 

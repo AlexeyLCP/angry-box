@@ -52,6 +52,13 @@ jobs:
       - name: Unit tests (non-e2e)
         run: go test ./internal/... ./cmd/... -count=1
 
+      - name: Coverage summary
+        run: |
+          go test ./internal/... -count=1 -coverprofile=coverage.out -run=^$ 2>/dev/null || true
+          go tool cover -func=coverage.out | tail -1
+          echo "--- per-package (core) ---"
+          go tool cover -func=coverage.out | grep -E 'chain|singbox|config|takeover|web|i18n|ssh' | sort -t: -k3 -nr || true
+
       - name: Verify e2e + wsl_smoke compile
         run: |
           go build -tags e2e ./...

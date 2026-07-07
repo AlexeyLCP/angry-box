@@ -83,30 +83,31 @@ func TestGenerateVMessWSPath(t *testing.T) {
 
 // TestGenerateSSPassword_2022 verifies a 2022-blake3 cipher yields base64 bytes
 // of the cipher's key length.
-func TestGenerateSSPassword_2022(t *testing.T) {
-	p := GenerateSSPassword("2022-blake3-aes-128-gcm")
-	if p == "" {
-		t.Fatal("expected non-empty password")
+// TestGenerateSSPassword is a table-driven test covering 2022 ciphers (base64
+// output), legacy ciphers (non-empty), and unknown cipher fallback. Replaces the
+// three separate TestGenerateSSPassword_* funcs (CTO-review §13 table-driven).
+func TestGenerateSSPassword(t *testing.T) {
+	cases := []struct {
+		name       string
+		cipher     string
+		wantBase64 bool
+	}{
+		{"2022-blake3-aes-128-gcm", "2022-blake3-aes-128-gcm", true},
+		{"unknown cipher falls back", "not-a-cipher", false},
+		{"legacy aes-256-gcm", "aes-256-gcm", false},
 	}
-	if _, err := base64.StdEncoding.DecodeString(p); err != nil {
-		t.Errorf("2022 cipher password not base64: %v", err)
-	}
-}
-
-// TestGenerateSSPassword_UnknownCipher verifies an unknown cipher falls back to
-// the default (non-empty password).
-func TestGenerateSSPassword_UnknownCipher(t *testing.T) {
-	p := GenerateSSPassword("not-a-cipher")
-	if p == "" {
-		t.Fatal("expected non-empty password after fallback")
-	}
-}
-
-// TestGenerateSSPassword_Legacy verifies a legacy cipher yields 32 hex chars.
-func TestGenerateSSPassword_Legacy(t *testing.T) {
-	p := GenerateSSPassword("aes-256-gcm")
-	if p == "" {
-		t.Fatal("expected non-empty password")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := GenerateSSPassword(tc.cipher)
+			if p == "" {
+				t.Fatal("expected non-empty password")
+			}
+			if tc.wantBase64 {
+				if _, err := base64.StdEncoding.DecodeString(p); err != nil {
+					t.Errorf("password not base64: %v", err)
+				}
+			}
+		})
 	}
 }
 

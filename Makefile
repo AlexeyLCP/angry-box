@@ -149,6 +149,12 @@ test-coverage:
 	@echo ""
 	@echo "Run 'go tool cover -html=coverage.out' for interactive report"
 
+.PHONY: bench
+bench:
+	@echo "==> Running benchmarks (NOT run by CI)..."
+	go test ./internal/chain/ -bench=. -benchmem -run=^$ -count=1
+	@echo "    benchmarks complete"
+
 .PHONY: version
 version:
 	@echo "version: $(VERSION)"
