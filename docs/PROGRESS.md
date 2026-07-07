@@ -524,3 +524,39 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 - **context.Context threaded into SSH-push**: `pushConfig`/`pushConfigLocked`/`pushConfigWithAWG`/`probeServiceUp`/`ensureCertForTLSInbounds`/`ensureIPForward`/`pushAWGConfFile`/`enableAWGService`/`pushAWGConfs`/`awgConfDirExists` now take `ctx context.Context`; the `context.Background()` calls inside the deploy sequence replaced with `ctx`. Exported wrappers (`PushConfig`/`ProbeServiceUp`/`DisableService`/`EnableService`/`RestoreFile`/`PushConfigForTest`) updated; all callers (ApplyChain, applyMergedNodeLocked, takeover, tests) pass ctx through. A cancelled UI deploy now cancels in-flight SSH commands instead of waiting out the timeout (CTO-review §8).
 - **autoapply concurrency cap**: `ScheduleAutoApply` now acquires a slot on a counting semaphore (`autoApplyMaxConcurrent=8`) before the SSH deploy, so a 100-node all-pending fleet fans out to at most 8 concurrent SSH deploys, not 100. `SetAutoApplyConcurrency(n)` lets operators/tests override the cap before `InitAutoApply`. Covered by `TestScheduleAutoApply_ConcurrencyCap` (schedules 10 deploys against a blocking connector, asserts high-water ≤ cap=3 and saturates the cap). The per-host `withHostLock` still serializes same-node re-entrancy; the semaphore bounds the global fan-out.
 - **SSH connection pool (deferred)**: connection REUSE across deploys (buffering live SSH sessions per host with idle TTL) is a deeper change to the `SSHConnector` interface + lifecycle (the current `connector.Connect` returns a fresh client each deploy; `client.Close()` drops it). The concurrency cap (above) bounds the worst-case fan-out; a true connection pool is a v1.0 follow-up (needs idle-eviction, host-key cache invalidation on TOFU change, and a redesign of the `defer client.Close()` pattern across ApplyChain/ApplyMergedNode/takeover). Tracked but NOT implemented this cycle.
+
+## 13. v0.3.1 + v0.3.2 + v0.4.0 (2026-07-06/07)
+
+### 13.1. v0.3.1 — deferred v0.3.0 follow-ups + UI fixes + patches safety
+
+**Audit log split (D1):** `SaveAuditLog` теперь append-only `<store>.audit.jsonl` (O(1) per entry, separate `auditMu`), НЕ rewrite всего `store.json`. `ListAuditLogs` merge legacy inline + jsonl, dedup by ID, cap 5000.
+
+**AWG per-inbound server IP (A1):** `NodeInbound.AWGServerAddress` field (default 10.8.0.1/24) + `allocateAWGPeerIPInSubnet`. `RenderNodeAWGConfs` collision chain entry + standalone → loud warning (было silent drop).
+
+**Takeover'd AWG peers → model.User (A2):** `MaterializeAWGPeersAsUsers` (deterministic ID, dedup, idempotent) + `DeleteSynthesizedAWGUsers` rollback. `TakeoverState.SynthesizedUserIDs`.
+
+**SSH connection POOL (A3):** cross-deploy reuse (autoapply re-deploy every ~5min reuses connection). `pool.go` (Ping liveness + stored-fingerprint TOFU re-check + key-resolution re-check + idle sweeper + graceful shutdown). Wired only at serveCmd composition root.
+
+**UI fixes:** language switch (ru) — dynamic `<html lang>` + `Cache-Control: no-store`; user create import-secret block → telemt only (server-side guard rejects non-telemt).
+
+**CLI AWG deprecate warning:** `config`/`apply --protocol awg` warn (legacy userspace → web UI/apply-chain).
+
+**Patches safety (C2):** `patchcheck_test.go` (build-tag gated — `git apply --check` на pinned upstream) + `docs/PATCHES.md` + CI `patchcheck` job.
+
+### 13.2. v0.3.2 — Tokyo Night UI redesign
+
+Полный visual redesign под Tokyo Night aesthetic (ported from hoaxisr/awg-manager, MIT, attribution в `docs/CREDITS.md`). IBM Plex Sans/Mono self-hosted (14 woff2, Latin+Cyrillic). 3 selectable themes (`tokyonight`/`tokyonight-day`/`tokyonight-storm`) — CSS-override mapping Tokyo Night → DaisyUI v4 OKLCH vars. Theme dropdown в header. `.tn-card`/`.tn-table`/`.tn-badge` component conventions. Favicon. NO build step (CDN-only preserved).
+
+### 13.3. v0.4.0 (in progress) — multi-AWG-interface + takeover re-render + SNI + tests
+
+**Reality SNI configurable (done):** `PanelSettings.DefaultRealitySNI` (global default, empty → built-in const). `SetDefaultSNI`/`EffectiveDefaultSNI` accessors. `ResolveServerName` + singbox renderers используют `EffectiveDefaultSNI()`. Settings UI input. Migration-safe (empty → const fallback).
+
+**Multi-AWG-interface awg0/awg1 (done):** chain entry (awg0) + standalone с distinct subnet (AWGServerAddress) → awg1 (second kernel interface). `AWGServerConfParams.InterfaceName` (PostUp/PostDown parameterized). `RenderNodeAWGConfs` multi-file emit. `tunIncludeInterfacesForNode(node, nodeInfo)` appends awg1. Tests: multi-interface render, InterfaceName PostUp, include list.
+
+**Takeover re-render fresh awg0.conf (in progress):** export `PushConfigWithAWG` + `AwgServerConfigToAmnezia` adapter + NodeInbound wiring (ForUsers) + switch takeover to `PushConfigWithAWG` (atomic push awg0.conf + sing-box, rollback both). Materialize BEFORE push. Set `OldConfigPath` for rollback.
+
+**Table-driven tests (pending):** convert SSPassword/GetNotFound/ChecksumForArch to table-driven.
+
+**Benchmarks (pending):** SaveAuditLog/StoreRead/Write/RenderMerged/ProxyPassword + Makefile bench target.
+
+**Coverage baseline in CI (pending):** ci.yml coverage step + docs/COVERAGE.md regenerate.

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 // MaterializeAWGPeersAsUsers creates a model.User per imported AWG peer so the
@@ -143,4 +144,56 @@ func pubKeyPrefix(pub string, n int) string {
 		return p
 	}
 	return p[:n]
+}
+// AwgServerConfigToAmnezia converts an imported AwgServerConfig (flat
+// JC/JMIN/JMAX/S1-S4 ints + H1-H4/I1-I5 strings) to a *config.AmneziaOptions
+// for RenderServerAWGConf. Returns nil when JC==0 (no obfuscation — plain WG).
+// The field shapes match 1:1 with writeAmneziaConfLines (awg_server.go).
+func AwgServerConfigToAmnezia(s *AwgServerConfig) *config.AmneziaOptions {
+	if s == nil || s.JC == 0 {
+		return nil
+	}
+	return &config.AmneziaOptions{
+		JC:   s.JC,
+		JMIN: s.JMIN,
+		JMAX: s.JMAX,
+		S1:   s.S1, S2: s.S2, S3: s.S3, S4: s.S4,
+		H1: s.H1, H2: s.H2, H3: s.H3, H4: s.H4,
+		I1: s.I1, I2: s.I2, I3: s.I3, I4: s.I4, I5: s.I5,
+	}
+}
+
+// RenderTakeoverAWGConf builds a fresh kernel awg0.conf (via RenderServerAWGConf)
+// from the imported server config + materialized users, so the orchestrator
+// OWNS the awg0.conf after takeover (instead of leaving the imported one
+// untouched). Returns the AWGConfFile for pushing via PushConfigWithAWG.
+// peers are built from the materialized model.User entries (each user's
+// AWGPublicKey + AWGAddress), NOT from the raw AwgPeerEntry — so future user
+// add/remove re-renders correctly.
+func RenderTakeoverAWGConf(server *AwgServerConfig, users []model.User) AWGConfFile {
+	var peers []AWGServerPeer
+	for _, u := range users {
+		if !u.Active || u.AWGPublicKey == "" || u.AWGAddress == "" {
+			continue
+		}
+		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress})
+	}
+	tunnelAddr := server.Address
+	if tunnelAddr == "" {
+		tunnelAddr = "10.8.0.1/24"
+	}
+	return AWGConfFile{
+		Path:        awg0ConfPath,
+		ServiceName: awgServiceName("awg0"),
+		Content: RenderServerAWGConf(AWGServerConfParams{
+			ServerPrivateKey: server.PrivateKey,
+			ListenPort:       server.ListenPort,
+			TunnelAddress:    tunnelAddr,
+			MTU:              1420,
+			Amnezia:          AwgServerConfigToAmnezia(server),
+			Peers:            peers,
+			TUNInterface:     tunInterfaceName,
+			InterfaceName:    "awg0",
+		}),
+	}
 }

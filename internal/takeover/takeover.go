@@ -99,21 +99,68 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	// path pulls amnezia from a preset and hardcodes one peer, which would break
 	// existing AWG clients). Other types go through renderTakeoverConfig.
 	//
-	// For AWG we also materialize the imported peers as model.User entries
-	// (kept in scope for the success path) so per-client source_ip_cidr routing
-	// is available on the takeover'd inbound — AGENTS.md Known Issue #10. The
-	// users are only saved on success (step 8); a failure rolls them back via
-	// DeleteSynthesizedAWGUsers so no phantom users remain.
+	// For AWG we ALSO: (a) materialize the imported peers as model.User entries
+	// BEFORE the push (so the fresh awg0.conf can render peers from the users),
+	// (b) construct a NodeInbound (Protocol=awg, ForUsers=wired) so
+	// usersByInboundMap finds the peers on future re-applies, and (c) build a
+	// fresh awg0.conf via RenderTakeoverAWGConf (the orchestrator OWNS awg0.conf
+	// after takeover, instead of leaving the imported one untouched —
+	// AGENTS.md Known Issue #10 takeover re-render follow-up). The push uses
+	// PushConfigWithAWG (atomic awg0.conf + sing-box, rollback both on failure).
 	var cfgContent string
-	var awgPeers []chain.AwgPeerEntry
+	var awgFiles []chain.AWGConfFile
 	if det.Type == DetectedAWG {
 		imp, ierr := chain.ImportAWGConfigsViaClient(client, useSudo, nil)
 		if ierr != nil || imp == nil || imp.ServerConfig == nil {
 			res := &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "awg import failed: " + errString(ierr)}
 			return res, fmt.Errorf("takeover: awg import: %v", ierr)
 		}
-		awgPeers = imp.Peers
+
+		// (a) Materialize peers as users BEFORE the push so the fresh awg0.conf
+		// renders them. Rollback (step 7 failure) deletes synthesized users.
+		if len(imp.Peers) > 0 {
+			ids, merr := chain.MaterializeAWGPeersAsUsers(store, host.ID, imp.Peers, "")
+			if merr != nil {
+				slog.Warn("takeover: materialize AWG peers failed (per-client routing deferred)",
+					"node", host.ID, "err", merr)
+			} else if len(ids) > 0 {
+				info.Takeover.SynthesizedUserIDs = ids
+				// (b) Construct a NodeInbound so usersByInboundMap finds the
+				// peers (ForUsers wired to the synthesized user IDs). This makes
+				// future ApplyMergedNode re-applies render the same awg0.conf.
+				awgTag := "takeover-awg-" + host.ID
+				ib := model.NodeInbound{
+					Protocol:       "awg",
+					Port:           imp.ServerConfig.ListenPort,
+					Tag:            awgTag,
+					ServerPrivKey:  imp.ServerConfig.PrivateKey,
+					ForUsers:       ids,
+					AWGServerAddress: imp.ServerConfig.Address,
+					Source:         "takeover",
+				}
+				info.Inbounds = append(info.Inbounds, ib)
+			}
+		}
+
+		// (c) Build the sing-box TUN-overlay config + the fresh awg0.conf.
 		cfgContent, err = renderAWGTakeoverConfig(imp.ServerConfig, imp.Peers)
+		if err != nil {
+			return &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "render failed: " + err.Error()}, err
+		}
+		// Fetch the materialized users to render the fresh awg0.conf peers.
+		allUsers, _ := store.ListUsers()
+		var synthUsers []model.User
+		for _, u := range allUsers {
+			for _, sid := range info.Takeover.SynthesizedUserIDs {
+				if u.ID == sid {
+					synthUsers = append(synthUsers, *u)
+					break
+				}
+			}
+		}
+		awgFiles = []chain.AWGConfFile{
+			chain.RenderTakeoverAWGConf(imp.ServerConfig, synthUsers),
+		}
 	} else {
 		cfgContent, err = renderTakeoverConfig(f, inbounds, extra)
 	}
@@ -144,7 +191,16 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 
 	// 7. Push the sing-box config (backup → check → restart → health-probe, with
 	// its own rollback to the previous /etc/sing-box/config.json on failure).
-	if _, perr := chain.PushConfig(ctx, client, host.ID, cfgContent, useSudo); perr != nil {
+	// For AWG: use PushConfigWithAWG to atomically push the fresh awg0.conf +
+	// sing-box config, with rollback of BOTH on failure (the orchestrator owns
+	// awg0.conf after takeover — AGENTS.md #10 re-render follow-up).
+	var pushErr error
+	if det.Type == DetectedAWG && len(awgFiles) > 0 {
+		_, pushErr = chain.PushConfigWithAWG(ctx, client, host.ID, cfgContent, awgFiles, useSudo)
+	} else {
+		_, pushErr = chain.PushConfig(ctx, client, host.ID, cfgContent, useSudo)
+	}
+	if pushErr != nil {
 		// sing-box did NOT come up. Auto-rollback to the old VPN.
 		res.RollbackOccurred = true
 		// Symmetry: if any synthesized AWG users were already created (defensive
@@ -158,7 +214,7 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 		if rbErr := rollbackToOldVPN(ctx, client, det, info.Takeover, useSudo); rbErr != nil {
 			// Old VPN ALSO failed to come back — critical, do not hide.
 			res.Status = "failed-both"
-			res.Message = fmt.Sprintf("sing-box failed: %v; AND rollback to %s also failed: %v", perr, det.ServiceName, rbErr)
+			res.Message = fmt.Sprintf("sing-box failed: %v; AND rollback to %s also failed: %v", pushErr, det.ServiceName, rbErr)
 			info.Takeover.Status = "failed-both"
 			if err := store.SaveNodeInfo(info); err != nil {
 				slog.Warn("takeover: save node info (failed-both) failed", "node", host.ID, "err", err)
@@ -167,7 +223,7 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 			return res, fmt.Errorf("takeover: %s", res.Message)
 		}
 		res.Status = "rolled-back"
-		res.Message = fmt.Sprintf("takeover failed (sing-box did not come up: %v); rolled back to %s — old VPN restored and active", perr, det.ServiceName)
+		res.Message = fmt.Sprintf("takeover failed (sing-box did not come up: %v); rolled back to %s — old VPN restored and active", pushErr, det.ServiceName)
 		info.Takeover.Status = "rolled-back"
 		if err := store.SaveNodeInfo(info); err != nil {
 			slog.Warn("takeover: save node info (rolled-back) failed", "node", host.ID, "err", err)
@@ -181,22 +237,11 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	info.Takeover.Status = "taken"
 	info.Takeover.ConvertedAt = time.Now()
 
-	// AWG: materialize the imported peers as model.User entries so per-client
-	// source_ip_cidr routing is available on the takeover'd inbound (AGENTS.md
-	// Known Issue #10). The synthesized user IDs are recorded on TakeoverState
-	// for rollback symmetry. chainName is "" — a takeover'd AWG node is not yet
-	// attached to a chain; the users become visible in the UI and, on a later
-	// ApplyMergedNode re-apply with a real chain/inbound, RenderServerAWGConf
-	// renders them into a fresh awg0.conf. Best-effort: a materialization
-	// failure is logged, not fatal (the takeover itself succeeded).
-	if det.Type == DetectedAWG && len(awgPeers) > 0 {
-		if ids, merr := chain.MaterializeAWGPeersAsUsers(store, host.ID, awgPeers, ""); merr != nil {
-			slog.Warn("takeover: materialize AWG peers failed (takeover succeeded, per-client routing deferred)",
-				"node", host.ID, "err", merr)
-		} else if len(ids) > 0 {
-			info.Takeover.SynthesizedUserIDs = ids
-		}
-	}
+	// AWG materialization + NodeInbound wiring already done in step 5 (BEFORE
+	// the push) so the fresh awg0.conf renders peers from the materialized
+	// users. SaveNodeInfo persists the NodeInbound (ForUsers-wired) so future
+	// ApplyMergedNode re-applies render the same awg0.conf. SynthesizedUserIDs
+	// on TakeoverState drive rollback cleanup (DeleteSynthesizedAWGUsers).
 
 	if err := store.SaveNodeInfo(info); err != nil {
 		slog.Warn("takeover: save node info (taken) failed", "node", host.ID, "err", err)

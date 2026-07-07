@@ -172,6 +172,14 @@ func rollbackAWGConfs(client ports.SSHClient, records []awgPushRecord, useSudo b
 	}
 }
 
+// PushConfigWithAWG is the exported AWG-aware deploy push — the same as
+// pushConfigWithAWG but callable from outside the chain package (the takeover
+// package uses it to atomically push a fresh awg0.conf + sing-box config, with
+// rollback of both on failure — CTO-review §13.3 takeover re-render).
+func PushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, awgFiles []AWGConfFile, useSudo bool) (string, error) {
+	return pushConfigWithAWG(ctx, client, nodeID, cfgContent, awgFiles, useSudo)
+}
+
 // pushConfigWithAWG is the AWG-aware deploy push. For nodes with kernel AWG
 // .conf files it: (1) pushes the awg-quick .confs and enables their services,
 // (2) pushes the sing-box config (check → restart → probe), (3) on any sing-box
