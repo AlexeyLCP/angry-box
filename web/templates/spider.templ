@@ -12,7 +12,7 @@ import (
 // graph edges (ConnectionLink), persistent node positions, and native SVG
 // pan/zoom. Links are the source of truth for topology; Chain.Nodes is the
 // materialized deploy path kept in sync by the handlers.
-templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo, links []*model.ConnectionLink) {
+templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo, links []*model.ConnectionLink, metrics []*model.NodeMetrics) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Spider Web") }</h2>
@@ -79,8 +79,8 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							}
 
 							<!-- Nodes -->
-							for _, sn := range spiderNodes(hosts, infos, chains) {
-								@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y)
+							for _, sn := range spiderNodes(hosts, infos, chains, metrics) {
+								@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y, sn.State)
 							}
 						</g>
 					</svg>
@@ -225,7 +225,7 @@ func chainNodeList(nodes []model.ChainNode) string {
 }
 
 // spiderNode renders a single node circle on the SVG canvas
-templ spiderNode(id string, country string, chains []*model.Chain, x, y float64) {
+templ spiderNode(id string, country string, chains []*model.Chain, x, y float64, state string) {
 	<g class="spider-node cursor-pointer" data-node-id={ id }>
 		<circle class="node-inner"
 			cx={ fmt.Sprintf("%.0f", x) }
@@ -245,7 +245,7 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64)
 			cx={ fmt.Sprintf("%.0f", x + 10) }
 			cy={ fmt.Sprintf("%.0f", y - 10) }
 			r="3"
-			fill="oklch(var(--su))"
+			fill={ statusDotFill(state) }
 		/>
 		if country != "" {
 			<text class="country-label"
@@ -297,6 +297,23 @@ func findInfoSpider(id string, infos []*model.NodeInfo) *model.NodeInfo {
 	return nil
 }
 
+// statusDotFill returns the oklch color var for the spider status dot, keyed
+// by node health state. Mirrors the dashboard badge colors so the spider and
+// the dashboard agree on the visual language. Was hardcoded green (oklch(var
+// --su)) before P1a — now data-driven from nodeState.
+func statusDotFill(state string) string {
+	switch state {
+	case model.NodeStateHealthy:
+		return "oklch(var(--su))"
+	case model.NodeStateSuspect:
+		return "oklch(var(--wa))"
+	case model.NodeStateDown, model.NodeStateUnreachable, model.NodeStateBlocked:
+		return "oklch(var(--er))"
+	default:
+		return "oklch(var(--bc) / 0.4)"
+	}
+}
+
 type spiderLinkData struct {
 	ID                  string
 	X1, Y1, X2, Y2      float64
@@ -307,6 +324,7 @@ type spiderLinkData struct {
 type spiderNodeData struct {
 	ID      string
 	Country string
+	State   string
 	X, Y    float64
 }
 
@@ -336,7 +354,7 @@ func nodePosFor(id string, hosts []*model.Host, infos []*model.NodeInfo) (float6
 	return nodePosition(idxOf(id, hosts), len(hosts))
 }
 
-func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain) []spiderNodeData {
+func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain, metrics []*model.NodeMetrics) []spiderNodeData {
 	var nodes []spiderNodeData
 	for i, h := range hosts {
 		x, y := nodePosFor(h.ID, hosts, infos)
@@ -347,7 +365,16 @@ func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.C
 		if ni := findInfoSpider(h.ID, infos); ni != nil {
 			country = ni.Country
 		}
-		nodes = append(nodes, spiderNodeData{ID: h.ID, Country: country, X: x, Y: y})
+		// Derive the node's health state from its latest metrics so the spider
+		// status dot reflects reality (was hardcoded green before P1a).
+		state := model.NodeStateUnknown
+		for _, m := range metrics {
+			if m.HostID == h.ID {
+				state = NodeState(m)
+				break
+			}
+		}
+		nodes = append(nodes, spiderNodeData{ID: h.ID, Country: country, State: state, X: x, Y: y})
 	}
 	_ = chains
 	return nodes

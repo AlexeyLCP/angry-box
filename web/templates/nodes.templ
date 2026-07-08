@@ -91,16 +91,7 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 			}
 		</td>
 		<td>
-			<div
-				hx-get={"/ui/hosts/" + h.ID + "/status"}
-				hx-target="this"
-				hx-swap="innerHTML">
-				if m != nil && m.Online {
-					<span class="badge badge-success badge-sm">{ i18n.T(ctx, "Online") }</span>
-				} else {
-					<button class="btn btn-ghost btn-xs">{ i18n.T(ctx, "Check") }</button>
-				}
-			</div>
+			@NodeStatusCell(h.ID, m)
 		</td>
 		<td>
 			<div class="flex items-center gap-1">
@@ -632,6 +623,44 @@ func findMetric(id string, metrics []*model.NodeMetrics) *model.NodeMetrics {
 		}
 	}
 	return nil
+}
+
+// NodeStatusCell renders the per-node health cell for the nodes table: a
+// health-state badge + a Mark/Clear-blocked button. The block/unblock POST
+// handlers (web/nodes.go) swap this cell back in (hx-target="closest td"), so
+// the button label + badge update in place after the operator acts. The "Check"
+// button (manual status probe) is kept as a secondary action — it fires
+// /ui/hosts/{id}/status which now also drives the state machine.
+templ NodeStatusCell(id string, m *model.NodeMetrics) {
+	{{ state := NodeState(m)
+	_ = state }}
+	<div class="flex items-center gap-1">
+		<span class={ healthBadgeClass(state) }>{ healthBadgeLabel(ctx, state) }</span>
+		if state == model.NodeStateBlocked {
+			<button
+				class="btn btn-ghost btn-xs"
+				hx-post={"/ui/nodes/" + id + "/unblock"}
+				hx-target="closest td"
+				hx-swap="innerHTML">
+				{ i18n.T(ctx, "Clear block") }
+			</button>
+		} else {
+			<button
+				class="btn btn-ghost btn-xs"
+				hx-post={"/ui/nodes/" + id + "/block"}
+				hx-target="closest td"
+				hx-swap="innerHTML">
+				{ i18n.T(ctx, "Mark blocked") }
+			</button>
+		}
+		<button
+			class="btn btn-ghost btn-xs"
+			hx-get={"/ui/hosts/" + id + "/status"}
+			hx-target="closest td"
+			hx-swap="innerHTML">
+			{ i18n.T(ctx, "Check") }
+		</button>
+	</div>
 }
 
 func niCountry(nodeInfo []*model.NodeInfo) string {

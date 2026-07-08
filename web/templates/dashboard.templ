@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -12,8 +13,13 @@ import (
 type DashboardStats struct {
 	TotalHosts  int
 	OnlineHosts int
-	TotalChains int
-	TotalUsers  int
+	// P1a — per-state health counts so the dashboard can surface real health,
+	// not just the binary online/offline. DownHosts = down + unreachable;
+	// BlockedHosts = operator-marked DPI blocks.
+	DownHosts    int
+	BlockedHosts int
+	TotalChains  int
+	TotalUsers   int
 }
 
 // StatsCards renders just the four stat cards (used for polling).
@@ -242,17 +248,65 @@ func getMetric(hostID string, metrics []*model.NodeMetrics) *model.NodeMetrics {
 	return nil
 }
 
+// NodeState derives the effective health state from a metrics record. Old
+// stores (pre-P1a) have an empty State but a populated Online bool; for those
+// we derive healthy/down from Online so they render correctly without a
+// migration. A nil metrics record → NodeStateUnknown. Exported so handlers
+// (web/dashboard.go) can tally per-state counts.
+func NodeState(m *model.NodeMetrics) string {
+	if m == nil {
+		return model.NodeStateUnknown
+	}
+	if m.State != "" {
+		return m.State
+	}
+	if m.Online {
+		return model.NodeStateHealthy
+	}
+	return model.NodeStateDown
+}
+
+// healthBadgeClass returns the DaisyUI badge classes for a node health state.
+// Shared by the dashboard metricBadge, the spider status dot, and the nodes
+// table status cell so all three surfaces agree on the visual language.
+func healthBadgeClass(state string) string {
+	switch state {
+	case model.NodeStateHealthy:
+		return "badge badge-success badge-xs"
+	case model.NodeStateSuspect:
+		return "badge badge-warning badge-xs"
+	case model.NodeStateDown, model.NodeStateUnreachable:
+		return "badge badge-error badge-xs"
+	case model.NodeStateBlocked:
+		return "badge badge-error badge-outline badge-xs"
+	default:
+		return "badge badge-ghost badge-xs"
+	}
+}
+
+// healthBadgeLabel returns the i18n label for a node health state.
+func healthBadgeLabel(ctx context.Context, state string) string {
+	switch state {
+	case model.NodeStateHealthy:
+		return i18n.T(ctx, "Online")
+	case model.NodeStateSuspect:
+		return i18n.T(ctx, "Suspect")
+	case model.NodeStateDown:
+		return i18n.T(ctx, "Down")
+	case model.NodeStateUnreachable:
+		return i18n.T(ctx, "Unreachable")
+	case model.NodeStateBlocked:
+		return i18n.T(ctx, "Blocked")
+	default:
+		return i18n.T(ctx, "Unknown")
+	}
+}
+
 // Helper: show online/offline badge based on metrics
 templ metricBadge(hostID string, metrics []*model.NodeMetrics) {
-	if m := getMetric(hostID, metrics); m != nil {
-		if m.Online {
-			<span class="badge badge-success badge-xs">{ i18n.T(ctx, "Online") }</span>
-		} else {
-			<span class="badge badge-error badge-xs">{ i18n.T(ctx, "Offline") }</span>
-		}
-	} else {
-		<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "Unknown") }</span>
-	}
+	{{ state := NodeState(getMetric(hostID, metrics))
+	_ = state }}
+	<span class={ healthBadgeClass(state) }>{ healthBadgeLabel(ctx, state) }</span>
 }
 
 // Helper: show last checked time from metrics

@@ -245,3 +245,34 @@ func TestMarkNodeBlocked_UnknownHost(t *testing.T) {
 		t.Fatalf("block unknown: status %d, want 404", w.Code)
 	}
 }
+
+// TestDashboard_RendersDownBadge — a node in the down state renders a "Down"
+// badge (state-aware metricBadge) on the dashboard, not the old "Offline".
+// Confirms the render path picks up the State field, end to end through the
+// handler → template.
+func TestDashboard_RendersDownBadge(t *testing.T) {
+	ts := newTestServer(t)
+	seedHost(t, ts, "n1")
+	// Seed a down metrics record directly (skip the hysteresis dance).
+	ts.srv.store().SaveMetrics(&model.NodeMetrics{
+		HostID: "n1", State: model.NodeStateDown, Online: false,
+	})
+
+	w := ts.get("/ui")
+	ts.assertStatus(w, http.StatusOK)
+	ts.assertContains(w, "Down")
+}
+
+// TestDashboard_RendersBlockedBadge — a blocked node renders the "Blocked"
+// badge on the dashboard (operator-marked state surfaces in the summary).
+func TestDashboard_RendersBlockedBadge(t *testing.T) {
+	ts := newTestServer(t)
+	seedHost(t, ts, "n1")
+	ts.srv.store().SaveMetrics(&model.NodeMetrics{
+		HostID: "n1", State: model.NodeStateBlocked, Online: false,
+	})
+
+	w := ts.get("/ui")
+	ts.assertStatus(w, http.StatusOK)
+	ts.assertContains(w, "Blocked")
+}

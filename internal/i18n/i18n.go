@@ -662,6 +662,16 @@ var locales = map[string]map[string]string{
 		"On hold": "On hold",
 		"Limited": "Limited",
 		"Disabled": "Disabled",
+		// P1a — node health states + operator mark/clear block.
+		"Suspect": "Suspect",
+		"Down": "Down",
+		"Unreachable": "Unreachable",
+		"Blocked": "Blocked",
+		"Mark blocked": "Mark blocked",
+		"Clear block": "Clear block",
+		"Mark as blocked": "Mark as blocked",
+		"Reason": "Reason",
+		"node is not blocked": "node is not blocked",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1350,6 +1360,16 @@ var locales = map[string]map[string]string{
 		"On hold": "Ожидание",
 		"Limited": "Ограничен",
 		"Disabled": "Отключён",
+		// P1a — node health states + operator mark/clear block.
+		"Suspect": "Подозрительно",
+		"Down": "Недоступен",
+		"Unreachable": "Не отвечает",
+		"Blocked": "Заблокирован",
+		"Mark blocked": "Отметить заблокированным",
+		"Clear block": "Снять блокировку",
+		"Mark as blocked": "Пометить как заблокированный",
+		"Reason": "Причина",
+		"node is not blocked": "нода не заблокирована",
 	},
 }
 

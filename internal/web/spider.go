@@ -21,7 +21,8 @@ func (s *Server) handleSpiderWeb(w http.ResponseWriter, r *http.Request) {
 	chains, _ := st.ListChains()
 	infos, _ := st.ListNodeInfos()
 	links, _ := st.ListLinks()
-	s.renderContent(w, r, i18n.T(r.Context(), "Spider Web"), templates.SpiderWeb(hosts, chains, infos, links))
+	metrics, _ := st.ListMetrics()
+	s.renderContent(w, r, i18n.T(r.Context(), "Spider Web"), templates.SpiderWeb(hosts, chains, infos, links, metrics))
 }
 
 func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +234,8 @@ func (s *Server) renderSpider(w http.ResponseWriter, r *http.Request, st *chain.
 	allChains, _ := st.ListChains()
 	allInfos, _ := st.ListNodeInfos()
 	allLinks, _ := st.ListLinks()
-	s.render(w, r, templates.SpiderWeb(allHosts, allChains, allInfos, allLinks))
+	allMetrics, _ := st.ListMetrics()
+	s.render(w, r, templates.SpiderWeb(allHosts, allChains, allInfos, allLinks, allMetrics))
 }
 
 // indexOfChainNode returns the index of nodeID in nodes, or -1.

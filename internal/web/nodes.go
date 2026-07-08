@@ -673,8 +673,8 @@ func (s *Server) handleMarkNodeBlocked(w http.ResponseWriter, r *http.Request) {
 	}
 	chain.WriteAudit(st, "blocked", "node", id, chain.AuditPayload{"reason": reason}, "operator")
 
-	// HTMX swaps the status cell (hx-target="this" on the button's parent).
-	s.render(w, r, nodeStatusCell(id, model.NodeStateBlocked))
+	// HTMX swaps the status cell back in (hx-target="closest td" on the button).
+	s.render(w, r, templates.NodeStatusCell(id, m))
 }
 
 // handleClearNodeBlocked clears an operator-marked block, resetting the state
@@ -700,42 +700,7 @@ func (s *Server) handleClearNodeBlocked(w http.ResponseWriter, r *http.Request) 
 	}
 	chain.WriteAudit(st, "unblocked", "node", id, chain.AuditPayload{}, "operator")
 
-	s.render(w, r, nodeStatusCell(id, model.NodeStateUnknown))
-}
-
-// nodeStatusCell returns the HTMX-swappable status cell for a node row: a
-// health badge + a Mark/Clear-blocked button. Used by the block/unblock
-// handlers (swap outerHTML of the cell) and rendered statically by the nodes
-// table (Step 6). Kept as simpleHTML for now so the handlers compile before the
-// templ component lands; the templ version replaces this in Step 6.
-func nodeStatusCell(id, state string) *simpleHTML {
-	badge := healthBadgeHTML(state)
-	var action string
-	if state == model.NodeStateBlocked {
-		// Clear block button → POST /ui/nodes/{id}/unblock, swap the cell back.
-		action = `<button class="btn btn-ghost btn-xs" hx-post="/ui/nodes/` + id + `/unblock" hx-target="this" hx-swap="outerHTML">Clear block</button>`
-	} else {
-		action = `<button class="btn btn-ghost btn-xs" hx-post="/ui/nodes/` + id + `/block" hx-target="this" hx-swap="outerHTML">Mark blocked</button>`
-	}
-	return &simpleHTML{html: `<div class="flex items-center gap-1">` + badge + action + `</div>`}
-}
-
-// healthBadgeHTML returns a DaisyUI badge span for a node health state.
-func healthBadgeHTML(state string) string {
-	switch state {
-	case model.NodeStateHealthy:
-		return `<span class="badge badge-success badge-sm">Online</span>`
-	case model.NodeStateSuspect:
-		return `<span class="badge badge-warning badge-sm">Suspect</span>`
-	case model.NodeStateDown:
-		return `<span class="badge badge-error badge-sm">Down</span>`
-	case model.NodeStateUnreachable:
-		return `<span class="badge badge-error badge-sm">Unreachable</span>`
-	case model.NodeStateBlocked:
-		return `<span class="badge badge-error badge-outline badge-sm">Blocked</span>`
-	default:
-		return `<span class="badge badge-ghost badge-sm">Unknown</span>`
-	}
+	s.render(w, r, templates.NodeStatusCell(id, m))
 }
 
 // registerNodeRoutes wires every node-scoped route (CRUD + capture + test +

@@ -21,19 +21,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	metrics, _ := st.ListMetrics()
 	infos, _ := st.ListNodeInfos()
 
-	// Build stats
-	onlineCount := 0
-	for _, m := range metrics {
-		if m.Online {
-			onlineCount++
-		}
-	}
+	hc := computeHealthCounts(metrics)
 
 	stats := templates.DashboardStats{
-		TotalHosts:  len(hosts),
-		OnlineHosts: onlineCount,
-		TotalChains: len(chains),
-		TotalUsers:  len(users),
+		TotalHosts:   len(hosts),
+		OnlineHosts:  hc.Online,
+		DownHosts:    hc.Down,
+		BlockedHosts: hc.Blocked,
+		TotalChains:  len(chains),
+		TotalUsers:   len(users),
 	}
 
 	s.renderContent(w, r, i18n.T(r.Context(), "Dashboard"), templates.Dashboard(stats, hosts, metrics, infos, chains))
@@ -93,19 +89,45 @@ func (s *Server) handleDashboardStatsHTML(w http.ResponseWriter, r *http.Request
 	users, _ := st.ListUsers()
 	metrics, _ := st.ListMetrics()
 
-	online := 0
-	for _, m := range metrics {
-		if m.Online {
-			online++
-		}
-	}
+	hc := computeHealthCounts(metrics)
 	stats := templates.DashboardStats{
-		TotalHosts:  len(hosts),
-		OnlineHosts: online,
-		TotalChains: len(chains),
-		TotalUsers:  len(users),
+		TotalHosts:   len(hosts),
+		OnlineHosts:  hc.Online,
+		DownHosts:    hc.Down,
+		BlockedHosts: hc.Blocked,
+		TotalChains:  len(chains),
+		TotalUsers:   len(users),
 	}
 	s.render(w, r, templates.StatsCards(stats))
+}
+
+// healthCounts tallies node metrics by health state. Online counts healthy
+// nodes (State==healthy, or back-compat Online==true with empty State); Down
+// counts down + unreachable; Blocked counts operator-marked blocks. Suspect
+// + unknown are not surfaced in the dashboard summary (they're transient or
+// "no data") — only actionable states get a count.
+type healthCounts struct {
+	Online  int
+	Down   int
+	Blocked int
+}
+
+func computeHealthCounts(metrics []*model.NodeMetrics) healthCounts {
+	var hc healthCounts
+	for _, m := range metrics {
+		if m == nil {
+			continue
+		}
+		switch templates.NodeState(m) {
+		case model.NodeStateHealthy:
+			hc.Online++
+		case model.NodeStateDown, model.NodeStateUnreachable:
+			hc.Down++
+		case model.NodeStateBlocked:
+			hc.Blocked++
+		}
+	}
+	return hc
 }
 // registerDashboardRoutes wires the dashboard + the dashboard stats partial
 // (HTMX) + the trust-host-key POST. trust-host-key is a node-path route but the
