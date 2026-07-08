@@ -1132,23 +1132,48 @@ func restoreCmd() {
 	}
 }
 
-// relocateCmd is the CLI entry point for node relocation (Stage 3D wires the
-// full RelocateNode flow; this stub parses flags so `angry-box relocate --help`
-// works before the backend lands). It is filled in at Stage 3D.
+// relocateCmd is the CLI entry point for node relocation: move a blocked node
+// to a new VPS (--addr, required) + optionally a new SSH user/key, and
+// re-deploy every chain containing it so the new IP propagates to dependent
+// nodes. The node's transit keys are reused (other nodes + existing clients
+// are not reconfigured). Prints a per-chain success/error report.
 func relocateCmd() {
 	fs := flag.NewFlagSet("relocate", flag.ExitOnError)
 	fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
 	addr := fs.String("addr", "", "new SSH address (IP:port) for the node")
 	user := fs.String("user", "", "new SSH user (optional, keeps current if empty)")
 	keyID := fs.String("key", "", "new SSH key registry id (optional, keeps current if empty)")
-	_ = fs.Parse(os.Args[2:])
-	id, _ := popFirstArg(fs.Args())
+	id, flagArgs := popFirstArg(os.Args[2:])
+	_ = fs.Parse(flagArgs)
 	if id == "" || *addr == "" {
 		fmt.Fprintf(os.Stderr, "usage: angry-box relocate <node-id> --addr <new-ip:port> [--user <user>] [--key <key-id>]\n")
 		os.Exit(1)
 	}
-	_ = user
-	_ = keyID
-	fmt.Fprintf(os.Stderr, "relocate: backend not yet wired (Stage 3D)\n")
-	os.Exit(1)
+
+	st := chain.NewStore(storePath)
+	f := factory.New(nil)
+	applier := chain.NewApplier(f, nil)
+	sshclient.SetHostKeyManager(st)
+	sshclient.SetKeyResolver(st)
+
+	ctx := context.Background()
+	report, err := chain.RelocateNode(ctx, st, applier, id, *addr, *user, *keyID, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "relocate %q failed: %v\n", id, err)
+		os.Exit(1)
+	}
+	fmt.Printf("relocated %s: %s -> %s (%d chain(s))\n", report.NodeID, report.OldAddr, report.NewAddr, len(report.Chains))
+	failed := 0
+	for _, c := range report.Chains {
+		if c.Success {
+			fmt.Printf("  chain %s: OK\n", c.Name)
+			continue
+		}
+		failed++
+		fmt.Printf("  chain %s: FAIL — %s\n", c.Name, c.Error)
+	}
+	if failed > 0 {
+		fmt.Fprintf(os.Stderr, "relocate: %d/%d chain(s) failed to re-apply\n", failed, len(report.Chains))
+		os.Exit(1)
+	}
 }
