@@ -143,6 +143,31 @@ type PanelSettings struct {
 	// (internal/web/services.go). Empty = no Services defined (wizard shows
 	// only the Custom/advanced path).
 	Services json.RawMessage `json:"services,omitempty"`
+
+	// OffsiteBackup is the operator-configured target for encrypted offsite
+	// store backups (P2a). nil/empty = offsite backup disabled. The passphrase
+	// is stored here (in the at-rest-encrypted store, protected by the master
+	// key when enabled); it is NEVER the master key itself — the offsite blob
+	// is encrypted with a passphrase-derived key (see chain.backup_crypto).
+	// The master-key file never leaves the host.
+	OffsiteBackup *OffsiteBackupConfig `json:"offsite_backup,omitempty"`
+}
+
+// OffsiteBackupConfig describes an encrypted offsite backup target (P2a).
+// When Enabled, the orchestrator periodically (IntervalMin, default 360=6h)
+// exports the store as plaintext (ExportStore), encrypts it with the
+// passphrase (EncryptBackup), and pushes the blob to Host:RemotePath via SSH
+// (UploadText). The SSH key is resolved by ID from the key registry (same
+// mechanism as node SSH). "Backup now" also uses this config.
+type OffsiteBackupConfig struct {
+	Enabled     bool      `json:"enabled,omitempty"`
+	Host        string    `json:"host,omitempty"`         // offsite SSH target, host:port
+	User        string    `json:"user,omitempty"`
+	SSHKeyID    string    `json:"ssh_key_id,omitempty"`   // registry key ID (resolved by the SSH connector)
+	RemotePath  string    `json:"remote_path,omitempty"`  // e.g. /home/backup/angry-box.abbkp
+	Passphrase  string    `json:"passphrase,omitempty"`   // never the master key; scrypt-derived
+	IntervalMin int       `json:"interval_min,omitempty"` // 0 = default 360 (6h)
+	LastBackupAt time.Time `json:"last_backup_at,omitempty"`
 }
 
 // Service is an operator-defined product tier: a named bundle of chains +
