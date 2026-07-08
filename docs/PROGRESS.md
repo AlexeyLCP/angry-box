@@ -2,7 +2,7 @@
 
 > Единый источник правды: что сделано, что нужно, откуда берём. Обновлять при каждом изменении. Не удалять — накапливать.
 
-Последнее обновление: 2026-07-08 (chain-building E2E suite on fresh VPSes + 2 bugs found & fixed — §13.5)
+Последнее обновление: 2026-07-08 (backups + node relocation feature — §14)
 
 ---
 
@@ -608,3 +608,62 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 - `TestE2E_Heavy_QUICCapture_AWGConfig` требовал ровно 5 пакетов — на GCloud (UDP/443 частично заблокирован) capture возвращает 2. Расслаблено: `source=quic` с любым числом пакетов валиден (production fallback сработает на <5); только `source=error` или malformed packet = failure.
 
 `go build ./...` + `go vet ./...` + полный non-e2e `go test` зелёные. Сервера оставлены staged.
+
+---
+
+## 14. Backups + node relocation (2026-07-08) — v0.5.0
+
+Фича: бэкапы серверов (полный + пер-нода) + быстрое перенесение заблокированной ноды на новый VPS с авто-heal цепочки.
+
+### 14.1. ResolveNodes bugfix (базовый блокер — Stage 1)
+
+`ResolveNodes` (`internal/chain/store.go`) пересоздавал `ChainNode` struct literal, копируя только `Port + TransitPrivKey/ShortID/UUID + Inbounds` — дропая `Role, ExitTargets, TransitAWG*, ExitAWG*, ExitAWGLinks`. На следующем `ApplyChain` после рестарта процесса AWG transit/exit ключи были пустые → регенерация → inter-node AWG линки рвались (previous node's outbound `peer.PublicKey` больше не матчило новый server pubkey; balancer `awg-exit-nX` не матчило exit's новый server key). Это латентный re-apply баг для любой AWG-цепи после рестарта оркестратора, и он же блокировал relocation (которой нужны те же ключи на новом VPS).
+
+Фикс: `ResolveNodes` копирует stored `ChainNode` целиком, потом перезаписывает только live-Host поля (`ID/Addr/User/KeyPath`) + `Inbounds` (из `NodeInfo`). Никакой transit/material не теряется. Regression tests: `TestResolveNodes_PreservesAllTransitFields`, `TestResolveNodes_ReapplyKeepsAWGKeys`.
+
+### 14.2. Backups (Stage 2)
+
+**Backend** (`internal/chain/backup.go`):
+- `ExportStore()` — весь `storeFile` как plaintext JSON (portable — НЕ on-disk encrypted form, чтобы backup восстанавливался на другой инсталляции без того же master-key). `ImportStore(data, force)` — заменяет весь store; без `force` отказывается перезаписывать непустой store (wipe protection); re-runs schema migrations.
+- `ExportNode(id)` — портативная identity одной ноды: Host + NodeInfo + `ChainNode` record (со всем transit/exit material) для каждой цепи где нода состоит. `ImportNode(b, force)` — dedup по ID: отказ reroute live node (same ID, different Addr) без `force`; merge chain memberships по имени, skip несуществующих цепей (node backup не изобретает half-chain). Skipped-missing-chains — warning, не fatal.
+- `backupEnvelope` (`format=angry-box-store|angry-box-node`, `version`) → `DetectBackupFormat` для unified restore path (auto-detect store vs node).
+
+**HTTP** (`internal/web/backups.go`): `GET /ui/backup/store` (download), `GET /ui/backup/nodes/{id}` (download, 404 unknown), `POST /ui/backup/import` (auto-detect, `force=on`).
+
+**UI**: Settings → секция "Backups" (Export panel + Import form с textarea + force checkbox). Nodes → кнопка "Export" на каждой ноде (`/ui/backup/nodes/{id}` download).
+
+**CLI**: `angry-box backup store [-o file]`, `angry-box backup node <id> [-o file]`, `angry-box restore <file> [--force]` (auto-detect, skipped-missing-chains — exit 0 warning).
+
+**Тесты**: `TestExportNode_*` (roundtrip, unknown ID, dedup, reroute-without-force), `TestExportStore_ImportStore_*` (roundtrip, non-empty-without-force), `TestDetectBackupFormat_Invalid`; handler tests `TestHandler_Export*`, `TestHandler_ImportBackup_*` (roundtrip, refuses-non-empty, force, invalid/empty).
+
+### 14.3. Node relocation (Stage 3) — auto-heal dependent chains
+
+**Backend** (`internal/chain/relocate.go`): `RelocateNode(ctx, store, applier, nodeID, newAddr, newUser, newKeyPath, awgClientPubKey)`:
+1. Обновляет Addr (+опц. User/KeyPath) в 3 местах — Host, NodeInfo.Host, ChainNode snapshot в каждой цепи с этой нодой — сохраняя ID + ВСЕ transit/exit material (Reality PrivateKey/ShortID/UUID, AWG Transit*/ExitAWG*, Role, ExitTargets), чтобы re-deploy переиспользовал те же credentials (other nodes + existing clients не перенастраиваются).
+2. Re-apply каждой affected chain через `applier.ApplyChain`. ApplyChain re-deploys саму ноду (на новый VPS, переиспользуя persisted keys) И каждую ноду чей config embed'ит Addr ноды — previous hop (outbound dials `extractHost(N.Addr)`) + balancer'ы чьи `ExitTargets` включают N (`awg-exit-nX` endpoint embeds N.Addr, `awg_deploy.go:179`). Один вызов heal'ит всю affected topology.
+3. Audit (best-effort).
+
+`chainApplier` interface → tests inject fake applier (no SSH). Failure на одной цепи — recorded, не fatal (report carries per-chain success/error). `ResolveNodes` fix (§14.1) preserving transit material — это что делает key-reuse работающим.
+
+**Тесты**: `TestRelocateNode_UpdatesAddrInThreePlaces`, `_PropagatesNewAddrToApplier` (new IP доходит до re-deploy + transit keys survive), `_UnknownNode`, `_PreservesTransitKeysAcrossReapply` (core invariant), `_OneChainFailureDoesNotAbortOthers`, `_UpdatesUserAndKey`.
+
+**HTTP**: `POST /ui/nodes/{id}/relocate` (validates new_addr + SSH key id exists before mutation → `RelocateNode` → `RelocateResult` template с per-chain success/error). `GET /ui/nodes/{id}/relocate` → modal.
+
+**UI**: Nodes → кнопка "Relocate" на каждой ноде → modal (`RelocateForm`: new_addr required + опц. new_user/new_ssh_key_id). Help text: "transit keys are reused, other nodes + existing clients are not reconfigured".
+
+**CLI**: `angry-box relocate <node-id> --addr <new-ip:port> [--user <user>] [--key <key-id>]` → `RelocateNode` → per-chain report (exit 1 если relocate или любая цепь failed).
+
+### 14.4. Live-verify (playwright, реальный браузер)
+
+- Backups секция в Settings рендерится (Export panel link + Import form + endpoints).
+- Node row: Export + Relocate buttons присутствуют.
+- Relocate modal открывается (`#relocate-modal` dialog + form `hx-post=/ui/nodes/n1/relocate` + inputs new_addr/new_user/new_ssh_key_id + help text).
+- CLI: `backup store` выводит store backup JSON; `backup store -o` пишет файл; `restore` roundtrips; `relocate ghost --addr ...` fails с "host not found" (no SSH, validation works).
+
+### 14.5. Что НЕ в скоупе v0.5.0 (явно)
+
+- Авто-detect заблокированной ноды (health-check → auto-relocate) — отдельная фича, требует monitoring; оператор решает что заблокировано.
+- Backup на удалённое хранилище (S3/SSH) — download/upload через UI/CLI, оператор хранит файл сам.
+- Relocate с заменой transit-ключей (rotation) — deliberately переиспользуем persisted ключи. Rotation — follow-up.
+- **Clone node** — отдельная фича (NEXT).
+- **Users flow audit** (create user + choose where inbounds + how to route) — отдельная фича (NEXT).

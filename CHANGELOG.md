@@ -4,6 +4,72 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.5.0] — 2026-07-08
+
+### Server backups + quick node relocation (chain auto-heal)
+
+Minor bump: new operator features (backups + node relocation) + a latent
+re-apply bugfix that AWG chains depended on.
+
+#### ResolveNodes preserves all transit/exit/role fields (bugfix)
+- `ResolveNodes` (`internal/chain/store.go`) rebuilt a fresh `ChainNode`
+  copying only `Port + TransitPrivKey/ShortID/UUID + Inbounds`, dropping
+  `Role, ExitTargets, TransitAWG*, ExitAWG*, ExitAWGLinks`. On the next
+  `ApplyChain` after a process restart those AWG fields were empty → keys
+  regenerated → inter-node AWG links broke (previous node's outbound
+  `peer.PublicKey` no longer matched the new server pubkey; balancer
+  `awg-exit-nX` no longer matched the exit's new server key). A latent
+  re-apply bug for any AWG chain after an orchestrator restart, and it also
+  blocked node relocation (which needs the same keys reused on the new VPS).
+  Fix: copy the stored `ChainNode` wholesale, overwrite only the live-Host
+  fields + Inbounds. Regression tests pin every persisted field survives.
+
+#### Backups (full-panel + per-node export/import)
+- `ExportStore`/`ImportStore`: whole-panel plaintext JSON backup (portable —
+  not the on-disk encrypted form, so a backup restores on a different install
+  without the same master key). `ImportStore` refuses a non-empty target
+  without `force` (wipe protection), re-runs schema migrations on restore.
+- `ExportNode`/`ImportNode`: one node's portable identity — Host + NodeInfo +
+  the full `ChainNode` record (with all transit/exit material) for every
+  chain it belongs to. `ImportNode` dedups by ID (refuses to reroute a live
+  node without `force`), merges chain memberships by name, skips chains that
+  do not exist on the target (a node backup alone never invents a half-chain).
+- A backup envelope (`format=angry-box-store|angry-box-node`, `version`) makes
+  a unified restore path auto-detect the backup kind via `DetectBackupFormat`.
+- HTTP: `GET /ui/backup/store` + `GET /ui/backup/nodes/{id}` (download,
+  404 unknown) + `POST /ui/backup/import` (auto-detect, `force=on`).
+- UI: Settings → Backups section (Export panel + Import form); node row →
+  Export button.
+- CLI: `angry-box backup store [-o file]`, `angry-box backup node <id>
+  [-o file]`, `angry-box restore <file> [--force]`.
+
+#### Node relocation (auto-heal dependent chains)
+- `RelocateNode` (`internal/chain/relocate.go`) moves a blocked node to a new
+  VPS: updates Addr (+ optional User/KeyPath) in Host + NodeInfo + the
+  `ChainNode` snapshot, keeping the ID + ALL transit/exit material unchanged,
+  then re-applies every chain containing the node. `ApplyChain` re-deploys the
+  node itself (onto the new VPS, reusing its persisted keys) AND every node
+  whose config embeds the node's Addr — the previous hop (outbound dials
+  `extractHost(N.Addr)`) + any balancer whose `ExitTargets` include N
+  (`awg-exit-nX` endpoint embeds N.Addr). One call heals the whole affected
+  topology; other nodes + existing clients are NOT reconfigured (same keys).
+- HTTP: `POST /ui/nodes/{id}/relocate` (validates new_addr + SSH key id exists
+  before mutation → `RelocateResult` per-chain report); `GET .../relocate`
+  modal. UI: node row → Relocate button → modal. CLI: `angry-box relocate
+  <node-id> --addr <new-ip:port> [--user <user>] [--key <key-id>]`.
+- A failing chain re-apply is recorded, not fatal — the report carries
+  per-chain success/error so the operator sees what healed and what to retry.
+
+#### Tests + i18n
+- ResolveNodes regression, backup roundtrip/dedup/force, relocate 3-place
+  addr update + key-reuse + one-failure-does-not-abort, handler export/import
+  + relocate error paths. i18n keys (en+ru, parity): Backups, Export panel,
+  Import backup, Export node, Relocate node, Relocate to new VPS, New address,
+  New SSH user/key (optional), Store/Node imported, Overwrite existing (force),
+  the relocate help text.
+
+See `docs/PROGRESS.md` §14.
+
 ## [v0.4.1] — 2026-07-08
 
 ### Fixes — UI bugs found by live E2E + i18n gaps + release body

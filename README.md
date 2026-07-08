@@ -31,6 +31,7 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 - **Multi-Hop Chains:** construct 2-node or 3-node proxy chains; AmneziaWG works both as a client entry point (kernel awg-quick + sing-box bind_interface) and as an inter-node hop (userspace wireguard endpoint with amnezia — the patched binary fixes the upstream `chacha20poly1305` panic that previously crashed kernel-mode AWG).
 - **Failover & Load Balancing:** `urltest`, `failover`, `selector`, and a patched per-connection round-robin `fallback`.
 - **Reliable deploy with rollback:** every apply does backup (cp, preserved) → cert → upload → `sing-box check` (stderr surfaced) → restart → real health-probe → rollback on failure; per-node lock prevents concurrent-deploy races.
+- **Backups + quick node relocation:** export the whole panel (or one node's portable identity) as a JSON backup and restore/migrate it; when a node's IP gets blocked, **Relocate** moves it to a fresh VPS — keeping the node's transit keys so other nodes and existing clients are NOT reconfigured — and re-deploys every chain containing it so the new IP propagates to dependent hops automatically (UI button + `angry-box relocate` CLI).
 - **Modern Web UI:** Spider-web topology editor (graph edges, persistent node positions, native SVG pan/zoom), deploy-status (pending-changes badge), audit log, profiles/services, unified clients, route rules — built with HTMX + TailwindCSS + DaisyUI + templ.
 - **Background auto-apply:** per-user/inbound mutations trigger a background SSH deploy (hybrid mode); per-host lock serializes.
 - **100% Independent:** Angry-BOX ships its own **patched sing-box-extended** binary (deps/), so weak VPSes never compile Go — they just download.
@@ -98,9 +99,18 @@ angry-box apply-chain my-chain
 
 # 5. Generate a standalone config locally (e.g. REALITY+XHTTP) without pushing
 angry-box config -port 443
+
+# 6. Back up the panel + relocate a blocked node to a fresh VPS
+angry-box backup store -o panel-backup.json          # whole-panel backup
+angry-box backup node entry-node -o entry-node.json  # one node's portable identity
+angry-box restore panel-backup.json                 # auto-detects store vs node, restores
+# When entry-node's IP gets blackholed, move it to a new VPS — transit keys are
+# reused, so other nodes + existing clients are NOT reconfigured; every chain
+# containing the node is re-deployed so the new IP propagates:
+angry-box relocate entry-node --addr 9.9.9.9:22
 ```
 
-**Takeover** (detect + convert an existing VPN server) is available from the Web UI: open a node → **Takeover** button. It detects AWG/sing-box/Xray/MTProxy, converts the config to sing-box with the same settings, disables the old VPN, and auto-rolls back if sing-box fails.
+**Takeover** (detect + convert an existing VPN server) is available from the Web UI: open a node → **Takeover** button. It detects AWG/sing-box/Xray/MTProxy, converts the config to sing-box with the same settings, disables the old VPN, and auto-rolls back if sing-box fails. **Backups + relocation** are also in the Web UI: Settings → Backups (export/import the panel), node row → **Export** (download one node's identity) + **Relocate** (move a blocked node to a new VPS).
 
 ## Third-Party Components
 
