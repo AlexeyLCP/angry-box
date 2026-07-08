@@ -153,6 +153,13 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 				</a>
 				<button
 					class="btn btn-ghost btn-xs"
+					hx-get={ "/ui/nodes/" + h.ID + "/relocate" }
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					{ i18n.T(ctx, "Relocate") }
+				</button>
+				<button
+					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/edit"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
@@ -717,4 +724,46 @@ templ HostKeyWarning(host model.Host, newFingerprint string, changed bool) {
 			</div>
 		</div>
 	</div>
+}
+
+// RelocateForm renders the "relocate this node to a new VPS" modal. The form
+// posts to /ui/nodes/{id}/relocate with a new addr (required) + optional new
+// SSH user/key. The result renders into #relocate-result (RelocateResult). The
+// node's transit material is preserved by RelocateNode, so the help text calls
+// that out: other nodes + existing clients are not reconfigured.
+templ RelocateForm(host *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {
+	<dialog id="relocate-modal" class="modal" open>
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-1">{ i18n.T(ctx, "Relocate node") }: { host.ID }</h3>
+			<div class="text-xs text-base-content/50 mb-4">{ i18n.T(ctx, "Move this node to a new VPS. Its transit keys are reused, so other nodes and existing clients are not reconfigured. Every chain containing this node is re-deployed so the new IP propagates to dependent hops.") }</div>
+
+			<form
+				hx-post={ "/ui/nodes/" + host.ID + "/relocate" }
+				hx-target="#relocate-result"
+				hx-swap="innerHTML"
+				class="space-y-4">
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "New address") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "IP:port") }</span></label>
+					<input type="text" name="new_addr" class="input input-bordered" placeholder="1.2.3.4:22" required />
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "New SSH user (optional)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "empty keeps current") }</span></label>
+					<input type="text" name="new_user" class="input input-bordered" placeholder={ host.User } />
+				</div>
+
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "New SSH key (optional)") }</span></label>
+					@sshKeySelect("new_ssh_key_id", host.KeyPath, settings, allKeys)
+				</div>
+
+				<div class="modal-action">
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Relocate to new VPS") }</button>
+					<form method="dialog" class="modal-backdrop"><button class="btn btn-ghost">{ i18n.T(ctx, "Cancel") }</button></form>
+				</div>
+			</form>
+			<div id="relocate-result" class="mt-2"></div>
+		</div>
+	</dialog>
 }

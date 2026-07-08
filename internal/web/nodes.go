@@ -363,6 +363,21 @@ func (s *Server) handleNodeCaptureForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, templates.NodeCaptureForm(host, settings, allKeys))
 }
 
+// handleRelocateForm renders the "relocate this node to a new VPS" modal for
+// the node row's Relocate button. The form posts to /ui/nodes/{id}/relocate.
+func (s *Server) handleRelocateForm(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	host, err := st.GetHost(id)
+	if err != nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	settings, _ := st.GetSettings()
+	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
+	s.render(w, r, templates.RelocateForm(host, settings, allKeys))
+}
+
 // handleTestNodeConnection runs ONLY GetStatus (no save, no install) so the
 // user can verify the key/password works before committing to the wizard
 // flow. The host is built one-off and never persisted.
@@ -648,5 +663,6 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	// registered here by path, handler stays in chains.go.
 	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
 	// relocate: move a blocked node to a new VPS + re-deploy dependent chains.
+	mux.HandleFunc("GET /ui/nodes/{id}/relocate", s.auth(s.handleRelocateForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/relocate", s.auth(s.handleRelocateNode))
 }
