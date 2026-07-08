@@ -78,11 +78,37 @@ jobs:
           # Checksums over everything that gets uploaded.
           ( cd release && sha256sum *.tar.gz *.zip *.ipk > checksums-sha256.txt )
 
+      - name: Extract this release's changelog section
+        # CHANGELOG.md holds the whole history; a GitHub release body should
+        # show ONLY the changes for the tag being released (the section between
+        # "## [<VERSION>]" and the next "## ["). The previous workflow uploaded
+        # the full CHANGELOG.md as every release's body, so every release showed
+        # the entire history instead of its own slice. Extract just this tag's
+        # section into release-body.md (fallback to the full file if the header
+        # is missing — e.g. a dev tag without a CHANGELOG entry).
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+          # Extract the "## [<VERSION>]" section from CHANGELOG.md (from the
+          # header line to the next "## ["). Use index()==1 instead of a regex:
+          # awk's regex escape handling for "[" / "]" is portably messy, and a
+          # literal substring match at column 1 is exact + robust.
+          awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { in_section=1; next }
+            in_section && /^## \[/ { in_section=0 }
+            in_section { print }
+          ' CHANGELOG.md > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "No CHANGELOG section for $VERSION; using full CHANGELOG.md as release body."
+            cp CHANGELOG.md release-body.md
+          fi
+          echo "--- release body (first 40 lines) ---"
+          head -40 release-body.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          # Use the tag's own message; fall back to CHANGELOG if the tag has no body.
-          body_path: CHANGELOG.md
+          # Use only this release's CHANGELOG section (not the full history).
+          body_path: release-body.md
           files: |
             release/angry-box-*.tar.gz
             release/angry-box-*.zip

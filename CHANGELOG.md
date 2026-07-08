@@ -4,6 +4,81 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.4.1] — 2026-07-08
+
+### Fixes — UI bugs found by live E2E + i18n gaps + release body
+
+#### Settings: language switch + duplicate "Add New SSH Key" + SSH key data-loss
+- **Language switch was silently broken.** Root cause: the `SSHKeyList`
+  component rendered its own `<form>` elements (add/import/test/delete) INSIDE
+  the main settings `<form>`, but HTML forbids nested `<form>` — the browser
+  closed the outer form at the first nested one, dropping the Save Settings
+  button (and the language select's submit) out of the form, so Save Settings
+  no-op'd and the language never changed. Fix: moved `#ssh-keys-list` + the
+  add-key form OUTSIDE the main settings `<form>` in `settings.templ`. The main
+  form now holds only plain inputs + the Save Settings submit; SSH keys are
+  managed through their own `/ui/settings/ssh-keys*` endpoints. The same
+  nesting had produced a second, duplicate "Add New SSH Key" form visible on
+  the page — both fixed by the one move. Verified on a live browser.
+- **SSH key data-loss.** `handleSaveSettings` rebuilt `settings.SSHKeys` from
+  `ssh_key_name`/`ssh_key_path` form fields — a legacy pre-v0.2.5 KeyPath-based
+  schema. After the redesign the main settings form no longer carries those
+  fields (keys are added via `/ui/settings/ssh-keys` with PEM `key_data`), so
+  this block clobbered `settings.SSHKeys` to an empty slice on every Save
+  Settings — saving the language wiped all imported keys. Removed.
+- Regression tests: `TestHandler_SettingsView_NoNestedFormsInMainForm` (pins
+  the structure — heading ×1, Save Settings inside the main form,
+  `#ssh-keys-list` after `</form>`), `TestHandler_SaveSettings_PreservesSSHKeys`
+  (pre-seed key → save panel settings → key survives + language persists).
+
+#### QUIC CPS capture panic on partial capture
+- `CaptureQUICSignature` panicked on a partial QUIC capture
+  (`awgcapture.go`): `packets[:captureMaxPkts]` (5) crashed with "slice bounds
+  out of range" when the read loop returned fewer packets (timeout/loss). A
+  live VPS hitting `one.one.one.one` returned 2 packets and crashed the
+  orchestrator. Extracted the slice logic into `capturePacketsToCPS` with a
+  `min(len, captureMaxPkts)` clamp — partial capture yields a partial CPS set,
+  not a crash. Production `EnsureChainAWGMaterial` already requires `len >= 5`
+  for live capture (else synthesized fallback), so partial captures route to
+  fallback correctly. 4 unit tests (PartialNoPanic regression + Full +
+  ClipsOversized + Empty).
+
+#### Rollback test self-staging
+- `TestE2E_Heavy_Rollback_OnBadConfig` failed on a fresh VPS:
+  `performRollbackTest` called `PushConfig` directly (bypassing `Deploy`),
+  which writes to `/etc/sing-box/config.json` but does not `mkdir` that dir.
+  On a clean VPS the raw push failed with "No such file or directory" before
+  the rollback path was reached. `performRollbackTest` now pre-stages via
+  `DeployWithOptions` so the rollback fixture is self-contained and runs on a
+  clean VPS.
+
+#### i18n — untranslated UI elements
+- 21 built-in preset descriptions (russia_2026, iran_2026, china_2026,
+  maximum_stealth_2026, pro_2026, xhttp_max_stealth_2026 + their _awg/
+  _reality/_xhttp variants) were always-English even in ru locale. Added
+  `i18n.TPreset(ctx, name, fallback)` which looks up
+  `preset.<name>.description` and falls back to the source string; the presets
+  template now renders built-in descriptions through it. en+ru keys for all 21
+  (parity test passes). Custom user presets keep their user-typed description.
+- The license no-warranty clause in `settings.templ` was hardcoded English
+  despite the i18n key existing — wrapped in `i18n.T` so it renders the ru
+  translation ("ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ»...").
+
+#### Release workflow — per-version body
+- The release workflow uploaded the full `CHANGELOG.md` as every release's
+  body, so every release showed the entire history instead of its own slice.
+  Added an "Extract this release's changelog section" step that pulls just the
+  `## [<tag>]` section into `release-body.md` (awk `index()` match, with a
+  full-file fallback for dev tags without a CHANGELOG entry); the
+  `softprops/action-gh-release` step now uses `body_path: release-body.md`.
+
+### Live E2E verification (fresh GCloud Debian 12 VPSes)
+- 21 core E2E tests PASS: chain building (1/2/3-hop + topology change), VLESS+
+  Reality+XHTTP transport, AWG kernel (single + 2-hop + userspace), balancer
+  (urltest + failover), selector strategy (live egress IP switches middle↔exit),
+  rollback, takeover, import AWG, idempotency, concurrency, hostlock, QUIC
+  capture → AWG config. See `docs/PROGRESS.md` §13.4/§13.5.
+
 ## [v0.4.0] — 2026-07-07
 
 ### Architecture — multi-AWG-interface + takeover re-render + Reality SNI + tests

@@ -575,6 +575,30 @@ var locales = map[string]map[string]string{
 		"usually root": "usually root",
 		"Русский": "Русский",
 		"— or use login + password —": "— or use login + password —",
+
+		// Built-in preset descriptions (en = source of truth). Mirror the ru
+		// block so TestEnRuKeyParity passes and TPreset can fall back to these.
+		"preset.russia_2026.description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI.",
+		"preset.russia_2026_awg.description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI. (AWG variant)",
+		"preset.russia_2026_reality.description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI. (Reality variant)",
+		"preset.russia_2026_xhttp.description": "Good all-round preset for Russia (RKN) as of mid-2026. Reality still works well with proper SNI. (XHTTP variant)",
+		"preset.iran_2026.description": "Strong preset against Iranian DPI. XHTTP performs very well here.",
+		"preset.iran_2026_awg.description": "Strong preset against Iranian DPI. XHTTP performs very well here. (AWG variant)",
+		"preset.iran_2026_reality.description": "Strong preset against Iranian DPI. XHTTP performs very well here. (Reality variant)",
+		"preset.iran_2026_xhttp.description": "Strong preset against Iranian DPI. XHTTP performs very well here. (XHTTP variant)",
+		"preset.china_2026.description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic.",
+		"preset.china_2026_awg.description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic. (AWG variant)",
+		"preset.china_2026_reality.description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic. (Reality variant)",
+		"preset.china_2026_xhttp.description": "One of the strongest known combinations vs GFW in 2026. Heavy use of XHTTP + Apple-like traffic. (XHTTP variant)",
+		"preset.maximum_stealth_2026.description": "Very aggressive preset for when lighter ones start getting blocked.",
+		"preset.maximum_stealth_2026_awg.description": "Very aggressive preset for when lighter ones start getting blocked. (AWG variant)",
+		"preset.maximum_stealth_2026_reality.description": "Very aggressive preset for when lighter ones start getting blocked. (Reality variant)",
+		"preset.maximum_stealth_2026_xhttp.description": "Very aggressive preset for when lighter ones start getting blocked. (XHTTP variant)",
+		"preset.pro_2026.description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required.",
+		"preset.pro_2026_awg.description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required. (AWG variant)",
+		"preset.pro_2026_reality.description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required. (Reality variant)",
+		"preset.pro_2026_xhttp.description": "PRO 2026 profile. Security > Compatibility. Forces full CPS level 3 + QUIC I1 1200B (Chrome fb) on all AWG hops. Use when maximum resistance to DPI is required. (XHTTP variant)",
+		"preset.xhttp_max_stealth_2026.description": "Extreme XHTTP + AWG combination (2026). Maximum padding ranges, XMUX controls, full CPS3 + QUIC. Use only when lighter profiles are burned. Security is strictly prioritized over compatibility.",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1174,6 +1198,32 @@ var locales = map[string]map[string]string{
 		"Paths": "Пути",
 		"Idle timeout": "Idle timeout",
 		"Ping timeout": "Ping timeout",
+
+		// Built-in preset descriptions (key = preset.<name>.description).
+		// The base presets + the per-protocol variants (_awg/_reality/_xhttp).
+		// Technical terms (RKN, GFW, DPI, XHTTP, CPS, QUIC, AWG, Reality, SNI)
+		// are kept as-is — they are proper nouns in the field.
+		"preset.russia_2026.description": "Хороший универсальный пресет для России (РКН) на середину 2026 года. Reality по-прежнему хорошо работает с правильным SNI.",
+		"preset.russia_2026_awg.description": "Хороший универсальный пресет для России (РКН) на середину 2026 года. Reality по-прежнему хорошо работает с правильным SNI. (AWG-вариант)",
+		"preset.russia_2026_reality.description": "Хороший универсальный пресет для России (РКН) на середину 2026 года. Reality по-прежнему хорошо работает с правильным SNI. (Reality-вариант)",
+		"preset.russia_2026_xhttp.description": "Хороший универсальный пресет для России (РКН) на середину 2026 года. Reality по-прежнему хорошо работает с правильным SNI. (XHTTP-вариант)",
+		"preset.iran_2026.description": "Сильный пресет против иранского DPI. XHTTP здесь работает очень хорошо.",
+		"preset.iran_2026_awg.description": "Сильный пресет против иранского DPI. XHTTP здесь работает очень хорошо. (AWG-вариант)",
+		"preset.iran_2026_reality.description": "Сильный пресет против иранского DPI. XHTTP здесь работает очень хорошо. (Reality-вариант)",
+		"preset.iran_2026_xhttp.description": "Сильный пресет против иранского DPI. XHTTP здесь работает очень хорошо. (XHTTP-вариант)",
+		"preset.china_2026.description": "Одна из сильнейших известных комбинаций против GFW в 2026 году. Активное использование XHTTP + трафика в стиле Apple.",
+		"preset.china_2026_awg.description": "Одна из сильнейших известных комбинаций против GFW в 2026 году. Активное использование XHTTP + трафика в стиле Apple. (AWG-вариант)",
+		"preset.china_2026_reality.description": "Одна из сильнейших известных комбинаций против GFW в 2026 году. Активное использование XHTTP + трафика в стиле Apple. (Reality-вариант)",
+		"preset.china_2026_xhttp.description": "Одна из сильнейших известных комбинаций против GFW в 2026 году. Активное использование XHTTP + трафика в стиле Apple. (XHTTP-вариант)",
+		"preset.maximum_stealth_2026.description": "Очень агрессивный пресет для случаев, когда более лёгкие начинают блокироваться.",
+		"preset.maximum_stealth_2026_awg.description": "Очень агрессивный пресет для случаев, когда более лёгкие начинают блокироваться. (AWG-вариант)",
+		"preset.maximum_stealth_2026_reality.description": "Очень агрессивный пресет для случаев, когда более лёгкие начинают блокироваться. (Reality-вариант)",
+		"preset.maximum_stealth_2026_xhttp.description": "Очень агрессивный пресет для случаев, когда более лёгкие начинают блокироваться. (XHTTP-вариант)",
+		"preset.pro_2026.description": "Профиль PRO 2026. Безопасность > Совместимость. Форсирует полный CPS уровень 3 + QUIC I1 1200B (Chrome fb) на всех AWG-хопах. Использовать, когда требуется максимальная устойчивость к DPI.",
+		"preset.pro_2026_awg.description": "Профиль PRO 2026. Безопасность > Совместимость. Форсирует полный CPS уровень 3 + QUIC I1 1200B (Chrome fb) на всех AWG-хопах. Использовать, когда требуется максимальная устойчивость к DPI. (AWG-вариант)",
+		"preset.pro_2026_reality.description": "Профиль PRO 2026. Безопасность > Совместимость. Форсирует полный CPS уровень 3 + QUIC I1 1200B (Chrome fb) на всех AWG-хопах. Использовать, когда требуется максимальная устойчивость к DPI. (Reality-вариант)",
+		"preset.pro_2026_xhttp.description": "Профиль PRO 2026. Безопасность > Совместимость. Форсирует полный CPS уровень 3 + QUIC I1 1200B (Chrome fb) на всех AWG-хопах. Использовать, когда требуется максимальная устойчивость к DPI. (XHTTP-вариант)",
+		"preset.xhttp_max_stealth_2026.description": "Экстремальная комбинация XHTTP + AWG (2026). Максимальные диапазоны паддинга, управление XMUX, полный CPS3 + QUIC. Использовать только когда более лёгкие профили сожжены. Безопасность строго приоритетнее совместимости.",
 	},
 }
 
@@ -1183,13 +1233,35 @@ func T(ctx context.Context, key string) string {
 	if !ok || lang == "" {
 		lang = "en" // Default
 	}
-	
+
 	if dict, found := locales[lang]; found {
 		if val, exists := dict[key]; exists {
 			return val
 		}
 	}
 	return key
+}
+
+// TPreset returns the localized description for a built-in preset. The key is
+// "preset.<name>.description"; when no translation exists (e.g. an unknown
+// preset, or a custom user-defined preset whose description the user typed in
+// their own language) it falls back to the supplied fallback string unchanged.
+// Used by the presets template so built-in preset descriptions render in the
+// active language instead of always-English source strings.
+func TPreset(ctx context.Context, name, fallback string) string {
+	lang, ok := ctx.Value(LangKey).(string)
+	if !ok || lang == "" {
+		lang = "en"
+	}
+	if lang == "en" {
+		return fallback // English descriptions are the source of truth.
+	}
+	if dict, found := locales[lang]; found {
+		if val, exists := dict["preset."+name+".description"]; exists {
+			return val
+		}
+	}
+	return fallback
 }
 
 // Lang returns the current language code from context (e.g. "en", "ru"),

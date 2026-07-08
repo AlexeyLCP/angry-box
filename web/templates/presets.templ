@@ -114,7 +114,7 @@ templ PresetsPage(builtins []chain.ConnectionPreset, customs []chain.ConnectionP
 											<span class="badge badge-xs">{ b.Protocol }</span>
 										}
 									</td>
-									<td class="text-xs text-base-content/60">{ b.Description }</td>
+									<td class="text-xs text-base-content/60">{ i18n.TPreset(ctx, b.Name, b.Description) }</td>
 								</tr>
 							}
 						</tbody>
