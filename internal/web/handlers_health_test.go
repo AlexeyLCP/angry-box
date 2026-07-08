@@ -9,7 +9,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -201,8 +200,8 @@ func TestMarkNodeBlocked(t *testing.T) {
 		t.Fatalf("audit = %d, want 1 (blocked entry)", n)
 	}
 	m, _ := ts.srv.store().GetMetrics("n1")
-	if !strings.Contains(m.StateReason, "operator") {
-		t.Fatalf("reason = %q, want it to mention operator", m.StateReason)
+	if m.StateReason != "DPI block observed" {
+		t.Fatalf("reason = %q, want the form-supplied reason", m.StateReason)
 	}
 }
 

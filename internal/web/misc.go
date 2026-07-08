@@ -56,17 +56,29 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 
 	status, err := b.GetStatus(ctx, hostCopy)
 
+	// Reuse the same state-machine path as the metrics loop so a manual "Check"
+	// produces a State consistent with the background ticker (and does not wipe
+	// hysteresis counters / block state). Read existing metrics, classify, save.
+	probe := chain.ClassifyProbe(err, status)
+	m, _ := st.GetMetrics(id)
+	if m == nil {
+		m = &model.NodeMetrics{HostID: id, State: model.NodeStateUnknown}
+	}
+	m.LastChecked = time.Now()
+	if err == nil && status != nil {
+		m.Version = status.Version
+		m.OS = status.OS
+		m.SingBoxInstalled = status.SingBoxInstalled
+		m.AWGModuleInstalled = status.AWGModuleInstalled
+	}
+	chain.NextState(m, probe, model.DefaultHysteresis)
+	m.Online = m.State == model.NodeStateHealthy
+	st.SaveMetrics(m)
+
 	if err != nil {
-		// Record offline metric
-		st.SaveMetrics(&model.NodeMetrics{HostID: id, Online: false})
 		s.render(w, r, &simpleHTML{html: `<span class="badge badge-error badge-sm">` + i18n.T(r.Context(), "Error") + `</span>`})
 		return
 	}
-	st.SaveMetrics(&model.NodeMetrics{
-		HostID:  id,
-		Online:  status.Running,
-		Version: status.Version,
-	})
 	s.render(w, r, templates.HostStatus(status))
 }
 

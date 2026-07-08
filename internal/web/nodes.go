@@ -643,6 +643,101 @@ func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) 
 	chain.ScheduleAutoApply(info.ID, "inbounds update")
 	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">` + i18n.T(r.Context(), "Inbounds saved.") + `</div>`})
 }
+
+// handleMarkNodeBlocked sets a node's health state to NodeStateBlocked. This is
+// an operator-initiated action (the orchestrator SSHes from a free region and
+// cannot observe a DPI block itself — see AGENTS.md / P1a). Blocked is sticky:
+// the metrics loop never clears it; the operator must unblock explicitly. The
+// reason from the form is recorded in StateReason + the audit payload.
+func (s *Server) handleMarkNodeBlocked(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	if _, err := st.GetHost(id); err != nil {
+		http.Error(w, i18n.T(r.Context(), "Host not found"), http.StatusNotFound)
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	if reason == "" {
+		reason = "operator marked"
+	}
+
+	m, _ := st.GetMetrics(id)
+	if m == nil {
+		m = &model.NodeMetrics{HostID: id, State: model.NodeStateUnknown}
+	}
+	chain.SetNodeState(m, model.NodeStateBlocked, reason)
+	m.Online = false
+	if err := st.SaveMetrics(m); err != nil {
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
+		return
+	}
+	chain.WriteAudit(st, "blocked", "node", id, chain.AuditPayload{"reason": reason}, "operator")
+
+	// HTMX swaps the status cell (hx-target="this" on the button's parent).
+	s.render(w, r, nodeStatusCell(id, model.NodeStateBlocked))
+}
+
+// handleClearNodeBlocked clears an operator-marked block, resetting the state
+// to NodeStateUnknown so the next metrics tick reclassifies from live signals
+// (rather than inheriting stale counters). Only acts on an actually-blocked
+// node — unblocking a healthy/down node is a no-op-able error (409).
+func (s *Server) handleClearNodeBlocked(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	if _, err := st.GetHost(id); err != nil {
+		http.Error(w, i18n.T(r.Context(), "Host not found"), http.StatusNotFound)
+		return
+	}
+	m, _ := st.GetMetrics(id)
+	if m == nil || m.State != model.NodeStateBlocked {
+		http.Error(w, i18n.T(r.Context(), "node is not blocked"), http.StatusConflict)
+		return
+	}
+	chain.SetNodeState(m, model.NodeStateUnknown, "operator cleared")
+	if err := st.SaveMetrics(m); err != nil {
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
+		return
+	}
+	chain.WriteAudit(st, "unblocked", "node", id, chain.AuditPayload{}, "operator")
+
+	s.render(w, r, nodeStatusCell(id, model.NodeStateUnknown))
+}
+
+// nodeStatusCell returns the HTMX-swappable status cell for a node row: a
+// health badge + a Mark/Clear-blocked button. Used by the block/unblock
+// handlers (swap outerHTML of the cell) and rendered statically by the nodes
+// table (Step 6). Kept as simpleHTML for now so the handlers compile before the
+// templ component lands; the templ version replaces this in Step 6.
+func nodeStatusCell(id, state string) *simpleHTML {
+	badge := healthBadgeHTML(state)
+	var action string
+	if state == model.NodeStateBlocked {
+		// Clear block button → POST /ui/nodes/{id}/unblock, swap the cell back.
+		action = `<button class="btn btn-ghost btn-xs" hx-post="/ui/nodes/` + id + `/unblock" hx-target="this" hx-swap="outerHTML">Clear block</button>`
+	} else {
+		action = `<button class="btn btn-ghost btn-xs" hx-post="/ui/nodes/` + id + `/block" hx-target="this" hx-swap="outerHTML">Mark blocked</button>`
+	}
+	return &simpleHTML{html: `<div class="flex items-center gap-1">` + badge + action + `</div>`}
+}
+
+// healthBadgeHTML returns a DaisyUI badge span for a node health state.
+func healthBadgeHTML(state string) string {
+	switch state {
+	case model.NodeStateHealthy:
+		return `<span class="badge badge-success badge-sm">Online</span>`
+	case model.NodeStateSuspect:
+		return `<span class="badge badge-warning badge-sm">Suspect</span>`
+	case model.NodeStateDown:
+		return `<span class="badge badge-error badge-sm">Down</span>`
+	case model.NodeStateUnreachable:
+		return `<span class="badge badge-error badge-sm">Unreachable</span>`
+	case model.NodeStateBlocked:
+		return `<span class="badge badge-error badge-outline badge-sm">Blocked</span>`
+	default:
+		return `<span class="badge badge-ghost badge-sm">Unknown</span>`
+	}
+}
+
 // registerNodeRoutes wires every node-scoped route (CRUD + capture + test +
 // inbounds + apply) onto the mux. Trust-host-key lives in dashboard.go (the
 // handler is there); host-status lives in misc.go. Grouped by path prefix
@@ -665,4 +760,8 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	// relocate: move a blocked node to a new VPS + re-deploy dependent chains.
 	mux.HandleFunc("GET /ui/nodes/{id}/relocate", s.auth(s.handleRelocateForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/relocate", s.auth(s.handleRelocateNode))
+	// health: operator mark/clear a DPI block (P1a). Not auto-detected — the
+	// orchestrator can't see a block from its free-region vantage point.
+	mux.HandleFunc("POST /ui/nodes/{id}/block", s.auth(s.handleMarkNodeBlocked))
+	mux.HandleFunc("POST /ui/nodes/{id}/unblock", s.auth(s.handleClearNodeBlocked))
 }
