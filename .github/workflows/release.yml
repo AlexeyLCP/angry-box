@@ -45,6 +45,17 @@ jobs:
             awk 'BEGIN{seen=0} /^import "github.com\/a-h\/templ"$/ {if(++seen>1) next} {print}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
           done
           cd ../..
+          # templ generate (+ the awk duplicate-import strip) rewrites the
+          # *_templ.go files even when the committed copies are already
+          # up-to-date (line-ending / mtime / strip re-emit). That leaves the
+          # working tree dirty, so `git describe --dirty` returns e.g.
+          # "v0.5.0-dirty" — which then poisons the VERSION baked into the
+          # binaries AND the CHANGELOG section match (no "## [v0.5.0-dirty]"
+          # header → full CHANGELOG as the release body). Restore the
+          # committed *_templ.go so the release tag stays clean. CI's
+          # templ-no-diff job already guarantees the committed copies match
+          # `templ generate`, so this checkout is a no-op on content.
+          git checkout -- web/templates/*_templ.go
 
       - name: Cross-build binaries
         run: make build-all
