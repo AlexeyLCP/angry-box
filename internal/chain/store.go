@@ -433,16 +433,22 @@ func (s *Store) ResolveNodes(chain *model.Chain) ([]model.ChainNode, error) {
 		
 		info, _ := s.GetNodeInfo(n.ID)
 
-		rn := model.ChainNode{
-			ID:      host.ID,
-			Addr:    host.Addr,
-			User:    host.User,
-			KeyPath: host.KeyPath,
-			Port:           n.Port,
-			TransitPrivKey: n.TransitPrivKey,
-			TransitShortID: n.TransitShortID,
-			TransitUUID:    n.TransitUUID,
-		}
+		// Rebuild the resolved node from the live Host (ID/Addr/User/KeyPath)
+		// while preserving EVERY persisted identity/material field from the
+		// stored ChainNode. The previous version copied only Port + the 3
+		// Reality transit fields + Inbounds, dropping Role/ExitTargets + all
+		// AWG transit/exit material. That made the next ApplyChain regenerate
+		// AWG keys → inter-node links broke (previous node's outbound
+		// peer.PublicKey no longer matched the new server pubkey; balancer
+		// awg-exit-nX no longer matched the exit's new server key) — a latent
+		// re-apply bug that also blocked node relocation (which needs the same
+		// keys reused on the new VPS). Copy the full struct, then overwrite the
+		// live-Host fields so nothing transit/material is lost.
+		rn := n
+		rn.ID = host.ID
+		rn.Addr = host.Addr
+		rn.User = host.User
+		rn.KeyPath = host.KeyPath
 		if info != nil {
 			rn.Inbounds = info.Inbounds
 		}

@@ -319,6 +319,135 @@ func TestResolveNodes_MissingHost(t *testing.T) {
 	}
 }
 
+// TestResolveNodes_PreservesAllTransitFields is the regression for the
+// relocation/re-apply bug: ResolveNodes rebuilt a fresh ChainNode copying only
+// Port + the 3 Reality transit fields + Inbounds, dropping Role/ExitTargets +
+// every AWG transit/exit field. On the next ApplyChain after a process restart
+// those AWG fields were empty → keys regenerated → inter-node AWG links broke
+// (previous node's outbound peer.PublicKey no longer matched the new server
+// pubkey; balancer awg-exit-nX no longer matched the exit's new server key).
+// Relocation (update Addr + re-apply to reuse keys) is impossible while
+// ResolveNodes strips the material. This test pins that EVERY persisted
+// ChainNode field survives ResolveNodes.
+func TestResolveNodes_PreservesAllTransitFields(t *testing.T) {
+	s := tempStore(t)
+	seedHost(t, s, "n1", "1.1.1.1:22")
+	s.SaveNodeInfo(&model.NodeInfo{Host: model.Host{ID: "n1", Addr: "1.1.1.1:22", User: "root"}})
+
+	seeded := model.ChainNode{
+		ID:                   "n1",
+		Port:                 443,
+		Role:                 model.NodeRoleExit,
+		ExitTargets:          []string{"n1"},
+		TransitPrivKey:       "REALITY-PRIV",
+		TransitShortID:       "deadbeef",
+		TransitUUID:          "uuid-1234",
+		TransitAWGServerPriv: "awg-srv-priv",
+		TransitAWGServerPub:  "awg-srv-pub",
+		TransitAWGClientPriv: "awg-cli-priv",
+		TransitAWGClientPub:  "awg-cli-pub",
+		TransitAWGAddress:    "10.9.0.5/32",
+		TransitAWGClientPort: 51821,
+		ExitAWGServerPriv:    "exit-srv-priv",
+		ExitAWGServerPub:     "exit-srv-pub",
+		ExitAWGListenPort:     52001,
+		ExitAWGLinks:         []model.AWGExitLink{{TargetID: "n1", InterfaceName: "awg-exit-n1", ClientPriv: "lk-priv", ClientPub: "lk-pub", Address: "10.10.0.2/32", ClientPort: 53001}},
+	}
+	c := &model.Chain{Name: "relo", Nodes: []model.ChainNode{seeded}}
+	if err := s.SaveChain(c); err != nil {
+		t.Fatalf("SaveChain: %v", err)
+	}
+
+	got, err := s.ResolveNodes(c)
+	if err != nil {
+		t.Fatalf("ResolveNodes: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 node, got %d", len(got))
+	}
+	r := got[0]
+	// Every persisted transit/identity field must survive ResolveNodes (the
+	// relocation/re-apply invariant). A dropped field here means ApplyChain
+	// regenerates it → the inter-node link breaks.
+	type fieldCheck struct {
+		name string
+		got  string
+		want string
+	}
+	checks := []fieldCheck{
+		{"Role", string(r.Role), string(seeded.Role)},
+		{"TransitPrivKey", r.TransitPrivKey, seeded.TransitPrivKey},
+		{"TransitShortID", r.TransitShortID, seeded.TransitShortID},
+		{"TransitUUID", r.TransitUUID, seeded.TransitUUID},
+		{"TransitAWGServerPriv", r.TransitAWGServerPriv, seeded.TransitAWGServerPriv},
+		{"TransitAWGServerPub", r.TransitAWGServerPub, seeded.TransitAWGServerPub},
+		{"TransitAWGClientPriv", r.TransitAWGClientPriv, seeded.TransitAWGClientPriv},
+		{"TransitAWGClientPub", r.TransitAWGClientPub, seeded.TransitAWGClientPub},
+		{"TransitAWGAddress", r.TransitAWGAddress, seeded.TransitAWGAddress},
+		{"ExitAWGServerPriv", r.ExitAWGServerPriv, seeded.ExitAWGServerPriv},
+		{"ExitAWGServerPub", r.ExitAWGServerPub, seeded.ExitAWGServerPub},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s: got %q, want %q (ResolveNodes dropped it)", c.name, c.got, c.want)
+		}
+	}
+	if r.Port != seeded.Port {
+		t.Errorf("Port: got %d, want %d", r.Port, seeded.Port)
+	}
+	if r.TransitAWGClientPort != seeded.TransitAWGClientPort {
+		t.Errorf("TransitAWGClientPort: got %d, want %d", r.TransitAWGClientPort, seeded.TransitAWGClientPort)
+	}
+	if r.ExitAWGListenPort != seeded.ExitAWGListenPort {
+		t.Errorf("ExitAWGListenPort: got %d, want %d", r.ExitAWGListenPort, seeded.ExitAWGListenPort)
+	}
+	if len(r.ExitTargets) != 1 || r.ExitTargets[0] != "n1" {
+		t.Errorf("ExitTargets: got %v, want [n1]", r.ExitTargets)
+	}
+	if len(r.ExitAWGLinks) != 1 || r.ExitAWGLinks[0].ClientPriv != "lk-priv" {
+		t.Errorf("ExitAWGLinks: got %+v, want 1 link with ClientPriv=lk-priv", r.ExitAWGLinks)
+	}
+}
+
+// TestResolveNodes_ReapplyKeepsAWGKeys verifies a second ResolveNodes (simulating
+// a re-apply after a process restart) does not lose the AWG transit material —
+// the core relocation/re-apply invariant.
+func TestResolveNodes_ReapplyKeepsAWGKeys(t *testing.T) {
+	s := tempStore(t)
+	seedHost(t, s, "n1", "1.1.1.1:22")
+	s.SaveNodeInfo(&model.NodeInfo{Host: model.Host{ID: "n1", Addr: "1.1.1.1:22", User: "root"}})
+	c := &model.Chain{Name: "relo2", Nodes: []model.ChainNode{{
+		ID:                   "n1",
+		TransitAWGServerPriv: "awg-srv-priv",
+		TransitAWGServerPub:  "awg-srv-pub",
+		ExitAWGServerPriv:    "exit-srv-priv",
+		Role:                 model.NodeRoleExit,
+		ExitTargets:          []string{"n1"},
+	}}}
+	if err := s.SaveChain(c); err != nil {
+		t.Fatalf("SaveChain: %v", err)
+	}
+	first, _ := s.ResolveNodes(c)
+	// Simulate re-apply: load chain fresh from store + ResolveNodes again.
+	c2, err := s.GetChain("relo2")
+	if err != nil {
+		t.Fatalf("GetChain: %v", err)
+	}
+	second, err := s.ResolveNodes(c2)
+	if err != nil {
+		t.Fatalf("second ResolveNodes: %v", err)
+	}
+	if second[0].TransitAWGServerPriv != first[0].TransitAWGServerPriv {
+		t.Errorf("TransitAWGServerPriv changed across re-apply: %q -> %q", first[0].TransitAWGServerPriv, second[0].TransitAWGServerPriv)
+	}
+	if second[0].ExitAWGServerPriv != first[0].ExitAWGServerPriv {
+		t.Errorf("ExitAWGServerPriv changed across re-apply: %q -> %q", first[0].ExitAWGServerPriv, second[0].ExitAWGServerPriv)
+	}
+	if second[0].Role != first[0].Role || len(second[0].ExitTargets) != 1 {
+		t.Errorf("Role/ExitTargets not preserved across re-apply: %+v", second[0])
+	}
+}
+
 // ─── Users ─────────────────────────────────────────────────────────────────────
 
 func TestSaveAndGetUser(t *testing.T) {
