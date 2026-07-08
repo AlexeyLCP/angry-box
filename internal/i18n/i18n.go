@@ -286,6 +286,7 @@ var locales = map[string]map[string]string{
 		// Backups (full-panel + per-node export/import)
 		"Backups": "Backups",
 		"Export panel": "Export panel",
+		"Export": "Export",
 		"Import backup": "Import backup",
 		"Export node": "Export node",
 		"backup json is required": "backup JSON is required",
@@ -1143,6 +1144,7 @@ var locales = map[string]map[string]string{
 		// Backups (full-panel + per-node export/import)
 		"Backups": "Резервные копии",
 		"Export panel": "Экспорт панели",
+		"Export": "Экспорт",
 		"Import backup": "Импорт резервной копии",
 		"Export node": "Экспорт узла",
 		"backup json is required": "требуется JSON резервной копии",

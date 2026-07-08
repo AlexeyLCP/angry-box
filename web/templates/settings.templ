@@ -207,6 +207,41 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					</ul>
 				</div>
 			</div>
+
+			<!-- Backups — full-panel export/import + per-node export (the import
+			     endpoint is on Settings because it is panel-wide; per-node export
+			     buttons live on the Nodes page). -->
+			<div class="tn-card">
+				<div class="card-body p-4">
+					<h3 class="font-semibold mb-3">{ i18n.T(ctx, "Backups") }</h3>
+					<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Export the whole panel (hosts, chains, transit keys, users, settings) as a portable JSON backup, or import one to restore/migrate.") }</p>
+					<div class="flex gap-2 flex-wrap">
+						<a class="btn btn-ghost btn-sm" href="/ui/backup/store" download>{ i18n.T(ctx, "Export panel") }</a>
+						<button type="button" class="btn btn-ghost btn-sm"
+							onclick="var f=document.getElementById('import-backup-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
+							{ i18n.T(ctx, "Import backup") }
+						</button>
+					</div>
+					<div id="import-backup-form" class="hidden mt-2 border border-dashed border-base-300 rounded-lg p-2">
+						<form
+							hx-post="/ui/backup/import"
+							hx-target="#import-backup-result"
+							hx-swap="innerHTML"
+							class="space-y-2">
+							<div class="form-control">
+								<textarea name="backup_json" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="6"
+									placeholder="{&quot;format&quot;:&quot;angry-box-store&quot;...}  /  {&quot;format&quot;:&quot;angry-box-node&quot;...}"></textarea>
+							</div>
+							<label class="label cursor-pointer gap-2">
+								<input type="checkbox" name="force" class="checkbox checkbox-sm" />
+								<span class="label-text text-xs">{ i18n.T(ctx, "Overwrite existing (force)") }</span>
+							</label>
+							<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import backup") }</button>
+						</form>
+						<div id="import-backup-result" class="mt-1"></div>
+					</div>
+				</div>
+			</div>
 		</div>
 	</div>
 }

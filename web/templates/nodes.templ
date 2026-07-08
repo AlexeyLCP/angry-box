@@ -148,6 +148,9 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 					hx-push-url="true">
 					{ i18n.T(ctx, "Takeover") }
 				</button>
+				<a class="btn btn-ghost btn-xs" href={ "/ui/backup/nodes/" + h.ID } download title={ i18n.T(ctx, "Export node") }>
+					{ i18n.T(ctx, "Export") }
+				</a>
 				<button
 					class="btn btn-ghost btn-xs"
 					hx-get={"/ui/nodes/" + h.ID + "/edit"}
