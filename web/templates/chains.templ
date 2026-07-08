@@ -422,6 +422,69 @@ templ ApplyResult(chainName string, success bool, report *chain.ApplyReport, sim
 	</div>
 }
 
+// RelocateResult renders the outcome of a node relocation: which node moved
+// (old→new addr) and, per affected chain, whether the re-apply healed it. A
+// nil report + non-empty simpleMessage is the error path (unknown node, bad
+// addr, missing SSH key). When report is non-nil the overall success is
+// derived from whether every chain re-apply succeeded.
+templ RelocateResult(nodeID string, report *chain.RelocateReport, simpleMessage string) {
+	if report != nil {
+		<div class={ "alert " + alertClass(relocateAllSuccess(report)) + " shadow-sm text-sm mb-2" }>
+			<div class="w-full">
+				<div class="flex justify-between items-start mb-1">
+					<strong>{ fmt.Sprintf("%s: %s → %s", i18n.T(ctx, "Relocate node"), nodeID, report.NewAddr) }</strong>
+					<button class="btn btn-ghost btn-xs" onclick="this.closest('.alert').remove()">✕</button>
+				</div>
+				<div class="text-xs opacity-70 mb-1">{ fmt.Sprintf("%s: %s → %s", nodeID, report.OldAddr, report.NewAddr) }</div>
+				<div class="space-y-1 text-xs">
+					for _, c := range report.Chains {
+						<div>
+							<span class="font-mono">{ c.Name }</span>
+							if c.Success {
+								<span class="text-success font-semibold">{ i18n.T(ctx, "OK") }</span>
+							} else {
+								<span class="text-error font-semibold">{ i18n.T(ctx, "FAIL") }</span>
+								if c.Error != "" {
+									<span class="opacity-70 max-w-[300px] truncate inline-block align-bottom cursor-pointer"
+										onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none'"
+										title={ i18n.T(ctx, "Click to expand") }> — { c.Error }</span>
+									<span class="hidden text-[10px] font-mono opacity-60 mt-1 block max-w-full break-all">{ c.Error }</span>
+								}
+							}
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	} else {
+		<div class="alert alert-error shadow-sm text-sm mb-2">
+			<div class="w-full">
+				<div class="flex justify-between items-start mb-1">
+					<strong>{ i18n.T(ctx, "Relocate node") + ": " + nodeID }</strong>
+					<button class="btn btn-ghost btn-xs" onclick="this.closest('.alert').remove()">✕</button>
+				</div>
+				if simpleMessage != "" {
+					<div class="text-xs">{ simpleMessage }</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+// relocateAllSuccess reports whether every chain re-apply in a relocate report
+// succeeded (drives the top-level alert class).
+func relocateAllSuccess(report *chain.RelocateReport) bool {
+	if report == nil || len(report.Chains) == 0 {
+		return false
+	}
+	for _, c := range report.Chains {
+		if !c.Success {
+			return false
+		}
+	}
+	return true
+}
+
 func nodeListStr(nodes []model.ChainNode) string {
 	s := ""
 	for i, n := range nodes {

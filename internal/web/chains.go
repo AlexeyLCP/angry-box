@@ -427,6 +427,50 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, templates.ApplyResult(id, true, report, resultMsg))
 }
 
+// handleRelocateNode moves a node to a new VPS (new addr + optional user/key)
+// and re-deploys every chain containing it so the new IP propagates to
+// dependent nodes (previous hop + balancers on this node). The node's ID +
+// transit/exit material are preserved, so re-deploy reuses the same
+// credentials — other nodes + existing clients are not reconfigured. Renders a
+// per-chain RelocateResult summary (success/error for each affected chain).
+func (s *Server) handleRelocateNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, i18n.T(r.Context(), "missing id"), http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	newAddr := strings.TrimSpace(r.FormValue("new_addr"))
+	if newAddr == "" {
+		s.render(w, r, templates.RelocateResult(id, nil, i18n.T(r.Context(), "new address is required")))
+		return
+	}
+	newUser := strings.TrimSpace(r.FormValue("new_user"))
+	// SSH key: read the unified dropdown field. Empty preserves the current
+	// KeyPath. Validate a registry id exists before relocating (a stale id
+	// would make the re-deploy fail to dial).
+	newKeyPath := strings.TrimSpace(r.FormValue("new_ssh_key_id"))
+	if newKeyPath != "" && !strings.HasPrefix(newKeyPath, "password:") {
+		if _, ok := s.store().ResolveKey(newKeyPath); !ok {
+			s.render(w, r, templates.RelocateResult(id, nil, i18n.T(r.Context(), "Selected key not found in registry")))
+			return
+		}
+	}
+
+	st := s.store()
+	applier := chain.NewApplier(s.factory, s.SSHConnector())
+	ctx := context.Background()
+	report, err := chain.RelocateNode(ctx, st, applier, id, newAddr, newUser, newKeyPath, "")
+	if err != nil {
+		s.render(w, r, templates.RelocateResult(id, nil, err.Error()))
+		return
+	}
+	s.render(w, r, templates.RelocateResult(id, report, ""))
+}
+
 // handleCaptureQUICPreview runs chain.CaptureQUICSignature against the
 // domain entered in the chain form and returns an inline I1-I5 preview (or a
 // failure warning). It does NOT save anything — pure preview. The actual

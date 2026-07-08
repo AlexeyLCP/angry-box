@@ -647,4 +647,6 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	// apply is a node-path route but the handler shares chain apply logic —
 	// registered here by path, handler stays in chains.go.
 	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
+	// relocate: move a blocked node to a new VPS + re-deploy dependent chains.
+	mux.HandleFunc("POST /ui/nodes/{id}/relocate", s.auth(s.handleRelocateNode))
 }
