@@ -209,6 +209,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	s.registerMiscRoutes(mux)
 	s.registerClientRoutes(mux)
 	s.registerPresetRoutes(mux)
+	s.registerServiceRoutes(mux)
 	s.registerBackupRoutes(mux)
 }
 
