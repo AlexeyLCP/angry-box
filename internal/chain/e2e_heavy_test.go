@@ -237,12 +237,14 @@ func TestE2E_Heavy_Protocol_AWG_Kernel(t *testing.T) {
 // downstream hop must forward the TUN-overlay catch-all (tun-in) to the
 // inter-node outbound — NOT "direct" (which would egress from the entry node
 // and silently break chain forwarding). Deploys entry→exit on test-server-1 +
-// test-server-3 (both already have the amneziawg module — fast path, no DKMS).
+// test-server-3 (ApplyChain auto-stages the amneziawg module via the PPA fast
+// path on a fresh Debian 12 VPS, falling back to DKMS if the PPA is unavailable).
 func TestE2E_Heavy_Protocol_AWG_Kernel_2Hop(t *testing.T) {
 	e2eHeavy(t)
 	store := newStore(t)
-	// entry=server-1 (34.62.128.71), exit=server-3 (23.251.133.38) — both have
-	// the amneziawg module + awg-quick installed, so no DKMS build is needed.
+	// entry=server-1 (34.14.98.64), exit=server-3 (35.189.235.61). On a fresh
+	// VPS ApplyChain runs installAWGModule (PPA → DKMS fallback) the first time;
+	// a redeploy short-circuits via the amneziawg-loaded fast path.
 	nodes := buildChainNodes(e2eRoleEntry, e2eRoleExit)
 	registerChainNodes(t, store, nodes, true)
 

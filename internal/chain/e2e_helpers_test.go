@@ -38,9 +38,9 @@ var e2eServers = []struct {
 	KeyFile string
 	Role    string
 }{
-	{ID: "e2e-entry", Addr: "34.62.128.71:22", User: "lcp", KeyFile: "id_ed25519", Role: "entry"},
-	{ID: "e2e-middle", Addr: "207.175.40.161:22", User: "lcp", KeyFile: "id_ed25519", Role: "middle"},
-	{ID: "e2e-exit", Addr: "23.251.133.38:22", User: "lcp", KeyFile: "id_ed25519", Role: "exit"},
+	{ID: "e2e-entry", Addr: "34.14.98.64:22", User: "lcp", KeyFile: "id_ed25519", Role: "entry"},
+	{ID: "e2e-middle", Addr: "207.175.1.227:22", User: "lcp", KeyFile: "id_ed25519", Role: "middle"},
+	{ID: "e2e-exit", Addr: "35.189.235.61:22", User: "lcp", KeyFile: "id_ed25519", Role: "exit"},
 }
 
 var (

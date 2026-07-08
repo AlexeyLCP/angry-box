@@ -2,7 +2,7 @@
 
 > Единый источник правды: что сделано, что нужно, откуда берём. Обновлять при каждом изменении. Не удалять — накапливать.
 
-Последнее обновление: 2026-07-04 (real e2e egress verified + 3 routing bugs found & fixed — §11)
+Последнее обновление: 2026-07-08 (v0.4.0 live E2E на свежих GCloud VPSes — §13.4)
 
 ---
 
@@ -37,7 +37,7 @@
 8. **Itime ломает runtime.** `sing-box UAPI` rejects "itime", `awg setconf` rejects "Itime". Держим только в Go (`AmneziaOptions.ITime json:"-"`), не эмитим в .conf. Фикс 6f1a108.
 9. **awg-quick .conf: amnezia-поля в `[Interface]` ДО `[Peer]`.** `awg setconf` парсит amnezia только в `[Interface]`; после `[Peer]` → `Line unrecognized: Jc=...`.
 10. **commit convention:** `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-11. **E2E-инфра:** GCloud VPSes — entry `34.62.128.71`, middle `207.175.40.161`, exit `23.251.133.38`. User `lcp`, key `id_ed25519`. GCloud UDP 443 firewall на exit VPS — известный инфраструктурный затык e2e.
+11. **E2E-инфра:** GCloud VPSes (свежие, 2026-07-08) — entry `34.14.98.64`, middle `207.175.1.227`, exit `35.189.235.61`. User `lcp`, key `id_ed25519`, passwordless sudo (google-sudoers), Debian 12, kernel 6.1.0-49. Сервера чистые (нет sing-box/awg — ApplyChain self-stages). GCloud UDP 443 firewall на exit VPS — известный инфраструктурный затык e2e.
 
 ---
 
@@ -560,3 +560,21 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 **Benchmarks (done):** SaveAuditLog/StoreRead/Write/RenderMerged/ProxyPassword + Makefile bench target.
 
 **Coverage baseline in CI (done):** ci.yml coverage step + docs/COVERAGE.md regenerate.
+
+### 13.4. v0.4.0 live E2E на свежих GCloud VPSes (2026-07-08)
+
+Пользователь дал 3 свежих GCloud Debian 12 VPS (entry `34.14.98.64`, middle `207.175.1.227`, exit `35.189.235.61`, user `lcp`, key `id_ed25519`, passwordless sudo). Сервера были **чистые** (нет sing-box, нет awg-quick, нет amneziawg-модуля) — проверено что `ApplyChain` полностью self-stages: sing-box-extended binary (download из GitHub Release), amneziawg kernel module (PPA fast path `apt install amneziawg`), `awg-quick@.service` template, `awg0.conf`, `ip_forward=1`, sing-box systemd unit с `After=awg-quick@awg0.service`. Адреса в `e2e_helpers_test.go` обновлены на новые IP.
+
+**Результаты E2E (3 теста PASS):**
+
+| Тест | Результат | Время | Что проверено |
+|------|-----------|-------|---------------|
+| `TestE2E_Heavy_Protocol_AWG_Kernel` | **PASS** | 398с (1-й прогон = full staging) | amneziawg module loaded, awg-quick `/usr/bin/awg-quick`, awg0.conf pushed (3787 bytes с amnezia Jc/S1/H1, NO Itime), `awg-quick@awg0` active, awg0 iface up `10.8.0.1/24`, sing-box `After=awg-quick@awg0.service`, TUN-overlay (`include_interface awg0`), NO userspace wireguard endpoint. |
+| `TestE2E_Heavy_Protocol_AWG_Kernel_2Hop` | **PASS** | 316с | entry→exit: entry TUN-overlay catch-all → `ch-...-out-www` (inter-node outbound, NOT direct — chain forwarding wired), entry awg0 up, exit XHTTP transport inbound present + healthy. |
+| `TestE2E_Heavy_PerClientRouting` (`AB_E2E_AWG_PERCLIENT=1`) | **PASS** (с WARNING) | 71с | balancer arch (server-1 awg0 + awg-exit-n1, server-3 exit awg0+MASQUERADE). **AWG handshake OK** (`latest handshake: 5 seconds ago` — proof persisted CPS I1-I5 server↔client identical, амнезия обфускация end-to-end работает). balancer awg-exit-n1 active, exit awg0 active с MASQUERADE. **НО: egress IP через client tunnel пустой** (`curl --interface awge2e ifconfig.me` → empty) — известный открытый пункт (см. ниже). |
+
+**Egress routing через client tunnel — ОТКРЫТ (не блокер):** Handshake проходит (главное proof — амнезия обфускация работает end-to-end на свежих VPS), но `curl --interface awge2e` не возвращает egress IP. Sing-box TUN-overlay поднят (`sing-box-tun`), но trace пустой после старта — нет router match для трафика с `awge2e` client tunnel. Это тот же пункт что AGENTS.md #13 "Per-client `source_ip_cidr` under TUN-overlay still needs real-VPS verify" — routing polish для client-side tunnel на test VPS. Тест логирует WARNING и проходит (handshake = AWG-obfuscation proof). Требует отдельной отладки (tcpdump + sing-box trace debug) — не v0.4.0 блокер, отдельная задача.
+
+**Stage 3 unit-тесты добавлены (quality gap из прошлой сессии закрыт):** `TestAwgServerConfigToAmnezia` (obfuscated + plain-WG-returns-nil), `TestRenderTakeoverAWGConf` (path/service = awg0, [Interface] carries imported material, 2 [Peer] from active users, inactive/skipped users excluded, PostUp present, NO Itime), `TestRenderTakeoverAWGConf_PlainWG`, `TestRenderTakeoverAWGConf_DefaultAddress`. Все PASS.
+
+**Cleanup серверов после тестов:** `e2eResetAllServers` чинит post-crash state (chown sing-box binary, reset-failed). AWG-интерфейсы (awg0, awg-exit-n1, awge2e) оставлены для будущих прогонов (модуль установлен — fast path при redeploy).
