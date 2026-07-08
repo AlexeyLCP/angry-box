@@ -147,16 +147,14 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		settings.DefaultProtocol = dp
 	}
 
-	// SSH keys
-	keyNames := r.Form["ssh_key_name"]
-	keyPaths := r.Form["ssh_key_path"]
-	keys := make([]model.SSHKeyEntry, 0, len(keyNames))
-	for i := range keyNames {
-		if keyNames[i] != "" && keyPaths[i] != "" {
-			keys = append(keys, model.SSHKeyEntry{Name: keyNames[i], KeyPath: keyPaths[i]})
-		}
-	}
-	settings.SSHKeys = keys
+	// SSH keys are managed through their own endpoints (/ui/settings/ssh-keys,
+	// /ui/settings/ssh-keys/{id}, import-system, import) which carry the PEM
+	// key_data — NOT through the main settings form. The main form used to emit
+	// ssh_key_name/ssh_key_path pairs (the pre-v0.2.5 KeyPath-based schema), and
+	// this block rebuilt settings.SSHKeys from those fields. After the redesign
+	// the main form no longer carries them, so this would clobber the
+	// PEM-stored keys to an empty slice on every Save Settings (data-loss:
+	// saving the language wiped all imported keys). Removed.
 
 	st.SaveSettings(settings)
 

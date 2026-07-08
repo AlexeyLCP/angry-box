@@ -113,17 +113,6 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 						<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "SNI domain for REALITY/TUIC inbounds when no preset specifies one") }</span></label>
 					</div>
 
-					<!-- SSH Keys -->
-					<div class="border-t border-base-300 pt-4 mt-4">
-						<h4 class="font-medium mb-2">{ i18n.T(ctx, "SSH Keys") }</h4>
-						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.") }</p>
-
-						<div id="ssh-keys-list" class="space-y-2">
-							@SSHKeyList(settings, systemKeysSlice(systemKeys), hosts)
-						</div>
-
-					</div>
-
 					<div class="pt-2">
 						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Settings") }</button>
 					</div>
@@ -131,7 +120,25 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 
 				<div id="settings-result" class="mt-2"></div>
 
-				<!-- Add new key form (moved outside main form) -->
+				<!-- SSH Keys — kept OUTSIDE the main settings form. The SSHKeyList
+				     component renders its own <form> elements (add/import/test/delete
+				     each hit their own /ui/settings/ssh-keys* endpoints), and HTML
+				     forbids nested <form>: a <form> inside the main settings <form>
+				     makes the browser close the outer form early, which drops the
+				     Save Settings button (and the language select's submit) out of
+				     the form — so Save Settings silently no-op'd and the language
+				     never changed. -->
+				<div class="border-t border-base-300 pt-4 mt-4">
+					<h4 class="font-medium mb-2">{ i18n.T(ctx, "SSH Keys") }</h4>
+					<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.") }</p>
+
+					<div id="ssh-keys-list" class="space-y-2">
+						@SSHKeyList(settings, systemKeysSlice(systemKeys), hosts)
+					</div>
+				</div>
+
+				<!-- Add new key form (outside the main settings form + the ssh-keys-list
+				     so it is not re-rendered on every add/delete/test/delete swap). -->
 				<div class="mt-4 border border-dashed border-base-300 rounded-lg p-3">
 					<form
 						hx-post="/ui/settings/ssh-keys"
@@ -337,27 +344,6 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, 
 			<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import registry") }</button>
 		</form>
 		<div id="import-result" class="mt-1"></div>
-	</div>
-	<!-- Add new key form -->
-	<div class="mt-3 border border-dashed border-base-300 rounded-lg p-3">
-		<form
-			hx-post="/ui/settings/ssh-keys"
-			hx-target="closest #ssh-keys-list"
-			hx-swap="outerHTML"
-			hx-on::after-request="this.reset()"
-			class="space-y-2">
-			<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
-			<div class="form-control">
-				<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
-			</div>
-			<div class="form-control">
-				<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
-					required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
-...
------END OPENSSH PRIVATE KEY-----"></textarea>
-			</div>
-			<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
-		</form>
 	</div>
 }
 

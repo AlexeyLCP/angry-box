@@ -610,33 +610,46 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</span></label></div><!-- SSH Keys --><div class=\"border-t border-base-300 pt-4 mt-4\"><h4 class=\"font-medium mb-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</span></label></div><div class=\"pt-2\"><button type=\"submit\" class=\"btn btn-primary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var36 string
-		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "SSH Keys"))
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Save Settings"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 118, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 117, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</h4><p class=\"text-xs text-base-content/50 mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></div></form><div id=\"settings-result\" class=\"mt-2\"></div><!-- SSH Keys — kept OUTSIDE the main settings form. The SSHKeyList\n\t\t\t\t     component renders its own <form> elements (add/import/test/delete\n\t\t\t\t     each hit their own /ui/settings/ssh-keys* endpoints), and HTML\n\t\t\t\t     forbids nested <form>: a <form> inside the main settings <form>\n\t\t\t\t     makes the browser close the outer form early, which drops the\n\t\t\t\t     Save Settings button (and the language select's submit) out of\n\t\t\t\t     the form — so Save Settings silently no-op'd and the language\n\t\t\t\t     never changed. --><div class=\"border-t border-base-300 pt-4 mt-4\"><h4 class=\"font-medium mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var37 string
-		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/."))
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "SSH Keys"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 119, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 132, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</p><div id=\"ssh-keys-list\" class=\"space-y-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</h4><p class=\"text-xs text-base-content/50 mb-3\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var38 string
+		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/."))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 133, Col: 140}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</p><div id=\"ssh-keys-list\" class=\"space-y-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -644,27 +657,14 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</div></div><div class=\"pt-2\"><button type=\"submit\" class=\"btn btn-primary\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var38 string
-		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Save Settings"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 128, Col: 82}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</button></div></form><div id=\"settings-result\" class=\"mt-2\"></div><!-- Add new key form (moved outside main form) --><div class=\"mt-4 border border-dashed border-base-300 rounded-lg p-3\"><form hx-post=\"/ui/settings/ssh-keys\" hx-target=\"#ssh-keys-list\" hx-swap=\"outerHTML\" hx-on::after-request=\"this.reset()\" class=\"space-y-2\"><div class=\"text-sm font-medium mb-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><!-- Add new key form (outside the main settings form + the ssh-keys-list\n\t\t\t\t     so it is not re-rendered on every add/delete/test/delete swap). --><div class=\"mt-4 border border-dashed border-base-300 rounded-lg p-3\"><form hx-post=\"/ui/settings/ssh-keys\" hx-target=\"#ssh-keys-list\" hx-swap=\"outerHTML\" hx-on::after-request=\"this.reset()\" class=\"space-y-2\"><div class=\"text-sm font-medium mb-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Add New SSH Key"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 142, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 149, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -677,7 +677,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "Key name (e.g. Home Server)"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 144, Col: 140}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 151, Col: 140}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 		if templ_7745c5c3_Err != nil {
@@ -690,7 +690,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Save Key"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 150, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 157, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -703,7 +703,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "System Info"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 159, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 166, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -716,7 +716,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Nodes"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 162, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 169, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -729,7 +729,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(hosts)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 163, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 170, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -742,7 +742,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Chains"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 166, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 173, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -755,7 +755,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(chains)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 167, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 174, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
@@ -768,7 +768,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Default Obfuscation"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 170, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 177, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -786,7 +786,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(settings.PanelCountry)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 173, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 180, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -804,7 +804,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Global default"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 175, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 182, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -822,7 +822,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Metrics Interval"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 180, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 187, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -835,7 +835,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(i18n.T(ctx, "%d min"), settings.MetricsInterval))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 181, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 188, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
@@ -848,7 +848,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "License & Disclaimer"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 190, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 197, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
@@ -861,7 +861,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "PolyForm Noncommercial License 1.0.0"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 192, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 199, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 		if templ_7745c5c3_Err != nil {
@@ -874,7 +874,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var54 string
 		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "This software is licensed for"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 193, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 200, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 		if templ_7745c5c3_Err != nil {
@@ -887,7 +887,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "personal, non-commercial, educational, and scientific use only"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 193, Col: 145}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 200, Col: 145}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 		if templ_7745c5c3_Err != nil {
@@ -900,7 +900,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Any commercial use is strictly prohibited."))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 193, Col: 217}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 200, Col: 217}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -913,7 +913,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "By using Angry-BOX, you acknowledge that:"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 195, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 202, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
@@ -926,7 +926,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Circumvention of network censorship may be illegal in your jurisdiction"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 197, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 204, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -939,7 +939,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "You are solely responsible for complying with applicable laws"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 198, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 205, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {
@@ -952,7 +952,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "The software must not be used for any commercial purpose"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 199, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 206, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 		if templ_7745c5c3_Err != nil {
@@ -1004,7 +1004,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(key.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 217, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 224, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 			if templ_7745c5c3_Err != nil {
@@ -1027,7 +1027,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf(`{"ssh_key_id":"%s"}`, key.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 220, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 227, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
 			if templ_7745c5c3_Err != nil {
@@ -1040,7 +1040,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(keyBadge(ctx, key.Source))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 225, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 232, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1053,7 +1053,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(key.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 226, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 233, Col: 16}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1071,7 +1071,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var66 string
 				templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Use as default"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 228, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 235, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 				if templ_7745c5c3_Err != nil {
@@ -1094,7 +1094,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var67 string
 				templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(key.Fingerprint)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 233, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 240, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 				if templ_7745c5c3_Err != nil {
@@ -1113,7 +1113,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var68 string
 				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(i18n.T(ctx, "%d bytes"), len(key.KeyData)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 236, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 243, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 				if templ_7745c5c3_Err != nil {
@@ -1131,7 +1131,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var69 string
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue("test-form-" + key.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 241, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 248, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 			if templ_7745c5c3_Err != nil {
@@ -1144,7 +1144,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Test key"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 243, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 250, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
@@ -1157,7 +1157,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/settings/ssh-keys/" + key.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 246, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 253, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 			if templ_7745c5c3_Err != nil {
@@ -1170,7 +1170,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 249, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 256, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1183,7 +1183,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var73 string
 			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue("test-form-" + key.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 252, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 259, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
 			if templ_7745c5c3_Err != nil {
@@ -1196,7 +1196,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue("/ui/settings/ssh-keys/" + key.ID + "/test")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 254, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 261, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 			if templ_7745c5c3_Err != nil {
@@ -1209,7 +1209,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue("#test-result-" + key.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 255, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 262, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
 			if templ_7745c5c3_Err != nil {
@@ -1222,7 +1222,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Node"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 258, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 265, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
@@ -1235,7 +1235,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var77 string
 			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Select node…"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 260, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 267, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 			if templ_7745c5c3_Err != nil {
@@ -1253,7 +1253,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var78 string
 				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.ResolveAttributeValue(h.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 262, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 269, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var78)
 				if templ_7745c5c3_Err != nil {
@@ -1266,7 +1266,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var79 string
 				templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(h.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 262, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 269, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 				if templ_7745c5c3_Err != nil {
@@ -1279,7 +1279,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var80 string
 				templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(h.Addr)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 262, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 269, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 				if templ_7745c5c3_Err != nil {
@@ -1297,7 +1297,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var81 string
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Test connection"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 266, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 273, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 			if templ_7745c5c3_Err != nil {
@@ -1310,7 +1310,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var82 string
 			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue("test-result-" + key.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 268, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 275, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
 			if templ_7745c5c3_Err != nil {
@@ -1333,7 +1333,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(keyBadge(ctx, key.Source))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 277, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 284, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 			if templ_7745c5c3_Err != nil {
@@ -1346,7 +1346,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(key.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 278, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 285, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1364,7 +1364,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 				var templ_7745c5c3_Var85 string
 				templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(key.Fingerprint)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 282, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 289, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 				if templ_7745c5c3_Err != nil {
@@ -1382,7 +1382,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(key.KeyPath)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 285, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 292, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 			if templ_7745c5c3_Err != nil {
@@ -1400,7 +1400,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 		var templ_7745c5c3_Var87 string
 		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Import from ~/.ssh/"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 294, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 301, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 		if templ_7745c5c3_Err != nil {
@@ -1418,7 +1418,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var88 string
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.ResolveAttributeValue(k.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 302, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 309, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var88)
 			if templ_7745c5c3_Err != nil {
@@ -1431,7 +1431,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(k.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 304, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 311, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
@@ -1444,7 +1444,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(k.KeyPath)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 304, Col: 112}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 311, Col: 112}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 			if templ_7745c5c3_Err != nil {
@@ -1457,7 +1457,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "Key name (e.g. Home Server)"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 305, Col: 140}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 312, Col: 140}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var91)
 			if templ_7745c5c3_Err != nil {
@@ -1470,7 +1470,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var92 string
 			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Save Key"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 307, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 314, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 			if templ_7745c5c3_Err != nil {
@@ -1489,7 +1489,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "No SSH key configured and no default key set"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 311, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 318, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 			if templ_7745c5c3_Err != nil {
@@ -1507,7 +1507,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 		var templ_7745c5c3_Var94 string
 		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Export registry"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 317, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 324, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 		if templ_7745c5c3_Err != nil {
@@ -1520,7 +1520,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Import registry"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 320, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 327, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 		if templ_7745c5c3_Err != nil {
@@ -1533,7 +1533,7 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 		var templ_7745c5c3_Var96 string
 		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Are you sure?"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 335, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 342, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 		if templ_7745c5c3_Err != nil {
@@ -1546,52 +1546,13 @@ func SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, h
 		var templ_7745c5c3_Var97 string
 		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Import registry"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 337, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 344, Col: 88}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</button></form><div id=\"import-result\" class=\"mt-1\"></div></div><!-- Add new key form --><div class=\"mt-3 border border-dashed border-base-300 rounded-lg p-3\"><form hx-post=\"/ui/settings/ssh-keys\" hx-target=\"closest #ssh-keys-list\" hx-swap=\"outerHTML\" hx-on::after-request=\"this.reset()\" class=\"space-y-2\"><div class=\"text-sm font-medium mb-1\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var98 string
-		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Add New SSH Key"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 349, Col: 73}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "</div><div class=\"form-control\"><input type=\"text\" name=\"name\" class=\"input input-bordered input-sm\" required placeholder=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var99 string
-		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "Key name (e.g. Home Server)"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 351, Col: 138}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var99)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "\"></div><div class=\"form-control\"><textarea name=\"key_data\" class=\"textarea textarea-bordered textarea-sm font-mono text-xs\" rows=\"4\" required placeholder=\"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----\"></textarea></div><button type=\"submit\" class=\"btn btn-primary btn-sm\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var100 string
-		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Save Key"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 359, Col: 81}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "</button></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</button></form><div id=\"import-result\" class=\"mt-1\"></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

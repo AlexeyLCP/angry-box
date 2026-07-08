@@ -267,6 +267,130 @@ func TestHandler_SaveSettings_LanguagePersists(t *testing.T) {
 	}
 }
 
+// TestHandler_SettingsView_NoNestedFormsInMainForm is the regression for the
+// language-switch bug (2026-07-08): the SSHKeyList component rendered its own
+// <form> elements (add/import/test/delete) INSIDE the main settings <form>,
+// but HTML forbids nested <form> — the browser closed the outer form at the
+// first nested one, which dropped the Save Settings button (and the language
+// select's submit) out of the form. The fix moved #ssh-keys-list + the add-key
+// form outside the main <form>. This test pins the structure: the main settings
+// form (hx-post="/ui/settings") must contain NO nested <form> and must contain
+// the Save Settings submit button.
+func TestHandler_SettingsView_NoNestedFormsInMainForm(t *testing.T) {
+	ts := newTestServer(t)
+	w := ts.get("/ui/settings")
+	ts.assertStatus(w, http.StatusOK)
+	body := w.Body.String()
+
+	// The "Add New SSH Key" heading must appear exactly once (the duplicate
+	// add-key form inside SSHKeyList was the second copy — both visible on the
+	// page). Count occurrences of the heading text.
+	addKeyHeading := "Add New SSH Key"
+	if got := strings.Count(body, addKeyHeading); got != 1 {
+		t.Errorf("Add New SSH Key heading appears %d times, want 1 (duplicate add-key form regression):\n%s", got, excerpt(body, addKeyHeading))
+	}
+
+	// The main settings form must open before the Save Settings button and
+	// close AFTER it (so the button is inside the form). We check the ordering:
+	// form-open tag, then the Save Settings button, then form-close — by
+	// locating each in the body and comparing offsets.
+	formOpen := strings.Index(body, `hx-post="/ui/settings"`)
+	if formOpen < 0 {
+		t.Fatal(`main settings form hx-post="/ui/settings" not found`)
+	}
+	// The Save Settings button is the non-sm primary submit ("Save Settings"
+	// label, en in the test harness which defaults to en).
+	saveBtn := strings.Index(body, ">Save Settings<")
+	if saveBtn < 0 {
+		t.Fatal(`Save Settings button not found on settings page`)
+	}
+	if saveBtn < formOpen {
+		t.Errorf("Save Settings button (offset %d) appears BEFORE the main form open (offset %d) — it must be inside the form", saveBtn, formOpen)
+	}
+	// The #ssh-keys-list block (which contains nested <form>s) must sit AFTER
+	// the main form closes, not inside it. The main form closes with </form>;
+	// ssh-keys-list must appear after that first </form>.
+	firstFormClose := strings.Index(body, "</form>")
+	if firstFormClose < 0 {
+		t.Fatal("no </form> on settings page")
+	}
+	sshKeysList := strings.Index(body, `id="ssh-keys-list"`)
+	if sshKeysList < 0 {
+		t.Fatal(`#ssh-keys-list not found`)
+	}
+	if sshKeysList < firstFormClose {
+		t.Errorf("#ssh-keys-list (offset %d) is INSIDE the main settings form (closes at %d) — nested <form> would break the Save Settings submit (language-switch regression)", sshKeysList, firstFormClose)
+	}
+}
+
+// TestHandler_SaveSettings_PreservesSSHKeys is the regression for the data-loss
+// bug (2026-07-08): handleSaveSettings rebuilt settings.SSHKeys from
+// ssh_key_name/ssh_key_path form fields — a legacy pre-v0.2.5 schema. After the
+// redesign the main settings form no longer carries those fields (keys are
+// added via /ui/settings/ssh-keys with PEM key_data), so this block clobbered
+// settings.SSHKeys to an empty slice on every Save Settings. Saving the language
+// wiped all imported keys. The fix removed the clobber. This test pre-seeds a
+// key, saves panel-only settings, and asserts the key survives.
+func TestHandler_SaveSettings_PreservesSSHKeys(t *testing.T) {
+	ts := newTestServer(t)
+	// Pre-seed an SSH key directly in the store (the way /ui/settings/ssh-keys
+	// would after an add).
+	st := ts.srv.store()
+	seedSettings, err := st.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	seedSettings.SSHKeys = []model.SSHKeyEntry{{
+		ID:   "key-seed",
+		Name: "seed-key",
+		// A dummy private-key blob is enough — the save path doesn't re-parse it.
+		KeyData:      "-----BEGIN OPENSSH PRIVATE KEY-----\nseed\n-----END OPENSSH PRIVATE KEY-----",
+		Fingerprint:  "deadbeef",
+		Source:       "manual",
+	}}
+	if err := st.SaveSettings(seedSettings); err != nil {
+		t.Fatalf("seed SaveSettings: %v", err)
+	}
+
+	// Save panel-only settings (language/country/metrics/protocol) — the form
+	// the UI actually sends today (NO ssh_key_name/ssh_key_path).
+	form := url.Values{
+		"language":         {"ru"},
+		"panel_country":    {"RU"},
+		"metrics_interval": {"15"},
+		"default_protocol": {"awg"},
+	}
+	w := ts.post("/ui/settings", form)
+	ts.assertStatus(w, http.StatusOK)
+	ts.assertContains(w, "Settings saved")
+
+	// The seeded key must survive the save.
+	got, err := st.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings after save: %v", err)
+	}
+	var found bool
+	for _, k := range got.SSHKeys {
+		if k.ID == "key-seed" {
+			found = true
+			if k.KeyData != seedSettings.SSHKeys[0].KeyData {
+				t.Errorf("seeded key KeyData changed: got %q, want %q", k.KeyData, seedSettings.SSHKeys[0].KeyData)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("seeded SSH key key-seed was wiped by SaveSettings (data-loss regression); SSHKeys=%+v", got.SSHKeys)
+	}
+	// And the language must have persisted (the save still works).
+	if got.Language != "ru" {
+		t.Errorf("Language = %q, want ru (save should still persist panel settings)", got.Language)
+	}
+}
+
+// keep chain import used (for the store() return type assertion in the
+// preserves-keys test if the harness widens later).
+var _ = chain.ConfigHash
+
 // excerpt returns a small window of body around the first occurrence of needle
 // (for readable test failure messages without dumping the whole page).
 func excerpt(body, needle string) string {
