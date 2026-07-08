@@ -209,6 +209,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	s.registerMiscRoutes(mux)
 	s.registerClientRoutes(mux)
 	s.registerPresetRoutes(mux)
+	s.registerBackupRoutes(mux)
 }
 
 func (s *Server) store() *chain.Store { return chain.NewStore(s.storePath) }

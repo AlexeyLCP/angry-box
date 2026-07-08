@@ -89,6 +89,13 @@ func detectBackupFormat(data []byte) (string, error) {
 	}
 }
 
+// DetectBackupFormat is the exported form of detectBackupFormat for callers
+// outside the chain package (the web import handler auto-detects a store vs
+// node backup from the envelope so a single endpoint handles both).
+func DetectBackupFormat(data []byte) (string, error) {
+	return detectBackupFormat(data)
+}
+
 // ExportStore returns the entire store as plaintext JSON (a full-panel
 // backup). The on-disk store may be encrypted at rest; this returns the
 // decrypted content so a backup is portable across installs (restoring on a
