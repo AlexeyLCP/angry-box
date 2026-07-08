@@ -952,3 +952,138 @@ TUN device его не принимает. Это **upstream sing-box-extended b
 Требует upstream research + архитектурного решения. Это P0-блокер продукта,
 но не блокер для P0b (Users flow) — egress-verify можно отложить отдельной
 сессией, а UX-фичи строить параллельно (они не зависят от egress-routing).
+
+## 16. P0b Slice 1 — Users flow wizard + Service model + subscription URL (2026-07-08)
+
+Самая ценная по продукту часть v0.6.0: превращает создание юзера из инженерной
+формы (8+ внутренних полей: protocols/chains/MTProxy/order/nodes) в wizard
+(4 шага: Who → What → Quota → Review), добавляет **Service** model (именованный
+продукт-тир: bundle цепей + exit-pin + протоколов + MTProxy-defaults —
+Marzneshin `Service` analogue) и **subscription URL** (`/sub/{token}` — одна
+opaque ссылка, которую клиент вставляет в v2rayNG/Nekoray/sing-box и получает
+актуальный конфиг). Research: Marzban/Marzneshin/3x-ui/Hiddify patterns
+(§15 audit) — все сходятся: identity + quota + expiry = форма, protocol/
+inbound = вычисляется. Angry-box теперь делает так же.
+
+### 16.1. Что в скоупе Slice 1
+
+- **Service model** (`model.Service`, `PanelSettings.Services`) — operator-
+  defined product tiers, CRUD на `/ui/services`. Bundle: ChainNames +
+  DefaultExitByChain (chain→ChainNode.ID, **первый UI для User.ChainExit**,
+  уже wired в `buildMergedRoute`) + Protocols + RoutingPresetIDs + MTProxy
+  defaults.
+- **User wizard** (`web/templates/users.templ` `UserForm`/`userFormBody` →
+  4-step): Step 1 Who (id/name/telegram/email), Step 2 What (Service radio-
+  cards + Custom advanced disclosure: chains + per-chain exit-pin selects +
+  protocols + import-secret + MTProxy collapse), Step 3 Quota/Expiry
+  (ExpireStrategy segmented control: fixed_date/start_on_first_use/never +
+  DataLimit + reset strategy), Step 4 Review. Single-form + DaisyUI steps +
+  minimal JS toggle (`wizardNext`/`wizardPrev` в `app.js`, ~40 строк, без
+  framework — AGENTS.md #1). Один POST в существующие handlers.
+- **`/sub/{token}` endpoint** (`internal/web/subscription.go`) — public (без
+  `s.auth`, precedent `/static/`/`/health`; GET passes CSRF). Token lookup via
+  `Store.GetUserBySubscriptionToken`. Honors `ComputeStatus` (expired/disabled/
+  limited → 404). Lazy token backfill для legacy users + `start_on_first_use`
+  `FirstUseAt` stamp. Format negotiation: `?format=raw|base64`; default by
+  User-Agent (v2rayNG/nekoray/nekobox/shadowrocket/sing-box → base64 v2ray
+  convention, else raw). `collectUserLinks` — shared link-gathering (extracted
+  из `handleUserConfig`/`handleUserQR`, DRY — теперь все три рендерят
+  идентичный link set включая MTProxy).
+- **User schema additions** (all `omitempty`, additive — NO migration): DataLimit,
+  DataLimitResetStrategy, ExpireStrategy, UsageDuration, ActivationDeadline,
+  SubscriptionToken, Status, ServiceID, UsedTraffic/LifetimeUsedTraffic
+  (populated by P0b-2 poller), FirstUseAt. `User.ComputeStatus()` —
+  disabled/expired/on_hold/active (limited needs poller); "never" strategy
+  ignores ExpiresAt (Marzneshin semantics).
+- **Handler changes** (`internal/web/users.go`): `handleCreateUser`/
+  `handleUpdateUser` read `service_id` → `applyServiceToUser` (expands
+  Service в ChainNames/Protocols/ChainExit/MTProxy/ServiceID); Custom path
+  reads `exit_<chainName>` → builds ChainExit; `expire_strategy`/`data_limit`/
+  `usage_duration`/`activation_deadline`; mint `SubscriptionToken` at create
+  (retry on collision) + re-mint at update if cleared; `u.ComputeStatus()`
+  before SaveUser; create returns `UserCreatedResult` (sub URL box + Copy/QR
+  buttons) вместо bare `UserRow`.
+- **Lifecycle status wiring**: `UserRow` Status column via `userStatusBadge`
+  (active/disabled/expired/on_hold/limited → i18n label + badge class);
+  `handleClients`/`handleUsers` derive Status для display (legacy records
+  без persisted Status получают derived).
+
+### 16.2. Что НЕ в скоупе (явно, deferred)
+
+- **Quota enforcement** (V2Ray stats poller writing `UsedTraffic`) → **P0b-2**.
+  Поля `DataLimit`/`UsedTraffic` добавлены сейчас (zero, не мутируются), но
+  enforcement = greenfield: emit `experimental.v2ray_api` в sing-box config +
+  backend `QueryStats` method + per-user metrics model + poller + compare
+  against DataLimit → remove user + redeploy. `limited` Status никогда не
+  выставляется в Slice 1 (только poller).
+- **Per-user destination routing render** (`Service.RoutingPresetIDs` →
+  `BuildRoutingSection`) → **P0b-3**. `RoutingPresetIDs` stored + UI их
+  собирает (label "applies on next deploy — P0b-3"), но `BuildRoutingSection`
+  кушает только `ConnectionPreset.Routing` geosite имена, не `ROUTING_PRESETS`
+  domain catalog. Render — отдельная работа.
+- **Clash YAML / sing-box JSON sub formats** → later. Slice 1 = raw + base64.
+
+### 16.3. Build sequence (7 групп, каждая компилируется)
+
+1. Model + cryptogen + store (`panel.go`, `cryptogen.go`, `store.go`) — committed `785f774`.
+2. i18n (~36 keys en+ru, parity test green) — committed `26cc915`.
+3. Service CRUD (`services.go`, `services.templ`, `server.go` routes, 7 tests) — committed.
+4. `/sub/{token}` (`subscription.go`, `server.go` public route, 7 tests) — committed.
+5. User wizard (`users.templ` UserWizard + UserCreatedResult, `app.js`, `users.go` handlers, 5 wizard tests) — committed `ee51c0a`.
+6. Status wiring (`UserRow` + `handleClients`/`handleUsers`) — committed `d0e4637`.
+7. Final verify + docs §16 — этот commit.
+
+### 16.4. Тесты (все PASS, non-e2e)
+
+| Группа | Тесты | Покрытие |
+|---|---|---|
+| Model | `TestComputeStatus` (10 branches), `TestIsExpired`, `TestGenerateSubscriptionToken`, `TestGetUserBySubscriptionToken` | schema + helpers |
+| Service CRUD | `TestHandler_ServicesPage_Renders`, `_CreateService` (+persist), `_MissingFields`, `_DuplicateID` 409, `_DeleteService_RefusesIfInUse` 409, `_DeleteService_OK`, `_EditServiceForm` 200/404 | full CRUD |
+| Subscription | `TestSub_KnownToken_Raw/Base64Param`, `_V2rayNGUserAgent_DefaultsBase64`, `_UnknownToken_404`, `_ExpiredUser_404`, `_DisabledUser_404`, `_LazyTokenBackfill` | endpoint + UA negotiation + status honor |
+| Wizard | `_CreateUser_WithService_ExpandsFields`, `_CustomPath_ChainExitExposed`, `_ExpireStrategy_StartOnFirstUse_StatusOnHold`, `_CreateUser_MintsSubToken`, `_ExpiredUser_StatusExpired` | Service expansion + ChainExit UI + quota + token mint |
+
+`go build ./...` + `go vet ./...` + полный non-e2e `go test ./internal/...` —
+зелёные (10 пакетов). `TestEnRuKeyParity` PASS (i18n parity). E2E не трогался
+(Slice 1 — чисто UI + handlers + model, без VPS).
+
+### 16.5. Архитектурные решения (resolved during impl)
+
+- **Wizard style**: single-form + DaisyUI steps + minimal JS toggle (НЕ HTMX
+  multi-step) — matches `presets.templ` inline-toggle precedent, один POST в
+  существующие handlers, no wizard-state server store, AGENTS.md #1 compliant.
+- **Migration #2**: НЕТ — lazy token backfill на first sub fetch + mint at
+  create. Additive `omitempty` поля load old stores без миграции.
+  `currentSchemaVersion` остаётся 1.
+- **Status computation**: `ComputeStatus()` method — single source of truth,
+  called at save + list time. "limited" не выставляется в Slice 1 (poller).
+- **Service storage**: `PanelSettings.Services json.RawMessage` (mirrors
+  `CustomPresets` precedent), CRUD via `servicesList`/`saveService`.
+- **Public sub route**: directly on mux without `s.auth` (precedent `/static/`,
+  `/`, `/health`); GET passes CSRF safe-method bypass; own Cache-Control
+  `max-age=60` (не наследует `s.auth`'s `no-store`).
+
+### 16.6. Honest gaps / risks
+
+1. **`Service.RoutingPresetIDs` stored-not-rendered** — UI labels clearly
+   ("applies on next deploy — P0b-3"). `BuildRoutingSection` не кушает
+   `ROUTING_PRESETS` domain lists. Пер-user destination routing = P0b-3.
+2. **Quota не enforced** — `DataLimit`/`UsedTraffic` хранятся, но poller
+   отсутствует (V2Ray stats API — grep 0 в кодовой базе). `limited` Status
+   никогда не выставляется. P0b-2.
+3. **Subscription URL host** — `subURLHost` использует `X-Forwarded-Host` →
+   `r.Host` → `localhost:9080`. Behind reverse-proxy корректен если proxy
+   sets Host/X-Forwarded-Host. `/sub/{token}` сам host-agnostic.
+4
+5. **Token uniqueness** — create-time `GetUserBySubscriptionToken(t)` not-found
+   check (retry ×3), 2^96 entropy collision-free.
+
+### 16.7. Следующие slice'ы P0b
+
+- **P0b-2**: quota enforcement — `experimental.v2ray_api` emit + `QueryStats`
+  backend method + per-user metrics + poller + DataLimit compare → remove user
+  + redeploy. Закрывает "limited" Status + real quota UX.
+- **P0b-3**: per-user destination routing — `RoutingPresetIDs` →
+  `GetRoutingPresetDomains` → per-user `RouteRule` (auth_user/source_ip_cidr)
+  → `BuildRoutingSection`. Закрывает "this user gets Telegram-only".
+- (опционально) **sing-box JSON / Clash YAML** sub formats — для нативных
+  sing-box / Clash клиентов.
