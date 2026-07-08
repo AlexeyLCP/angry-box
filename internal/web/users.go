@@ -39,8 +39,9 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNewUserForm(w http.ResponseWriter, r *http.Request) {
-	chains, _ := s.store().ListChains()
-	s.render(w, r, templates.UserForm(nil, chains))
+	st := s.store()
+	chains, _ := st.ListChains()
+	s.render(w, r, templates.UserForm(nil, chains, s.servicesList(), subURLHost(r)))
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -96,15 +97,47 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:      time.Now(),
 	}
 
+	// P0b Slice 1: Service expansion. If a service_id was chosen (non-empty),
+	// expand it into the user's ChainNames/Protocols/ChainExit/MTProxy/ServiceID
+	// — the operator never picks those manually in the Service path. The
+	// Custom (advanced) path (service_id == "") keeps the form-supplied
+	// chainNames/protocols and reads per-chain exit pins (exit_<chainName>).
+	serviceID := strings.TrimSpace(r.FormValue("service_id"))
+	if serviceID != "" {
+		svc, ok := s.lookupService(serviceID)
+		if !ok {
+			http.Error(w, i18n.T(r.Context(), "service not found"), http.StatusBadRequest)
+			return
+		}
+		applyServiceToUser(u, svc)
+	} else if len(chainNames) > 0 {
+		// Custom path: build ChainExit from exit_<chainName> form values.
+		u.ChainExit = map[string]string{}
+		for _, cn := range chainNames {
+			if exit := strings.TrimSpace(r.FormValue("exit_" + cn)); exit != "" {
+				u.ChainExit[cn] = exit
+			}
+		}
+		if len(u.ChainExit) == 0 {
+			u.ChainExit = nil
+		}
+	}
+
 	if len(u.Protocols) == 0 {
 		u.Protocols = []string{"awg"}
 	}
 
 	// MTProxy (Telegram FakeTLS) credentials. Set only when the form enables the
 	// MTProxy section or supplies a secret; otherwise the user is not an MTProxy
-	// client on any node.
-	if mtproxyEnabled || mtproxySecret != "" {
-		u.MTProxySecret = mtproxySecret
+	// client on any node. A Service with MTProxy.Enabled pre-fills these via
+	// applyServiceToUser; the form values override (operator can tweak).
+	if mtproxyEnabled || mtproxySecret != "" || u.MTProxySecret != "" {
+		if mtproxySecret != "" {
+			u.MTProxySecret = mtproxySecret
+		}
+		if mtproxyDomain == "" {
+			mtproxyDomain = u.MTProxyDomain
+		}
 		if mtproxyDomain == "" {
 			mtproxyDomain = "disk.yandex.ru"
 		}
@@ -112,8 +145,36 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.Atoi(mtproxyOrderStr); err == nil && n != 0 {
 			u.MTProxyOrderIndex = n
 		}
-		u.MTProxyNodes = mtproxyNodes
+		if len(mtproxyNodes) > 0 {
+			u.MTProxyNodes = mtproxyNodes
+		}
+		// If MTProxy is enabled but no secret anywhere, auto-generate one
+		// (removes the blank-by-default footgun — operator no longer has to
+		// click the Generate button).
+		if u.MTProxySecret == "" && (mtproxyEnabled || (serviceID != "" && lookupServiceMTProxyEnabled(s, serviceID))) {
+			u.MTProxySecret = chain.GenerateMTProxySecret()
+		}
 	}
+
+	// P0b Slice 1: expiry-strategy + quota fields.
+	u.ExpireStrategy = strings.TrimSpace(r.FormValue("expire_strategy"))
+	if u.ExpireStrategy == "" {
+		u.ExpireStrategy = "never" // default: no expiry (matches legacy behaviour)
+	}
+	if u.ExpireStrategy == "fixed_date" {
+		// expiresAt already parsed above; clear it if strategy is not fixed_date.
+	}
+	if u.ExpireStrategy != "fixed_date" {
+		u.ExpiresAt = time.Time{} // never / start_on_first_use ignore the date
+	}
+	u.UsageDuration, _ = strconv.ParseInt(r.FormValue("usage_duration"), 10, 64)
+	if dlStr := strings.TrimSpace(r.FormValue("activation_deadline")); dlStr != "" {
+		if dl, err := time.Parse("2006-01-02", dlStr); err == nil {
+			u.ActivationDeadline = dl
+		}
+	}
+	u.DataLimit, _ = strconv.ParseInt(r.FormValue("data_limit"), 10, 64)
+	u.DataLimitResetStrategy = strings.TrimSpace(r.FormValue("data_limit_reset_strategy"))
 
 	// Generate per-user credentials for the selected protocols so this user
 	// can authenticate to a multi-user inbound with its own identity (the basis
@@ -129,6 +190,26 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		chain.EnsureUserAWGAddress(u, existingAWGIPs)
 	}
 
+	// P0b Slice 1: mint a subscription token at create time (stable identity
+	// for the /sub/{token} endpoint). Retry on the astronomically-unlikely
+	// collision. Lazily backfilled for legacy users on first sub fetch.
+	if u.SubscriptionToken == "" {
+		for i := 0; i < 3; i++ {
+			t, err := chain.GenerateSubscriptionToken()
+			if err != nil {
+				break
+			}
+			if _, err := st.GetUserBySubscriptionToken(t); err != nil {
+				u.SubscriptionToken = t // not found = unique
+				break
+			}
+		}
+	}
+
+	// Derive the lifecycle status before saving (active/disabled/expired/
+	// on_hold; "limited" needs the P0b-2 poller).
+	u.Status = u.ComputeStatus()
+
 	if err := st.SaveUser(u); err != nil {
 		if strings.Contains(err.Error(), "mtproxy secret already used") {
 			http.Error(w, i18n.T(r.Context(), "mtproxy secret already used on node %s"), http.StatusBadRequest)
@@ -137,9 +218,12 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
-	chain.WriteAudit(st, "create", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
+	chain.WriteAudit(st, "create", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols, "service": u.ServiceID}, "operator")
 	s.scheduleAutoApplyForUser(st, u, "user create")
-	s.render(w, r, templates.UserRow(u))
+	// P0b Slice 1: on create, return the sub URL box so the operator immediately
+	// gets the shareable subscription URL (replaces the bare UserRow).
+	subURL := subURLHost(r) + "/sub/" + u.SubscriptionToken
+	s.render(w, r, templates.UserCreatedResult(u, subURL))
 }
 
 func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +234,7 @@ func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chains, _ := s.store().ListChains()
-	s.render(w, r, templates.UserForm(u, chains))
+	s.render(w, r, templates.UserForm(u, chains, s.servicesList(), subURLHost(r)))
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -228,6 +312,55 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		u.MTProxyNodes = nil
 	}
 
+	// P0b Slice 1: Service expansion (same as create). On edit, switching to a
+	// Service re-applies its chain/exit/protocol/MTProxy; switching to Custom
+	// keeps the form-supplied chains and reads exit_<chainName> pins.
+	serviceID := strings.TrimSpace(r.FormValue("service_id"))
+	if serviceID != "" {
+		svc, ok := s.lookupService(serviceID)
+		if !ok {
+			http.Error(w, i18n.T(r.Context(), "service not found"), http.StatusBadRequest)
+			return
+		}
+		applyServiceToUser(u, svc)
+	} else {
+		u.ServiceID = ""
+		u.ChainExit = map[string]string{}
+		for _, cn := range u.ChainNames {
+			if exit := strings.TrimSpace(r.FormValue("exit_" + cn)); exit != "" {
+				u.ChainExit[cn] = exit
+			}
+		}
+		if len(u.ChainExit) == 0 {
+			u.ChainExit = nil
+		}
+	}
+
+	// P0b Slice 1: expiry-strategy + quota fields (edit path).
+	u.ExpireStrategy = strings.TrimSpace(r.FormValue("expire_strategy"))
+	if u.ExpireStrategy == "" {
+		u.ExpireStrategy = "never"
+	}
+	if u.ExpireStrategy == "fixed_date" {
+		if expiryStr := strings.TrimSpace(r.FormValue("expires_at")); expiryStr != "" {
+			u.ExpiresAt, _ = time.Parse("2006-01-02", expiryStr)
+		} else {
+			u.ExpiresAt = time.Time{}
+		}
+	} else {
+		u.ExpiresAt = time.Time{} // never / start_on_first_use ignore the date
+	}
+	u.UsageDuration, _ = strconv.ParseInt(r.FormValue("usage_duration"), 10, 64)
+	if dlStr := strings.TrimSpace(r.FormValue("activation_deadline")); dlStr != "" {
+		if dl, err := time.Parse("2006-01-02", dlStr); err == nil {
+			u.ActivationDeadline = dl
+		}
+	} else {
+		u.ActivationDeadline = time.Time{}
+	}
+	u.DataLimit, _ = strconv.ParseInt(r.FormValue("data_limit"), 10, 64)
+	u.DataLimitResetStrategy = strings.TrimSpace(r.FormValue("data_limit_reset_strategy"))
+
 	if len(u.Protocols) == 0 {
 		u.Protocols = []string{"awg"}
 	}
@@ -242,6 +375,22 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		chain.EnsureUserAWGAddress(u, existingAWGIPs)
 	}
 
+	// P0b Slice 1: re-mint a sub token if the operator cleared it (stable
+	// identity otherwise — do not rotate on every save). Derive status.
+	if u.SubscriptionToken == "" {
+		for i := 0; i < 3; i++ {
+			t, err := chain.GenerateSubscriptionToken()
+			if err != nil {
+				break
+			}
+			if _, err := st.GetUserBySubscriptionToken(t); err != nil {
+				u.SubscriptionToken = t
+				break
+			}
+		}
+	}
+	u.Status = u.ComputeStatus()
+
 	if err := st.SaveUser(u); err != nil {
 		if strings.Contains(err.Error(), "mtproxy secret already used") {
 			http.Error(w, i18n.T(r.Context(), "mtproxy secret already used on node %s"), http.StatusBadRequest)
@@ -250,7 +399,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
-	chain.WriteAudit(st, "update", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols}, "operator")
+	chain.WriteAudit(st, "update", "user", u.ID, chain.AuditPayload{"name": u.Name, "protocols": u.Protocols, "service": u.ServiceID}, "operator")
 	s.scheduleAutoApplyForUser(st, u, "user update")
 	if isHTMXRequest(r) {
 		s.render(w, r, templates.UserRow(u))
@@ -688,27 +837,9 @@ func (s *Server) handleUserQR(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.T(r.Context(), "user not found"), http.StatusNotFound)
 		return
 	}
-
-	var links []string
-	for _, chainName := range u.ChainNames {
-		c, err := st.GetChain(chainName)
-		if err != nil {
-			continue
-		}
-		link := buildConnectionLink(c, u)
-		links = append(links, link)
-	}
-
-	// Also include standalone inbounds assigned to this user.
-	nodes, _ := st.ListNodeInfos()
-	for _, node := range nodes {
-		for _, ib := range node.Inbounds {
-			if contains(ib.ForUsers, u.ID) {
-				links = append(links, buildStandaloneLink(node.Addr, ib, u))
-			}
-		}
-	}
-
+	// Reuse the shared collectUserLinks (subscription.go) so QR shows the same
+	// link set as the subscription endpoint + config view (includes MTProxy).
+	links := s.collectUserLinks(u, st)
 	s.render(w, r, templates.UserQRView(u, links))
 }
 
@@ -734,4 +865,76 @@ func (s *Server) registerUserRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
 	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
 	mux.HandleFunc("POST /ui/users/generate-mtproxy-secret", s.auth(s.handleGenerateMTProxySecret))
+}
+
+// ── P0b Slice 1 helpers: Service expansion + subscription URL host ─────────────
+
+// subURLHost returns the scheme://host[:port] for the subscription URL shown
+// post-create. Prefers X-Forwarded-Host (reverse-proxy), then r.Host, then the
+// server's listen addr. Scheme is https when TLS is configured (caller-side),
+// otherwise http — kept simple here (the /sub/{token} endpoint itself is
+// scheme-agnostic; this is only the displayed copy string).
+func subURLHost(r *http.Request) string {
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		host = "localhost:9080"
+	}
+	return "http://" + host
+}
+
+// lookupService finds a Service by ID in PanelSettings.Services. Returns the
+// Service and true on hit.
+func (s *Server) lookupService(id string) (model.Service, bool) {
+	for _, svc := range s.servicesList() {
+		if svc.ID == id {
+			return svc, true
+		}
+	}
+	return model.Service{}, false
+}
+
+// lookupServiceMTProxyEnabled reports whether a Service has MTProxy.Enabled
+// (used by the create path to decide whether to auto-generate a secret).
+func lookupServiceMTProxyEnabled(s *Server, id string) bool {
+	svc, ok := s.lookupService(id)
+	return ok && svc.MTProxy.Enabled
+}
+
+// applyServiceToUser expands a Service into the user's ChainNames / Protocols /
+// ChainExit (DefaultExitByChain) / MTProxy defaults / ServiceID. The operator
+// never picks those manually in the Service path. Per-user creds are generated
+// later by EnsureUserCreds (caller). Does NOT touch the user's existing
+// MTProxySecret (auto-generated by the caller if needed) — only the defaults.
+func applyServiceToUser(u *model.User, svc model.Service) {
+	u.ServiceID = svc.ID
+	u.ChainNames = svc.ChainNames
+	if len(svc.Protocols) > 0 {
+		u.Protocols = svc.Protocols
+	}
+	u.ChainExit = nil
+	if len(svc.DefaultExitByChain) > 0 {
+		u.ChainExit = map[string]string{}
+		for chain, exit := range svc.DefaultExitByChain {
+			if exit != "" {
+				u.ChainExit[chain] = exit
+			}
+		}
+		if len(u.ChainExit) == 0 {
+			u.ChainExit = nil
+		}
+	}
+	if svc.MTProxy.Enabled {
+		u.MTProxyDomain = svc.MTProxy.Domain
+		if u.MTProxyDomain == "" {
+			u.MTProxyDomain = "disk.yandex.ru"
+		}
+		u.MTProxyOrderIndex = svc.MTProxy.OrderIndex
+		if len(svc.MTProxy.NodeIDs) > 0 {
+			u.MTProxyNodes = svc.MTProxy.NodeIDs
+		}
+		// MTProxySecret is generated by the caller (after this) when empty.
+	}
 }

@@ -230,3 +230,60 @@ function initPresetFormSections() {
 }
 document.addEventListener('DOMContentLoaded', initPresetFormSections);
 document.addEventListener('htmx:afterSettle', initPresetFormSections);
+
+// ── P0b Slice 1: user wizard step toggle + sub URL copy ───────────────────────
+// wizardNext/wizardPrev toggle fieldset.wizard-step visibility + the DaisyUI
+// steps indicator. Single form, one POST — no server-side wizard state
+// (AGENTS.md #1 minimal-JS). Also rebinds the Back/Next button labels to the
+// step titles so the operator knows which way they're moving.
+function wizardCurrentStep(form) {
+    var steps = form.querySelectorAll('fieldset.wizard-step');
+    for (var i = 0; i < steps.length; i++) {
+        if (steps[i].style.display !== 'none') return i + 1;
+    }
+    return 1;
+}
+function wizardShowStep(form, n) {
+    var steps = form.querySelectorAll('fieldset.wizard-step');
+    var max = steps.length;
+    if (n < 1) n = 1;
+    if (n > max) n = max;
+    for (var i = 0; i < steps.length; i++) {
+        steps[i].style.display = (i + 1 === n) ? 'block' : 'none';
+    }
+    // Update the steps indicator (mark steps < n as primary/completed).
+    var lis = form.querySelectorAll('ul.steps li');
+    for (var j = 0; j < lis.length; j++) {
+        if ((j + 1) <= n) {
+            lis[j].classList.add('step-primary');
+        } else {
+            lis[j].classList.remove('step-primary');
+        }
+    }
+    // Update the nav button labels.
+    var back = form.querySelector('button[onclick="wizardPrev()"]');
+    var next = form.querySelector('button[onclick="wizardNext()"]');
+    if (back) back.style.visibility = (n <= 1) ? 'hidden' : 'visible';
+    if (next) {
+        if (n >= max) {
+            next.style.display = 'none';
+        } else {
+            next.style.display = '';
+            next.textContent = lis[n] ? lis[n].textContent.trim() + ' →' : '→';
+        }
+    }
+}
+function wizardNext() { wizardShowStep(document.querySelector('dialog#user-modal form'), wizardCurrentStep(document.querySelector('dialog#user-modal form')) + 1); }
+function wizardPrev() { wizardShowStep(document.querySelector('dialog#user-modal form'), wizardCurrentStep(document.querySelector('dialog#user-modal form')) - 1); }
+
+// copySubURL selects + copies the input identified by data-target and swaps the
+// button label to the data-copied string for a moment (used by UserCreatedResult).
+function copySubURL(btn) {
+    var el = document.getElementById(btn.getAttribute('data-target'));
+    if (!el) return;
+    el.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    var orig = btn.textContent;
+    btn.textContent = btn.getAttribute('data-copied') || 'Copied';
+    setTimeout(function(){ btn.textContent = orig; }, 1500);
+}
