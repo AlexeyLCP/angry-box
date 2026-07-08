@@ -771,10 +771,42 @@ echo "---AWG SHOW---"
 sudo awg show "$IFACE" 2>&1
 echo "---ROUTES AFTER UP---"
 ip route 2>&1 | head -10
+echo "---ROUTE GET 1.1.1.1 (loop check: via sing-box-tun = routing loop, PROGRESS §15.1 H1)---"
+ip route get 1.1.1.1 2>&1 || true
+# Egress diagnostics (PROGRESS §15.1): capture on the key interfaces during
+# the curl window to localize where client-tunnel traffic dies. Distinguishes:
+#   H2 (include_interface capture broken — nothing on sing-box-tun)
+#   H3 (IPv4-mapped IPv6 source — trace shows ::ffff:10.8.0.x)
+#   H5 (TUN SNAT — sing-box-tun shows 172.16.250.1 as source, not 10.8.0.x)
+# Also capture awg-exit-n1 (balancer exit tunnel) — if traffic reaches it but
+# not ens4, the exit-tunnel MASQUERADE/forwarding is the culprit.
+which tcpdump >/dev/null 2>&1 || sudo apt-get install -y tcpdump >/dev/null 2>&1 || true
+# Start tcpdump in background with nohup so the bg process is detached
+# properly; the previous ampersand-only form left pcaps unwritten. A 25s
+# capture window covers the 20s curl.
+for I in awg0 sing-box-tun awg-exit-n1 ens4; do
+  if ip link show "$I" >/dev/null 2>&1; then
+    sudo nohup timeout 25 tcpdump -n -U -i "$I" -w "/tmp/e2e-td-$I.pcap" >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+  fi
+done
+sleep 1  # let tcpdump open the captures
+echo "---PCAP FILES PRESENT---"
+ls -la /tmp/e2e-td-*.pcap 2>/dev/null || echo "no pcap files (tcpdump may not have perms)"
 echo "---CURL VIA TUNNEL---"
 IP=$(curl -s --max-time 20 --interface "$IFACE" https://ifconfig.me 2>/dev/null || true)
-echo "---SINGBOX TRACE (last 60s, 30 lines)---"
-sudo journalctl -u sing-box --since "60 seconds ago" --no-pager 2>/dev/null | grep -v unknown | tail -30
+sleep 2  # let tcpdump capture the reply tail before reading pcaps
+echo "---TCPDUMP awg0 (peer IP 10.8.0.x as source? if absent = AWG allowed_ips/forwarding broken)---"
+if [ -f /tmp/e2e-td-awg0.pcap ] && [ -s /tmp/e2e-td-awg0.pcap ]; then sudo tcpdump -n -r /tmp/e2e-td-awg0.pcap 2>/dev/null | grep -v -E 'UDP, (length|bad)' | head -25; else echo "no awg0 capture"; fi
+echo "---TCPDUMP sing-box-tun (enters TUN? source=10.8.0.x or 172.16.250.1? H5 SNAT check)---"
+if [ -f /tmp/e2e-td-sing-box-tun.pcap ] && [ -s /tmp/e2e-td-sing-box-tun.pcap ]; then sudo tcpdump -n -r /tmp/e2e-td-sing-box-tun.pcap 2>/dev/null | head -25; else echo "no sing-box-tun capture (interface missing — TUN not created?)"; fi
+echo "---TCPDUMP awg-exit-n1 (reaches balancer exit tunnel?)---"
+if [ -f /tmp/e2e-td-awg-exit-n1.pcap ] && [ -s /tmp/e2e-td-awg-exit-n1.pcap ]; then sudo tcpdump -n -r /tmp/e2e-td-awg-exit-n1.pcap 2>/dev/null | head -25; else echo "no awg-exit-n1 capture"; fi
+echo "---TCPDUMP ens4 (egress via real NIC? SYN src = exit IP via balancer?)---"
+if [ -f /tmp/e2e-td-ens4.pcap ] && [ -s /tmp/e2e-td-ens4.pcap ]; then sudo tcpdump -n -r /tmp/e2e-td-ens4.pcap 2>/dev/null | grep -E 'ifconfig|1\.1\.1\.1|:443|:80' | head -25; else echo "no ens4 capture"; fi
+echo "---SINGBOX TRACE (last 90s, 40 lines — look for router:match + 10.8.0.x / ::ffff:10.8.0.x / 172.16.250.1)---"
+sudo journalctl -u sing-box --since "90 seconds ago" --no-pager 2>/dev/null | grep -v unknown | tail -40
+sudo rm -f /tmp/e2e-td-*.pcap 2>/dev/null || true
 sudo ip route del default dev "$IFACE" metric 200 2>/dev/null || true
 sudo awg-quick down "$IFACE" 2>/dev/null || true
 echo EGRESS:$IP
@@ -800,10 +832,12 @@ echo EGRESS:$IP
 	}
 	t.Logf("AWG handshake OK: %s", handshakeLine)
 	// Egress through the chain (curl via the tunnel) is a routing concern
-	// (sing-box endpoint→route→XHTTP outbound); it works in principle but the
-	// test VPS awg-quick + sing-box endpoint interaction needs routing polish.
-	// Log it as a warning, not a failure — the handshake (the AWG-obfuscation
-	// proof) already passed.
+	// (sing-box endpoint→route→XHTTP outbound). Log it as a warning, not a
+	// failure — the handshake (the AWG-obfuscation proof) already passed.
+	// The expanded script above auto-collects tcpdump on awg0/sing-box-tun/ens4
+	// + the sing-box trace so the WARNING output contains the diagnostics needed
+	// to localize the failure per PROGRESS §15.1 hypotheses (H2/H3/H5). Run with
+	// AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 to capture.
 	egressIP := ""
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "EGRESS:") {
@@ -812,7 +846,7 @@ echo EGRESS:$IP
 	}
 	exitIP := e2eServerIP(e2eRoleExit)
 	if egressIP == "" {
-		t.Logf("WARNING: no egress IP via tunnel (routing polish TBD); AWG handshake passed. Full output:\n%s", out)
+		t.Logf("WARNING: no egress IP via tunnel (routing TBD, PROGRESS §15.1); AWG handshake passed.\nDiagnostics above (tcpdump awg0/sing-box-tun/ens4 + sing-box trace) localize: empty sing-box-tun=H2 capture broken; ::ffff:10.8.0.x in trace=H3 IPv4-mapped; 172.16.250.1 as source=H5 TUN SNAT.\nFull output:\n%s", out)
 		return
 	}
 	t.Logf("per-client AWG: alice egress=%s, want exit %s", egressIP, exitIP)

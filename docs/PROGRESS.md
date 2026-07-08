@@ -667,3 +667,288 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 - Relocate с заменой transit-ключей (rotation) — deliberately переиспользуем persisted ключи. Rotation — follow-up.
 - **Clone node** — отдельная фича (NEXT).
 - **Users flow audit** (create user + choose where inbounds + how to route) — отдельная фича (NEXT).
+
+---
+
+## 15. v0.6.0 roadmap — product + egress verify (2026-07-08, в работе)
+
+После v0.5.0 (backups + relocate) технический долг из CTO-review закрыт почти
+целиком (CI, at-rest шифрование, паники из request-path, config.Load silent
+fallback, handleTrustHostKey fingerprint-сверка, systemd hardening, HTTP
+timeouts, schema versioning, sentinel errors, i18n parity, applier split, TUIC
+e2e skip, zombie-каталоги). Осталось — **продуктовые дыры**, а не hygiene. Этот
+раздел фиксирует план и процесс v0.6.0. Приоритеты PO (циничный аналитик):
+
+| # | Задача | Почему | Тип |
+|---|---|---|---|
+| P0a | Verify egress на реальном client-tunnel (AWG .conf на VPS) | Без этого unknown — работает ли продукт у юзера. Handshake ≠ интернет. | P0 блокер |
+| P0b | Users flow wizard + Service model + subscription URL | Без нормального flow юзер-создания = инженерный инструмент, не продукт. | P0 продукт |
+| P1a | Auto-detect blocked node (semi-auto: probe + state machine + alert) | Killer-фича, отличает от конкурентов. | P1 продукт |
+| P1b | Clone node | Масштабирование флота. | P1 продукт |
+| P2a | Offsite backup MVP (SSH target + passphrase encryption + scheduler) | Premium product = не «копируй JSON вручную». | P2 надёжность |
+| P2b | Auto-relocate opt-in (warm pool + guardrails) | Поверх P1a. | P2 продукт |
+| P2c | Legacy CLI standalone-AWG deprecate; deps/sing-box mirror | Когнитивный диссонанс CLI vs UI; SPOF флота. | P2 долг |
+
+### 15.1. P0a — egress через client-tunnel: аудит кода (2026-07-08)
+
+**Симптом (PROGRESS §13.4):** AWG handshake проходит на свежих GCloud VPS
+(`latest handshake: 5 seconds ago` — proof persisted CPS I1-I5 server↔client
+identical, амнезия обфускация end-to-end работает), но `curl --interface awge2e
+ifconfig.me` → empty. Sing-box TUN-overlay поднят, trace пустой после старта —
+нет router match для трафика с `awge2e` client tunnel.
+
+**Аудит генерации конфига (READ → AUDIT):**
+
+1. **TUN inbound** (`internal/chain/awg_tun_overlay.go:94`):
+   `type:"tun", interface_name:"sing-box-tun", address:["172.16.250.1/30"],
+   mtu:1200, stack:"mixed", auto_route:true, include_interface:["awg0"+exit-ifaces],
+   strict_route:false`. Это **ровно** dns.idoctor.mom reference shape.
+2. **Route секция** (`internal/chain/merged_config.go:297-313`): когда overlay
+   есть, создаётся `RoutingSection{Final:"direct", AutoDetectInterface:true}`.
+   `AutoDetectInterface: true` **уже выставлен**.
+3. **Per-client правила** (`merged_config.go:382-402`): AWG использует
+   `Inbound:["tun-in"], SourceIPCIDR:[u.AWGAddress], Outbound:"direct-out"`
+   (или inter-node outbound). **Уже ключены на tun-in** (а не на старый
+   users-in endpoint) — re-keying сделано в `merged_config.go:357-367`.
+4. **Merge order** (`merged_config.go:304-312`): `actionRules + cfg.Route.Rules
+   + catchAll` → per-client правила идут **перед** catch-all (правильно —
+   first-match-wins, per-client pin не затеняется catch-all).
+5. **`BindInterface`** на exit-direct outbounds (`awg_tun_overlay.go:119`,
+   `roles.go:264`) — есть.
+
+**Гипотезы (после research + code audit), ранжированные:**
+
+| H | Гипотеза | Статус после code audit |
+|---|---|---|
+| H1 | Нет `auto_detect_interface`/`bind_interface` → routing loop глотает egress | **ОПРОВЕРГНУТО** — `AutoDetectInterface:true` уже выставлен в overlay-пути (`merged_config.go:301`) и в `BuildRoutingSection` (`presets.go:279`); `BindInterface` на exit-direct outbounds есть. |
+| H4 | Route rule использует deprecated `outbound` без `action:"route"` (post-1.11 regression) | **ОПРОВЕРГНУТО** — дока sing-box 1.13 (`/configuration/route/rule_action/`): `"action": "route"` помечен `"// default"`. Legacy `outbound` поле без `action` дефолтит к `route`, НЕ молча игнорируется. `sing-box check` корректно принимает обе формы. |
+| H2 | `include_interface` nftables rule пустой (issue #3805) при >1 интерфейсе | НЕВОЗМОЖНО проверить кодом; на стенде `["awg0"]` (single) — маловероятно, но если balancer добавляет `awg-exit-nX` → список растёт. Проверять `nft list ruleset` на VPS. |
+| H3 | Source представлен как IPv4-mapped IPv6 (`::ffff:10.8.0.5`) → `source_ip_cidr:["10.8.0.0/24"]` молча не матчит (issue #2451) | ВОЗМОЖЕН при `stack:"mixed"`/`"system"` на dual-stack хосте. Проверять `journalctl -u sing-box | grep "10\.8\.0"` на `::ffff:` prefix. Fix: добавить `"::ffff:10.8.0.0/120"` в SourceIPCIDR или force v4-only TUN (только IPv4 `address`). |
+| H5 | TUN inbound реально SNAT'ит peer IP до router'а | Код-комментарий `awg_tun_overlay.go:154` **утверждает что ДА** ("TUN NAT changes the source IP — source_ip_cidr matching breaks"), но это утверждение противоречит AGENTS.md #7 (per-client routing через `source_ip_cidr` = primary механизм) и тому что per-client правила УЖЕ ключены на `tun-in + source_ip_cidr`. Требует эмпирической проверки: если в Step 3 router видит TUN's `172.16.250.1` вместо `10.8.0.x` → H5 подтверждён → per-client routing под TUN-overlay невозможен в принципе (нужен другой механизм: multiple TUN inbounds per peer, или `auth_user` на отдельном inbound). |
+
+**Ключевое противоречие в коде (latent):**
+- `awg_tun_overlay.go:154-156`: catch-all использует `inbound:["tun-in"]`
+  (НЕ `source_ip_cidr`) потому что "TUN NAT changes the source IP".
+- `merged_config.go:395`: per-client правила используют `Inbound:["tun-in"] +
+  SourceIPCIDR:[u.AWGAddress]`.
+- Если H5 верен (TUN SNAT'ит) — per-client `source_ip_cidr` правила **никогда
+  не срабатывают** (source уже не `10.8.0.x`), и catch-all (тоже по `tun-in`)
+  матчит ВСЁ → все юзеры идут по default route, pin не работает. Это ровно
+  симптом "handshake ok, egress empty" (если default route = direct на entry,
+  а не forward к exit).
+
+**Вывод аудита:** код уже содержит H1-fix (`AutoDetectInterface`) и не нуждается
+в H4-fix. Реальный вопрос — **меняет ли TUN source IP или нет** (H5), и
+**dual-stack mapping** (H3). Оба требуют **live VPS эмпирики** (tcpdump +
+sing-box trace), кодом не разрешаются.
+
+**Debug playbook (для запуска на entry VPS, тест `TestE2E_Heavy_PerClientRouting`
+уже содержит большую часть — расширить):**
+
+```
+# Step 0 — state
+ip -br addr show awg0; awg show awg0 latest-handshakes
+ip route show table all | grep -E 'awg0|tun0|sing-box'; ip rule show
+
+# Step 1 — доходит ли трафик до awg0 с peer IP как source?
+# (на VPS, во время `curl --interface awge2e ifconfig.me` с клиента)
+tcpdump -n -i awg0 'ip and not udp port 51820'   # ждать: 10.8.0.x > ifconfig.me.443
+
+# Step 2 — входит ли в TUN (sing-box-tun)?
+tcpdump -n -i sing-box-tun 'host 10.8.0.5'       # если пусто = include_interface capture сломан (H2)
+
+# Step 3 — видит ли router source? (log.level: trace)
+journalctl -u sing-box --since "60s ago" | grep -E 'router|match|10\.8\.0'
+# ждать: "router: match[N] source_ip_cidr=10.8.0.0/24 => route <outbound>"
+# если видите ::ffff:10.8.0.5 → H3 (IPv4-mapped v6)
+# если видите 172.16.250.1 (TUN addr) как source → H5 (TUN SNAT) → source_ip_cidr невозможен
+# если "no match" → правило не матчит (но H4 уже отпал, значит правило форме корректно)
+
+# Step 4 — уходит ли egress через реальный NIC?
+tcpdump -n -i ens4 'host ifconfig.me'            # SYN должен выйти с IP exit-ноды (через balancer)
+# если SYN выходит с entry IP (а не exit) → catch-all матчит, per-client не сработал (H5)
+# если не выходит вовсе → outbound misconfigured (bind_interface кривой)
+
+# Step 5 — loop check
+ip route get <ifconfig.me-IP>                    # если "via <tun-gw> dev sing-box-tun" → loop
+```
+
+**Следующий шаг (P0a code):** расширить `TestE2E_Heavy_PerClientRouting`
+чтобы при пустом egress автоматически собирал tcpdump Step 1-3 + `ip route get`
+и логировал (сейчас — просто WARNING без диагностики). Затем запустить на live
+VPS (`AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1`) → локализовать H2/H3/H5 → fix.
+
+**Источники research (WebSearch/WebFetch, 2026-07-08):**
+- sing-box TUN docs (`/configuration/inbound/tun/`): `include_interface`
+  requires `auto_route`; NAT/stack options.
+- sing-box route/rule_action docs: `action:"route"` = default, legacy
+  `outbound` дефолтит к route (H4 отпал).
+- GitHub issue #3805 (`include_interface` empty `iifname`), #2451
+  (`source_ip_cidr` silent miss под IPv4-mapped IPv6 → H3), #3858/#4157
+  (WG endpoint + TUN routing loop, handshake ok / no return traffic).
+- dns.idoctor.mom — login-gated, reference-архитектуру получить не удалось
+  (считать любые доки, ссылающиеся на него, unverifiable).
+
+### 15.2. P0a live-VPS diagnosis — root cause localized (2026-07-08)
+
+После code-audit (§15.1) гипотезы H1/H4 были опровергнуты кодом/dokой. Для
+локализации H2/H3/H5 прогнан расширенный `TestE2E_Heavy_PerClientRouting`
+(добавлен tcpdump на awg0/sing-box-tun/awg-exit-n1/ens4 + `ip route get` +
+sing-box trace при пустом egress) на свежих GCloud VPS (entry 34.14.98.64,
+exit 35.189.235.61, `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 AB_LOG_LEVEL=trace`).
+Дополнительно — ручные SSH-сесии с воспроизведением условий теста + A/B/C-пробы
+(rp_filter=0, явный `ip rule from 10.8.0.0/24 lookup 2022`, host-route через
+awge2e). **Все пробы дали одинаковый результат** — диагноз стабилен.
+
+**Доказательный вывод (tcpdump `-i any`, воспроизведён многократно):**
+
+```
+awge2e Out  10.8.0.16.55602 > 34.160.111.145.443 [S]   ← curl кладёт SYN в awge2e (OK)
+ens4   Out  10.132.0.8.36528 > 34.14.98.64:51820 UDP   ← AWG шифрует, hairpin на self (OK)
+ens4   In   34.14.98.64.36528 > 10.132.0.8:51820 UDP   ← ответ доходит (OK)
+awg0   In   10.8.0.16.55602 > 34.160.111.145.443 [S]   ← дешифрованный SYN arrives on awg0 (OK)
+[ НИЧЕГО на sing-box-tun; sing-box trace: "No entries" ]
+```
+
+**Chain `awge2e → ens4 → awg0` РАБОТАЕТ** полностью — дешифрованный TCP SYN
+с source `10.8.0.x` доходит до kernel AWG интерфейса `awg0`. Дальше трафик
+**должен** форвардиться в `sing-box-tun` (TUN-overlay) через sing-box
+`auto_route` policy rules. **Не форвардится** — на `sing-box-tun` нет
+захвата, sing-box router не вызывается (trace пуст, нет `router:match`).
+TCP SYN ретраится 5 раз (1s/2s/4s/8s), curl таймаутит.
+
+**Что ОПРОВЕРГНУТО live-пробами:**
+- **H1 (routing loop / нет auto_detect_interface)** — `ip route get 1.1.1.1` →
+  `via 10.132.0.1 dev ens4` (НЕ через sing-box-tun, нет loop). `AutoDetectInterface:true`
+  в конфиге есть.
+- **H3 (IPv4-mapped IPv6 source)** — sing-box trace пуст ВООБЩЕ (router не
+  вызывается, до matching дело не доходит). Не H3.
+- **H4 (deprecated outbound field)** — отпал по доке (action:route = default).
+- **H5 (TUN SNAT)** — отпал: пакет не доходит ДО router'а (trace пуст), SNAT
+  не при чём.
+- **rp_filter** — `net.ipv4.conf.sing-box-tun.rp_filter=1` (унаследован от
+  `all=1`) найден как подозреваемый, но `sysctl ... rp_filter=0` на
+  sing-box-tun + awg0 + all **НЕ исправил**. Не первопричина.
+- **явный `ip rule from 10.8.0.0/24 lookup 2022 priority 100`** (раньше
+  sing-box'овых 9000) — **НЕ исправил**. sing-box `auto_route` правило 9000
+  `from all iif awg0 goto 9002` уже направляет awg0-трафик в table 2022
+  (`default via 172.16.250.2 dev sing-box-tun`), но пакет в TUN не попадает.
+
+**Истинная первопричина (OPEN):** sing-box-extended TUN-overlay **не
+захватывает forwarded-трафик с kernel AWG интерфейса** `awg0`, несмотря на
+`include_interface:["awg0",...]` + `auto_route:true` + корректные `ip rule`
+policy rules (9000: `iif awg0 goto 9002` → table 2022 → `default via
+172.16.250.2 dev sing-box-tun`). Пакет доходит до awg0 (kernel подтверждает
+tcpdump'ом), но в TUN device не входит — sing-box userspace его не читает.
+Это **точно совпадает** с давним OPEN пунктом CTO-review Technical Debt:
+*"`ip rule 10.8.0.0/24 → table 2022` на entry не эмитится deploy-flow — OPEN
+(low)"* — но live-пробы показывают что проблема НЕ в отсутствии rule (sing-box
+его эмитит сам через auto_route), а в том что **TUN device не принимает
+forwarded ingress с kernel iface**.
+
+**Оставшиеся гипотезы (для след. итерации):**
+- **`strict_route: false`** в текущем конфиге — дока sing-box: *"Enforce
+  strict routing rules when auto_route is enabled"* → с `false` правила
+  могут не enforced. Попробовать `strict_route: true`.
+- **`auto_redirect: true`** (Linux-only, дока: *"better routing, higher
+  performance, avoids conflicts between TUN and Docker bridge"*) — текущий
+  конфиг НЕ использует `auto_redirect`. Возможно нужен для forwarded ingress.
+- **TUN `stack: "mixed"`** (system TCP + gvisor UDP) — попробовать `gvisor`
+  или `system`.
+- **TUN device flags** — `sing-box-tun` = `POINTOPOINT,MULTICAST,NOARP` (не
+  обычный ethernet TUN). Возможно sing-box-extended не читает forwarded
+  пакеты с NOARP-интерфейса. Upstream bug-кандидат.
+- **sing-box-extended vs vanilla** — проверить, ломается ли тот же конфиг
+  на vanilla sing-box 1.13.14 (изолировать regression от patch).
+
+**Вывод:** egress через client-tunnel — **не минутный фикс**, требует
+исследования upstream sing-box-extended TUN-ingress поведения (strict_route /
+auto_redirect / stack / NOARP). Это P0-блокер продукта (пользователь
+подключается, но не получает интернет), но технически — глубокий sing-box
+вопрос, не angry-box config-typo. Дальнейший шаг: targeted research по
+sing-box-extended TUN + `include_interface` + forwarded ingress, + пробы
+`strict_route:true` / `auto_redirect:true` / `stack:gvisor` на live VPS.
+
+**Тест-инфра (сохранена для след. итерации):** `TestE2E_Heavy_PerClientRouting`
+расширен tcpdump + route-get + sing-box trace — каждый прогон авто-собирает
+диагностику. Запуск: `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 AB_LOG_LEVEL=trace
+go test -tags e2e ./internal/chain/ -run TestE2E_Heavy_PerClientRouting -v`.
+Сервера оставлены staged (модуль + sing-box установлены, awg0/awg-exit-n1
+активны). Cleanup в defer корректен (awge2e + peers удаляются).
+
+### 15.3. P0a live flag-trials — все конфиг-флаги НЕ исправили (2026-07-08)
+
+После локализации (§15.2) прогнал на live entry VPS (34.14.98.64) 8 вариантов
+TUN inbound через прямую правку `/etc/sing-box/config.json` + `systemctl restart`
++ подъем awge2e-client + curl + tcpdump `-i any`. Каждый вариант — отдельная
+проба (скрипт `/tmp/try_flags.sh` + `/tmp/try_struct.sh` на VPS).
+
+**TUN config-флаги (5 вариантов):**
+
+| Вариант | Egress | sing-box trace |
+|---|---|---|
+| `strict_route:true` | empty | `-- No entries --` |
+| `auto_redirect:true` | empty | `-- No entries --` |
+| `stack:gvisor` | empty | `-- No entries --` |
+| `stack:system` | empty | `-- No entries --` |
+| `strict_route+auto_redirect+gvisor` | empty | `-- No entries --` |
+
+**Вывод:** ни один конфиг-флаг sing-box TUN не заставляет overlay захватывать
+forwarded ingress с kernel AWG iface. Флаги отпадают как фикс.
+
+**`include_interface` structural variants (3 варианта) — КЛЮЧЕВОЕ:**
+
+| Вариант | AWG handshake | sing-box видит трафик? |
+|---|---|---|
+| **`include_interface:["awg0"]` (current)** | **OK** (`HS=...latest handshake`) | **НЕТ** (trace `-- No entries --`) |
+| **`include_interface` removed (auto_route only)** | **BROKEN** (`HS=0`) | **ДА** (`dns: exchange ifconfig.me NOERROR → 34.160.111.145`) |
+| **`exclude_interface:["ens4"]`** | **BROKEN** (`HS=0`) | **ДА** (`dns: exchange ifconfig.me`) |
+
+**Парадокс разрешён — semantics `include_interface` прояснились:**
+
+- **Без `include_interface`** sing-box `auto_route` ставит default route через
+  TUN для **ВСЕГО** трафика хоста, включая AWG handshake UDP на
+  `34.14.98.64:51820` → handshake-пакеты уходят в TUN вместо ens4 → handshake
+  ломается (`HS=0`). НО дешифрованный user-трафик (которого нет, т.к. handshake
+  не прошёл) — не доходил; при этом sing-box видит DNS-запросы curl'а (curl
+  пытается резолвить ifconfig.me, DNS-пакет уходит в TUN → sing-box логирует
+  `dns: exchange`). Это **artefact**, не рабочий path.
+
+- **С `include_interface:["awg0"]`** sing-box ставит policy rule `from all iif
+  awg0 goto 9002` (только ingress с awg0 → table 2022 → TUN). AWG outgoing
+  UDP на ens4 **не трогается** → handshake работает. **НО** дешифрованный
+  forwarded ingress, который ПРИХОДИТ на awg0 (iif=awg0) и должен попасть в
+  TUN через правило 9000 — **НЕ попадает** (trace пуст, tcpdump на
+  sing-box-tun пуст).
+
+**Итоговый вывод (окончательный):** `include_interface` в sing-box-extended
+захватывает **только трафик, originate-ящий из локальных сокетов на этом
+интерфейсе**, **НЕ forwarded ingress** с kernel WireGuard iface. Дешифрованный
+пакет от AWG-пира приходит на awg0 как forwarded ingress (destination = remote
+IP, не локальный socket) — и хотя `ip rule 9000 (iif awg0 goto 9002)` существует,
+TUN device его не принимает. Это **upstream sing-box-extended behavior** /
+возможный bug, не angry-box config-typo.
+
+**Оставшиеся path forward (для след. сессии, требует upstream research):**
+
+1. **Upstream issue на sing-box-extended**: `include_interface` не захватывает
+   forwarded ingress с kernel WireGuard iface — file с минимальным
+   репродьюсером (конфиг + tcpdump доказательство из §15.2). WebSearch
+   недоступен в текущей среде — нужен ручной поиск/репорт.
+2. **Альтернативная архитектура (last resort):** отказаться от kernel AWG +
+   TUN-overlay, вернуть **userspace WireGuard endpoint** для user-entry
+   (НЕ для transit — transit остаётся userspace per AGENTS #10). Userspace
+   endpoint сам владеет интерфейсом → sing-box видит трафик напрямую, без
+   TUN-overlay indirection. Но AGENTS #10 предупреждает что userspace amnezia
+   паничит (chacha20poly1305) — патч `wireguard-go-awg-overlap.patch` это
+   фиксал, но user-facing сервера были переведены на kernel-AWG именно из-за
+   нестабильности userspace. Возврат = regression risk.
+3. **sing-box как AWG endpoint** (sing-box-extended поддерживает amnezia в
+   `wireguard` outbound/inbound): sing-box сам поднимает AWG, без awg-quick —
+   тогда трафик сразу в sing-box, без TUN-overlay. Это архитектурный сдвиг от
+   "kernel awg-quick + sing-box TUN-overlay" (AGENTS #11 kernel-AWG rework).
+
+**Статус P0a:** диагностика завершена, фикс НЕ найден в рамках config-флагов.
+Требует upstream research + архитектурного решения. Это P0-блокер продукта,
+но не блокер для P0b (Users flow) — egress-verify можно отложить отдельной
+сессией, а UX-фичи строить параллельно (они не зависят от egress-routing).
