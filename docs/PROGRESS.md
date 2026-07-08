@@ -2,7 +2,7 @@
 
 > Единый источник правды: что сделано, что нужно, откуда берём. Обновлять при каждом изменении. Не удалять — накапливать.
 
-Последнее обновление: 2026-07-08 (v0.4.0 live E2E на свежих GCloud VPSes — §13.4)
+Последнее обновление: 2026-07-08 (chain-building E2E suite on fresh VPSes + 2 bugs found & fixed — §13.5)
 
 ---
 
@@ -578,3 +578,33 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 **Stage 3 unit-тесты добавлены (quality gap из прошлой сессии закрыт):** `TestAwgServerConfigToAmnezia` (obfuscated + plain-WG-returns-nil), `TestRenderTakeoverAWGConf` (path/service = awg0, [Interface] carries imported material, 2 [Peer] from active users, inactive/skipped users excluded, PostUp present, NO Itime), `TestRenderTakeoverAWGConf_PlainWG`, `TestRenderTakeoverAWGConf_DefaultAddress`. Все PASS.
 
 **Cleanup серверов после тестов:** `e2eResetAllServers` чинит post-crash state (chown sing-box binary, reset-failed). AWG-интерфейсы (awg0, awg-exit-n1, awge2e) оставлены для будущих прогонов (модуль установлен — fast path при redeploy).
+
+### 13.5. Chain-building E2E suite on fresh VPSes (2026-07-08) — 2 bugs found & fixed
+
+После AWG-тестов (§13.4) прогнал полный core E2E suite (chain building / topology / transport / balancer / strategy / rollback / takeover / import / concurrency / hostlock / QUIC capture) на тех же свежих GCloud VPS. **Все PASS** (TUIC frozen — не гонял; ClientConnectivity SKIP без `AB_ROUTE_DNS=1` — деплой проходит, egress verify пропущен). Найдены и исправлены 2 бага.
+
+**Результаты (21 тест PASS):**
+
+| Группа | Тесты | Результат |
+|--------|-------|-----------|
+| Deploy/Staging | `Deploy_FreshNode` | PASS — sing-box-extended self-stages на clean VPS |
+| Chain building | `Chain_SingleNode`, `Chain_2Hop`, `Chain_3Hop`, `Chain_TopologyChange` (2hop→3hop→2hop) | PASS — построение цепей 1/2/3 hop + topology change |
+| Transport | `Protocol_VLESSRealityXHTTP_Advanced` | PASS — REALITY+XHTTP obfuscation на inter-node transport, exit слушает 443 |
+| AWG | `Protocol_AWG_Kernel`, `Protocol_AWG_Kernel_2Hop`, `Protocol_AWG_Userspace`, `PerClientRouting` | PASS (per-client handshake verified, §13.4) |
+| Balancer | `Balancer_URLTestInChain`, `Balancer_Failover` (stop middle → still 204), `Balancer_MultiEntry` (SKIP) | PASS |
+| Strategy | `SelectorStrategy` | PASS — selector переключает egress между middle (207.175.1.227) и exit (35.189.235.61) — per-client routing через selector работает на live VPS |
+| Rollback | `Rollback_OnBadConfig` | PASS (после fix — см. ниже) — sing-box check ловит `unknown inbound type`, rollback восстанавливает vless config |
+| Takeover | `Takeover_SingBox_FullFlow` | PASS |
+| Import AWG | `ImportAWG_PreservesPeers`, `ImportAWG_FromSeededNode` | PASS — non-destructive peer import |
+| Idempotency/Locking | `Idempotency_DoubleApply`, `ConcurrentDeploy_Serialized`, `HostLock_Identity`, `PostDeploy_HashAndHealth`, `BackendStatus_AllNodes` | PASS |
+| QUIC capture | `QUICCapture_AWGConfig` | PASS (после 2 fixes — см. ниже) — capture на one.one.one.one (2 packets, partial), kernel-AWG TUN overlay + awg0.conf с amnezia |
+
+**Баг 1 (test-fixture, fixed): `TestE2E_Heavy_Rollback_OnBadConfig` падал на fresh VPS.** `performRollbackTest` вызывал `chain.PushConfig` напрямую (минуя `Deploy`), который пишет в `/etc/sing-box/config.json` но НЕ делает `mkdir` этой директории — staging (binary + dirs + systemd unit) это работа `Deploy`. На чистом VPS (`/etc/sing-box` не существует) raw PushConfig фейлился с `cp: cannot create regular file '/etc/sing-box/config.json': No such file or directory` до того как rollback-путь вообще достигался. Fix: `performRollbackTest` теперь сначала делает `backend.DeployWithOptions` (pre-stage), потом seed good config через PushConfig — rollback-фикстура self-contained и работает на clean VPS (соответствует философии self-staging). Это test-fixture gap, не production баг — `PushConfig` по дизайну низкоуровневый I/O слой, staging делает `Deploy`.
+
+**Баг 2 (production crash, fixed): `CaptureQUICSignature` panic на partial QUIC capture.** `awgcapture.go:137` делал `packets[:captureMaxPkts]` (captureMaxPkts=5 для I1-I5), но read-loop мог вернуть меньше пакетов (timeout/loss/сервер перестал слать). На live VPS `one.one.one.one` вернул 2 пакета → `slice bounds out of range [:5] with capacity 2` → **panic, крашит оркестратор**. Fix: вынес slice-логику в `capturePacketsToCPS(packets)` с `min(len(packets), captureMaxPkts)` clamp — partial capture даёт partial CPS set, не краш. Production-код (`EnsureChainAWGMaterial`) уже корректно требует `len(Packets) >= 5` для live capture (иначе fallback на synthesized), так что partial capture в production идёт в fallback корректно. Добавлены 4 unit-теста (`TestCapturePacketsToCPS_PartialNoPanic` regression, `_Full`, `_ClipsOversized`, `_Empty`).
+
+**Также обновлены устаревшие E2E assertions:**
+- `TestE2E_Heavy_QUICCapture_AWGConfig` требовал `"amnezia"`+`"i1"` в sing-box config — это userspace-era assertion (amnezia в userspace wireguard endpoint). При kernel-AWG architecture (AGENTS.md #10) amnezia живёт в `awg0.conf`, sing-box config содержит только TUN overlay (`type: tun`, `include_interface: awg0`, NO `wireguard`). Assertion обновлено на kernel-AWG shape + проверку amnezia в запушенном awg0.conf.
+- `TestE2E_Heavy_QUICCapture_AWGConfig` требовал ровно 5 пакетов — на GCloud (UDP/443 частично заблокирован) capture возвращает 2. Расслаблено: `source=quic` с любым числом пакетов валиден (production fallback сработает на <5); только `source=error` или malformed packet = failure.
+
+`go build ./...` + `go vet ./...` + полный non-e2e `go test` зелёные. Сервера оставлены staged.

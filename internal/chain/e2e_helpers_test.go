@@ -434,6 +434,17 @@ func e2eClientBinary(t *testing.T) string {
 
 func performRollbackTest(t *testing.T, role int, nodeID string) {
 	t.Helper()
+	// Pre-stage the VPS: pushConfig writes to /etc/sing-box/config.json but does
+	// NOT mkdir that dir — staging (binary + dirs + systemd unit) is Deploy's job.
+	// On a fresh VPS (no /etc/sing-box) a raw PushConfig fails with "cp: cannot
+	// create regular file '/etc/sing-box/config.json': No such file or directory"
+	// before the rollback path is even reached. Deploy once so the rollback
+	// fixture is self-contained and runs on a clean VPS.
+	host := e2eHost(role)
+	backend := factory.New(nil).Create()
+	if _, err := backend.DeployWithOptions(e2eContext(t, 5*time.Minute), host, model.DeployOptions{UseSudo: true}); err != nil {
+		t.Fatalf("pre-stage Deploy role=%d: %v", role, err)
+	}
 	client := e2eConnect(t, role)
 	good, err := singbox.RenderProxyNode(singbox.ProxyNodeParams{ListenPort: 8443})
 	if err != nil {

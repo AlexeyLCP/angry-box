@@ -133,12 +133,28 @@ func CaptureQUICSignature(domain string, timeout time.Duration) CaptureResult {
 		return CaptureResult{Source: "error", Warning: fmt.Sprintf("Domain %s does not support QUIC (UDP 443). Choose another domain.", domain)}
 	}
 
-	cps := make([]string, 0, captureMaxPkts)
-	for _, pkt := range packets[:captureMaxPkts] {
+	return CaptureResult{OK: true, Source: "quic", Packets: capturePacketsToCPS(packets)}
+}
+
+// capturePacketsToCPS converts the captured packet slice (I1 = the sent Initial,
+// I2..I5 = server responses) to the CPS string slice used as amnezia I1-I5
+// material. It is capped at captureMaxPkts entries and tolerant of a partial
+// capture (fewer than captureMaxPkts packets) — the read loop breaks on
+// timeout/loss, so packets may be short. Slicing packets[:captureMaxPkts] when
+// len(packets) < captureMaxPkts would panic (slice out of range); min-clamp
+// instead so a partial capture yields a partial CPS set, not a crash. Each
+// packet is also clipped to captureMaxPacket bytes before CPS encoding.
+func capturePacketsToCPS(packets [][]byte) []string {
+	limit := len(packets)
+	if limit > captureMaxPkts {
+		limit = captureMaxPkts
+	}
+	cps := make([]string, 0, limit)
+	for _, pkt := range packets[:limit] {
 		if len(pkt) > captureMaxPacket {
 			pkt = pkt[:captureMaxPacket]
 		}
 		cps = append(cps, CPSString(pkt, 0))
 	}
-	return CaptureResult{OK: true, Source: "quic", Packets: cps}
+	return cps
 }

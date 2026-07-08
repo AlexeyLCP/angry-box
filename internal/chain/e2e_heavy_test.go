@@ -892,7 +892,14 @@ func TestE2E_Heavy_Balancer_Failover(t *testing.T) {
 func TestE2E_Heavy_QUICCapture_AWGConfig(t *testing.T) {
 	e2eHeavy(t)
 	capture := captureQUICOrSkip(t)
-	if capture.Source != "quic" || len(capture.Packets) != 5 {
+	// captureQUICOrSkip skips when UDP/443 is blocked on every candidate domain.
+	// A successful capture may return fewer than 5 packets on networks where
+	// UDP/443 is partially filtered (e.g. GCloud) — the slice-safety fix in
+	// capturePacketsToCPS keeps that from panicking, and EnsureChainAWGMaterial
+	// falls back to synthesized packets when len(Packets) < 5. So a partial
+	// capture (source=quic, <5 packets) is a valid outcome here; only error
+	// source or a malformed packet string is a failure.
+	if capture.Source != "quic" {
 		t.Fatalf("bad capture: source=%s packets=%d", capture.Source, len(capture.Packets))
 	}
 	for i, p := range capture.Packets {
@@ -900,7 +907,7 @@ func TestE2E_Heavy_QUICCapture_AWGConfig(t *testing.T) {
 			t.Errorf("packet %d bad format: %q", i, p)
 		}
 	}
-	t.Logf("captured %d QUIC packets", len(capture.Packets))
+	t.Logf("captured %d QUIC packets (>=5 = full CPS; <5 = partial, production falls back to synthesized)", len(capture.Packets))
 
 	store := newStore(t)
 	nodes := buildChainNodes(e2eRoleExit)
@@ -924,9 +931,29 @@ func TestE2E_Heavy_QUICCapture_AWGConfig(t *testing.T) {
 	if report.AWG != nil && report.AWG.CPSLevel < 1 {
 		t.Errorf("expected CPS level on AWG material, got %+v", report.AWG)
 	}
+	// Kernel-AWG architecture (AGENTS.md #10): the amnezia obfuscation
+	// (Jc/S1-S4/H1-H4/I1-I5) lives in the separately-pushed awg0.conf, NOT in
+	// the sing-box config — which carries only the TUN overlay that captures
+	// awg0. The old userspace-era assertion (`"amnezia"`, `"i1"` in the sing-box
+	// config) is obsolete; assert the kernel-AWG shape instead.
 	cfg := fetchRemoteConfig(t, e2eRoleExit)
-	assertConfigContains(t, cfg, `"amnezia"`, `"i1"`)
-	t.Logf("AWG config includes CPS/amnezia fields from pro_2026 preset")
+	assertConfigContains(t, cfg, `"type": "tun"`, `"include_interface"`, `"awg0"`)
+	if strings.Contains(cfg, `"type": "wireguard"`) {
+		t.Errorf("kernel-AWG config must NOT emit a userspace wireguard endpoint:\n%s", truncate(cfg, 2000))
+	}
+	// The amnezia material must be in the pushed awg0.conf (I1 = the captured
+	// QUIC packet when the preset is quic-live, or synthesized when it fell back).
+	awg0Conf, _ := e2eConnect(t, e2eRoleExit).Run("sudo cat /etc/amnezia/amneziawg/awg0.conf 2>/dev/null || echo MISSING")
+	if strings.TrimSpace(awg0Conf) == "MISSING" {
+		t.Fatal("awg0.conf not pushed — kernel-AWG deploy must write it")
+	}
+	awg0Lower := strings.ToLower(awg0Conf)
+	for _, want := range []string{"[interface]", "jc", "s1", "h1"} {
+		if !strings.Contains(awg0Lower, want) {
+			t.Errorf("awg0.conf missing %q (amnezia obfuscation):\n%s", want, truncate(awg0Conf, 2000))
+		}
+	}
+	t.Logf("kernel-AWG: sing-box TUN overlay + awg0.conf with amnezia (Jc/S1/H1) from pro_2026 preset")
 }
 
 // ─── AWG Peer Import (non-destructive) ────────────────────────────────────────
