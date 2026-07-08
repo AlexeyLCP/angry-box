@@ -828,6 +828,9 @@ func serveCmd() {
 	// Start background metrics collection based on panel settings
 	settings, _ := chain.NewStore(storePath).GetSettings()
 	ui.StartBackgroundMetrics(settings.MetricsInterval)
+	// Start the periodic encrypted offsite-backup loop (P2a). No-op until the
+	// operator enables + configures an offsite target in Settings.
+	ui.StartOffsiteBackupLoop()
 	// Apply the operator's global default REALITY/TUIC SNI (if set) so
 	// ResolveServerName + the standalone singbox renderers use it as the
 	// fallback instead of the built-in const (CTO-review §2 Reality SNI drift).

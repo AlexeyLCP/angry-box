@@ -232,18 +232,118 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 								<textarea name="backup_json" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="6"
 									placeholder="{&quot;format&quot;:&quot;angry-box-store&quot;...}  /  {&quot;format&quot;:&quot;angry-box-node&quot;...}"></textarea>
 							</div>
+							<div class="form-control">
+								<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup passphrase") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "only for encrypted (ABBKP1) offsite blobs") }</span></label>
+								<input type="password" name="passphrase" class="input input-bordered input-sm" placeholder="••••••••" />
+							</div>
 							<label class="label cursor-pointer gap-2">
 								<input type="checkbox" name="force" class="checkbox checkbox-sm" />
 								<span class="label-text text-xs">{ i18n.T(ctx, "Overwrite existing (force)") }</span>
 							</label>
 							<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import backup") }</button>
 						</form>
-						<div id="import-backup-result" class="mt-1"></div>
+							<div id="import-backup-result" class="mt-1"></div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Offsite backup target (P2a) — push an encrypted copy of the
+				     store to an offsite SSH box on a schedule + on demand. The
+				     blob is passphrase-encrypted (scrypt/AES-GCM), so it is
+				     restorable without the host's master key. The master key
+				     file never leaves this host. -->
+				<div class="tn-card">
+					<div class="card-body p-4">
+						<h3 class="font-semibold mb-3">{ i18n.T(ctx, "Offsite backup") }</h3>
+						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Push an encrypted copy of the panel to an offsite SSH target on a schedule. The blob is passphrase-encrypted — restorable without this host's master key (which never leaves this host).") }</p>
+						<form
+							hx-post="/ui/backup/offsite/save"
+							hx-target="#offsite-backup-result"
+							hx-swap="innerHTML"
+							class="space-y-3">
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup target host") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "host:port") }</span></label>
+									<input type="text" name="offsite_host" class="input input-bordered input-sm"
+										value={ offsiteVal(settings, "Host") }
+										placeholder="backup.example:22" />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "New SSH user (optional)") }</span></label>
+									<input type="text" name="offsite_user" class="input input-bordered input-sm"
+										value={ offsiteVal(settings, "User") } placeholder="backup" />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "New SSH key (optional)") }</span></label>
+									<select name="offsite_ssh_key_id" class="select select-bordered select-sm">
+										<option value="">{ i18n.T(ctx, "Select...") }</option>
+										for _, k := range settings.SSHKeys {
+											if offsiteVal(settings, "SSHKeyID") == k.ID {
+												<option value={ k.ID } selected>{ k.Name }</option>
+											} else {
+												<option value={ k.ID }>{ k.Name }</option>
+											}
+										}
+									</select>
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Remote path") }</span></label>
+									<input type="text" name="offsite_remote_path" class="input input-bordered input-sm"
+										value={ offsiteVal(settings, "RemotePath") } placeholder="/home/backup/angry-box.abbkp" />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup passphrase") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "leave blank to keep current") }</span></label>
+									<input type="password" name="offsite_passphrase" class="input input-bordered input-sm" placeholder="••••••••" />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup interval (minutes)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 6h default") }</span></label>
+									<input type="number" name="offsite_interval" class="input input-bordered input-sm"
+										value={ offsiteVal(settings, "IntervalMin") } placeholder="360" />
+								</div>
+							</div>
+							<label class="label cursor-pointer gap-2">
+								<input type="checkbox" name="offsite_enabled" class="checkbox checkbox-sm"
+									if settings.OffsiteBackup != nil && settings.OffsiteBackup.Enabled { checked } />
+								<span class="label-text text-xs">{ i18n.T(ctx, "Offsite backup enabled") }</span>
+							</label>
+							<div class="flex gap-2 flex-wrap">
+								<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save") }</button>
+								<button type="button" class="btn btn-ghost btn-sm"
+									hx-post="/ui/backup/offsite/now"
+									hx-target="#offsite-backup-result"
+									hx-swap="innerHTML">
+									{ i18n.T(ctx, "Backup now") }
+								</button>
+							</div>
+						</form>
+						<div id="offsite-backup-result" class="mt-2"></div>
 					</div>
 				</div>
 			</div>
 		</div>
-	</div>
+}
+
+// offsiteVal returns a field of the OffsiteBackupConfig for pre-filling the
+// settings form, returning "" when offsite backup is not configured yet (nil
+// cfg). field is one of "Host","User","SSHKeyID","RemotePath","IntervalMin".
+func offsiteVal(settings *model.PanelSettings, field string) string {
+	if settings == nil || settings.OffsiteBackup == nil {
+		return ""
+	}
+	ob := settings.OffsiteBackup
+	switch field {
+	case "Host":
+		return ob.Host
+	case "User":
+		return ob.User
+	case "SSHKeyID":
+		return ob.SSHKeyID
+	case "RemotePath":
+		return ob.RemotePath
+	case "IntervalMin":
+		return fmt.Sprintf("%d", ob.IntervalMin)
+	}
+	return ""
 }
 
 // SSHKeyList renders the SSH key list (used for HTMX partial updates). It lists

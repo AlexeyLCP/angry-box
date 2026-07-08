@@ -122,6 +122,53 @@ func (s *Server) Stop() {
 	}
 }
 
+// StartOffsiteBackupLoop starts the periodic encrypted offsite-backup ticker
+// (P2a). No-op if OffsiteBackup is disabled/unconfigured. Reads a fresh
+// OffsiteBackupConfig every tick (so operator edits in settings take effect
+// without a restart). Interval from cfg.IntervalMin (default 360 min = 6h).
+// Shares s.stopCh with the metrics loop for clean shutdown. Errors are logged
+// + audited by runOffsiteBackup; a failing tick never stops the loop.
+func (s *Server) StartOffsiteBackupLoop() {
+	go func() {
+		interval := time.Duration(chain.DefaultOffsiteBackupInterval) * time.Minute
+		// Do NOT back up immediately on startup — give the metrics loop a head
+		// start and let an operator fix a misconfigured target before the first
+		// push. First tick after one interval.
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.runOffsiteBackup()
+			case <-s.stopCh:
+				return
+			}
+		}
+	}()
+}
+
+// runOffsiteBackup runs one offsite backup cycle if enabled. Reads the fresh
+// config, computes the interval (so a changed IntervalMin applies next tick),
+// and delegates to chain.PushOffsiteBackup. Logs + audits the outcome.
+func (s *Server) runOffsiteBackup() {
+	st := s.store()
+	settings, err := st.GetSettings()
+	if err != nil || settings.OffsiteBackup == nil || !settings.OffsiteBackup.Enabled {
+		return
+	}
+	cfg := settings.OffsiteBackup
+	if cfg.Host == "" || cfg.RemotePath == "" || cfg.Passphrase == "" {
+		log.Printf("offsite backup: enabled but incomplete config (host/path/passphrase missing), skipping")
+		return
+	}
+	if err := chain.PushOffsiteBackup(context.Background(), st, cfg, s.SSHConnector()); err != nil {
+		log.Printf("offsite backup: push to %s failed: %v", cfg.Host, err)
+		chain.WriteAudit(st, "backup", "offsite", "", chain.AuditPayload{"target": cfg.Host, "error": err.Error()}, "system")
+		return
+	}
+	chain.WriteAudit(st, "backup", "offsite", "", chain.AuditPayload{"target": cfg.Host, "path": cfg.RemotePath, "success": true}, "system")
+}
+
 // collectAllMetrics checks all hosts, classifies each probe via the node
 // health state machine, and records the resulting state + metrics. An audit
 // event is written ONLY on a state transition (not every tick) so a stable

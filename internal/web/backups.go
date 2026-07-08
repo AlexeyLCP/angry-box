@@ -17,10 +17,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
 )
 
@@ -30,6 +32,29 @@ func (s *Server) registerBackupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/backup/store", s.auth(s.handleExportStoreBackup))
 	mux.HandleFunc("GET /ui/backup/nodes/{id}", s.auth(s.handleExportNodeBackup))
 	mux.HandleFunc("POST /ui/backup/import", s.auth(s.handleImportBackup))
+	mux.HandleFunc("POST /ui/backup/offsite/now", s.auth(s.handleBackupNow))
+	mux.HandleFunc("POST /ui/backup/offsite/save", s.auth(s.handleSaveOffsite))
+}
+
+// handleBackupNow triggers one encrypted offsite backup push immediately (P2a).
+// Uses the saved OffsiteBackupConfig; refuses 400 if not configured. Swaps an
+// alert (success/error) back into the settings Backups card via HTMX.
+func (s *Server) handleBackupNow(w http.ResponseWriter, r *http.Request) {
+	st := s.store()
+	settings, err := st.GetSettings()
+	if err != nil || settings.OffsiteBackup == nil || settings.OffsiteBackup.Host == "" ||
+		settings.OffsiteBackup.RemotePath == "" || settings.OffsiteBackup.Passphrase == "" {
+		http.Error(w, i18n.T(r.Context(), "backup: offsite target not configured"), http.StatusBadRequest)
+		return
+	}
+	cfg := settings.OffsiteBackup
+	if perr := chain.PushOffsiteBackup(r.Context(), st, cfg, s.SSHConnector()); perr != nil {
+		chain.WriteAudit(st, "backup", "offsite", "", chain.AuditPayload{"target": cfg.Host, "error": perr.Error()}, "operator")
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Backup failed") + `: ` + perr.Error() + `</span></div>`})
+		return
+	}
+	chain.WriteAudit(st, "backup", "offsite", "", chain.AuditPayload{"target": cfg.Host, "path": cfg.RemotePath, "success": true}, "operator")
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Backup sent to offsite target") + `: ` + cfg.Host + `</span></div>`})
 }
 
 // handleExportStoreBackup streams the entire panel as a plaintext JSON backup
@@ -88,6 +113,24 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	force := r.FormValue("force") == "on"
 	data := []byte(payload)
 
+	// P2a restore: a passphrase-encrypted offsite blob (ABBKP1 magic). Decrypt
+	// with the form-supplied passphrase, then import the resulting plaintext
+	// store backup. The master key is never used here — the blob is passphrase-
+	// encrypted precisely so it is restorable without the host's master key.
+	if chain.IsBackupBlob(data) {
+		pass := strings.TrimSpace(r.FormValue("passphrase"))
+		if pass == "" {
+			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "passphrase is required to decrypt the backup") + `</span></div>`})
+			return
+		}
+		plain, err := chain.DecryptBackup(data, pass)
+		if err != nil {
+			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "import failed") + `: ` + err.Error() + `</span></div>`})
+			return
+		}
+		data = plain
+	}
+
 	format, err := chain.DetectBackupFormat(data)
 	if err != nil {
 		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid backup JSON") + `: ` + err.Error() + `</span></div>`})
@@ -128,4 +171,55 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid backup JSON") + `</span></div>`})
 	}
+}
+
+// handleSaveOffsite saves ONLY the offsite-backup target config (P2a), leaving
+// every other panel setting untouched. This is a dedicated endpoint (not the
+// main /ui/settings save) because the offsite card is a separate HTMX form and
+// posting it through the main settings handler would blank out all the other
+// fields (panel_country, language, etc.) the offsite form does not carry.
+// An empty host disables the target; an empty passphrase keeps the current one.
+func (s *Server) handleSaveOffsite(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	settings, err := st.GetSettings()
+	if err != nil {
+		http.Error(w, i18n.T(r.Context(), "save: %v"), http.StatusInternalServerError)
+		return
+	}
+
+	obHost := strings.TrimSpace(r.FormValue("offsite_host"))
+	if obHost == "" {
+		// Disabling: keep the record (for LastBackupAt history) but flip Enabled off.
+		if settings.OffsiteBackup != nil {
+			settings.OffsiteBackup.Enabled = false
+		}
+	} else {
+		ob := settings.OffsiteBackup
+		if ob == nil {
+			ob = &model.OffsiteBackupConfig{}
+		}
+		ob.Enabled = r.FormValue("offsite_enabled") == "on"
+		ob.Host = obHost
+		ob.User = strings.TrimSpace(r.FormValue("offsite_user"))
+		ob.SSHKeyID = strings.TrimSpace(r.FormValue("offsite_ssh_key_id"))
+		ob.RemotePath = strings.TrimSpace(r.FormValue("offsite_remote_path"))
+		// Empty passphrase = keep current (so a routine save does not wipe it).
+		if pp := strings.TrimSpace(r.FormValue("offsite_passphrase")); pp != "" {
+			ob.Passphrase = pp
+		}
+		if iv := strings.TrimSpace(r.FormValue("offsite_interval")); iv != "" {
+			ob.IntervalMin, _ = strconv.Atoi(iv)
+		}
+		settings.OffsiteBackup = ob
+	}
+
+	if err := st.SaveSettings(settings); err != nil {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "save: %v") + `: ` + err.Error() + `</span></div>`})
+		return
+	}
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Offsite backup settings saved") + `</span></div>`})
 }
