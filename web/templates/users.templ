@@ -104,12 +104,8 @@ templ UserRow(u *model.User) {
 			}
 		</td>
 		<td>
-			if u.IsExpired() {
-				<span class="badge badge-error badge-xs">{ i18n.T(ctx, "Expired") }</span>
-			} else if u.Active {
-				<span class="badge badge-success badge-xs">{ i18n.T(ctx, "Active") }</span>
-			} else {
-				<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "Inactive") }</span>
+			if status, cls := userStatusBadge(u); status != "" {
+				<span class={ "badge badge-xs " + cls }>{ i18n.T(ctx, status) }</span>
 			}
 		</td>
 		<td>
@@ -576,6 +572,31 @@ func displayShow(show bool) string {
 		return "block"
 	}
 	return "none"
+}
+
+// userStatusBadge returns the i18n status label + DaisyUI badge class for a
+// user. Prefers the persisted u.Status (set by handlers via ComputeStatus);
+// falls back to deriving on the fly so the list renders correctly even for
+// users loaded before the Status field existed (legacy/empty).
+func userStatusBadge(u *model.User) (label, class string) {
+	status := u.Status
+	if status == "" {
+		status = u.ComputeStatus()
+	}
+	switch status {
+	case "active":
+		return "Active", "badge-success"
+	case "disabled":
+		return "Inactive", "badge-ghost"
+	case "expired":
+		return "Expired", "badge-error"
+	case "on_hold":
+		return "On hold", "badge-warning"
+	case "limited":
+		return "Limited", "badge-warning"
+	default:
+		return "Inactive", "badge-ghost"
+	}
 }
 
 // ─── User Created Result (post-create sub URL box) ─────────────────────────────

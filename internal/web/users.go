@@ -26,12 +26,17 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	users, _ := st.ListUsers()
 	chains, _ := st.ListChains()
 
-	// Auto-deactivate expired users on every view
+	// Auto-deactivate expired users on every view (legacy behaviour kept).
+	// P0b Slice 1: also refresh the persisted Status field so the badge is
+	// consistent (expired/disabled/on_hold/active).
 	now := time.Now()
 	for _, u := range users {
 		if u.Active && !u.ExpiresAt.IsZero() && now.After(u.ExpiresAt) {
 			u.Active = false
 			st.SaveUser(u)
+		}
+		if u.Status == "" {
+			u.Status = u.ComputeStatus()
 		}
 	}
 

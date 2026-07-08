@@ -20,6 +20,16 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	if users == nil {
 		users = []*model.User{}
 	}
+	// Derive the lifecycle Status for display (active/disabled/expired/on_hold;
+	// "limited" needs the P0b-2 poller). Display-only — does not persist, so the
+	// auto-deactivate behaviour in handleUsers stays the source of truth for the
+	// persisted Active flag. Users without a persisted Status get it derived
+	// here so the badge renders correctly for legacy records.
+	for _, u := range users {
+		if u.Status == "" {
+			u.Status = u.ComputeStatus()
+		}
+	}
 	s.render(w, r, templates.Users(users, chains))
 }
 // registerClientRoutes wires the unified clients page (replaces the dead
