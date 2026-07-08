@@ -199,15 +199,52 @@ type SSHKeyEntry struct {
 	Fingerprint string `json:"fingerprint,omitempty"` // last 8 of SHA256 pubkey fingerprint
 }
 
-// NodeMetrics holds the latest health/metrics snapshot for a node.
+// Node health states (NodeMetrics.State). Computed by the metrics loop from
+// SSH+systemd signals via chain.NextState, except NodeStateBlocked which is
+// operator-marked via the block/unblock handlers (the orchestrator SSHes from
+// a free region and cannot observe a DPI block itself — see AGENTS.md / P1a).
+// String constants (no enum type) mirror the project convention (Source*,
+// user Status). Additive: old stores with empty State derive from Online.
+const (
+	NodeStateHealthy     = "healthy"     // SSH ok, sing-box systemd active
+	NodeStateSuspect     = "suspect"     // 1-2 consecutive failures (transient — not yet actionable)
+	NodeStateDown        = "down"        // SSH ok but sing-box systemd inactive/failed (≥ DownThreshold fails)
+	NodeStateUnreachable = "unreachable" // SSH dial fails (≥ DownThreshold fails) — host/network dead, not a service crash
+	NodeStateBlocked     = "blocked"     // operator-marked DPI block — sticky, cleared only by the unblock handler
+	NodeStateUnknown      = "unknown"     // no metrics yet / fresh node / just cleared
+)
+
+// HysteresisConfig controls how many consecutive probe failures/recoveries
+// must occur before the node state machine transitions, so a single transient
+// SSH timeout does not flap a node to "down" and spam audit events. Tunable
+// via PanelSettings (P1a+); hardcoded DefaultHysteresis this slice.
+type HysteresisConfig struct {
+	DownThreshold    int `json:"down_threshold,omitempty"`    // consecutive fails → down/unreachable (default 3)
+	RecoverThreshold int `json:"recover_threshold,omitempty"` // consecutive oks → healthy (default 2)
+}
+
+// DefaultHysteresis is the baked-in hysteresis used by collectAllMetrics when
+// PanelSettings.Hysteresis is not configured. 3 fails at the default 15-min
+// metrics interval ≈ 45 min before a node is flagged; 2 consecutive oks to
+// recover — dampens flapping without hiding a real outage.
+var DefaultHysteresis = HysteresisConfig{DownThreshold: 3, RecoverThreshold: 2}
+
+// NodeMetrics holds the latest health/metrics snapshot for a node. Persisted
+// to the store JSON (durable across restarts) — see store.go SaveMetrics.
 type NodeMetrics struct {
 	HostID      string    `json:"host_id"`
-	Online      bool      `json:"online"`
+	Online      bool      `json:"online"`                 // back-compat bool, derived from State in the metrics loop
+	State       string    `json:"state,omitempty"`        // one of NodeState* constants; empty → derive from Online (old stores)
+	StateReason string    `json:"state_reason,omitempty"` // human-readable: "ssh dial: timeout", "sing-box inactive", "operator marked", ""
 	Version     string    `json:"version,omitempty"`
 	LatencyMs   int64     `json:"latency_ms,omitempty"`
 	BytesSent   int64     `json:"bytes_sent,omitempty"`
 	BytesRecv   int64     `json:"bytes_recv,omitempty"`
 	LastChecked time.Time `json:"last_checked"`
+
+	StateChangedAt  time.Time `json:"state_changed_at,omitempty"`  // when the current State was entered
+	ConsecutiveFails int      `json:"consecutive_fails,omitempty"` // hysteresis: consecutive failing probes
+	ConsecutiveOKs  int       `json:"consecutive_oks,omitempty"`   // hysteresis: consecutive successful probes (recovery)
 
 	OS                 string `json:"os,omitempty"`
 	SingBoxInstalled   bool   `json:"sing_box_installed,omitempty"`
