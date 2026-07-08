@@ -482,6 +482,34 @@ func TestListUsers(t *testing.T) {
 	}
 }
 
+// TestGetUserBySubscriptionToken verifies the public /sub/{token} lookup: a
+// user is found by token, an empty token never matches, and an unknown token
+// returns ErrUserNotFound.
+func TestGetUserBySubscriptionToken(t *testing.T) {
+	s := tempStore(t)
+	s.SaveUser(&model.User{ID: "u1", Name: "A", SubscriptionToken: "tok-A"})
+	s.SaveUser(&model.User{ID: "u2", Name: "B", SubscriptionToken: "tok-B"})
+	s.SaveUser(&model.User{ID: "u3", Name: "NoToken"})
+
+	got, err := s.GetUserBySubscriptionToken("tok-A")
+	if err != nil {
+		t.Fatalf("GetUserBySubscriptionToken: %v", err)
+	}
+	if got.ID != "u1" {
+		t.Errorf("got user %q, want u1", got.ID)
+	}
+
+	if _, err := s.GetUserBySubscriptionToken("tok-B"); err != nil {
+		t.Errorf("second known token: %v", err)
+	}
+	if _, err := s.GetUserBySubscriptionToken(""); err == nil {
+		t.Error("empty token must not match")
+	}
+	if _, err := s.GetUserBySubscriptionToken("no-such-token"); err == nil {
+		t.Error("unknown token must return ErrUserNotFound")
+	}
+}
+
 func TestDeleteUser(t *testing.T) {
 	s := tempStore(t)
 	s.SaveUser(&model.User{ID: "u1", Name: "A"})

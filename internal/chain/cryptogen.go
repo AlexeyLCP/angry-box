@@ -147,7 +147,20 @@ func GenerateTUICPassword() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// GenerateVMessWSPath returns "/<8 url-safe chars>".
+// GenerateSubscriptionToken returns a url-safe 16-byte (22-char, no padding)
+// random token for the public /sub/{token} endpoint. RawURLEncoding so the
+// token has no "=" padding (cleaner in a path segment). Returns an error if
+// crypto/rand is unavailable instead of panicking in the request path
+// (CTO-review #3). 128 bits of entropy — collision-free in practice;
+// GetUserBySubscriptionToken is a linear scan so the create-time uniqueness
+// check (handlers call it once) is cheap insurance.
+func GenerateSubscriptionToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("cryptogen: crypto/rand failed for subscription token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
 func GenerateVMessWSPath() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

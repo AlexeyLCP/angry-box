@@ -317,6 +317,33 @@ func TestGenerateWireGuardKeypair_Valid(t *testing.T) {
 	}
 }
 
+// TestGenerateSubscriptionToken verifies the /sub/{token} token: url-safe,
+// 16 bytes (22 base64-url chars), unique across calls.
+func TestGenerateSubscriptionToken(t *testing.T) {
+	tok1, err := GenerateSubscriptionToken()
+	if err != nil {
+		t.Fatalf("GenerateSubscriptionToken: %v", err)
+	}
+	tok2, _ := GenerateSubscriptionToken()
+	if tok1 == "" || tok2 == "" {
+		t.Fatal("empty token")
+	}
+	if tok1 == tok2 {
+		t.Error("tokens must be unique")
+	}
+	// 16 bytes -> base64.RawURLEncoding 22 chars, no padding.
+	if len(tok1) != 22 {
+		t.Errorf("token length = %d, want 22 (16 bytes url-safe no padding)", len(tok1))
+	}
+	b, err := base64.RawURLEncoding.DecodeString(tok1)
+	if err != nil {
+		t.Fatalf("token is not valid url-safe base64: %v", err)
+	}
+	if len(b) != 16 {
+		t.Errorf("decoded token = %d bytes, want 16", len(b))
+	}
+}
+
 func TestGenerateWireGuardKeypair_Unique(t *testing.T) {
 	p1, b1, _ := GenerateWireGuardKeypair()
 	p2, b2, _ := GenerateWireGuardKeypair()

@@ -527,6 +527,29 @@ func (s *Store) GetUser(id string) (*model.User, error) {
 	return nil, fmt.Errorf("store: user %q not found: %w", id, ErrUserNotFound)
 }
 
+// GetUserBySubscriptionToken returns the user whose SubscriptionToken matches.
+// Used by the public /sub/{token} endpoint to resolve a subscription fetch to
+// a user without exposing user IDs. Linear scan is fine (user counts are
+// small; matches the existing linear scans in ListMTProxyUsersForNode). An
+// empty token never matches (returns ErrUserNotFound) so the endpoint 404s.
+func (s *Store) GetUserBySubscriptionToken(token string) (*model.User, error) {
+	if token == "" {
+		return nil, fmt.Errorf("store: empty subscription token: %w", ErrUserNotFound)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sf, err := s.readStore()
+	if err != nil {
+		return nil, fmt.Errorf("store: read: %w", err)
+	}
+	for _, u := range sf.Users {
+		if u.SubscriptionToken == token {
+			return u, nil
+		}
+	}
+	return nil, fmt.Errorf("store: subscription token not found: %w", ErrUserNotFound)
+}
+
 // ListUsers returns all users.
 func (s *Store) ListUsers() ([]*model.User, error) {
 	s.mu.RLock()

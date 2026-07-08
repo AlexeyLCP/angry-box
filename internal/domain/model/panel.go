@@ -70,11 +70,52 @@ type User struct {
 	ChainExit map[string]string `json:"chain_exit,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
+
+	// ── P0b Slice 1: subscription / expiry-strategy / quota ────────────────────
+	// These fields are ADDITIVE (omitempty) so old stores load unchanged — no
+	// migration required to read them. Quota fields (DataLimit/UsedTraffic) are
+	// stored now but NOT enforced this slice; enforcement is the P0b-2 V2Ray
+	// stats poller. ExpireStrategy lets a user expire on a fixed date, on first
+	// use, or never (Marzneshin model). SubscriptionToken backs the public
+	// /sub/{token} endpoint. Status is the derived lifecycle state, computed
+	// by ComputeStatus() at save + list time.
+	SubscriptionToken string `json:"subscription_token,omitempty"` // url-safe secret in /sub/{token}
+	ExpireStrategy    string `json:"expire_strategy,omitempty"`    // "fixed_date"|"start_on_first_use"|"never"
+	UsageDuration     int64  `json:"usage_duration,omitempty"`      // seconds, when start_on_first_use
+	ActivationDeadline time.Time `json:"activation_deadline,omitempty"` // outer bound to first connect (start_on_first_use)
+	DataLimit          int64  `json:"data_limit,omitempty"`          // bytes, 0 = unlimited (P0b-2 enforces)
+	DataLimitResetStrategy string `json:"data_limit_reset_strategy,omitempty"` // no_reset|day|week|month
+	UsedTraffic        int64  `json:"used_traffic,omitempty"`        // populated by P0b-2 poller (zero this slice)
+	LifetimeUsedTraffic int64 `json:"lifetime_used_traffic,omitempty"` // populated by P0b-2 poller
+	FirstUseAt         time.Time `json:"first_use_at,omitempty"`    // stamped on first /sub fetch (start_on_first_use)
+	Status             string `json:"status,omitempty"`            // active|disabled|limited|expired|on_hold
+	ServiceID          string `json:"service_id,omitempty"`         // link to the Service the user was created from
 }
 
 // IsExpired returns true if the user has a non-zero expiry before now.
 func (u *User) IsExpired() bool {
 	return !u.ExpiresAt.IsZero() && time.Now().After(u.ExpiresAt)
+}
+
+// ComputeStatus derives the user's lifecycle status from its fields. Pure
+// function over the user (no clock-dependent "limited" — that needs the P0b-2
+// stats poller). Called by handlers before SaveUser and by the list renderer
+// so Status is always consistent. This slice can only produce
+// active/disabled/expired/on_hold; "limited" is set only by the future poller.
+//
+// "never" ExpireStrategy means the user has no expiry (ExpiresAt ignored even
+// if set), matching the Marzneshin expire_strategy semantics.
+func (u *User) ComputeStatus() string {
+	if !u.Active {
+		return "disabled"
+	}
+	if u.ExpireStrategy != "never" && u.IsExpired() {
+		return "expired"
+	}
+	if u.ExpireStrategy == "start_on_first_use" && u.FirstUseAt.IsZero() {
+		return "on_hold"
+	}
+	return "active"
 }
 
 // PanelSettings holds global panel configuration.
@@ -94,6 +135,49 @@ type PanelSettings struct {
 	// operator pick a regional SNI (e.g. www.bing.com for CN) without editing
 	// every preset.
 	DefaultRealitySNI string `json:"default_reality_sni,omitempty"`
+	// Services is the operator-defined product-tier catalog (a JSON array of
+	// Service). A Service bundles chains + protocols + per-chain exit pin +
+	// MTProxy defaults, offered as a single pick in the user wizard ("Step 2 —
+	// What"). Mirrors the CustomPresets precedent: stored as json.RawMessage,
+	// round-tripped via Store.GetSettings/SaveSettings, CRUD in the web layer
+	// (internal/web/services.go). Empty = no Services defined (wizard shows
+	// only the Custom/advanced path).
+	Services json.RawMessage `json:"services,omitempty"`
+}
+
+// Service is an operator-defined product tier: a named bundle of chains +
+// protocols + per-chain exit pin + (future) destination-routing presets,
+// offered as a single selection in the user wizard ("Step 2 — What").
+// Picking a Service in the wizard expands into the existing User fields
+// (Protocols, ChainNames, ChainExit, MTProxy*) at save time. Mirrors the
+// Marzneshin `Service` / Marzban `UserTemplate` pattern.
+type Service struct {
+	ID          string   `json:"id"`                    // unique, used as User.ServiceID ref
+	Name        string   `json:"name"`                  // display ("Telegram Pro")
+	Description string   `json:"description,omitempty"`
+	ChainNames  []string `json:"chain_names,omitempty"` // expands to User.ChainNames
+	// DefaultExitByChain pre-fills User.ChainExit per chain (chain name ->
+	// ChainNode.ID). Empty value for a chain = chain's default exit (last node).
+	// This is the first UI surface for User.ChainExit (panel.go:70), which is
+	// already fully wired in buildMergedRoute (merged_config.go:345-472).
+	DefaultExitByChain map[string]string `json:"default_exit_by_chain,omitempty"`
+	// Protocols is the union of protocols the user gets configs for. When empty
+	// the wizard falls back to the chains' protocols (legacy []string{"awg"}).
+	Protocols []string `json:"protocols,omitempty"`
+	// RoutingPresetIDs references ROUTING_PRESETS ids (telegram/youtube/...).
+	// STORED BUT NOT RENDERED this slice — the data plane (BuildRoutingSection
+	// in internal/chain/presets.go) consumes only ConnectionPreset.Routing
+	// geosite names, not the ROUTING_PRESETS domain catalog. Per-user
+	// destination routing is wired in P0b-3. The UI labels this clearly.
+	RoutingPresetIDs []string `json:"routing_preset_ids,omitempty"`
+	// MTProxy defaults applied when the Service bundles a Telegram MTProxy.
+	// Auto-generates a secret on user-create if Enabled and the user has none.
+	MTProxy struct {
+		Enabled    bool     `json:"enabled,omitempty"`
+		Domain     string   `json:"domain,omitempty"` // default "disk.yandex.ru"
+		OrderIndex int      `json:"order_index,omitempty"`
+		NodeIDs    []string `json:"node_ids,omitempty"`
+	} `json:"mtproxy,omitempty"`
 }
 
 // Source of an SSHKeyEntry. Stored as a JSON string (no iota) so the registry
