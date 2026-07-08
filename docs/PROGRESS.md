@@ -1087,3 +1087,93 @@ inbound = вычисляется. Angry-box теперь делает так ж�
   → `BuildRoutingSection`. Закрывает "this user gets Telegram-only".
 - (опционально) **sing-box JSON / Clash YAML** sub formats — для нативных
   sing-box / Clash клиентов.
+
+---
+
+## 17. P1a — Node health state machine (liveness + operator block) (2026-07-08)
+
+**Скоуп:** Заменить бинарный `NodeMetrics.Online bool` на настоящую стейт-машину
+`healthy → suspect → down → unreachable` + оператор-маркированный `blocked`,
+считаемую из существующего цикла метрик с **гистерезисом** (один транзитный
+SSH-таймаут не флипает ноду). Состояние показывается везде, где раньше был
+фейковый «green = online» (точка статуса в spider, бейдж дашборда, ячейка таблицы
+нод) + пишется событие аудита на каждый **переход** (не на каждый тик).
+
+**Ключевое архитектурное решение (подтверждено пользователем):**
+
+- **Источник обнаружения = только liveness** (сигналы SSH+systemd, уже
+  собираемые `GetStatus`). «Заблокирован DPI» — это **оператор-маркированное**
+  состояние, НЕ авто-обнаруживается: оркестратор SSH'ит из свободного региона и
+  физически не видит DPI-блок (нода выглядит полностью здоровой — SSH ок,
+  systemd активен). Sentinel-проб (точка наблюдения из цензурированного региона,
+  диалющая публичный инбаунд-порт) — отложен как P1a+ за плаггабельным
+  интерфейсом `Probe`; разделение `classifyProbe`/`NextState` делает эту точку
+  расширения чистой (будущий `SentinelProbe` вернёт `ProbeOutcome{Blocked bool}`).
+- **Авто-действие = только алерт + аудит.** Без авто-отключения инбаундов, без
+  авто-релокейта. Оператор видит состояние + кнопку «Mark blocked / Clear block»
+  и решает сам (существующая кнопка Relocate делает сам переезд).
+
+### Что сделано (коммиты 35e19f9 → 74048fc)
+
+1. **Модель** (`internal/domain/model/panel.go`): `NodeMetrics` += `State`,
+   `StateReason`, `StateChangedAt`, `ConsecutiveFails`, `ConsecutiveOKs`
+   (аддитивные `omitempty`, без миграции — старые сторы с пустым `State`
+   выводятся из `Online`). Константы `NodeState*` (healthy/suspect/down/
+   unreachable/blocked/unknown) + `HysteresisConfig`/`DefaultHysteresis`
+   (DownThreshold=3, RecoverThreshold=2).
+
+2. **Стейт-машина** (`internal/chain/nodehealth.go`, НОВЫЙ): чистая функция
+   `NextState(m, probe, cfg)` + `SetNodeState` + экспортированная `ClassifyProbe`.
+   `blocked` **липкий** — пробы его не сбрасывают, только хендлер оператора.
+   16 unit-тестов (`nodehealth_test.go`) покрывают всю таблицу переходов.
+
+3. **Цикл метрик** (`internal/web/server.go` `collectAllMetrics`): каждый тик
+   классифицирует пробу через `ClassifyProbe`, гонит `NextState`, сохраняет
+   метрики, пишет `chain.WriteAudit("health", ...)` **только на переходе**
+   (пропуская первичную `unknown→healthy` классификацию свежей ноды). 6 loop-тестов.
+
+4. **Хендлеры** (`internal/web/nodes.go`): `handleMarkNodeBlocked` /
+   `handleClearNodeBlocked` + роуты `POST /ui/nodes/{id}/block|unblock`.
+   `handleHostStatus` (misc.go) переведён на `ClassifyProbe`/`NextState` —
+   ручной «Check» теперь даёт состояние, консистентное с фоновым тикером.
+   5 block/unblock-тестов.
+
+5. **i18n** (`internal/i18n/i18n.go`): 9 ключей en+ru (Suspect/Down/Unreachable/
+   Blocked/Mark blocked/Clear block/Mark as blocked/Reason/node is not blocked).
+   `TestEnRuKeyParity` зелёный.
+
+6. **Рендер**: `metricBadge` (dashboard.templ) — 5-сторонний по состоянию +
+   back-compat-вывод из `Online`; общие хелперы `NodeState`/`healthBadgeClass`/
+   `healthBadgeLabel`. Spider status dot (spider.templ) — `fill` data-driven
+   через `statusDotFill` (был хардкод-зелёным). `NodeStatusCell` (nodes.templ) —
+   бейдж + кнопки Mark/Clear-blocked + Check. `DashboardStats` += `DownHosts`/
+   `BlockedHosts` + `computeHealthCounts`. 2 dashboard render-теста (Down +
+   Blocked бейджи).
+
+### Тесты
+
+- 16 unit (nodehealth) + 6 loop + 5 block/unblock + 2 dashboard render = **29
+  новых тестов**, все зелёные.
+- Полный non-e2e набор (10 пакетов) зелёный; `go build ./...` + `go vet ./...`
+  чистые.
+- Существующие тесты (`TestHandler_HostStatus_*`, `TestHandler_DashboardStats`,
+  `TestHandler_NodesList_*`) — зелёные (back-compat derive держит).
+
+### Риски / что отложено
+
+- **«Blocked» НЕ авто-обнаруживается** — по дизайну. UI говорит «Mark as
+  blocked» (действие оператора), не «Detected blocked». Sentinel-проб — P1a+.
+- **Гистерезис хардкод** (`DefaultHysteresis`). P1a+ подключит
+  `PanelSettings.Hysteresis`.
+- **Два writer'а** (`collectAllMetrics` + хендлер оператора) оба через per-call
+  лок `SaveMetrics`; потерянный апдейт реклассифицируется следующим тиком.
+  Приемлемо для 15-мин цикла; задокументировано в `collectAllMetrics`.
+- **Спам аудита** — только переходы + гистерезис глушит; флапающая нода пишет
+  2 события на флап, но RecoverThreshold=2 ограничивает.
+
+### Явные не-цели
+
+Нет sentinel-проба / точки наблюдения из ценз. региона (P1a+). Нет агрегации
+клиентских исходов. Нет авто-отключения инбаундов. Нет авто-Relocate (оператор
+жмёт существующий Relocate). Нет enforcement квоты (P0b-2). Нет e2e/VPS-изменений
+— чистая модель + цикл + хендлеры + UI; deploy-путь не тронут.
