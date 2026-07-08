@@ -54,6 +54,12 @@ Chain management:
   chain delete   Delete a chain
   apply-chain    Generate and push configs to all nodes in a chain
 
+Backup & relocation:
+  backup store   Export the whole panel as a JSON backup (stdout or -o file)
+  backup node    Export one node's portable identity (node id, -o file)
+  restore        Import a store or node backup (auto-detect, --force to overwrite)
+  relocate       Move a blocked node to a new VPS + re-deploy dependent chains
+
 Other:
   version        Show version information
 
@@ -183,6 +189,13 @@ func main() {
 
 	case "apply-chain":
 		applyChainCmd()
+
+	case "backup":
+		backupCmd()
+	case "restore":
+		restoreCmd()
+	case "relocate":
+		relocateCmd()
 
 	case "serve":
 		serveCmd()
@@ -1011,4 +1024,131 @@ func popFirstArg(args []string) (first string, rest []string) {
 		}
 	}
 	return "", args
+}
+
+// ─── backup / restore / relocate ─────────────────────────────────────────────
+
+// backupCmd handles `angry-box backup store` and `angry-box backup node <id>`.
+// Both write a JSON backup to -o <file> (or stdout when -o is "-"/empty). The
+// store backup is the whole panel (hosts, chains, transit keys, users,
+// settings); the node backup is one node's portable identity (Host + NodeInfo
+// + chain memberships with transit material).
+func backupCmd() {
+	sub, rest := popFirstArg(os.Args[2:])
+	fs := flag.NewFlagSet("backup "+sub, flag.ExitOnError)
+	fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
+	out := fs.String("o", "", "output file (default: stdout)")
+	_ = fs.Parse(rest)
+
+	st := chain.NewStore(storePath)
+	var data []byte
+	var err error
+	switch sub {
+	case "store":
+		data, err = st.ExportStore()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "backup store failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "node":
+		id, _ := popFirstArg(fs.Args())
+		if id == "" {
+			fmt.Fprintf(os.Stderr, "usage: angry-box backup node <id> [-o file]\n")
+			os.Exit(1)
+		}
+		b, err := st.ExportNode(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "backup node %q failed: %v\n", id, err)
+			os.Exit(1)
+		}
+		data, err = json.MarshalIndent(b, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "backup node marshal failed: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "usage: angry-box backup store|node <id> [-o file]\n")
+		os.Exit(1)
+	}
+	if *out == "" || *out == "-" {
+		os.Stdout.Write(data)
+		return
+	}
+	if err := os.WriteFile(*out, data, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "write %s: %v\n", *out, err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "backup written to %s (%d bytes)\n", *out, len(data))
+}
+
+// restoreCmd handles `angry-box restore <file> [--force]`. It auto-detects
+// whether the file is a store or node backup (via the envelope) and calls the
+// matching Store importer. force overwrites a non-empty store / reroutes a
+// live node.
+func restoreCmd() {
+	fs := flag.NewFlagSet("restore", flag.ExitOnError)
+	fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
+	force := fs.Bool("force", false, "overwrite a non-empty store / reroute a live node")
+	_ = fs.Parse(os.Args[2:])
+	args := fs.Args()
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "usage: angry-box restore <backup-file> [--force]\n")
+		os.Exit(1)
+	}
+	data, err := os.ReadFile(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read %s: %v\n", args[0], err)
+		os.Exit(1)
+	}
+	st := chain.NewStore(storePath)
+	format, err := chain.DetectBackupFormat(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "restore: not an angry-box backup: %v\n", err)
+		os.Exit(1)
+	}
+	switch format {
+	case chain.BackupFormatStore:
+		if err := st.ImportStore(data, *force); err != nil {
+			fmt.Fprintf(os.Stderr, "restore store failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("store restored from %s\n", args[0])
+	case chain.BackupFormatNode:
+		var b chain.NodeBackup
+		if err := json.Unmarshal(data, &b); err != nil {
+			fmt.Fprintf(os.Stderr, "restore node: parse: %v\n", err)
+			os.Exit(1)
+		}
+		if err := st.ImportNode(&b, *force); err != nil {
+			// Skipped-missing-chains is a warning, not a fatal error: the node
+			// itself was restored. Print the message but exit 0 so a script
+			// importing many node backups is not aborted by one missing chain.
+			fmt.Fprintf(os.Stderr, "restore node: %v\n", err)
+		}
+		fmt.Printf("node %q restored from %s\n", b.Node.ID, args[0])
+	default:
+		fmt.Fprintf(os.Stderr, "restore: unknown backup format %q\n", format)
+		os.Exit(1)
+	}
+}
+
+// relocateCmd is the CLI entry point for node relocation (Stage 3D wires the
+// full RelocateNode flow; this stub parses flags so `angry-box relocate --help`
+// works before the backend lands). It is filled in at Stage 3D.
+func relocateCmd() {
+	fs := flag.NewFlagSet("relocate", flag.ExitOnError)
+	fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
+	addr := fs.String("addr", "", "new SSH address (IP:port) for the node")
+	user := fs.String("user", "", "new SSH user (optional, keeps current if empty)")
+	keyID := fs.String("key", "", "new SSH key registry id (optional, keeps current if empty)")
+	_ = fs.Parse(os.Args[2:])
+	id, _ := popFirstArg(fs.Args())
+	if id == "" || *addr == "" {
+		fmt.Fprintf(os.Stderr, "usage: angry-box relocate <node-id> --addr <new-ip:port> [--user <user>] [--key <key-id>]\n")
+		os.Exit(1)
+	}
+	_ = user
+	_ = keyID
+	fmt.Fprintf(os.Stderr, "relocate: backend not yet wired (Stage 3D)\n")
+	os.Exit(1)
 }
