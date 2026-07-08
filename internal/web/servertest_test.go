@@ -135,6 +135,22 @@ func (ts *testServer) delete(path string) *httptest.ResponseRecorder {
 	return ts.request(http.MethodDelete, path, nil, nil)
 }
 
+// getWithUA fires a GET with the given User-Agent (for handlers that negotiate
+// on UA, e.g. /sub/{token}). Does NOT set HX-Request (subscription clients
+// aren't HTMX).
+func (ts *testServer) getWithUA(path, ua string) *httptest.ResponseRecorder {
+	ts.t.Helper()
+	r, err := http.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		ts.t.Fatalf("NewRequest: %v", err)
+	}
+	r.Header.Set("User-Agent", ua)
+	r.RemoteAddr = "127.0.0.1:1234"
+	w := httptest.NewRecorder()
+	ts.mux.ServeHTTP(w, r)
+	return w
+}
+
 // assertStatus fails the test if w.Code != want.
 func (ts *testServer) assertStatus(w *httptest.ResponseRecorder, want int) {
 	ts.t.Helper()

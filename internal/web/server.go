@@ -195,6 +195,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 		http.Redirect(w, r, "/ui", http.StatusSeeOther)
 	})
 
+	// Public subscription endpoint — OUTSIDE s.auth (client apps fetch it
+	// without Basic-Auth). GET passes CSRF automatically (safe-method bypass).
+	s.registerSubscriptionRoute(mux)
+
 	// Resource-scoped route registrations (CTO-review §4: split out of the old
 	// ~60-route monolith). Each register*Routes method lives next to its
 	// handlers in the resource file.
