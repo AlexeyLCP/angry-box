@@ -122,30 +122,60 @@ func (s *Server) Stop() {
 	}
 }
 
-// collectAllMetrics checks all hosts and records their status.
+// collectAllMetrics checks all hosts, classifies each probe via the node
+// health state machine, and records the resulting state + metrics. An audit
+// event is written ONLY on a state transition (not every tick) so a stable
+// node does not spam the audit log; hysteresis (chain.NextState) dampens
+// transient blips before they can transition.
+//
+// Lock discipline: GetMetrics + SaveMetrics each take their own lock; the
+// read-modify-write gap between them is safe because collectAllMetrics is the
+// only metrics-writer goroutine (the ticker at StartBackgroundMetrics). The
+// operator block/unblock handler is a second writer but goes through the same
+// per-call-locked SaveMetrics; a lost update here just reclassifies next tick.
+// Acceptable for a 15-min loop — if hard safety is ever needed, add a
+// store.UpdateMetrics(hostID, func(*NodeMetrics)) locked helper.
 func (s *Server) collectAllMetrics() {
 	st := s.store()
 	hosts, _ := st.ListHosts()
-	f := s.factory
-	b := f.Create()
+	b := s.factory.Create()
 	ctx := context.Background()
+	cfg := model.DefaultHysteresis
 
 	for _, h := range hosts {
 		start := time.Now()
-
 		status, err := b.GetStatus(ctx, *h)
-
 		latency := time.Since(start).Milliseconds()
-		if err != nil {
-			st.SaveMetrics(&model.NodeMetrics{HostID: h.ID, Online: false, LatencyMs: latency})
-			continue
+
+		probe := chain.ClassifyProbe(err, status)
+
+		m, _ := st.GetMetrics(h.ID) // durable — survives restart (store.go GetMetrics)
+		if m == nil {
+			m = &model.NodeMetrics{HostID: h.ID, State: model.NodeStateUnknown}
 		}
-		st.SaveMetrics(&model.NodeMetrics{
-			HostID:    h.ID,
-			Online:    status.Running,
-			Version:   status.Version,
-			LatencyMs: latency,
-		})
+		m.LastChecked = time.Now()
+		m.LatencyMs = latency
+		if err == nil && status != nil {
+			m.Version = status.Version
+			m.OS = status.OS
+			m.SingBoxInstalled = status.SingBoxInstalled
+			m.AWGModuleInstalled = status.AWGModuleInstalled
+		}
+
+		oldState := m.State
+		chain.NextState(m, probe, cfg) // mutates m in place (State/Reason/counters)
+		m.Online = m.State == model.NodeStateHealthy
+		st.SaveMetrics(m)
+
+		// Audit only on a real, incident-class transition. Skip the very first
+		// classification of a fresh node (oldState == NodeStateUnknown) so the
+		// initial "unknown → healthy" is not logged as an incident — the node
+		// was never down, we just observed it for the first time.
+		if m.State != oldState && oldState != "" && oldState != model.NodeStateUnknown {
+			chain.WriteAudit(st, "health", "node", h.ID,
+				chain.AuditPayload{"from": oldState, "to": m.State, "reason": m.StateReason},
+				"system")
+		}
 	}
 }
 

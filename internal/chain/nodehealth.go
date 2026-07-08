@@ -39,11 +39,14 @@ type ProbeOutcome struct {
 	Reason  string // human-readable cause: "ssh dial: ...", "sing-box inactive", "" (healthy)
 }
 
-// classifyProbe maps a GetStatus result into a ProbeOutcome. err != nil → SSH
+// ClassifyProbe maps a GetStatus result into a ProbeOutcome. err != nil → SSH
 // unreachable; err == nil + !Running → service down; err == nil + Running →
 // healthy. Reason is the short first-line of the error (capped) so the audit
 // payload stays readable. status may be nil when err != nil.
-func classifyProbe(err error, status *model.Status) ProbeOutcome {
+//
+// Exported because the metrics loop (internal/web/server.go) calls it; the
+// rest of nodehealth.go stays pure for unit testing.
+func ClassifyProbe(err error, status *model.Status) ProbeOutcome {
 	if err != nil {
 		return ProbeOutcome{SSHOK: false, Reason: "ssh dial: " + shortErr(err)}
 	}

@@ -202,17 +202,17 @@ func TestSetNodeState_ResetsCounters(t *testing.T) {
 // including the shortErr truncation for the audit payload.
 func TestClassifyProbe(t *testing.T) {
 	// healthy: SSH ok, running
-	p := classifyProbe(nil, &model.Status{Running: true})
+	p := ClassifyProbe(nil, &model.Status{Running: true})
 	if !p.SSHOK || !p.Running || p.Reason != "" {
 		t.Fatalf("healthy probe = %+v", p)
 	}
 	// down: SSH ok, not running
-	p = classifyProbe(nil, &model.Status{Running: false})
+	p = ClassifyProbe(nil, &model.Status{Running: false})
 	if !p.SSHOK || p.Running || p.Reason != "sing-box inactive" {
 		t.Fatalf("down probe = %+v", p)
 	}
 	// unreachable: err set, status nil
-	p = classifyProbe(errFail("ssh dial: i/o timeout"), nil)
+	p = ClassifyProbe(errFail("ssh dial: i/o timeout"), nil)
 	if p.SSHOK || p.Running || p.Reason != "ssh dial: ssh dial: i/o timeout" {
 		t.Fatalf("unreachable probe = %+v", p)
 	}

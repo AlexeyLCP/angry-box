@@ -73,10 +73,24 @@ func newTestServer(t *testing.T) *testServer {
 // production default.
 func newTestServerWithConnector(t *testing.T, connector ports.SSHConnector) *testServer {
 	t.Helper()
+	return newTestServerWith(t, connector, noopFactory{})
+}
+
+// newTestServerWithFactory is like newTestServer but injects a custom backend
+// factory — used by the health/collectAllMetrics tests to simulate a failing
+// or healthy GetStatus without a real SSH dial.
+func newTestServerWithFactory(t *testing.T, f ports.Factory) *testServer {
+	t.Helper()
+	return newTestServerWith(t, nil, f)
+}
+
+// newTestServerWith is the shared constructor behind the convenience variants.
+func newTestServerWith(t *testing.T, connector ports.SSHConnector, f ports.Factory) *testServer {
+	t.Helper()
 	dir := t.TempDir()
 	storePath := dir + "/store.json"
 	cfg := &config.Config{StoreFile: storePath, AuthEnabled: false}
-	srv := NewServer(storePath, true, cfg, "127.0.0.1:9080", noopFactory{})
+	srv := NewServer(storePath, true, cfg, "127.0.0.1:9080", f)
 	if connector != nil {
 		srv.connector = connector
 	}
