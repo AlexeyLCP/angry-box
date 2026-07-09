@@ -378,6 +378,67 @@ func (s *Server) handleRelocateForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, templates.RelocateForm(host, settings, allKeys))
 }
 
+// handleCloneForm renders the "clone this node to a new VPS" modal for the node
+// row's Clone button (P1b). The form posts to /ui/nodes/{id}/clone with a new
+// node ID (required, must not exist) + new VPS addr + optional SSH user/key.
+func (s *Server) handleCloneForm(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	host, err := st.GetHost(id)
+	if err != nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	settings, _ := st.GetSettings()
+	allKeys := mergeSSHKeys(settings.SSHKeys, detectSystemKeys())
+	s.render(w, r, templates.CloneForm(host, settings, allKeys))
+}
+
+// handleCloneNode clones a node's configuration onto a new VPS with fresh
+// identity (P1b). Reads new_id (required, must not exist + must differ from
+// source), new_addr (required), optional new_user/new_ssh_key_id. Delegates to
+// chain.CloneNode (which re-deploys every chain the source belongs to so the
+// clone is provisioned + dependent hops learn its addr).
+func (s *Server) handleCloneNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, i18n.T(r.Context(), "missing id"), http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	newID := strings.TrimSpace(r.FormValue("new_id"))
+	newAddr := strings.TrimSpace(r.FormValue("new_addr"))
+	if newID == "" {
+		s.render(w, r, templates.CloneResult(id, nil, i18n.T(r.Context(), "New node ID is required")))
+		return
+	}
+	if newAddr == "" {
+		s.render(w, r, templates.CloneResult(id, nil, i18n.T(r.Context(), "new address is required")))
+		return
+	}
+	newUser := strings.TrimSpace(r.FormValue("new_user"))
+	newKeyPath := strings.TrimSpace(r.FormValue("new_ssh_key_id"))
+	if newKeyPath != "" && !strings.HasPrefix(newKeyPath, "password:") {
+		if _, ok := s.store().ResolveKey(newKeyPath); !ok {
+			s.render(w, r, templates.CloneResult(id, nil, i18n.T(r.Context(), "Selected key not found in registry")))
+			return
+		}
+	}
+
+	st := s.store()
+	applier := chain.NewApplier(s.factory, s.SSHConnector())
+	ctx := context.Background()
+	report, err := chain.CloneNode(ctx, st, applier, id, newID, newAddr, newUser, newKeyPath, "")
+	if err != nil {
+		s.render(w, r, templates.CloneResult(id, nil, err.Error()))
+		return
+	}
+	s.render(w, r, templates.CloneResult(id, report, ""))
+}
+
 // handleTestNodeConnection runs ONLY GetStatus (no save, no install) so the
 // user can verify the key/password works before committing to the wizard
 // flow. The host is built one-off and never persisted.
@@ -725,6 +786,9 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	// relocate: move a blocked node to a new VPS + re-deploy dependent chains.
 	mux.HandleFunc("GET /ui/nodes/{id}/relocate", s.auth(s.handleRelocateForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/relocate", s.auth(s.handleRelocateNode))
+	// clone: duplicate a node's config onto a new VPS with fresh identity (P1b).
+	mux.HandleFunc("GET /ui/nodes/{id}/clone", s.auth(s.handleCloneForm))
+	mux.HandleFunc("POST /ui/nodes/{id}/clone", s.auth(s.handleCloneNode))
 	// health: operator mark/clear a DPI block (P1a). Not auto-detected — the
 	// orchestrator can't see a block from its free-region vantage point.
 	mux.HandleFunc("POST /ui/nodes/{id}/block", s.auth(s.handleMarkNodeBlocked))
