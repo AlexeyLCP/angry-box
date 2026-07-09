@@ -1177,3 +1177,151 @@ SSH-таймаут не флипает ноду). Состояние показ�
 клиентских исходов. Нет авто-отключения инбаундов. Нет авто-Relocate (оператор
 жмёт существующий Relocate). Нет enforcement квоты (P0b-2). Нет e2e/VPS-изменений
 — чистая модель + цикл + хендлеры + UI; deploy-путь не тронут.
+
+---
+
+## 18. P1b — Clone node (fresh identity, copied config) (2026-07-09)
+
+**Скоуп:** Дублировать конфиг ноды на новый VPS со **свежей идентичностью** (новые
+UUID/Reality keys/ShortID/AWG client keys/MTProxy secret/transit WG keypairs/
+transit UUID/transit IP), но с **скопированной конфигурацией** (Protocol/Port/
+Obfuscation/ForUsers/OutboundTag/Source/AWGServerAddress, chain Role +
+ExitTargets, Country/Bandwidth/AutoApply/UseSudo). Clone = «relocate, но с новой
+ID + свежей identity вместо переиспользованной, и новый ChainNode добавляется
+(append) в цепочку, а не мутируется на месте».
+
+**Решение (подтверждено пользователем):** конфиг + копия ForUsers + копия
+ExitTargets; identity всегда свежая. Clone служит тем же пользователям + той же
+топологии выходов, но как отдельный узел (не второй сервер с теми же кредами).
+
+### Что сделано (коммиты ee0de87 + ee81389 + cc4ae8d)
+
+1. **Ядро** (`internal/chain/clone.go`, НОВЫЙ): `CloneNode` (package-level +
+   `*Applier` wrapper). Минтит новую ID (коллизия-чек через `GetHost`), копирует
+   конфиг, регенерирует identity через cryptogen (`GenerateRealityKeypair`/
+   `GenerateRealityShortID`/`GenerateTUICUUID`/`GenerateInboundTag`/
+   `GenerateWireGuardKeypair`/`GenerateSelfSignedCert`/`GenerateHysteria2ObfsPassword`
+   + IP allocators `allocateAWGTransitIP`), добавляет новый ChainNode в каждую
+   цепь source, re-deploy через `ApplyChain` (как relocate), `WriteAudit("clone")`.
+   `chainApplier` интерфейс (как relocate) — тесты мокают.
+
+2. **Identity vs Config split** (задокументирован в `clone.go`):
+   - NodeInbound IDENTITY: UUID, ServerPrivKey/PubKey, ShortID, Tag, ObfsPassword,
+     TLSCertificate/TLSPrivateKey, AWGClientPub/Priv. CONFIG: Protocol, Port,
+     Obfuscation, ForUsers (копия), OutboundTag, Source, AWGServerAddress (копия).
+   - ChainNode IDENTITY: TransitPrivKey/ShortID/UUID, TransitAWGServer*/Client*/
+     Address, ExitAWGServer*/ExitAWGLinks. CONFIG: Port, Role, ExitTargets (копия),
+     Inbounds (regen).
+
+3. **Хендлеры** (`internal/web/nodes.go`): `handleCloneForm`/`handleCloneNode` +
+   роуты `GET/POST /ui/nodes/{id}/clone`. Валидация: new_id непустой + не равен
+   source + не существует; ssh-key-id проверка через registry.
+
+4. **UI** (`web/templates/nodes.templ`): `CloneForm` (зеркало `RelocateForm` +
+   поле `new_id`) + `CloneResult` (зеркало `RelocateResult` из chains.templ) +
+   `cloneAllSuccess` хелпер. Кнопка «Clone» в `NodeRow` рядом с Relocate.
+
+5. **i18n**: 7 ключей en+ru (Clone node/Clone/New node ID/unique not yet used/
+   Clone to new VPS/New node ID is required/clone help text).
+
+### Тесты
+
+- **8 unit** (`clone_test.go`): fresh identity + source untouched (UUID/keys/
+  ShortID/Tag на inbound; transit keys/UUID/IP на ChainNode; ForUsers + Role +
+  ExitTargets copied), validation (5 subtests), source-not-found, newID collision,
+  nil applier, audit written, one-chain-failure non-fatal. Все зелёные.
+- **8 web** (`handlers_clone_test.go`): form render/404, clone OK (fresh identity
+  + copied config + source untouched), empty new_id/addr, duplicate ID, same ID,
+  bad SSH key. Все зелёные (через ноду-без-цепей, как relocate-тест).
+- Существующие relocate/nodes-тесты не сломаны.
+
+### Риски (помечены)
+
+1. **AWGServerAddress коллизия** — копируем subnet как есть. На разных VPS
+   локального конфликта нет; конфликт только если обе ноды в одной цепочке и
+   роутинг пересекается. Флаг в CloneForm tooltip. P1b+: автолюбка свежего /24.
+2. **ExitTargets — это ID** — копируем как топологию. Клон exit таргетит те же
+   exit-ID (валидно — балансер на 2 exit).
+3. **Без e2e** — мок applier (как relocate). ApplyChain в проде деплоит (существующая
+   работающая функция). Без авто-генерации newID (operator-заданный, как capture).
+4. **ExitAWGLinks не копируются** — клоны-выходы не наследуют balancer-side links
+  (балансер, таргетящий клон, заминтит свои на re-apply). Документировано.
+
+---
+
+## 19. P2a — Offsite backup MVP (passphrase-encrypted SSH push) (2026-07-09)
+
+**Скоуп:** Периодически (и on-demand) пушить **зашифрованную паролем** копию стора
+(store.json — единый source of truth: hosts/chains/users/infos/metrics) на
+**внешний SSH-таргет**, чтобы потеря хоста не теряла состояние оркестратора.
+КРИТИЧНО: master-key файл **НИКОГДА** не покидает хост — внешний бэкап
+перешифровывается **отдельным паролем** (scrypt-derived), не master-ключом.
+
+**Решение (подтверждено пользователем):** пароль хранится в `PanelSettings`
+(в уже зашифрованном at-rest master-ключом сторе) → включает и периодический
+цикл, и on-demand «Backup now». Восстановление: пароль вводится отдельно (он в
+scrypt-параметрах блоба, не в блобе).
+
+### Что сделано (коммиты bc42ac9 + 4e60f2b + cc4ae8d)
+
+1. **Passphrase-шифрование** (`internal/chain/backup_crypto.go`, НОВЫЙ): `EncryptBackup`/
+   `DecryptBackup` — scrypt (N=2^16,r=8,p=1) → AES-256-GCM. Формат `ABBKP1` (magic
+   || salt(16) || N/r/p(8) || nonce(12) || ct+tag), отдельный от at-rest `ABENC1`.
+   Параметры в блобе → тюнимы без поломки старых. `IsBackupBlob` детектор.
+
+2. **Конфиг** (`model.OffsiteBackupConfig` + `PanelSettings.OffsiteBackup`):
+   Enabled/Host/User/SSHKeyID/RemotePath/Passphrase/IntervalMin/LastBackupAt.
+   Round-trip через `GetSettings`/`SaveSettings`.
+
+3. **Ядро** (`internal/chain/backup_offsite.go`, НОВЫЙ): `PushOffsiteBackup` —
+   `ExportStore` (plaintext in-process) → `EncryptBackup(passphrase)` → SSH
+   `UploadText` (через `ports.SSHConnector`, key resolved by ID из registry) →
+   stamp `LastBackupAt`. **Master-key не читается, не передаётся.**
+
+4. **Периодический цикл** (`internal/web/server.go` `StartOffsiteBackupLoop`):
+   mirror `StartBackgroundMetrics`, читает свежий cfg каждый тик (default 360 мин
+   = 6ч), не бэкапит сразу на старте. Wiring в `cmd/angry-box/main.go:830`.
+
+5. **Хендлеры + UI** (`internal/web/backups.go` + `settings.go` + `settings.templ`):
+   - `handleSaveOffsite` (отдельный эндпоинт `POST /ui/backup/offsite/save` —
+     трогает ТОЛЬКО offsite config, не сбрасывает остальные настройки).
+   - `handleBackupNow` (`POST /ui/backup/offsite/now`).
+   - `handleImportBackup` расширен: `ABBKP1` magic → `DecryptBackup(passphrase)`
+     → `ImportStore` (восстановление из зашифрованного блоба).
+   - Settings UI: карточка «Offsite backup» (host/user/key/path/passphrase/
+     interval/enabled) + «Backup now» + поле passphrase в import-форме.
+
+6. **i18n**: 15 ключей en+ru (offsite + restore).
+
+### Тесты
+
+- **11 unit** (`backup_crypto_test.go`): roundtrip, wrong passphrase, bad magic,
+  empty passphrase/plaintext, different salts, IsBackupBlob, full push via fake
+  connector (blob decrypts to store with host), no-target/no-passphrase, connect-fails.
+- **8 web** (`handlers_offsite_test.go`): save persists + не сбрасывает другие
+  настройки, empty host disables, backup-now ok/fail (LastBackupAt stamped/not),
+  encrypted restore roundtrip (host появляется в store), wrong/missing passphrase.
+- Существующие backup/settings-тесты не сломаны (включая
+  `TestHandler_SettingsView_NoNestedFormsInMainForm` — offsite-форма отдельная).
+
+### Риски (помечены)
+
+1. **Passphrase в сторе** — в at-rest-зашифрованном (master-key) сторе. Без
+   master-key файла стор plaintext → пароль виден. Документировано: «enable
+   master-key encryption (store.json.key) для at-rest защиты пароля».
+2. **Backup SSH target ≠ managed node** — TOFU host-key: первый коннект к
+   offside-боксу потребует доверия. Переиспользуем существующий connector (TOFU
+   как для нод). Флаг.
+3. **scrypt N=2^16 ~64MB** — память на каждый backup. На слабом оркестраторе
+   тяжело, но backup раз в 6ч — приемлемо. P2a+: тюнимый N в cfg.
+4. **Без retention/rotation** — один блоб per backup по remote_path (перезаписывается).
+   Operator управляет retention на offside-target.
+5. **Без restore-from-remote-pull** — operator скачивает блоб вручную → paste в
+   restore (с passphrase). Без master-key бэкапа (master-key НИКОГДА не покидает хост).
+
+### Явные не-цели
+
+Без restore-from-remote-pull. Без retention/rotation. Без master-key бэкапа
+(master-key НИКОГДА не покидает хост — это принцип). Без e2e SSH-пуша (мок-connector
+в тестах). Обе фичи (P1b + P2a) — чистая модель + хендлеры + UI; deploy-путь
+тронут только переиспользованным ApplyChain (clone) / UploadText (backup).
