@@ -214,6 +214,19 @@ func exitInterfacesForNode(node *model.ChainNode) []string {
 // re-capture egress traffic and loop") was WRONG — include_interface captures
 // INCOMING traffic on those interfaces (responses), not the outgoing egress
 // (which goes via bind_interface sockets, not the TUN). No loop occurs.
+//
+// OPEN P0a bug (2026-07-09, see docs/PROGRESS.md §21): include_interface per
+// upstream docs/impl SHOULD also capture FORWARDED INGRESS (not just response
+// traffic) — it is a route-filter on ingress interface, applied at prerouting/
+// routing, so forwarded transit from awg0 (src 10.8.0.x, dst = remote IP, NOT a
+// local socket) is intended behavior. But empirically (live VPS §15.2/§15.3) the
+// user→internet forwarded ingress on awg0 is NOT captured (tun empty, trace
+// "No entries") while the awg-exit-nX response direction above WORKS.
+// Candidates: (a) we never enabled auto_redirect (recommended flag, see §21.5 #0);
+// (b) SagerNet/sing-box#3805 — multi-element include_set renders as { "", "" }
+// → all packets bypass (only bites ≥2 elements; single ["awg0"] is safe, but
+// this list can grow to ≥2 with awg1/awg-exit-nX). Diagnose with
+// `nft list chain inet sing-box prerouting` + `ip rule show` on the live VPS.
 // tunIncludeInterfaces returns the kernel AWG interface names the sing-box TUN
 // overlay must capture (include_interface). Always includes awg0 (the chain
 // entry / first standalone); appends awg1 when a standalone AWG inbound with a
