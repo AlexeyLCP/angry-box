@@ -101,6 +101,11 @@ func CloneNode(ctx context.Context, store *Store, applier chainApplier, sourceID
 		return nil, fmt.Errorf("clone: source node %q not found: %w", sourceID, err)
 	}
 
+	// Collect the AWG /24 subnets already in use across the store so the clone's
+	// AWG inbounds can be allocated fresh, collision-free subnets (a copied
+	// AWGServerAddress would collide when the clone joins the same chain).
+	takenSubnets := collectAWGServerSubnets(store)
+
 	// 1. Build the clone's NodeInfo: copy configuration, clear deploy/takeover
 	//    state, mint a new Host with the new VPS coords, regenerate inbound identity.
 	if newUser == "" {
@@ -126,7 +131,7 @@ func CloneNode(ctx context.Context, store *Store, applier chainApplier, sourceID
 		Source:    "cloned",
 		AutoApply: srcInfo.AutoApply,
 		UseSudo:   srcInfo.UseSudo,
-		Inbounds:  cloneInbounds(srcInfo.Inbounds),
+		Inbounds:  cloneInbounds(srcInfo.Inbounds, takenSubnets),
 		// LastDeployedHash/At, PendingHostKeyFingerprint, Takeover: zero (fresh).
 	}
 	if err := store.SaveNodeInfo(cloneInfo); err != nil {
@@ -140,7 +145,7 @@ func CloneNode(ctx context.Context, store *Store, applier chainApplier, sourceID
 		if srcCN == nil {
 			continue // defensive: GetChainsForNode should only return chains containing it
 		}
-		cloneCN, err := cloneChainNode(*srcCN, c, newID, newUser, newKeyPath, newAddr)
+		cloneCN, err := cloneChainNode(*srcCN, c, newID, newUser, newKeyPath, newAddr, takenSubnets)
 		if err != nil {
 			return nil, fmt.Errorf("clone: chain %q: %w", c.Name, err)
 		}
@@ -196,22 +201,32 @@ func (a *Applier) CloneNode(ctx context.Context, store *Store, sourceID, newID, 
 
 // cloneInbounds returns a copy of src with fresh identity on each inbound
 // (UUID/Reality keys/ShortID/Tag/ObfsPassword/TLS/AWG client keys) and the
-// configuration fields (Protocol/Port/Obfuscation/ForUsers/OutboundTag/Source/
-// AWGServerAddress) copied as-is. ForUsers is COPIED per the agreed scope (the
-// clone serves the same users immediately).
-func cloneInbounds(src []model.NodeInbound) []model.NodeInbound {
+// configuration fields (Protocol/Port/Obfuscation/ForUsers/OutboundTag/Source)
+// copied as-is. ForUsers is COPIED per the agreed scope (the clone serves the
+// same users immediately). AWGServerAddress is NOT copied — for AWG inbounds a
+// FRESH /24 is allocated from `taken` (the existing AWGServerAddress values
+// across the store) so a clone joining the same chain does not collide with the
+// source's subnet; the allocated subnet is appended to taken so two AWG inbounds
+// on the same clone get distinct /24s. Non-AWG inbounds keep AWGServerAddress
+// empty (it is AWG-only).
+func cloneInbounds(src []model.NodeInbound, taken []string) []model.NodeInbound {
 	out := make([]model.NodeInbound, 0, len(src))
 	for _, ib := range src {
 		c := model.NodeInbound{
 			// Configuration (copied):
-			Protocol:         ib.Protocol,
-			Port:             ib.Port,
-			Obfuscation:      ib.Obfuscation,
-			ForUsers:         append([]string(nil), ib.ForUsers...),
-			OutboundTag:      ib.OutboundTag,
-			Source:           ib.Source,
-			AWGServerAddress: ib.AWGServerAddress,
+			Protocol:    ib.Protocol,
+			Port:        ib.Port,
+			Obfuscation: ib.Obfuscation,
+			ForUsers:    append([]string(nil), ib.ForUsers...),
+			OutboundTag: ib.OutboundTag,
+			Source:      ib.Source,
 			// Identity (regenerated below):
+		}
+		// AWG gets a fresh /24 (not the source's subnet) to avoid collisions.
+		if ib.Protocol == "awg" {
+			subnet := allocateAWGServerSubnet(taken)
+			c.AWGServerAddress = subnet
+			taken = append(taken, subnet)
 		}
 		if err := regenInboundIdentity(&c); err != nil {
 			// Best-effort: log via the package logger pattern (WriteAudit is for
@@ -266,13 +281,15 @@ func regenInboundIdentity(ib *model.NodeInbound) error {
 // cloneChainNode builds a fresh-identity ChainNode for the clone from srcCN:
 // copies Port/Role/ExitTargets/Inbounds(regen'd), mints fresh transit WG keypairs
 // + transit UUID + transit IP + exit material, and wires the new Host coords.
-func cloneChainNode(srcCN model.ChainNode, c *model.Chain, newID, newUser, newKeyPath, newAddr string) (model.ChainNode, error) {
+// `taken` is the in-use AWG /24 list (shared with the NodeInfo cloneInbounds
+// call) so the ChainNode's AWG inbounds also get collision-free subnets.
+func cloneChainNode(srcCN model.ChainNode, c *model.Chain, newID, newUser, newKeyPath, newAddr string, taken []string) (model.ChainNode, error) {
 	cn := model.ChainNode{
 		// Configuration (copied):
 		Port:        srcCN.Port,
 		Role:        srcCN.Role,
 		ExitTargets: append([]string(nil), srcCN.ExitTargets...),
-		Inbounds:    cloneInbounds(srcCN.Inbounds),
+		Inbounds:    cloneInbounds(srcCN.Inbounds, taken),
 		// Host coords (new):
 		ID:      newID,
 		Addr:    newAddr,
@@ -368,4 +385,25 @@ func countCloneSuccess(chains []CloneChainResult) int {
 		}
 	}
 	return n
+}
+
+// collectAWGServerSubnets gathers every AWGServerAddress currently in use by
+// any node's standalone AWG inbound across the store, so CloneNode can pass the
+// list to cloneInbounds and the clone's AWG inbounds get collision-free /24s.
+// Best-effort: a store read failure yields an empty list (allocation then starts
+// at 10.8.1.0/24, which is safe on a fresh/different node anyway).
+func collectAWGServerSubnets(store *Store) []string {
+	infos, err := store.ListNodeInfos()
+	if err != nil {
+		return nil
+	}
+	var taken []string
+	for _, info := range infos {
+		for _, ib := range info.Inbounds {
+			if ib.Protocol == "awg" && ib.AWGServerAddress != "" {
+				taken = append(taken, ib.AWGServerAddress)
+			}
+		}
+	}
+	return taken
 }

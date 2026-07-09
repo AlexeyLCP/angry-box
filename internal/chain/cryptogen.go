@@ -368,6 +368,33 @@ func allocateAWGExitIP(taken []string) string {
 	return allocateAWGHostIP("10.10.0", taken)
 }
 
+// allocateAWGServerSubnet picks the first free 10.8.X.0/24 (X = 1..250) that is
+// not already used by any inbound's AWGServerAddress, and returns the server
+// tunnel address "10.8.X.1/24" (.1 is the server, peers get .2../24). 10.8.0.0/24
+// is the legacy chain-entry default and is skipped so a clone's standalone AWG
+// inbound never collides with a chain AWG entry on the same node. Used by clone
+// (clone.go) so a cloned AWG inbound gets a FRESH /24 instead of copying the
+// source's subnet (which would collide when the clone joins the same chain).
+//
+// `taken` is the list of existing AWGServerAddress CIDR strings across the store
+// (collected by CloneNode from ListNodeInfos). Returns the legacy default
+// "10.8.0.1/24" only as a last-resort fallback when all 10.8.1..10.8.250 are in
+// use (250 standalone AWG inbounds — extremely unlikely; the operator can edit
+// the inbound's subnet in that case).
+func allocateAWGServerSubnet(taken []string) string {
+	occupied := make(map[string]bool, len(taken))
+	for _, a := range taken {
+		occupied[awgServerPrefix(a)] = true
+	}
+	for sub := 1; sub <= 250; sub++ {
+		prefix := fmt.Sprintf("10.8.%d", sub)
+		if !occupied[prefix] {
+			return fmt.Sprintf("%s.1/24", prefix)
+		}
+	}
+	return "10.8.0.1/24"
+}
+
 func allocateAWGHostIP(prefix string, taken []string) string {
 	occupied := make(map[string]bool, len(taken))
 	for _, a := range taken {

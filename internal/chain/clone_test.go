@@ -7,6 +7,7 @@ package chain
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -259,3 +260,92 @@ func TestCloneNode_OneChainFailureNonFatal(t *testing.T) {
 type errLine2 string
 
 func (e errLine2) Error() string { return string(e) }
+
+// TestAllocateAWGServerSubnet_Free — empty taken → 10.8.1.1/24; one taken → next.
+func TestAllocateAWGServerSubnet_Free(t *testing.T) {
+	if got := allocateAWGServerSubnet(nil); got != "10.8.1.1/24" {
+		t.Fatalf("empty taken = %q, want 10.8.1.1/24", got)
+	}
+	if got := allocateAWGServerSubnet([]string{"10.8.1.1/24"}); got != "10.8.2.1/24" {
+		t.Fatalf("taken [10.8.1.1/24] = %q, want 10.8.2.1/24", got)
+	}
+	// 10.8.0.0/24 (legacy chain-entry default) is in taken → still starts at 10.8.1.
+	if got := allocateAWGServerSubnet([]string{"10.8.0.1/24"}); got != "10.8.1.1/24" {
+		t.Fatalf("legacy taken = %q, want 10.8.1.1/24", got)
+	}
+}
+
+// TestAllocateAWGServerSubnet_SkipsLegacyDefault — never returns 10.8.0.X (that
+// /24 is reserved for the chain AWG entry so a standalone clone never collides).
+func TestAllocateAWGServerSubnet_SkipsLegacyDefault(t *testing.T) {
+	// Even with 10.8.1..10.8.5 taken, the next is 10.8.6 — never 10.8.0.
+	taken := []string{}
+	for i := 1; i <= 5; i++ {
+		taken = append(taken, fmt.Sprintf("10.8.%d.1/24", i))
+	}
+	got := allocateAWGServerSubnet(taken)
+	if got != "10.8.6.1/24" {
+		t.Fatalf("got %q, want 10.8.6.1/24", got)
+	}
+	if strings.HasPrefix(got, "10.8.0.") {
+		t.Fatalf("allocator returned legacy 10.8.0.0/24: %q", got)
+	}
+}
+
+// TestCloneNode_AWGSubnetFresh — a source with an AWG standalone inbound on
+// 10.8.0.1/24: the clone gets a FRESH /24 (10.8.1.1/24), the source is
+// untouched, and the two subnets differ (no collision when the clone joins the
+// source's chain).
+func TestCloneNode_AWGSubnetFresh(t *testing.T) {
+	s := tempStore(t)
+	seedHost(t, s, "src", "1.1.1.1:22")
+	s.SaveNodeInfo(&model.NodeInfo{
+		Host:    model.Host{ID: "src", Addr: "1.1.1.1:22", User: "root", KeyPath: "/k"},
+		Country: "RU",
+		Inbounds: []model.NodeInbound{{
+			Protocol: "awg", Port: 51820, AWGServerAddress: "10.8.0.1/24",
+			UUID: "SRC-UUID", ServerPrivKey: "SRC-PRIV", ShortID: "src-sid", Tag: "src-tag",
+		}},
+	})
+	fa := newFakeRelocateApplier()
+
+	if _, err := CloneNode(context.Background(), s, fa, "src", "clone1", "9.9.9.9:22", "", "", ""); err != nil {
+		t.Fatalf("CloneNode: %v", err)
+	}
+
+	ci, _ := s.GetNodeInfo("clone1")
+	cib := ci.Inbounds[0]
+	if cib.AWGServerAddress == "" || cib.AWGServerAddress == "10.8.0.1/24" {
+		t.Fatalf("clone AWGServerAddress = %q, want a fresh /24 (not the source's)", cib.AWGServerAddress)
+	}
+	if !strings.HasPrefix(cib.AWGServerAddress, "10.8.") || strings.HasPrefix(cib.AWGServerAddress, "10.8.0.") {
+		t.Fatalf("clone AWGServerAddress = %q, want 10.8.X.1/24 with X>=1", cib.AWGServerAddress)
+	}
+
+	// Source untouched.
+	si, _ := s.GetNodeInfo("src")
+	if si.Inbounds[0].AWGServerAddress != "10.8.0.1/24" {
+		t.Fatalf("source AWGServerAddress changed: %q", si.Inbounds[0].AWGServerAddress)
+	}
+
+	// Two AWG inbounds on the same clone get distinct /24s.
+	s2 := tempStore(t)
+	seedHost(t, s2, "src2", "1.1.1.1:22")
+	s2.SaveNodeInfo(&model.NodeInfo{
+		Host: model.Host{ID: "src2", Addr: "1.1.1.1:22", User: "root", KeyPath: "/k"},
+		Inbounds: []model.NodeInbound{
+			{Protocol: "awg", Port: 51820, AWGServerAddress: "10.8.0.1/24"},
+			{Protocol: "awg", Port: 51821, AWGServerAddress: "10.8.5.1/24"},
+		},
+	})
+	fa2 := newFakeRelocateApplier()
+	if _, err := CloneNode(context.Background(), s2, fa2, "src2", "clone2", "9.9.9.9:22", "", "", ""); err != nil {
+		t.Fatalf("CloneNode 2: %v", err)
+	}
+	ci2, _ := s2.GetNodeInfo("clone2")
+	sub0 := ci2.Inbounds[0].AWGServerAddress
+	sub1 := ci2.Inbounds[1].AWGServerAddress
+	if sub0 == sub1 {
+		t.Fatalf("two AWG inbounds on the clone got the same subnet: %q == %q", sub0, sub1)
+	}
+}
