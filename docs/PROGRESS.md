@@ -1356,3 +1356,145 @@ scrypt-параметрах блоба, не в блобе).
 - scrypt N без UI-валидации минимума (operator's choice — ниже = слабее к brute-force, документировано в help-тексте).
 - retention всегда on (default 5); «без ротации» = большое значение Retention (нет off-switch).
 - без e2e SSH-ротации (мок-fake); без retention-счётчика в сторе (серверная ротация через ls/rm).
+
+---
+
+## 21. P0a-followup — root-cause research (локальный аудит, без WebSearch) (2026-07-09)
+
+WebSearch недоступен в среде — этот раздел синтезирует ВСЁ in-repo доказательство
+в одну root-cause формулировку + оценивает fix-направления + добавляет НОВОЕ
+(netfilter workaround, которого не было в §15.3). Это research-артефакт для
+следующей живой сессии: что проверить на upstream + минимальный репродьюсер.
+
+### 21.1 Root-cause (окончательная формулировка из in-repo evidence)
+
+**Симптом:** `awge2e → ens4 → awg0` работает (дешифрованный SYN с src `10.8.0.x`
+достигает awg0, tcpdump подтверждает §15.2:805-811), но `awg0 → sing-box-tun`
+forwarding сломан (tcpdump на sing-box-tun пуст, sing-box trace «No entries»).
+
+**Конфиг (TUN-overlay):** `awg_tun_overlay.go:94-104` —
+```go
+config.TUNInbound{
+  Type:"tun", Tag:"tun-in", InterfaceName:"sing-box-tun",
+  Address:["172.16.250.1/30"], MTU:1200, Stack:"mixed",
+  AutoRoute:true, IncludeInterface:["awg0"], StrictRoute:false,
+}
+```
+
+**Эмпирически установлено (§15.3, живые VPS-триалы):**
+
+| вариант | handshake | sing-box видит трафик? |
+|---|---|---|
+| `include_interface:["awg0"]` (текущий) | OK | **НЕТ** (trace пуст) |
+| `include_interface` удалён (только auto_route) | СЛОМАН (HS=0) | ДА (artifact, не рабочий путь) |
+| `exclude_interface:["ens4"]` | СЛОМАН (HS=0) | ДА |
+| `strict_route:true` | — | пусто |
+| `auto_redirect:true` | — | пусто |
+| `stack:gvisor` / `stack:system` | — | пусто |
+
+**Root cause:** в sing-box-extended 1.13.14 `include_interface` + `auto_route`
+корректно ставит `ip rule 9000 (iif awg0 goto 9002 → table 2022 → default via
+sing-box-tun)`, но **TUN device (`sing-box-tun`, POINTOPOINT/NOARP) не принимает
+forwarded ingress** — пакеты, которые kernel `ip_forward` доставляет с awg0 на
+sing-box-tun как transit (dst = remote internet IP, НЕ локальный socket).
+sing-box читает только трафик, **originate-ящий из локальных сокетов** на
+именованном интерфейсе (например, `bind_interface` dial-возвраты на
+`awg-exit-nX` — это направление РАБОТАЕТ, §11.3).
+
+**Ключевое различение (почему dns.idoctor.mom reference «работает»):** в
+reference-архитектуре load-bearing `include_interface`-захват — это
+**response-направление** (SYN-ACK на `awg-exit-nX`, dst = balancer's
+`10.10.0.X` — локальный socket / `bind_interface` dial return), которое
+sing-box захватывает. Broken-направление — **user→internet forwarded ingress**
+на `awg0` (src `10.8.0.x`, dst = remote IP, не локальный socket) — его sing-box
+НЕ захватывает. Reference-config имеет тот же `include_interface:["awg0"]`
+shape, но (a) reference мог никогда не проверяться именно в этом направлении
+(§15.2:789 «login-gated, unverifiable»), либо (b) reference балансирует нагрузку
+по-другому и forwarded-ingress не load-bearing. **Точный контраст не
+подтверждён живой VPS** — это open item (§21.4.0).
+
+**Не установлено in-repo (нужен upstream/vanilla):** регрессия это extended-патча
+или upstream 1.13 behavior? NOARP/POINTOPOINT iface может не читаться для
+forwarded packets — кандидат на upstream-bug, но НЕ проверено на vanilla
+sing-box 1.13.14 (§15.3:861-862).
+
+### 21.2 Fix-направления (оценка feasibility/риска)
+
+| # | направление | feasibility | риск | статус |
+|---|---|---|---|---|
+| 1 | **Upstream issue на sing-box-extended** (мин. репродьюсер + tcpdump-доказательство) | High value, низкие усилия на репорт | 0 (research-only) | НЕ СДЕЛАНО — WebSearch недоступен, нужен ручной GitHub-репорт |
+| 2 | **Vanilla sing-box 1.13.14 изоляция** — тот же конфиг на не-extended билде | Высокая диагностическая ценность | 0 (research-only) | НЕ СДЕЛАНО — определяет регрессия ли это от патча |
+| 3 | **netfilter workaround (НОВОЕ, не в §15.3)** — iptables/nftables REDIRECT/TPROXY для forwarded ingress на awg0 → sing-box-tun, минуя include_interface | Medium (новый код в deploy PostUp) | Medium (нат-на-TUN может ломать source-IP per-client routing) | НЕ ИССЛЕДОВАНО — `route_address_set`/REDIRECT/nftables отсутствуют в repo (grep: 0) |
+| 4 | **sing-box как AWG endpoint** (sing-box-extended поддерживает amnezia в wireguard inbound) — sing-box сам поднимает AWG, без awg-quick, без TUN-overlay indirection | High effort (архитектурный сдвиг от kernel-AWG rework #11) | Medium (отказ от kernel-awg-quick стабильного пути) | НЕ СДЕЛАНО — требует перерисовать render path |
+| 5 | **Userspace WG endpoint return** (last resort, AGENTS #10 предупреждает о userspace amnezia panic — `wirego-awg-overlap.patch` фиксал, но user-facing был переведён на kernel из-за нестабильности) | Medium | High (regression к нестабильности) | НЕ СДЕЛАНО — явный regression risk |
+
+### 21.3 Рекомендация (на основе in-repo evidence)
+
+**Сначала #2 (vanilla изоляция) — cheapest, highest diagnostic value.** Если
+тот же конфиг ломается на vanilla sing-box 1.13.14 → это upstream-баг (не
+наш патч) → #1 (upstream issue) правильный путь. Если ломается ТОЛЬКО на
+extended → регрессия от патча → inspect `patches/` (оба патча НЕ касаются TUN/
+include_interface, так что маловероятно, но проверить). Это 1 живая VPS-сессия
+(~30 мин: развернуть vanilla бинарь + тот же config + tcpdump).
+
+**Если #2 подтверждает upstream-баг:** #1 (upstream issue с репродьюсером) —
+правильный долгосрочный путь; параллельно #3 (netfilter workaround) как
+локальный обход, чтобы разблокировать продукт сейчас (не ждать upstream).
+
+**#3 (netfilter) — самый перспективный локальный фикс.** Концепция:
+forwarded ingress на awg0 (src `10.8.0.x`, dst remote) перехватить в PREROUTING
+через nftables `tproxy` (или iptables REDIRECT на sing-box-tun listen-порт,
+если TUN слушает) → пакет идёт в sing-box без依赖имости от include_interface.
+**Риск:** source-IP per-client routing (`source_ip_cidr` на `10.8.0.x`) должен
+сохраниться через tproxy — TPROXY mode сохраняет src IP (в отличие от MASQUERADE),
+так что per-client routing должен работать. Требует: (a) sing-box TUN in
+`tproxy`-mode или route-table entry, (b) PostUp nftables rule в awg0.conf deploy.
+Не реализовано — это **новая работа**, не research.
+
+**#4/#5 — архитектурные сдвиги, last resort** если #1+#3 не дают результата.
+
+### 21.4 Открытые вопросы (требуют живой VPS / upstream / WebSearch — НЕ разрешимы локально)
+
+0. **Reference-контраст:** действительно ли dns.idoctor.mom reference работает в
+   forwarded-ingress направлении, или он никогда в нём не проверялся?
+   (login-gated, unverifiable per §15.2:789). Если reference ТОЖЕ не работает —
+   наша гипотеза («include_interface не захватывает forwarded ingress») =
+   upstream-bug подтверждён референсом.
+1. **Vanilla sing-box 1.13.14** — тот же конфиг ломается? (изоляция регрессии)
+2. **Upstream sing-box-extended GitHub** — есть ли открытый issue про
+   `include_interface` + forwarded ingress / kernel WireGuard iface? (WebSearch)
+3. **TPROXY feasibility** — sing-box TUN in 1.13 поддерживает tproxy-mode для
+   forwarded ingress? Или только auto_route+include_interface? (доки sing-box)
+4. **NOARP/POINTOPOINT** — реально ли TUN-device не читает forwarded packets,
+   или это tun-driver-specific (gVisor vs system)? (stack:gvisor/system триалы
+   оба пусты, но tproxy-режим может отличаться).
+
+### 21.5 Минимальный upstream-репродьюсер (для #1, когда будет WebSearch/GitHub)
+
+```
+# config.json (минимальный) — kernel awg0 (awg-quick@awg0, AllowedIPs 0.0.0.0/0,
+# Table=off) + sing-box TUN-overlay:
+{
+  "inbounds": [{
+    "type":"tun","tag":"tun-in","interface_name":"sing-box-tun",
+    "address":["172.16.250.1/30"],"mtu":1200,"stack":"mixed",
+    "auto_route":true,"include_interface":["awg0"],"strict_route":false
+  }],
+  "outbounds":[{"type":"direct","tag":"direct"}],
+  "route":{"rules":[{"inbound":["tun-in"],"outbound":"direct"}]}
+}
+# + kernel awg0 с peer 10.8.0.2 (client .conf), ip_forward=1, rp_filter=0
+# Доказательство: tcpdump -i awg0 (виден дешифрованный SYN src 10.8.0.x dst remote)
+#               vs tcpdump -i sing-box-tun (пусто) + sing-box trace (No entries)
+# Ожидаемое поведение: include_interface:["awg0"] + ip rule 9000 → TUN должен
+# принять forwarded ingress. Фактическое: не принимает.
+```
+
+### 21.6 Статус P0a-followup
+
+Research завершён в рамках локального аудита. Фикс НЕ найден — определены 5
+направлений + рекомендация (#2 vanilla-изоляция первой, потом #1 upstream-issue,
+параллельно #3 netfilter-workaround для разблокировки продукта). Все требуют
+живой VPS или WebSearch (недоступны в этой среде). Это остаётся P0-блокером
+продукта, но НЕ блокер для UX-фич (P0b/P1a/P1b/P2a — все готовы и не зависят от
+egress-routing). Следующая живая сессия берёт #2 первой (~30 мин).
