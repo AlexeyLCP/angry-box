@@ -214,6 +214,12 @@ func (s *Server) handleSaveOffsite(w http.ResponseWriter, r *http.Request) {
 		if iv := strings.TrimSpace(r.FormValue("offsite_interval")); iv != "" {
 			ob.IntervalMin, _ = strconv.Atoi(iv)
 		}
+		if rv := strings.TrimSpace(r.FormValue("offsite_retention")); rv != "" {
+			ob.Retention, _ = strconv.Atoi(rv)
+		}
+		if sv := strings.TrimSpace(r.FormValue("offsite_scrypt_n")); sv != "" {
+			ob.ScryptN, _ = strconv.Atoi(sv)
+		}
 		settings.OffsiteBackup = ob
 	}
 

@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -26,6 +28,15 @@ import (
 // DefaultOffsiteBackupInterval is the backup loop interval when
 // OffsiteBackupConfig.IntervalMin is 0 (360 min = 6h).
 const DefaultOffsiteBackupInterval = 360
+
+// DefaultOffsiteBackupRetention is how many recent blobs to keep on the offsite
+// target when OffsiteBackupConfig.Retention is 0 (rotation via ls+rm after push).
+const DefaultOffsiteBackupRetention = 5
+
+// backupBlobPrefix is the filename prefix for rotated offsite blobs; the full
+// name is <prefix>-<RFC3339-ish timestamp>.abbkp under cfg.RemotePath (which is
+// treated as a directory).
+const backupBlobPrefix = "angry-box"
 
 // PushOffsiteBackup runs one encrypted offsite backup cycle against cfg.
 // It reads the current store via ExportStore (plaintext, in-process decrypt),
@@ -74,6 +85,9 @@ func PushOffsiteBackup(ctx context.Context, store *Store, cfg *model.OffsiteBack
 	// 3. Push over SSH. SSHKeyID is resolved by the connector's key resolver
 	//    (the same registry nodes use). User defaults to the current SSH user
 	//    if empty (the connector / ssh.Connect handles "" as the OS user).
+	//    cfg.RemotePath is treated as a DIRECTORY on the offsite target; the blob
+	//    is written to <RemotePath>/angry-box-<timestamp>.abbkp so each push is a
+	//    distinct file (rotation keeps the last cfg.Retention, default 5).
 	user := cfg.User
 	keyRef := cfg.SSHKeyID
 	client, err := connector.Connect(cfg.Host, user, keyRef)
@@ -82,8 +96,19 @@ func PushOffsiteBackup(ctx context.Context, store *Store, cfg *model.OffsiteBack
 	}
 	defer client.Close()
 
-	if err := client.UploadText(ctx, string(blob), cfg.RemotePath, 0o600); err != nil {
-		return fmt.Errorf("backup: upload to %s:%s: %w", cfg.Host, cfg.RemotePath, err)
+	blobName := fmt.Sprintf("%s-%s.abbkp", backupBlobPrefix, time.Now().UTC().Format("20060102-150405"))
+	blobPath := strings.TrimRight(cfg.RemotePath, "/") + "/" + blobName
+	if err := client.UploadText(ctx, string(blob), blobPath, 0o600); err != nil {
+		return fmt.Errorf("backup: upload to %s:%s: %w", cfg.Host, blobPath, err)
+	}
+
+	// 3b. Rotate: keep the last `retention` blobs, remove older ones. Best-effort
+	//     — a rotation failure (ls/rm error, weird target) does NOT fail the push:
+	//     the new blob is already off-host; rotation is housekeeping. The ls lists
+	//     only angry-box-*.abbkp files in the directory, sorted chronologically
+	//     (the timestamp format sorts lexically = chronologically).
+	if rerr := rotateOffsiteBlobs(ctx, client, cfg); rerr != nil {
+		log.Printf("backup: pushed to %s but rotation failed (blobs may accumulate): %v", cfg.Host, rerr)
 	}
 
 	// 4. Stamp LastBackupAt + persist settings (best-effort; a failed save
@@ -96,6 +121,57 @@ func PushOffsiteBackup(ctx context.Context, store *Store, cfg *model.OffsiteBack
 		}
 	} else {
 		log.Printf("backup: pushed to %s but failed to read settings for LastBackupAt: %v", cfg.Host, gerr)
+	}
+	return nil
+}
+
+// rotateOffsiteBlobs lists the angry-box-*.abbkp blobs in cfg.RemotePath and
+// removes the oldest ones beyond cfg.Retention (default 5). Best-effort: any
+// ls/rm error is returned but the caller treats it as non-fatal (the new blob is
+// already pushed). The timestamp in the filename (20060102-150405) sorts
+// lexically = chronologically, so the newest N are the last N in sorted order.
+func rotateOffsiteBlobs(ctx context.Context, client ports.SSHClient, cfg *model.OffsiteBackupConfig) error {
+	_ = ctx
+	retention := cfg.Retention
+	if retention <= 0 {
+		retention = DefaultOffsiteBackupRetention
+	}
+	dir := strings.TrimRight(cfg.RemotePath, "/")
+	// ls -1 → one filename per line. Quote the glob so the shell does not expand
+	// it locally; the remote shell expands it against the directory.
+	out, err := client.Run(fmt.Sprintf("ls -1 %q/%s-*.abbkp 2>/dev/null", dir, backupBlobPrefix))
+	if err != nil {
+		return fmt.Errorf("ls: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var paths []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		// Keep only files that match our prefix (ls may include the literal glob
+		// if no match — filter those out).
+		base := l
+		if idx := strings.LastIndex(l, "/"); idx >= 0 {
+			base = l[idx+1:]
+		}
+		if !strings.HasPrefix(base, backupBlobPrefix+"-") || !strings.HasSuffix(base, ".abbkp") {
+			continue
+		}
+		paths = append(paths, l)
+	}
+	sort.Strings(paths) // chronological (timestamp sorts lexically)
+	if len(paths) <= retention {
+		return nil
+	}
+	// Remove the oldest (len - retention) blobs.
+	toRemove := paths[:len(paths)-retention]
+	for _, p := range toRemove {
+		if _, rerr := client.Run(fmt.Sprintf("rm -f %q", p)); rerr != nil {
+			// Log + continue — a single rm failure should not stop the rest.
+			log.Printf("backup: rotation rm %s failed: %v", p, rerr)
+		}
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ package web
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
@@ -98,8 +99,13 @@ func TestHandler_BackupNow_OK(t *testing.T) {
 	ts.assertStatus(w, http.StatusOK)
 	ts.assertContains(w, "Backup sent to offsite target")
 
-	if len(fake.uploads) != 1 || fake.uploads[0] != "/home/bk/ab.abbkp" {
-		t.Fatalf("uploads = %v, want [\"/home/bk/ab.abbkp\"]", fake.uploads)
+	if len(fake.uploads) != 1 {
+		t.Fatalf("uploads = %v, want 1", fake.uploads)
+	}
+	// RemotePath is now a directory; the blob is written to
+	// <RemotePath>/angry-box-<timestamp>.abbkp.
+	if path := fake.uploads[0]; !strings.HasPrefix(path, "/home/bk/ab.abbkp/angry-box-") || !strings.HasSuffix(path, ".abbkp") {
+		t.Fatalf("upload path = %q, want <dir>/angry-box-<ts>.abbkp", path)
 	}
 	// LastBackupAt should now be stamped in the persisted config.
 	got, _ := ts.srv.store().GetSettings()

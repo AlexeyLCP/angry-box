@@ -1325,3 +1325,34 @@ scrypt-параметрах блоба, не в блобе).
 (master-key НИКОГДА не покидает хост — это принцип). Без e2e SSH-пуша (мок-connector
 в тестах). Обе фичи (P1b + P2a) — чистая модель + хендлеры + UI; deploy-путь
 тронут только переиспользованным ApplyChain (clone) / UploadText (backup).
+
+---
+
+## 20. P1b/P2a follow-up — три мелочи (2026-07-09)
+
+Три точечные правки, закрывающие дыры из §18/§19. Коммиты `d60e991` + `b086b8e` + (Fix 2).
+
+### Fix 1 — свежий AWG /24 при клоне (§18 риск 1 закрыт)
+- `allocateAWGServerSubnet` (cryptogen.go): первый свободный `10.8.X.0/24` (X=1..250), **пропускает legacy `10.8.0.0/24`** (chain-entry default) — standalone AWG-инbaунд клона никогда не конфликтует с chain AWG-инbaундом на той же ноде.
+- `clone.go`: `cloneInbounds` принимает `taken`-subnets (собираются `CloneNode` из `ListNodeInfos`); AWG-инbaунды клона получают **свежий /24** (не копию source); два AWG-инbaунда на одном клоне — разные /24. Source не тронут.
+- 3 теста: allocator free/skip-legacy, clone AWG subnet fresh + source untouched + two-inbounds distinct.
+
+### Fix 3 — тюнимый scrypt N (§19 риск 3 смягчён)
+- `EncryptBackupWithParams(plain, pass, N, r, p)` + `EncryptBackup` обёртка (сохраняет сигнатуру, 11 существующих тестов не сломаны). N/r/p <= 0 → package defaults.
+- `OffsiteBackupConfig.ScryptN` + `PushOffsiteBackup` прокидывает его. N хранится per-blob → cross-N decrypt работает (старые блобы всегда расшифровываются).
+- 3 теста: low-N roundtrip, defaults-on-zero, cross-N decrypt.
+
+### Fix 2 — offsite retention/rotation (§19 явная не-цель «без retention» закрыта)
+- `OffsiteBackupConfig.Retention` (0 = default 5). `RemotePath` теперь **директория** на offsite-таргете; блоб пишется в `<RemotePath>/angry-box-<ts>.abbkp` (ts = `20060102-150405`, сортируется лексикографически = хронологически).
+- После push: `ls -1 <dir>/angry-box-*.abbkp` → sort → `rm -f` старых сверх Retention. **Best-effort**: ошибка ls/rm не фейлит push (блоб уже off-host; ротация — housekeeping, логируется).
+- `backups.go handleSaveOffsite` читает `offsite_retention`/`offsite_scrypt_n`. UI: 2 новых поля (Retention + scrypt N) + placeholder RemotePath = директория. 4 i18n-ключа en+ru.
+- 3 unit-теста: rotation removes 3 oldest (8 blobs - keep 5), under-limit no rm, ls-fails-non-fatal. Web `BackupNow_OK` обновлён под timestamp-путь.
+- **Semantic shift `RemotePath`**: было «файл», стало «директория». Существующие настройки работают (блоб в `<путь>/angry-box-<ts>.abbkp`), структура меняется — operator правит путь при желании.
+
+### Верификация
+- 9 новых тестов (3+3+3) зелёные. `go build ./...` + `go vet ./...` чистые. Полный non-e2e набор зелёный (один pre-existing Windows TempDir flake, проходит при повторе — не регрессия).
+
+### Остаточные не-цели
+- scrypt N без UI-валидации минимума (operator's choice — ниже = слабее к brute-force, документировано в help-тексте).
+- retention всегда on (default 5); «без ротации» = большое значение Retention (нет off-switch).
+- без e2e SSH-ротации (мок-fake); без retention-счётчика в сторе (серверная ротация через ls/rm).

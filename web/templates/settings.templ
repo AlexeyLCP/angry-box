@@ -288,8 +288,8 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 								</div>
 								<div class="form-control">
 									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Remote path") }</span></label>
-									<input type="text" name="offsite_remote_path" class="input input-bordered input-sm"
-										value={ offsiteVal(settings, "RemotePath") } placeholder="/home/backup/angry-box.abbkp" />
+								<input type="text" name="offsite_remote_path" class="input input-bordered input-sm"
+									value={ offsiteVal(settings, "RemotePath") } placeholder="/home/backup/angry-box" />
 								</div>
 								<div class="form-control">
 									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup passphrase") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "leave blank to keep current") }</span></label>
@@ -299,6 +299,16 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup interval (minutes)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 6h default") }</span></label>
 									<input type="number" name="offsite_interval" class="input input-bordered input-sm"
 										value={ offsiteVal(settings, "IntervalMin") } placeholder="360" />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Retention (keep N blobs)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 5 default") }</span></label>
+									<input type="number" name="offsite_retention" class="input input-bordered input-sm"
+										value={ offsiteVal(settings, "Retention") } placeholder="5" />
+								</div>
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "scrypt N (memory cost)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 65536 default; lower = weaker/faster") }</span></label>
+									<input type="number" name="offsite_scrypt_n" class="input input-bordered input-sm"
+										value={ offsiteVal(settings, "ScryptN") } placeholder="65536" />
 								</div>
 							</div>
 							<label class="label cursor-pointer gap-2">
@@ -342,6 +352,10 @@ func offsiteVal(settings *model.PanelSettings, field string) string {
 		return ob.RemotePath
 	case "IntervalMin":
 		return fmt.Sprintf("%d", ob.IntervalMin)
+	case "Retention":
+		return fmt.Sprintf("%d", ob.Retention)
+	case "ScryptN":
+		return fmt.Sprintf("%d", ob.ScryptN)
 	}
 	return ""
 }

@@ -697,6 +697,11 @@ var locales = map[string]map[string]string{
 		"Backup failed": "Backup failed",
 		"Offsite backup settings saved": "Offsite backup settings saved",
 		"passphrase is required to decrypt the backup": "passphrase is required to decrypt the backup",
+		// P2a follow-up — retention + tunable scrypt.
+		"Retention (keep N blobs)": "Retention (keep N blobs)",
+		"0 = 5 default": "0 = 5 default",
+		"scrypt N (memory cost)": "scrypt N (memory cost)",
+		"0 = 65536 default; lower = weaker/faster": "0 = 65536 default; lower = weaker/faster",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1420,6 +1425,11 @@ var locales = map[string]map[string]string{
 		"Backup failed": "Бэкап не удался",
 		"Offsite backup settings saved": "Настройки внешнего бэкапа сохранены",
 		"passphrase is required to decrypt the backup": "пароль обязателен для расшифровки бэкапа",
+		// P2a follow-up — retention + tunable scrypt.
+		"Retention (keep N blobs)": "Хранить N блобов",
+		"0 = 5 default": "0 = 5 по умолчанию",
+		"scrypt N (memory cost)": "scrypt N (память)",
+		"0 = 65536 default; lower = weaker/faster": "0 = 65536 по умолчанию; ниже = слабее/быстрее",
 	},
 }
 
