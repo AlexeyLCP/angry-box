@@ -59,8 +59,14 @@ func PushOffsiteBackup(ctx context.Context, store *Store, cfg *model.OffsiteBack
 		return fmt.Errorf("backup: export store: %w", err)
 	}
 
-	// 2. Encrypt with the passphrase-derived key (scrypt + AES-256-GCM).
-	blob, err := EncryptBackup(plain, cfg.Passphrase)
+	// 2. Encrypt with the passphrase-derived key (scrypt + AES-256-GCM). ScryptN
+	//    is tunable per-target (cfg.ScryptN); 0 = package default. The blob stores
+	//    the chosen N so a later decrypt reads it back regardless of this setting.
+	scryptN := cfg.ScryptN
+	if scryptN <= 0 {
+		scryptN = backupScryptN
+	}
+	blob, err := EncryptBackupWithParams(plain, cfg.Passphrase, scryptN, backupScryptR, backupScryptP)
 	if err != nil {
 		return fmt.Errorf("backup: encrypt: %w", err)
 	}

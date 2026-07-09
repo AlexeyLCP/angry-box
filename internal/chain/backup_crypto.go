@@ -54,18 +54,40 @@ const (
 // ErrBackupBlob is a sentinel for a malformed/unrecognized backup blob.
 var ErrBackupBlob = errors.New("backup: not a passphrase-encrypted blob (bad magic)")
 
-// EncryptBackup encrypts plaintext with a passphrase-derived AES-256-GCM key.
+// EncryptBackup encrypts plaintext with a passphrase-derived AES-256-GCM key
+// using the default scrypt parameters (N=2^16, r=8, p=1 — ~64MB/~100ms). It is
+// a thin wrapper around EncryptBackupWithParams preserving the original
+// signature so the existing callers/tests do not change. For a tunable memory
+// cost (e.g. a weak orchestrator), call EncryptBackupWithParams directly.
+func EncryptBackup(plaintext []byte, passphrase string) ([]byte, error) {
+	return EncryptBackupWithParams(plaintext, passphrase, backupScryptN, backupScryptR, backupScryptP)
+}
+
+// EncryptBackupWithParams is the parameterized variant: N/r/p are the scrypt
+// cost params, stored in the blob header so DecryptBackup reads them back
+// (blobs encrypted with different N decrypt uniformly). N must be a power of 2
+// >= 2 (scrypt requirement); the package default (backupScryptN) is recommended.
+// A lower N trades memory/brute-force resistance for speed — operator's choice.
 // The passphrase never leaves the caller; only the derived key (via a random
 // salt stored in the blob) is used. Returns the self-describing ABBKP1 blob.
-func EncryptBackup(plaintext []byte, passphrase string) ([]byte, error) {
+func EncryptBackupWithParams(plaintext []byte, passphrase string, N, r, p int) ([]byte, error) {
 	if passphrase == "" {
 		return nil, errors.New("backup: passphrase is empty")
+	}
+	if N <= 0 {
+		N = backupScryptN
+	}
+	if r <= 0 {
+		r = backupScryptR
+	}
+	if p <= 0 {
+		p = backupScryptP
 	}
 	salt := make([]byte, backupSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("backup: salt: %w", err)
 	}
-	key, err := deriveBackupKey(passphrase, salt, backupScryptN, backupScryptR, backupScryptP)
+	key, err := deriveBackupKey(passphrase, salt, N, r, p)
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +108,9 @@ func EncryptBackup(plaintext []byte, passphrase string) ([]byte, error) {
 	out := make([]byte, 0, len(backupBlobMagic)+backupSaltLen+8+backupNonceLen+len(plaintext)+gcm.Overhead())
 	out = append(out, backupBlobMagic...)
 	out = append(out, salt...)
-	out = appendUint32BE(out, backupScryptN)
-	out = appendUint16BE(out, backupScryptR)
-	out = appendUint16BE(out, backupScryptP)
+	out = appendUint32BE(out, uint32(N))
+	out = appendUint16BE(out, uint16(r))
+	out = appendUint16BE(out, uint16(p))
 	out = append(out, nonce...)
 	out = gcm.Seal(out, nonce, plaintext, nil)
 	return out, nil

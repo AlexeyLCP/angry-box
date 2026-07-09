@@ -89,6 +89,61 @@ func TestEncryptBackup_DifferentSalts(t *testing.T) {
 	}
 }
 
+// TestEncryptBackupWithParams_LowN — a lower scrypt N (2^12, faster/less memory)
+// still roundtrips, and the blob decrypts with the default DecryptBackup (which
+// reads N from the blob header, so cross-N decrypt works).
+func TestEncryptBackupWithParams_LowN(t *testing.T) {
+	plain := []byte("tunable scrypt cost")
+	blob, err := EncryptBackupWithParams(plain, "pass", 1<<12, backupScryptR, backupScryptP)
+	if err != nil {
+		t.Fatalf("EncryptBackupWithParams: %v", err)
+	}
+	if !IsBackupBlob(blob) {
+		t.Fatal("blob missing ABBKP1 magic")
+	}
+	got, err := DecryptBackup(blob, "pass")
+	if err != nil {
+		t.Fatalf("DecryptBackup: %v", err)
+	}
+	if !bytes.Equal(got, plain) {
+		t.Fatalf("roundtrip mismatch: %q vs %q", got, plain)
+	}
+}
+
+// TestEncryptBackupWithParams_DefaultsOnZero — passing N/r/p <= 0 falls back to
+// the package defaults (blob is equivalent to EncryptBackup output format).
+func TestEncryptBackupWithParams_DefaultsOnZero(t *testing.T) {
+	plain := []byte("defaults")
+	blob, err := EncryptBackupWithParams(plain, "pass", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("EncryptBackupWithParams: %v", err)
+	}
+	got, err := DecryptBackup(blob, "pass")
+	if err != nil {
+		t.Fatalf("DecryptBackup: %v", err)
+	}
+	if !bytes.Equal(got, plain) {
+		t.Fatalf("roundtrip mismatch: %q vs %q", got, plain)
+	}
+}
+
+// TestDecryptBackup_CrossN — a blob encrypted with N=2^14 decrypts correctly
+// (DecryptBackup reads N from the header, so it works regardless of the N used).
+func TestDecryptBackup_CrossN(t *testing.T) {
+	plain := []byte("cross-N decrypt")
+	blob, err := EncryptBackupWithParams(plain, "pass", 1<<14, backupScryptR, backupScryptP)
+	if err != nil {
+		t.Fatalf("EncryptBackupWithParams: %v", err)
+	}
+	got, err := DecryptBackup(blob, "pass")
+	if err != nil {
+		t.Fatalf("DecryptBackup cross-N: %v", err)
+	}
+	if !bytes.Equal(got, plain) {
+		t.Fatalf("roundtrip mismatch: %q vs %q", got, plain)
+	}
+}
+
 // TestIsBackupBlob — the magic detector works on prefixes and non-prefixes.
 func TestIsBackupBlob(t *testing.T) {
 	if !IsBackupBlob([]byte("ABBKP1rest")) {

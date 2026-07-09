@@ -168,6 +168,16 @@ type OffsiteBackupConfig struct {
 	Passphrase  string    `json:"passphrase,omitempty"`   // never the master key; scrypt-derived
 	IntervalMin int       `json:"interval_min,omitempty"` // 0 = default 360 (6h)
 	LastBackupAt time.Time `json:"last_backup_at,omitempty"`
+	// Retention is how many recent blobs to keep on the offsite target (rotation
+	// via ls+rm after each push). 0 = default 5. Blobs are written to
+	// <RemotePath>/angry-box-<timestamp>.abbkp; older blobs beyond Retention are
+	// removed. A very large value effectively disables rotation.
+	Retention int `json:"retention,omitempty"`
+	// ScryptN overrides the default scrypt cost (2^16) for the passphrase KDF.
+	// 0 = default. Lower N = less memory/faster but weaker brute-force resistance
+	// (use on a weak orchestrator); higher N = stronger but heavier. The chosen
+	// N is stored per-blob, so old blobs always decrypt regardless of this setting.
+	ScryptN int `json:"scrypt_n,omitempty"`
 }
 
 // Service is an operator-defined product tier: a named bundle of chains +
