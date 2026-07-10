@@ -214,12 +214,6 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 			ExitInterfaces:    exitInterfacesForNode(node),
 			BalancerTag:       balancerTagForNode(node),
 			FinalOutbound:     "direct",
-			// P0a trial (§21.10): enable auto_redirect — upstream "always
-			// recommended on Linux", needs nftables (now installed on the VPS).
-			// ip-rule-only path (without auto_redirect) does not deliver forwarded
-			// ingress from awg0 into the tun. TEMPORARY hardcode for the live trial;
-			// if egress works → wire as per-node UI toggle.
-			AutoRedirect:    &[]bool{true}[0],
 			// A linear AWG chain entry with a downstream hop forwards TUN traffic
 			// to the inter-node outbound — without this the catch-all targets
 			// "direct" and every AWG user egresses from the entry node, never

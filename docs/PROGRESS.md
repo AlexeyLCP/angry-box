@@ -1719,3 +1719,51 @@ deploy-trial на live VPS для подтверждения.
 валидный), #3805 на nft 1.0.6 не срабатывает (set правильный). Главный вопрос
 остаётся: пропустит ли nft prerouting + auto_redirect forwarded ingress с awg0
 в tun. Ответ требует middle-handshake (amnezia i1-i5 match) — next step выше.
+
+### 21.12 P0a trial результат + cleanup (2026-07-10)
+
+**Trial итог (auto_redirect ON на entry, nft установлен):**
+- auto_redirect валиден (sing-box check passes, nft table inet sing-box
+  установлен, prerouting `iifname != {awg0,awg-exit-n1}` рендерится ПРАВИЛЬНО —
+  SagerNet#3805 НЕ срабатывает на nft 1.0.6).
+- **НО egress НЕ доказан/опровергнут**: не удалось сгенерировать настоящий
+  forwarded-ingress для теста. Две попытки провалились по тест-инфра-причинам:
+  1. awgtest loopback-клиент (на entry, src 10.8.0.99): src локальный → kernel
+     local-delivery, не forwarded через ip-rule 9000 (артефакт).
+  2. middle sing-box awg-клиент (удалённый src): **`sendmmsg: message too long`**
+     — sing-box userspace wireguard endpoint НЕ фрагментирует handshake-initiation
+     при больших CPS-пакетах (i1 = ~1.2KB hex payload + amnezia headers > MTU
+     1420). Real awg-quick kernel-клиенты фрагментируют (kernel handles) — 5
+     entry peers с handshake-timestamps подтверждают, что real clients работают.
+     Но в момент теста real clients были offline (ping .2 → 0 reply).
+- **Вывод**: auto_redirect harness готов (opt-in field §21.9 + nft-предусловие
+  через apt install nftables), но **egress-trial требует настоящий awg-quick
+  kernel-клиент** (не sing-box userspace из-за CPS sendmmsg). Тест-инфра не дала
+  ответа.
+
+**Cleanup выполнен:**
+- entry: auto_redirect откатился (config.json.pre-autoredirect восстановлен,
+  sing-box active на исходном конфиге), test-peer Aeewo (10.8.0.99) удалён с
+  awg0, pcap/conf временные удалены. nftables ОСТАВЛЕН установленным (полезно —
+  предусловие для будущего auto_redirect).
+- middle: sing-box awgclient systemd unit остановлен, sb-tun удалён, log очищен.
+  nftables оставлен (полезно). awgclient.json /tmp — мелочь.
+- merged_config.go: hardcode AutoRedirect:&true ОТКАЧЕН (trial не подтвердил
+  egress — нельзя оставлять ON в проде без доказательства). Opt-in field
+  AWGTUNOverlayParams.AutoRedirect *bool ОСТАЁТСЯ (§21.9) — готов для
+  per-node UI toggle, когда egress будет подтверждён.
+
+**Следующий шаг (требует awg-quick kernel-клиента):**
+1. Поднять настоящий awg-quick клиент (не sing-box) — на laptop/другой VPS — с
+   client .conf от entry (amnezia i1-i5 + MTU 1420, kernel handles fragmentation).
+2. Подключиться к entry, curl ifconfig.me → forwarded ingress на entry awg0.
+3. Включить auto_redirect на entry (opt-in field) → tcpdump sing-box-tun + trace
+   → forwarded ingress дошёл в tun? Если да → P0a РЕШЁН.
+4. Если нет → nft prerouting counter на awg0 + ip rule show (дошёл ли до nft) →
+   иной root cause (return к §21.2 #5 sing-box-as-AWG).
+
+**Код-вывод сессии:** auto_redirect opt-in + nft-предусловие готовы (§21.9).
+Egress-trial не завершён из-за тест-инфра (sing-box awg-клиент sendmmsg+CPS;
+real clients offline). Это НЕ провал — это "harness готов, нужна правильная
+тест-клиент". P0a остаётся P0-блокером, но путь теперь точный: awg-quick
+kernel-клиент + auto_redirect trial.
