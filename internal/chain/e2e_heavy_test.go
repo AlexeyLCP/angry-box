@@ -154,6 +154,16 @@ func TestE2E_Heavy_Protocol_AWG_Kernel(t *testing.T) {
 	}
 	t.Logf("AWG material: cps=%d mimicry=%s", report.AWG.CPSLevel, report.AWG.Mimicry)
 
+	// P0a egress-trial: рендерим клиентский awg-quick .conf через оркестратор
+	// (RenderClientAWGConf берёт i1-i5 из chain preset + persisted material —
+	// совпадает с сервером). Печатаем, чтобы поднять настоящий kernel awg-quick
+	// клиент на другой VPS и проверить forwarded ingress → tun (auto_redirect).
+	clientConf, cerr := chain.RenderClientAWGConf(chain.ClientConfigParams{Chain: c, EntryHostOverride: e2eServerIP(e2eRoleEntry)})
+	if cerr != nil {
+		t.Fatalf("RenderClientAWGConf: %v", cerr)
+	}
+	t.Logf("AWG_CLIENT_CONF_BEGIN\n%s\nAWG_CLIENT_CONF_END", clientConf)
+
 	cfg := fetchRemoteConfig(t, e2eRoleEntry)
 	// Kernel-AWG architecture: the sing-box config has a TUN overlay capturing
 	// awg0 (include_interface), NOT a userspace wireguard endpoint (which panics

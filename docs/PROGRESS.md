@@ -1817,3 +1817,41 @@ kernel-клиент + auto_redirect trial.
 **Вывод сессии:** оркестратор-деплой с auto_redirect работает (главное). Egress
 не подтверждён из-за client .conf amnezia i1-i5 (нужно точное copy server→client,
 как awg-quick .conf обычно делает). Это последний шаг — ~5 мин в след. сессии.
+
+### 21.14 Оркестратор рендерит client .conf — но нужен per-user creds (2026-07-10)
+
+**Прорыв:** оркестратор через `RenderClientAWGConf` рендерит корректный awg-quick
+client .conf с i1-i5 (без ручных опечаток — берёт из chain preset + persisted
+AWGObfsMaterial). Тест `TestE2E_Heavy_Protocol_AWG_Kernel` (с добавленным
+RenderClientAWGConf вызовом) вывел полный .conf:
+- I1-I5 с правильными hex (matching server's pro_2026 preset),
+- H1-H4/Jc/S1-S4 (matching),
+- server pub + endpoint 34.14.98.64:51820.
+
+**НО:** `PrivateKey = CLIENT_PRIVATE_KEY_HERE` + `Address = 10.8.0.2/24` —
+legacy placeholder. RenderClientAWGConf без per-user model.User (AWGPrivateKey/
+AWGAddress) даёт placeholder — **handshake не пройдёт** (CLIENT_PRIVATE_KEY_HERE
+не валидный ключ + нет peer на сервере с этим pub).
+
+**Что нужно для egress-trial через оркестратор (последний шаг):**
+1. Per-user client .conf: serve (web UI) → создать User с AWG creds
+   (EnsureUserCreds + EnsureUserAWGAddress) → `GET /ui/users/{id}/config`
+   рендерит .conf с реальным PrivateKey + Address + matching peer на сервере.
+   ИЛИ: расширить e2e-тест — создать model.User, SaveUser, RenderClientAWGConf
+   с {Chain, User} → .conf с реальными creds.
+2. scp .conf на exit/middle (где есть awg-quick kernel-mod) → `awg-quick up` →
+   handshake (peer уже на сервере из User.AWGPublicKey) →
+3. `ip route add default dev <iface>` + `curl ifconfig.me` → exit IP?
+   (entry public 34.14.98.64 → forwarded ingress дошёл до tun через auto_redirect
+   = P0a РЕШЁН).
+
+**Cleanup:** hardcode AutoRedirect:&true в merged_config.go откат (egress не
+подтверждён). Тест-вставка (RenderClientAWGConf log) ОСТАВЛЕНА — полезна для
+будущих client-conf триалов. entry: auto_redirect откат (откат sing-box config
+или передеплой). peer 10.8.0.50 удалён.
+
+**Вывод сессии:** оркестратор-деплой auto_redirect работает (§21.13) + оркестратор
+рендерит client .conf с правильными i1-i5 (§21.14). Последний шаг — per-user
+.conf (нужен User с AWG creds, не placeholder). Это ~15 мин работы: расширить
+e2e-тест создать User → RenderClientAWGConf{User} → .conf с реальным key →
+awg-quick up на exit/middle → curl ifconfig.me.
