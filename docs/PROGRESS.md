@@ -1517,3 +1517,39 @@ Research завершён с реальным upstream-evidence (WebSearch че�
 - https://github.com/SagerNet/sing-box/issues/4137 (auto_redirect vs routing_mark conflict)
 - https://github.com/shtorm-7/sing-box-extended (extended upstream, НЕ 1776178536)
 - Реализация: sagernet/sing-tun tun_linux.go (ip-rule IifName) + redirect_nftables_rules.go (nftables prerouting iifname set)
+### 21.9 Код: auto_redirect opt-in field (2026-07-09)
+
+Реализован P0a кандидат #0 как **opt-in, не default** — `AWGTUNOverlayParams.AutoRedirect *bool`
+(awg_tun_overlay.go). Default = OFF (render не эмитит поле, sing-box трактует отсутствующий как false).
+
+**Почему НЕ default-ON (важно):** trial показал, что `auto_redirect:true` ломает
+`sing-box check` на хостах без Linux nftables/netlink — реальный бинарный
+`sing-box check` FATALит: `initialize inbound[0]: initialize auto-redirect: invalid
+argument` (подтверждено `TestRenderAWGTakeoverConfig_SingBoxCheck`). Т.к. deploy
+(applier_push.go) запускает `sing-box check` ПЕРЕД restart, default-ON сломал бы
+весь AWG-deploy на хостах где auto_redirect не инициализируется (SagerNet#3789
+netlink-FATAL класс). Поэтому:
+
+- **Default OFF** — конфиг проходит `sing-box check` везде (verified: takeover
+  test green, full suite green).
+- **Opt-in через `AWGTUNOverlayParams.AutoRedirect = &true`** — оператор включает
+  на конкретной ноде ПОСЛЕ живого VPS-триала, подтвердившего что auto_redirect
+  инициализируется чисто на этом ядре. Это лазейка для P0a-fix trial без риска
+  сломать всем.
+
+**TODO (live-VPS):** wiring opt-in через UI/настройки ноды (сейчас field есть, но
+никуда не привязан из handlers — `BuildAWGTUNOverlay` callers не выставляют
+`AutoRedirect`). Шаги для следующей живой сессии:
+1. На entry-ноде: выставить `AutoRedirect = &true` в merged_config.go вызове
+   `BuildAWGTUNOverlay` (временно хардкод для триала) → deploy → `sing-box check`
+   пройдёт? → egress работает? Если да → wiring в UI как per-node toggle.
+2. Если `sing-box check` FATALит → нода попадает в #3789-класс → auto_redirect на
+   этом ядре нельзя → #2 single-element (если multi) или #5 sing-box-as-AWG.
+
+Тесты: `TestBuildAWGTUNOverlay_AutoRedirectDefaultOff` (absent) +
+`TestBuildAWGTUNOverlay_AutoRedirectOptIn` (true) — 2 новых, зелёные.
+`roles.go RenderAWGBalancer` — auto_redirect OFF (коммент про opt-in). Takeover
+зовёт `BuildAWGTUNOverlay` → наследует default OFF.
+
+Весь non-e2e набор зелёный (10 пакетов). Auto_redirect остаётся P0a-кандидатом,
+но теперь есть БЕЗОПАСНЫЙ opt-in path без риска сломать deploy всем.

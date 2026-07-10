@@ -236,6 +236,11 @@ func RenderAWGBalancer(p AWGBalancerParams) ([]byte, error) {
 		MTU:              1200,
 		Stack:            "mixed", // kernel TCP + gVisor UDP so QUIC through-traffic works
 		AutoRoute:        true,
+		// AutoRedirect intentionally OFF by default (upstream "recommended on
+		// Linux", a P0a forwarded-ingress candidate §21.5 #0, but it makes
+		// sing-box check FATAL "auto-redirect: invalid argument" on hosts without
+		// nftables/netlink + SagerNet#3789 netlink-FATAL on minimal kernels). Opt
+		// in per-deploy once the target VPS is confirmed clean.
 		IncludeInterface: includeIfaces,
 		StrictRoute:      false,
 	}

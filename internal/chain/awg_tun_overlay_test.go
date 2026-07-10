@@ -275,6 +275,44 @@ func TestBuildAWGTUNOverlay_DefaultsApply(t *testing.T) {
 	}
 }
 
+// TestBuildAWGTUNOverlay_AutoRedirectDefaultOff verifies auto_redirect is OFF by
+// default (it's a P0a candidate §21.5 #0 but breaks sing-box check on hosts
+// without nftables, so opt-in only). OFF with omitempty means the field is
+// ABSENT from the JSON (sing-box treats absent as false).
+func TestBuildAWGTUNOverlay_AutoRedirectDefaultOff(t *testing.T) {
+	inb, _, _ := BuildAWGTUNOverlay(AWGTUNOverlayParams{})
+	tun := findInboundByType(inb, "tun")
+	if tun == nil {
+		t.Fatal("missing TUN inbound")
+	}
+	var m map[string]any
+	if err := json.Unmarshal(tun, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if v, present := m["auto_redirect"]; present && v != false {
+		t.Errorf("default auto_redirect = %#v present, want absent or false", v)
+	}
+}
+
+// TestBuildAWGTUNOverlay_AutoRedirectOptIn verifies setting AutoRedirect to true
+// renders auto_redirect:true in the TUN inbound (the operator opt-in path for
+// the P0a §21.5 #0 candidate fix on a confirmed-clean VPS).
+func TestBuildAWGTUNOverlay_AutoRedirectOptIn(t *testing.T) {
+	on := true
+	inb, _, _ := BuildAWGTUNOverlay(AWGTUNOverlayParams{AutoRedirect: &on})
+	tun := findInboundByType(inb, "tun")
+	if tun == nil {
+		t.Fatal("missing TUN inbound")
+	}
+	var m map[string]any
+	if err := json.Unmarshal(tun, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["auto_redirect"] != true {
+		t.Errorf("opt-in auto_redirect = %#v, want true", m["auto_redirect"])
+	}
+}
+
 // TestBuildAWGTUNOverlay_JSONValid ensures the rendered inbounds/outbounds are
 // valid JSON (marshal round-trip), guarding against struct-tag typos.
 func TestBuildAWGTUNOverlay_JSONValid(t *testing.T) {

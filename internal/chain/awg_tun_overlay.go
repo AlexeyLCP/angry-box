@@ -71,7 +71,25 @@ type AWGTUNOverlayParams struct {
 	// awg-exit-nX interfaces, not via a chain hop). Priority when set:
 	// ForwardOutbound > balancer > direct.
 	ForwardOutbound string
+	// AutoRedirect, when non-nil, overrides the TUN inbound auto_redirect flag
+	// (default true per upstream docs — "always recommended on Linux, better than
+	// tproxy"). Set to a pointer to false to disable — the only known reason is a
+	// host where auto_redirect FATALs at netlink setup (SagerNet#3789: "auto-
+	// redirect: conn.Receive: netlink receive: no such file or directory", OpenWrt/
+	// minimal-kernel). On a normal Debian VPS it should stay on. See §21.5 #0.
+	AutoRedirect *bool
 }
+
+// defaultAutoRedirect is the TUN auto_redirect default when params.AutoRedirect
+// is nil — OFF for now. Upstream docs mark auto_redirect "always recommended on
+// Linux", and turning it ON is a P0a forwarded-ingress candidate fix (§21.5 #0),
+// BUT it is NOT safe to flip globally yet: it makes `sing-box check` fail with
+// "auto-redirect: invalid argument" on hosts without Linux nftables/netlink
+// (verified: the takeover SingBoxCheck test FATALs), and SagerNet#3789 shows it
+// can FATAL at netlink setup on minimal kernels. So the default stays OFF; an
+// operator can opt-in per deploy via a pointer to true once the target VPS is
+// confirmed to initialize auto-redirect cleanly (live-VPS trial). See §21.5 #0.
+const defaultAutoRedirect = false
 
 // BuildAWGTUNOverlay renders the inbounds, outbounds, and route rules for a
 // kernel-AWG + sing-box-TUN-overlay server node. The caller merges these into
@@ -91,6 +109,15 @@ func BuildAWGTUNOverlay(p AWGTUNOverlayParams) (inbounds, outbounds []json.RawMe
 	// TUN inbound — captures traffic from the kernel AWG interfaces.
 	// stack:"mixed" = kernel TCP + gVisor UDP so QUIC through-traffic works
 	// (VPN/docs/nuances-bugs-patches.md: stack "system" breaks UDP/QUIC).
+	// auto_redirect:true (default) — upstream "always recommended on Linux":
+	// an nftables prerouting chain that improves forwarded-ingress capture vs
+	// the ip-rule-only path. We previously rendered it OFF; turning it ON is a
+	// P0a forwarded-ingress candidate fix (§21.5 #0). Disable via params only
+	// if a host FATALs at netlink (SagerNet#3789).
+	autoRedirect := defaultAutoRedirect
+	if p.AutoRedirect != nil {
+		autoRedirect = *p.AutoRedirect
+	}
 	tun := config.TUNInbound{
 		Type:             "tun",
 		Tag:              tunInboundTag,
@@ -99,6 +126,7 @@ func BuildAWGTUNOverlay(p AWGTUNOverlayParams) (inbounds, outbounds []json.RawMe
 		MTU:              tunMTU,
 		Stack:            "mixed",
 		AutoRoute:        true,
+		AutoRedirect:     autoRedirect,
 		IncludeInterface: p.IncludeInterfaces,
 		StrictRoute:      false,
 	}
