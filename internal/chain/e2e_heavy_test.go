@@ -154,13 +154,33 @@ func TestE2E_Heavy_Protocol_AWG_Kernel(t *testing.T) {
 	}
 	t.Logf("AWG material: cps=%d mimicry=%s", report.AWG.CPSLevel, report.AWG.Mimicry)
 
-	// P0a egress-trial: рендерим клиентский awg-quick .conf через оркестратор
-	// (RenderClientAWGConf берёт i1-i5 из chain preset + persisted material —
-	// совпадает с сервером). Печатаем, чтобы поднять настоящий kernel awg-quick
-	// клиент на другой VPS и проверить forwarded ingress → tun (auto_redirect).
-	clientConf, cerr := chain.RenderClientAWGConf(chain.ClientConfigParams{Chain: c, EntryHostOverride: e2eServerIP(e2eRoleEntry)})
+	// P0a egress-trial: рендерим per-user клиентский awg-quick .conf через
+	// оркестратор (RenderClientAWGConf с model.User — реальный PrivateKey +
+	// Address + matching peer на сервере, не placeholder). Печатаем, чтобы
+	// поднять настоящий kernel awg-quick клиент на другой VPS и проверить
+	// forwarded ingress → tun (auto_redirect). Сервер уже имеет alice как [Peer]
+	// (ApplyChain добавляет peers для активных AWG-пользователей chain).
+	alice := &model.User{
+		ID: "alice", Name: "alice", Active: true,
+		Protocols:  []string{"awg"},
+		ChainNames: []string{c.Name},
+	}
+	if err := chain.EnsureUserCreds(alice); err != nil {
+		t.Fatalf("EnsureUserCreds alice: %v", err)
+	}
+	chain.EnsureUserAWGAddress(alice, nil)
+	if err := store.SaveUser(alice); err != nil {
+		t.Fatalf("SaveUser alice: %v", err)
+	}
+	t.Logf("alice: AWGAddress=%s AWGPublicKey=%s", alice.AWGAddress, alice.AWGPublicKey)
+	// Re-deploy so the entry awg0.conf picks up alice as [Peer] (ApplyChain
+	// materializes active AWG users as kernel peers — per-client source_ip_cidr).
+	if _, err := newApplier().ApplyChain(e2eContext(t, 5*time.Minute), store, c, ""); err != nil {
+		t.Fatalf("ApplyChain (with alice peer): %v", err)
+	}
+	clientConf, cerr := chain.RenderClientAWGConf(chain.ClientConfigParams{Chain: c, User: alice, EntryHostOverride: e2eServerIP(e2eRoleEntry)})
 	if cerr != nil {
-		t.Fatalf("RenderClientAWGConf: %v", cerr)
+		t.Fatalf("RenderClientAWGConf: %v", err)
 	}
 	t.Logf("AWG_CLIENT_CONF_BEGIN\n%s\nAWG_CLIENT_CONF_END", clientConf)
 

@@ -1904,3 +1904,51 @@ RenderClientAWGConf log в AWG_Kernel тесте оставлена.
 **Вывод сессии:** найден готовый оркестратор-egress-trial тест. Блокер — exit-нода
 недоступна (инфраструктура). auto_redirect валиден в деплое (§21.13). Цикл почти
 закрыт: осталась живая exit-нода + запуск теста с auto_redirect → ответ про egress.
+
+### 21.16 awg-quick setconf ломается на I1 (CPS-формат несовместимость) (2026-07-10)
+
+**Обновил amneziawg на n1 (144.31.224.212):**
+- Добавил amnezia PPA (ключ 75C9DD72C799870E310542E24166F2C257290828) →
+  `apt install amneziawg-tools` → `awg --version v1.0.20260618-2` (актуальная, как entry).
+- НО PPA даёт обновлённые tools, но kernel-модуль base 20210914 (без CPS UAPI).
+- DKMS-собрал модуль из bundled `deps/amneziawg-src.tar.gz` (`amneziawg-linux-kernel-
+  module-master/src/`) → `/usr/src/amneziawg-1.0.0` → dkms build/install →
+  `modinfo amneziawg version: 1.0.20260611` (новый source, с CPS).
+- `awg set testawg i1 "<b 0x...>"` — РАБОТАЕТ (kernel принимает CPS через UAPI set).
+- n2 (144.31.157.106) — то же (та же версия/модуль).
+
+**Egress-trial блокирован: awg-quick setconf ломается на I1:**
+- Минимальный conf (только JC, без I/H) → `awg-quick up` ОК (setconf прошёл).
+- H1-H4 (без I1-I5) → `awg-quick up` ОК.
+- **I1 (CPS-пакет `<b 0x...>`) → `awg-quick up` FAIL: `Unable to modify interface:
+  Invalid argument`** (awg setconf batch UAPI rejectит I1-строку).
+- НО `awg set awgalice i1 "<b 0x...>"` (single UAPI) — работает.
+- **Несоответствие**: `awg set` (single) принимает I1, `awg setconf` (batch, что
+  использует awg-quick) — rejectит. Это формат-несовместимость CPS I-пакетов в
+  setconf vs set в amneziawg-tools v1.0.20260618-2.
+
+**Гипотеза**: setconf-формат для I1-I5 отличается — возможно нужен hex без `<b `
+  префикса, или base64, или другой delimiter. awg-quick передаёт I1 как-is из .conf.
+  Нужно изучить amneziawg-tools setconf парсер (исходник) — какой формат I1 он
+  ожидает в batch setconf vs single set.
+
+**Cleanup:** merged_config.go hardcode откат. Тест-вставки RenderClientAWGConf +
+alice User в AWG_Kernel тесте оставлены (полезны). entry: alice peer на awg0
+(добавлен re-deploy) — убрать (`sudo awg set awg0 peer lq9T6rAU... remove`). n1/n2:
+amneziawg-tools v1.0.20260618-2 + module v1.0.20260611 оставлены (полезно для
+будущих awg-клиентов). awgalice/awg-min/awg-i* интерфейсы на n1 убраны.
+
+**Что нужно для финала (след. сессия):**
+1. Разобраться с awg setconf I1-форматом (исходник amneziawg-tools: какой формат
+   setconf ожидает для I1-I5). Возможно `awg-quick` нужно патчить для правильного
+   I1-формата, ИЛИ .conf должен использовать другой I1-формат для setconf.
+2. Как только awg-quick примет .conf с I1-I5 → handshake с entry → curl ifconfig.me
+   → egress IP = entry public → forwarded ingress → tun (auto_redirect) = P0a РЕШЁН.
+3. Параллельно: оркестратор-тест TestE2E_Heavy_PerClientRouting (§21.15) — когда
+   exit-нода (35.189.235.61 GCloud) поднимется, запустить с auto_redirect → ответ.
+
+**Вывод сессии:** обновил awg на n1/n2 (модуль + tools актуальные). Egress-trial
+блокирован awg-quick setconf I1-несовместимостью (новая находка). Оркестратор-
+путь (PerClientRouting test) блокирован недоступной exit-нодой. P0a почти закрыт:
+harness готов (auto_redirect + nft + per-user .conf через оркестратор), не хватает
+лишь awg-quick-совместимого I1-формата (или живой exit-ноды).
