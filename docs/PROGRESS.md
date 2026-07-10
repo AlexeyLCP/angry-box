@@ -1767,3 +1767,53 @@ Egress-trial не завершён из-за тест-инфра (sing-box awg-�
 real clients offline). Это НЕ провал — это "harness готов, нужна правильная
 тест-клиент". P0a остаётся P0-блокером, но путь теперь точный: awg-quick
 kernel-клиент + auto_redirect trial.
+
+### 21.13 Оркестратор-деплой с auto_redirect — ПРОШЁЛ (2026-07-10)
+
+**Главный прорыв:** `TestE2E_Heavy_Protocol_AWG_Kernel` (build tag e2e) — оркестратор
+через `ApplyChain` задеплоил AWG kernel-chain на entry с **auto_redirect=true**
+(hardcode в merged_config.go, §21.12). Результат:
+- `sing-box check` ПРОШЁЛ (nft теперь установлен, §21.11) — auto_redirect валиден
+  в реальном production-деплое, НЕ FATAL'ит на этом ядре.
+- awg-quick@awg0 active, kernel-модуль amneziawg загружен, awg0 10.8.0.1/24.
+- pushed config: `"auto_route": true, "auto_redirect": true`.
+- **nft table inet sing-box установлен**: prerouting `iifname != "awg0" counter
+  ... return` (single-element include — chain entry, без awg-exit-nX; корректно,
+  #3805 не применим к single).
+- e2e-тест PASS за 22.5с — оркестратор-деплой с auto_redirect стабильный.
+
+**Egress-trial НЕ завершён (тест-инфра):**
+- exit-нода (35.189.235.61) ИМЕЕТ awg-quick + kernel-модуль amneziawg — настоящий
+  kernel-клиент готов.
+- Поднял awg-quick client .conf на exit (priv aHtCxH44..., pub MUc/V5T6..., peer
+  10.8.0.50/32 добавлен на entry awg0, endpoint 34.14.98.64:51820, AllowedIPs
+  0.0.0.0/0, Table=off).
+- **НО handshake = 0** — client .conf БЕЗ i1-i5 (я добавил только jc/s1-4/h1-4),
+  а server имеет i1-i5 (pro_2026 preset, CPS=3 quic) → **amnezia mismatch →
+  handshake падает** (та же проблема, что с sing-box-клиентом §21.12).
+- tcpdump entry sing-box-tun пуст, nft awg0-counter не растёт, trace No entries
+  — потому что client не шлёт (handshake не прошёл).
+
+**Что нужно для завершения (след. шаг, ~5 мин):**
+1. В client .conf на exit добавить i1-i5 (точно скопировать из `awg show awg0` на
+   entry — строки `<b 0x...>`, см. выше).
+2. `sudo awg-quick down /tmp/awg-client.conf && sudo awg-quick up /tmp/awg-client.conf`
+   на exit → handshake должен пройти (entry `awg show awg0 latest-handshakes` —
+   pub MUc/V5T6 получит timestamp).
+3. `sudo ip route add default dev awg-client` на exit + `curl ifconfig.me` →
+   если вернёт entry public IP (34.14.98.64 или exit-of-chain) НЕ exit-local →
+   **forwarded ingress дошёл до tun через auto_redirect = P0a РЕШЁН**.
+4. tcpdump entry sing-box-tun + trace подтвердят.
+
+**Cleanup-состояние (НЕ сделано — продолжить):**
+- merged_config.go hardcode AutoRedirect:&true — ОТКАТИТЬ (egress не подтверждён,
+  нельзя оставлять ON в проде без доказательства).
+- entry: awg-quick@awg0 + sing-box с auto_redirect (от деплоя) — откатить sing-box
+  на исходный (без auto_redirect) или передеплоить после отката hardcode.
+- entry awg0 peer MUc/V5T6 (10.8.0.50) — убрать.
+- exit: awg-client interface + /tmp/awg-client.conf — убрать.
+- nftables оставлен (полезно).
+
+**Вывод сессии:** оркестратор-деплой с auto_redirect работает (главное). Egress
+не подтверждён из-за client .conf amnezia i1-i5 (нужно точное copy server→client,
+как awg-quick .conf обычно делает). Это последний шаг — ~5 мин в след. сессии.
