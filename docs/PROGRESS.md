@@ -1553,3 +1553,114 @@ netlink-FATAL класс). Поэтому:
 
 Весь non-e2e набор зелёный (10 пакетов). Auto_redirect остаётся P0a-кандидатом,
 но теперь есть БЕЗОПАСНЫЙ opt-in path без риска сломать deploy всем.
+
+### 21.10 Живая VPS-диагностика (entry 34.14.98.64, 2026-07-10)
+
+SSH к актуальной entry-ноде (e2e_helpers_test.go:41 — IP сменились относительно
+AGENTS.md #E2E; актуальные: entry=34.14.98.64, middle=207.175.1.227,
+exit=35.189.235.61, user=lcp, key=id_ed25519). Диагностика read-only + один
+временный awg-клиент (cleanup выполнен). **NFT КРИТИЧНО — НЕ установлен.**
+
+#### Что подтверждено на entry
+
+1. **sing-box-extended 1.13.14** — Revision `93e34d124b7f6d92a68ce6527afeff0273f2e706`
+   (="Merge tag 'v1.13.14' into extended" per §21.1). Tags: with_gvisor,with_wireguard,
+   with_mtproxy,with_manager. Подтверждено — это наш patched extended билд.
+2. **`nft` command not found** — nftables НЕ установлен на Debian 12 entry-ноде.
+   => `auto_redirect:true` НЕВОЗМОЖНО (FATAL'd бы `initialize auto-redirect` —
+   проверено §21.9 + SagerNet#3789). Мы на **ip-rule-only path** (без nftables
+   prerouting). Это закрывает §21.5 #0: **trial auto_redirect требует
+   `apt install nftables` как предусловие** — без него #0 не пробуется.
+3. **ip-rules ПРАВИЛЬНЫЕ** (`ip rule show`):
+   ```
+   9000: from all iif awg0 goto 9002
+   9000: from all iif awg-exit-n1 goto 9002
+   9001: from all goto 9010
+   9002: from all nop
+   9003: from all to 172.16.250.0/30 lookup 2022
+   9004: from all lookup 2022 suppress_prefixlength 0
+   9005: not from all dport 53 lookup main suppress_prefixlength 0
+   9005: from all iif sing-box-tun goto 9010
+   9006: not from all iif lo lookup 2022 / from 0.0.0.0 iif lo / from 172.16.250.0/30 iif lo
+   ```
+   `table 2022`: `default via 172.16.250.2 dev sing-box-tun`.
+   `ip route get 1.1.1.1 from 10.8.0.5 iif awg0` → `via 172.16.250.2 dev sing-box-tun
+   table 2022 cache iif awg0` — **routing для forwarded ingress корректен**.
+4. **sing-box-tun РАБОТАЕТ** (не сломан глобально): журнал показывает успешный DNS
+   exchange — `inbound/tun[tun-in]: inbound packet connection from 172.16.250.1
+   to 172.16.250.2:53` → `router match[0] => sniff` → `hijack-dns` → `outbound/direct
+   to 8.8.8.8:53`. Tun принимает трафик, который до него доходит.
+5. **FORWARD chain `awg0→sing-box-tun ACCEPT = 0 packets`** (iptables -L FORWARD):
+   правило есть (наш deploy ставит), но **0 пакетов через него прошло**. Пакеты
+   доходят до awg0 (awg0 RX 167 pkts, 0 dropped) но НЕ попадают в FORWARD →
+   дропаются на routing-стадии ДО FORWARD, ИЛИ не идут через ip-rule 9000.
+6. **rp_filter: effective на awg0 = max(all=1, awg0=0) = 1** (Linux max-rule —
+   `all.rp_filter` переопределяет `awg0.rp_filter=0`). Я выставил `all=0` (временный
+   тест) — **forwarded ingress ВСЁ РАВНО не дошёл до tun** (см. тест ниже).
+7. **Интерфейсы UP**: awg0 (10.8.0.1/24), awg-exit-n1 (10.10.0.2/32),
+   sing-box-tun (172.16.250.1/30). sing-box-tun = `<POINTOPOINT,MULTICAST,NOARP,
+   UP,LOWER_UP>` tun type. include_interface=["awg0","awg-exit-n1"] (multi —
+   потенциальный #3805, но nft нет → #3805 не применим сейчас).
+8. **config**: auto_route:true, strict_route:false, include_interface:["awg0",
+   "awg-exit-n1"], stack:"mixed", auto_redirect ОТСУТСТВУЕТ (наш рендер OFF).
+   log level: trace.
+
+#### Живой тест (loopback awg-клиент)
+
+Создал временный awg-клиент `awgtest` (10.8.0.99) НА САМОЙ entry, подключённый к
+awg0 через 127.0.0.1:51820 (loopback), добавил peer на awg0. Пинг 1.1.1.1 с awgtest:
+- awg0 tcpdump: `10.8.0.99 > 1.1.1.1: ICMP echo request` — **forwarded ingress
+  ПРИХОДИТ на awg0** (дешифровка работает).
+- sing-box-tun tcpdump: **ПУСТО**.
+- sing-box trace: **No entries**.
+- ping: 0 received (100% loss).
+
+**ВАЖНО — loopback-тест артефакт:** src 10.8.0.99 — это **локальный** IP (awgtest
+на entry), kernel видит его как свой → local-delivery, НЕ forwarded через
+ip-rule 9000 `iif awg0`. Поэтому `ip route get 1.1.1.1 from 10.8.0.99 iif awg0`
+→ "Invalid argument" (src локальный). Этот тест подтверждает что pcap-цепочка
+работает, но НЕ доказывает forwarded-fail (нужен УДАЛЁННЫЙ src).
+
+Попытка middle-теста (настоящий удалённый src) — на middle запущен СИСТЕМНЫЙ
+sing-box (systemctl, PID постоянно меняется — supervisor перезапускает) → мой
+awg-клиент конфликтует. Остановлено без окончательного middle-теста.
+
+#### Итог диагноза (§21.10)
+
+- **auto_redirect НЕ включён И НЕ может быть (nft не установлен)** — это
+  РЕАЛЬНОЕ предусловие, упущенное в §21.5. На Debian 12 entry нужно
+  `apt install nftables` перед trial auto_redirect. После установки auto_redirect
+  может решить (nftables prerouting path сильнее ip-rule + bypass #3805
+  для multi-element через nft set).
+- **ip-rule path routing работает** (`ip route get` → tun) — но forwarded
+  ingress не попадает в FORWARD (0 pkts) / tun (trace пуст). rp_filter=0 НЕ
+  решил (loopback артефакт не доказателен, но middle-тест не завершён).
+- **root cause сужен до**: пакет приходит на awg0, routing-table говорит "в tun",
+  но kernel не доставляет его в tun/FORWARD. Кандидаты: (a) ip-rule 9000 `iif awg0
+  goto 9002` НЕ матчит реальный forwarded packet (возможно iif не awg0 из-за
+  awgtest-loopback — НО реальный remote-src не проверен); (b) nftables-less
+  ip-rule path имеет известный gap для forwarded ingress (требует auto_redirect
+  per docs "always recommended"); (c) что-то режет на INPUT/пре-routing.
+
+#### Следующий шаг (живая VPS, ~30 мин)
+
+1. `sudo apt install nftables -y` на entry.
+2. Включить auto_redirect (временно хардкод в merged_config.go →
+   BuildAWGTUNOverlay{AutoRedirect:&true}) → deploy entry → `sing-box check`
+   пройдёт? (nft теперь есть) → egress работает (curl --interface middle-awg
+   ifconfig.me → entry/exit IP)? Если да → **P0a РЕШЁН**: nft+auto_redirect
+   предусловие + opt-in field уже готовы (§21.9). Wiring в UI per-node toggle.
+3. Если не решено → `nft list chain inet sing-box prerouting` покажет include-set
+   (SagerNet#3805 для multi ["awg0","awg-exit-n1"] → single-element triал).
+
+#### Cleanup выполнен
+
+awgtest-интерфейс удалён, test-peer (10.8.0.99) удалён с awg0, rp_filter all
+восстановлен =1 (исходный), sing-box активен. Middle sing-box (системный) НЕ
+тронут (не мой — оставил как было). Временные /tmp файлы на entry — мелочь
+(прав нет удалить .conf, безвредно).
+
+**P0a root cause:** nftables НЕ установлен → auto_redirect невозможен →
+ip-rule-only path не доставляет forwarded ingress в tun. Фикс-кандидат: `apt
+install nftables` + auto_redirect opt-in (поле готово §21.9). Требует
+deploy-trial на live VPS для подтверждения.

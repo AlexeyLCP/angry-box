@@ -73,10 +73,14 @@ type AWGTUNOverlayParams struct {
 	ForwardOutbound string
 	// AutoRedirect, when non-nil, overrides the TUN inbound auto_redirect flag
 	// (default true per upstream docs — "always recommended on Linux, better than
-	// tproxy"). Set to a pointer to false to disable — the only known reason is a
-	// host where auto_redirect FATALs at netlink setup (SagerNet#3789: "auto-
-	// redirect: conn.Receive: netlink receive: no such file or directory", OpenWrt/
-	// minimal-kernel). On a normal Debian VPS it should stay on. See §21.5 #0.
+	// tproxy"). Set to a pointer to false to disable — reasons: (a) a host where
+	// auto_redirect FATALs at netlink setup (SagerNet#3789: "auto-redirect:
+	// conn.Receive: netlink receive: no such file or directory"); (b) **nftables
+	// not installed** — auto_redirect REQUIRES `nft` (live-verified entry VPS
+	// 34.14.98.64 Debian 12: `nft: command not found` → auto_redirect FATALs
+	// `initialize auto-redirect: invalid argument`, §21.10). Precondition: `apt
+	// install nftables`. On a normal Debian VPS with nft it should stay on. See
+	// §21.5 #0 + §21.10.
 	AutoRedirect *bool
 }
 
