@@ -1855,3 +1855,52 @@ AWGAddress) даёт placeholder — **handshake не пройдёт** (CLIENT_P
 .conf (нужен User с AWG creds, не placeholder). Это ~15 мин работы: расширить
 e2e-тест создать User → RenderClientAWGConf{User} → .conf с реальным key →
 awg-quick up на exit/middle → curl ifconfig.me.
+
+### 21.15 Найден готовый egress-trial тест + блокер exit-ноды (2026-07-10)
+
+**Прорыв:** `TestE2E_Heavy_PerClientRouting` (e2e_heavy_test.go:597) — УЖЕ делает
+ровно P0a egress-trial через оркестратор:
+1. Создаёт alice User + EnsureUserCreds + EnsureUserAWGAddress (per-user AWG
+   creds — решает placeholder-проблему §21.14).
+2. Деплоит chain (entry balancer + exit, kernel-AWG architecture) через ApplyChain.
+3. Рендерит per-user awg-quick .conf через RenderClientAWGConf{Chain, User} —
+   с реальным PrivateKey + Address + matching peer на сервере.
+4. Поднимает awg-quick клиент НА entry-ноде (подключение к себе через внешний IP,
+   Table=off для SSH safety, metric-200 route), tcpdump на awg0/sing-box-tun/
+   awg-exit-n1/ens4, sing-box trace, curl --interface awge2e ifconfig.me.
+5. Проверяет EGRESS IP = exit VPS IP (строка 863) — или WARNING+tcpdump-диагностика
+   если пусто (строка 858-861, НЕ провал — handshake=PASS достаточно для теста).
+
+AGENTS.md #13 «TestE2E_Heavy_PerClientRouting PASS» = handshake прошёл (строка 834
+`latest handshake` обязательна), но egress МОЖЕТ быть пустым (§15.2) — тест
+логирует WARNING + return, не FAIL. Значит **P0a egress-баг воспроизводится в
+этом тесте** — и я пытался его починить auto_redirect'ом.
+
+**Запуск с auto_redirect (hardcode merged_config.go):**
+- Deploit entry прошёл (sing-box с auto_redirect стартовал: лог `inbound/tun
+  [tun-in]: started`, `sing-box started`).
+- **НО тест упал: `ssh connect role=2 (35.189.235.61:22): dial tcp ... failed to
+  respond`** — exit-нода недоступна (TCP timeout ×3, ping не проходит).
+- TestE2E_Heavy_PerClientRouting требует exit-ноду (role=2) для balancer
+  architecture (entry balancer + exit server с MASQUERADE). Без exit тест не может.
+
+**Блокер = инфраструктура, не код:** exit-нода 35.189.235.61 (GCloud) выключена
+или firewall сменился. Нужна живая exit-нода (перезапустить инстанс в GCloud, или
+использовать другую VPS). entry (34.14.98.64) + middle (207.175.1.227) доступны.
+
+**Cleanup:** merged_config.go hardcode откат. entry: sing-box рестартован
+тестом (auto_redirect был в конфиге во время деплоя — нужно передеплоить без
+hardcode или вручную откатить config; нода активна). Тест-вставка
+RenderClientAWGConf log в AWG_Kernel тесте оставлена.
+
+**Что нужно для финала (когда exit-нода поднимется):**
+1. Включить auto_redirect hardcode (или per-node field, когда wiring будет).
+2. `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/
+   -run TestE2E_Heavy_PerClientRouting -v -timeout 9m`.
+3. Если EGRESS IP = exit IP → P0a РЕШЁН auto_redirect'ом → wiring + cleanup.
+4. Если WARNING (пусто) → tcpdump/trace покажут, дошёл ли forwarded ingress в
+   tun (auto_redirect vs иной root cause).
+
+**Вывод сессии:** найден готовый оркестратор-egress-trial тест. Блокер — exit-нода
+недоступна (инфраструктура). auto_redirect валиден в деплое (§21.13). Цикл почти
+закрыт: осталась живая exit-нода + запуск теста с auto_redirect → ответ про egress.
