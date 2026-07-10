@@ -1,0 +1,23 @@
+{
+  "log": {"level": "info"},
+  "endpoints": [{
+    "type": "wireguard", "tag": "wg-ep",
+    "address": ["10.8.0.99/32"],
+    "private_key": "CAY2h47TPlNMd2wXEsjYqS2pEOt1gwgyvORHBrD0S1s=",
+    "peers": [{
+      "address": "34.14.98.64", "port": 51820,
+      "public_key": "s3i5n1qis7dEaPRngpGa98AoxNznXKjSNOTfSayOKUE=",
+      "allowed_ips": ["0.0.0.0/0"]
+    }],
+    "mtu": 1420,
+    "amnezia": {"jc":120,"jmin":50,"jmax":1000,"s1":115,"s2":45,"s3":22,"s4":12,
+      "h1":"134847552-365735983","h2":"706191602-1031185815","h3":"1145791155-1531244421","h4":"1612626821-2063191740"}
+  }],
+  "inbounds": [{
+    "type": "tun", "tag": "tin", "interface_name": "sb-tun",
+    "address": ["172.16.251.1/30"], "mtu": 1200, "stack": "mixed",
+    "auto_route": true, "strict_route": false
+  }],
+  "outbounds": [{"type": "direct", "tag": "direct"}],
+  "route": {"rules": [{"inbound": ["tin"], "outbound": "wg-ep"}], "final": "direct"}
+}

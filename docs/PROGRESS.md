@@ -1664,3 +1664,58 @@ awgtest-интерфейс удалён, test-peer (10.8.0.99) удалён с a
 ip-rule-only path не доставляет forwarded ingress в tun. Фикс-кандидат: `apt
 install nftables` + auto_redirect opt-in (поле готово §21.9). Требует
 deploy-trial на live VPS для подтверждения.
+### 21.11 P0a fix-trial в процессе (entry auto_redirect ON, live test) (2026-07-10)
+
+**Состояние trial (прервано по времени, продолжить):**
+
+1. **nftables установлен** на entry (34.14.98.64) + middle (207.175.1.227):
+   `apt-get install -y nftables` → nft v1.0.6. Kernel-модуль nf_tables УЖЕ был
+   загружен (lsmod: nf_tables 303304) — пакет ставит только userspace `nft`.
+2. **auto_redirect включён на entry** (sed в /etc/sing-box/config.json, backup
+   в config.json.pre-autoredirect). `sing-box check` ПРОШЁЛ (nft теперь есть).
+   sing-box restart → active. **nft table inet sing-box установлен**, prerouting:
+   `iifname != { "awg0", "awg-exit-n1" } counter ... return` —
+   **#3805 НЕ срабатывает** (set рендерится правильно, НЕ пустой на nft 1.0.6).
+3. **merged_config.go** — временный хардкод `AutoRedirect: &[]bool{true}[0]` в
+   вызове BuildAWGTUNOverlay (Шаг 2). go build + tests зелёные. НЕ закоммичено
+   (trial) — откатить хардкод если egress не подтвердится.
+4. **middle awg-клиент** (sing-box wireguard endpoint, 10.8.0.99, tun sb-tun
+   route→wg-ep): tun стартует (`inbound/tun[tin]: started at sb-tun`), ip route
+   1.1.1.1 → via sb-tun (routing OK). **НО handshake с entry НЕ устанавливается**
+   → TCP egress таймаутит ("Resolving timed out"). Причина: middle-конфиг БЕЗ
+   i1-i5 (я их убрал), а server HAS i1-i5 (entry `awg show awg0` → i1-i5 строки
+   `<b 0x...>`) → **amnezia mismatch → handshake падает**. Это ТЕСТ-АРТЕФАКТ
+   middle-конфига, не вывод про P0a.
+
+**Entry-side диагноз пока (middle traffic не доходит до awg0):**
+- nft prerouting counter: `iifname != {awg0,awg-exit-n1}` = 254 packets (это
+  ens4 traffic, правильно bypass); awg0 = 0 (middle handshake нет → нет
+  forwarded ingress). sing-box-tun tcpdump = 0, trace No entries — потому что
+  middle не шлёт (handshake упал).
+
+**Продолжение (след. сессия):**
+1. middle-конфиг: добавить i1-i5 (точно скопировать из `awg show awg0` на entry —
+   строки `<b 0x...>`) в `amnezia` block (файл docs/awgclient.json — рабочий
+   шаблон, добавить i1-i5). scp на middle, restart sing-box.
+2. Проверить handshake (entry `awg show awg0 latest-handshakes` — 10.8.0.99
+   должен получить timestamp).
+3. curl --interface sb-tun ifconfig.me → если вернёт entry/exit IP (НЕ middle
+   207.175.1.227) → **P0a РЕШЁН auto_redirect'ом**: forwarded ingress дошёл до
+   entry tun через nft prerouting. tcpdump entry sing-box-tun + trace подтвердят.
+4. Если НЕ работает → `nft list chain inet sing-box prerouting` (counter на awg0
+   rule) + `ip rule show` + tcpdump entry awg0 (дошёл ли forwarded ingress до awg0).
+
+**Cleanup-состояние (НЕ сделано — продолжить):**
+- entry: auto_redirect в config.json (trial) — ОТКАТИТЬ если egress не
+  подтвердится (`sudo cp config.json.pre-autoredirect config.json + restart`),
+  иначе — wiring в код (merged_config.go hardcode → per-node field).
+- merged_config.go hardcode — откатить если egress не работает.
+- middle: sing-box awg-клиент (PID 61630, /tmp/awgclient.json, sb-tun iface) —
+  kill + ip link del sb-tun после теста. nftables установлен (можно оставить —
+  полезно).
+- entry peer 10.8.0.99 — ЕЩЁ на awg0 (не удалял в этом trial) — убрать после.
+
+**Предварительный вывод:** nft-предусловие подтверждено (auto_redirect теперь
+валидный), #3805 на nft 1.0.6 не срабатывает (set правильный). Главный вопрос
+остаётся: пропустит ли nft prerouting + auto_redirect forwarded ingress с awg0
+в tun. Ответ требует middle-handshake (amnezia i1-i5 match) — next step выше.
