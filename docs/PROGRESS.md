@@ -1952,3 +1952,56 @@ amneziawg-tools v1.0.20260618-2 + module v1.0.20260611 оставлены (по�
 путь (PerClientRouting test) блокирован недоступной exit-нодой. P0a почти закрыт:
 harness готов (auto_redirect + nft + per-user .conf через оркестратор), не хватает
 лишь awg-quick-совместимого I1-формата (или живой exit-ноды).
+
+### 21.17 awg-quick setconf I1-формат: n1 vs entry (2026-07-11)
+
+**Решение setconf-проблемы найдено, но упёрлось в amnezia-mismatch:**
+- n1 (kernel 6.12) `awg setconf` rejectит `I1 = <b 0xHEX>` (`Invalid argument`),
+  НО принимает `I1 = 0xHEX` (без `<b ` префикса и `>`) — exit=0, полный 2407-байт I1.
+- entry (kernel 6.1) `awg setconf` принимает **оба** формата (`<b 0x...>` и `0xhex`).
+- Module srcversion **одинаковый** (`228EEA4FFBDDD0F66070E02`) — не module-различие,
+  а tools/парсер различие (хотя tools version одна — загадка, возможно kernel-
+  version-dependent UAPI handling).
+
+**Egress-trial с I1=0xhex (без <b>):**
+- awg-quick up ПРОШЁЛ (интерфейс awgalice-fixed создан, peer добавлен, setconf OK).
+- alice peer (pub lq9T6rAU) добавлен на entry awg0 (allowed 10.8.0.2/32).
+- **НО handshake = 0** (client timestamp 0, entry transfer пуст, tun пуст, trace
+  пуст, ping loss 100%, curl пустой).
+
+**Гипотеза**: `I1 = 0xHEX` (без `<b>`) n1 module принял, но интерпретирует **не как
+CPS-пакет** (возможно как raw hex, другая семантика) → client шлёт handshake БЕЗ
+правильной CPS-обфускации → server (с `<b 0x...>` = CPS-packet) rejectит → amnezia
+mismatch. Т.е. формат `0xhex` для setconf ≠ `<b 0xhex>` семантически, даже если
+setconf принимает.
+
+**Тупик для awg-quick на n1**: n1 setconf не принимает `<b 0x...>` (нужный CPS-
+формат), а `0xhex` (принимает) ≠ CPS → handshake mismatch. Нужен n1, чей setconf
+принимает `<b 0x...>` (как entry) — но различие при одинаковых module+tools-version
+неясно (возможно kernel-version UAPI difference, 6.1 vs 6.12).
+
+**Cleanup:** n1 awgalice-fixed убран, entry alice peer удалён. n1/n2 amneziawg-
+  tools v1.0.20260618-2 + module v1.0.20260611 оставлены (полезно).
+
+**Оставшиеся пути для egress-trial:**
+1. **Изучить amnezia-tools setconf парсер** (исходник): почему n1 kernel 6.12
+   rejectит `<b 0x...>` а 6.1 принимает, и какой формат семантически = CPS. Это
+   требует копания в исходники amneziawg-tools/kernel-module — глубокая работа.
+2. **Использовать exit-ноду** (35.189.235.61, kernel 6.1 как entry — там `<b 0x...>`
+   работает) — НО продовая GCloud, трогать нельзя (по условию). Если будет другая
+   kernel-6.1 VPS — egress-trial через PerClientRouting-подобный flow.
+3. **Оркестратор-тест PerClientRouting** (§21.15) — нужен exit-нода (недоступна).
+
+**Итог P0a-цикла (§21.1–§21.17):** root cause = nft не был установлен (§21.10) →
+auto_redirect невозможен. После apt install nftables (§21.11) auto_redirect
+валиден в оркестратор-деплое (§21.13). Egress-trial блокирован тест-инфра:
+- sing-box awg-клиент sendmmsg+CPS (§21.12)
+- awg-quick на kernel 6.12 rejectит `<b 0x...>` CPS-формат setconf (§21.17)
+- продовые GCloud exit-ноды трогать нельзя (по условию)
+- нужна kernel-6.1 VPS (как entry) для awg-quick клиента, ИЛИ разбор amnezia-tools
+  setconf формата для kernel 6.12.
+
+P0a harness полностью готов (auto_redirect opt-in §21.9 + nft-предусловие +
+per-user .conf через оркестратор §21.14). Egress-ответ требует либо kernel-6.1
+тест-клиента, либо разбора amnezia-tools CPS-формата. Это узкий инфраструктурный/
+форматный вопрос, не код.
