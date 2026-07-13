@@ -19,7 +19,7 @@ Management is done exclusively over SSH. Target nodes run **only** sing-box-exte
 
 **Angry-BOX** is a fully original, self-written orchestrator (control plane) for building and managing complex anti-DPI proxy infrastructure.
 
-It drives **sing-box-extended** cores over SSH with zero agents on the nodes. The entire logic — chain composition, merged configs, rollback, UI, and deployment — was written from scratch.
+It drives **sing-box-extended** cores over SSH with zero agents on the nodes. The entire logic — chain composition, merged configs, per-user material, node health tracking, rollback, UI, and deployment — was written from scratch.
 
 ## Features
 
@@ -31,7 +31,10 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 - **Multi-Hop Chains:** construct 2-node or 3-node proxy chains; AmneziaWG works both as a client entry point (kernel awg-quick + sing-box bind_interface) and as an inter-node hop (userspace wireguard endpoint with amnezia — the patched binary fixes the upstream `chacha20poly1305` panic that previously crashed kernel-mode AWG).
 - **Failover & Load Balancing:** `urltest`, `failover`, `selector`, and a patched per-connection round-robin `fallback`.
 - **Reliable deploy with rollback:** every apply does backup (cp, preserved) → cert → upload → `sing-box check` (stderr surfaced) → restart → real health-probe → rollback on failure; per-node lock prevents concurrent-deploy races.
-- **Backups + quick node relocation:** export the whole panel (or one node's portable identity) as a JSON backup and restore/migrate it; when a node's IP gets blocked, **Relocate** moves it to a fresh VPS — keeping the node's transit keys so other nodes and existing clients are NOT reconfigured — and re-deploys every chain containing it so the new IP propagates to dependent hops automatically (UI button + `angry-box relocate` CLI).
+- **Backups + quick node relocation:** export the whole panel (or one node's portable identity) as a JSON backup and restore/migrate it; when a node's IP gets blocked, **Relocate** moves it to a fresh VPS — keeping the node's transit keys so other nodes and existing clients are NOT reconfigured — and re-deploys every chain containing it so the new IP propagates to dependent hops automatically (UI button + `angry-box relocate` CLI). **Clone** a node to spin up a replica with a fresh identity (regenerated keys/ports + a freshly-allocated AWG /24 subnet, copying its ForUsers + ExitTargets).
+- **Encrypted offsite backups:** push an encrypted, passphrase-protected copy of the whole panel to a remote host over SSH on a schedule and on-demand (scrypt KDF + AES-256-GCM; tunable scrypt N; retention by N blobs with server-side `ls`/`rm` rotation). The master key never leaves your control machine — the offsite passphrase is separate.
+- **Node health state machine:** each node is probed and tracked through `healthy → suspect → down → unreachable` with hysteresis (down after N consecutive fails, recover after M consecutive OKs), plus an operator-marked **blocked** state (sticky until cleared). State transitions are audited and surfaced in the UI (status badge on every node + per-state counts on the dashboard).
+- **Users wizard + Service model:** add a user through a guided wizard (select chains → pick protocols → assign AWG per-user address), inspect the synthesized **Service** (the merged view of a user across all chains), and get a ready-to-share **subscription URL** that hands the client the right config per chain.
 - **Modern Web UI:** Spider-web topology editor (graph edges, persistent node positions, native SVG pan/zoom), deploy-status (pending-changes badge), audit log, profiles/services, unified clients, route rules — built with HTMX + TailwindCSS + DaisyUI + templ.
 - **Background auto-apply:** per-user/inbound mutations trigger a background SSH deploy (hybrid mode); per-host lock serializes.
 - **100% Independent:** Angry-BOX ships its own **patched sing-box-extended** binary (deps/), so weak VPSes never compile Go — they just download.
@@ -42,10 +45,18 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 <div align="center">
   <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
   <br>
-  <em>The Angry-BOX Web UI Dashboard (v0.1.0)</em>
+  <em>The Angry-BOX Web UI Dashboard</em>
+  <br><br>
+  <img src="docs/assets/spider.png" alt="Spider-web topology editor" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>Spider-web topology editor — multi-hop chain graph</em>
+  <br><br>
+  <img src="docs/assets/users.png" alt="Users" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>Users — per-user protocols, chain access, lifecycle status</em>
 </div>
 
-> Screenshots reflect the v0.1.0 rewrite (role-based config generation, takeover, spider-web graph editor, deploy-status, audit).
+> Screenshots reflect the current build (node health state machine, users wizard, clone/relocate, encrypted offsite backups, spider-web graph editor, deploy-status, takeover, audit).
 
 ## Architecture
 
