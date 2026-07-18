@@ -320,13 +320,47 @@ func installPatchedBinary(ctx context.Context, client ports.SSHClient, useSudo b
 	if envURL := os.Getenv("ANGRY_BINARY_URL"); envURL != "" {
 		url = envURL
 	}
+	// Mirror fallback (P2c — GitHub release assets are a SPOF and can be
+	// unreachable from RU VPS networks): comma-separated extra URLs in
+	// ANGRY_BINARY_MIRRORS are tried in order after the primary. Every
+	// candidate is verified against the pinned checksum, so a broken or
+	// compromised mirror cannot install a bad binary.
+	urls := []string{url}
+	if mirrors := os.Getenv("ANGRY_BINARY_MIRRORS"); mirrors != "" {
+		for _, m := range strings.Split(mirrors, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				urls = append(urls, m)
+			}
+		}
+	}
+	// Validate every URL before it reaches a root shell — the value is
+	// interpolated into a single-quoted bash loop below; a single quote in an
+	// operator-supplied URL would break out and run arbitrary commands as
+	// root (same class as CodeRabbit M1 on the AWG tarball URL).
+	for _, u := range urls {
+		if err := validateTarballURL(u); err != nil {
+			return fmt.Errorf("sing-box binary URL: %w", err)
+		}
+	}
+
+	var quoted strings.Builder
+	for i, u := range urls {
+		if i > 0 {
+			quoted.WriteByte(' ')
+		}
+		fmt.Fprintf(&quoted, "'%s'", u)
+	}
 
 	script := fmt.Sprintf(`set -e
 mkdir -p /tmp/sing-box-install
 cd /tmp/sing-box-install
-curl -fsSL '%s' -o sing-box.tar.gz
-echo '%s  sing-box.tar.gz' | sha256sum -c -
-`, url, expectedChecksum)
+ok=0
+for u in %s; do
+  if curl -fsSL --connect-timeout 15 "$u" -o sing-box.tar.gz && echo '%s  sing-box.tar.gz' | sha256sum -c -; then ok=1; break; fi
+  echo "mirror failed: $u" >&2
+done
+if [ "$ok" != 1 ]; then echo 'ERROR: all sing-box download mirrors failed' >&2; exit 1; fi
+`, quoted.String(), expectedChecksum)
 
 	script += fmt.Sprintf(`tar -xzf sing-box.tar.gz
 SINGBOX_BIN=$(find /tmp/sing-box-install -maxdepth 2 -name sing-box -type f 2>/dev/null | head -1)
