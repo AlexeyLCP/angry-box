@@ -2005,3 +2005,81 @@ P0a harness полностью готов (auto_redirect opt-in §21.9 + nft-п�
 per-user .conf через оркестратор §21.14). Egress-ответ требует либо kernel-6.1
 тест-клиента, либо разбора amnezia-tools CPS-формата. Это узкий инфраструктурный/
 форматный вопрос, не код.
+
+## 22. P0a ЗАКРЫТ — egress VERIFIED на n1→n2 + kernel-6.12 fixes (2026-07-18)
+
+Сессия разблокировала и закрыла последний P0 из roadmap v0.6.0. Использовались
+личные тестовые VPS: n1 (144.31.224.212) и n2 (144.31.157.106), оба Debian 13,
+kernel 6.12 — то есть триал шёл на САМОМ новом стеке, а не на старом 6.1.
+
+### 22.1 Инструментарий n2
+
+n2 поднят до паритета с n1: amneziawg-tools v1.0.20260618-2 (бинари скопированы
+с n1 — lucx ставит их source-build'ом, не dpkg), DKMS-модуль 1.0.20260611
+(rebuild из /usr/src/amneziawg-1.0.0, скопированного с n1; srcversion
+228EEA4FFBDDD0F66070E02 — идентичен n1 и prod entry), плюс
+`iptables`/`nftables`/`openresolv` (Debian 13 их не ставит из коробки —
+обязательные зависимости: наши PostUp MASQUERADE/FORWARD используют
+iptables-shim, sing-box auto_redirect требует nftables).
+
+### 22.2 FIX: I1-I5 в server .conf ломают деплой на kernel 6.12 (commit dc72ca3)
+
+**Доказательная база (модуль amneziawg, исходник):**
+- `receive.c` НИ РАЗУ не читает ispecs — responder никогда не использует I1-I5;
+  CPS-пакеты клиента дропаются им как unknown junk (это by design — они decoy).
+- `send.c`: I1-I5 шлёт только инициатор handshake'а перед initiation.
+- netlink set-путь (`awg set <iface> i1 ...`) принимает CPS на всех ядрах.
+- `noise.c` consume_initiation: peer `AdvancedSecurity` = auto-detect по
+  mh_validate входящего init — руками включать не нужно.
+
+**Live-воспроизведение (n2, 6.12.90):** server conf с I1-I5 в теле →
+`awg-quick up` FAIL (setconf "Invalid argument", интерфейс откатывается).
+Тот же conf без I1-I5 → OK. Клиентские I1-I5 через PostUp `awg set` →
+применяются (showconf round-trip), handshake + ping проходят.
+
+**Фикс:** `RenderServerAWGConf`/`RenderExitServerAWGConf` больше НЕ пишут
+I1-I5 (responder'у они не нужны); `RenderExitAWGConf` (инициатор exit-линка)
+получает их через PostUp `awg set <iface> i1..i5`. Client app confs без
+изменений (приложения AmneziaWG парсят inline I1-I5 нативно). Совпадает с
+прод-опытом lucx-ui (server conf = Jc/S/H only — они наступили на это же на
+тех же машинах). До фикса деплой kernel-AWG на Debian 13 (текущий stable)
+был сломан — важность: критическая переносимость.
+
+### 22.3 FINDING: Jc=120 убивает handshake на lossy-сетях
+
+Handshake n1→n2 не проходил (transfer 0/0) при полностью совпадающих
+Jc/S/H и ключах. Диагностика: пакеты долетают (tcpdump ens3), модуль дропает
+"Unknown message" (dyndbg). Причина оказалась НЕ в crypto/amnezia: Jc=120 из
+дефолтного пресета — клиент шлёт ~120 junk-пакетов плотным UDP-флудом перед
+каждым init, бюджетный хостинг дропает часть флуда, включая единственный
+важный пакет — сам init. С `awg set awgc0 jc 3` handshake проходит мгновенно.
+На GCloud (premium-сеть) Jc=120 работал всегда — поэтому баг был скрыт.
+AGENTS.md Known Issue #17. Пресет не меняли (DPI-профиль — решение PO).
+
+### 22.4 P0a EGRESS VERIFIED
+
+Триал (драйвер `cmd/awgtrial`): оркестратор задеплоил standalone AWG
+(ApplyMergedNode) на n2 — sing-box + awg-quick@awg0 + TUN-overlay, trial-юзер
+как peer. Клиентский .conf (per-user creds, CPS через PostUp) поднят на n1
+awg-quick'ом (Table=off — SSH-safety). `ip route replace <ifconfig.me>/32 dev
+awgc0` → `curl ifconfig.me` вернул **144.31.157.106 (IP n2)** — egress через
+kernel-AWG + TUN-overlay + sing-box direct outbound РАБОТАЕТ.
+
+**A/B:** передеплой БЕЗ auto_redirect → egress ТОЖЕ работает. Значит ip-rule
+include_interface path на 6.12 корректно захватывает forwarded ingress, а
+симптом §13.4 (empty egress) был артефактом same-host-client топологии
+(клиент на той же VPS, hairpin) — не продуктовым багом. auto_redirect
+оставлен opt-in harness: `AB_AWG_AUTO_REDIRECT=1` (wiring в merged_config.go
+→ AWGTUNOverlayParams.AutoRedirect; commit ad3fdeb).
+
+### 22.5 Итоги
+
+- P0a из roadmap §15 **закрыт**: egress подтверждён на реальной cross-machine
+  топологии на текущем стеке (Debian 13, kernel 6.12, sing-box-extended,
+  kernel-AWG + TUN-overlay).
+- Побочные находки по пути: AdvancedSecurity auto-detect (не блокер);
+  standalone AWG рендерит H1-H4 деградацией `1984-1984` (работает, но
+  fingerprintable — follow-up: persisted obfs material для standalone);
+  capture-диагностика под junk-флудом lossy (tcpdump теряет пакеты).
+- n2 оставлен с trial-деплоем (:51840) как harness; n1 в исходном состоянии
+  (lucx awg1 не трогали).
