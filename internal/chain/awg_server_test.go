@@ -52,11 +52,14 @@ func TestRenderServerAWGConf_PlainWireGuard(t *testing.T) {
 }
 
 // TestRenderServerAWGConf_AmneziaBeforePeer verifies the critical format
-// invariant: amnezia fields (Jc/Jmin/Jmax/S1-S4/H1-H4/I1-I5) sit INSIDE
-// [Interface] BEFORE the first [Peer]. awg-quick passes the stripped .conf to
+// invariant: amnezia fields (Jc/Jmin/Jmax/S1-S4/H1-H4) sit INSIDE [Interface]
+// BEFORE the first [Peer]. awg-quick passes the stripped .conf to
 // `awg setconf`, which rejects amnezia fields after [Peer] with
 // "Line unrecognized: Jc=...". This is the handshake-breaking bug fixed in
-// commit 6f1a108's aftermath.
+// commit 6f1a108's aftermath. I1-I5 must NOT appear at all: the server is the
+// responder (kernel receive path never reads ispecs) and awg setconf on kernel
+// 6.12 rejects I1-I5 in the conf body (live-verified Debian 13 — awg-quick up
+// rolls back the interface).
 func TestRenderServerAWGConf_AmneziaBeforePeer(t *testing.T) {
 	out := RenderServerAWGConf(AWGServerConfParams{
 		ServerPrivateKey: "SERVER_PRIV",
@@ -83,9 +86,14 @@ func TestRenderServerAWGConf_AmneziaBeforePeer(t *testing.T) {
 	if jcIdx > peerIdx {
 		t.Errorf("amnezia Jc (idx %d) must come BEFORE [Peer] (idx %d) — awg setconf rejects amnezia after [Peer]", jcIdx, peerIdx)
 	}
-	for _, line := range []string{"Jmin = 212", "Jmax = 837", "S1 = 118", "S4 = 21", "H1 = 143219817-450506440", "I1 = <b 0x01>", "I5 = <b 0x05>"} {
+	for _, line := range []string{"Jmin = 212", "Jmax = 837", "S1 = 118", "S4 = 21", "H1 = 143219817-450506440"} {
 		if !strings.Contains(out, line) {
 			t.Errorf("missing amnezia line %q", line)
+		}
+	}
+	for _, banned := range []string{"I1 =", "I2 =", "I3 =", "I4 =", "I5 ="} {
+		if strings.Contains(out, banned) {
+			t.Errorf("server conf must NOT contain %q — responder never uses CPS and setconf on kernel 6.12 rejects it", banned)
 		}
 	}
 }
@@ -349,6 +357,66 @@ func TestRenderExitServerAWGConf(t *testing.T) {
 	}
 	if !strings.Contains(out, "AllowedIPs = 10.10.0.2/32") {
 		t.Error("missing balancer AllowedIPs")
+	}
+}
+
+// TestRenderExitAWGConf_CPSViaPostUp verifies that when an exit link opts into
+// amnezia WITH CPS material, I1-I5 do NOT go into the conf body (awg setconf on
+// kernel 6.12 rejects them — the exit-client runs under awg-quick) but are
+// applied via a PostUp `awg set <iface>` UAPI line, which the kernel accepts on
+// every version (live-verified Debian 13: set + showconf round-trip). The
+// exit-client is the link's handshake initiator, so CPS decoys belong to it.
+func TestRenderExitAWGConf_CPSViaPostUp(t *testing.T) {
+	out := RenderExitAWGConf(ExitClientConfParams{
+		InterfaceName:    "awg-exit-n1",
+		ClientPrivateKey: "BAL_CLIENT_PRIV",
+		ClientAddress:    "10.10.0.2/32",
+		ExitPublicKey:    "EXIT_PUB",
+		ExitEndpoint:     "1.2.3.4:52000",
+		Amnezia: &config.AmneziaOptions{
+			JC: 4, JMIN: 212, JMAX: 837, S1: 1, S2: 2, S3: 3, S4: 4,
+			H1: "1-2", H2: "3-4", H3: "5-6", H4: "7-8",
+			I1: "<b 0x01>", I2: "<b 0x02>", I3: "<b 0x03>", I4: "<b 0x04>", I5: "<b 0x05>",
+		},
+	})
+	body := strings.SplitN(out, "PostUp = ", 2)[0]
+	for _, banned := range []string{"I1 =", "I2 =", "I3 =", "I4 =", "I5 ="} {
+		if strings.Contains(body, banned) {
+			t.Errorf("conf body must NOT contain %q (setconf on kernel 6.12 rejects it)", banned)
+		}
+	}
+	if !strings.Contains(out, `PostUp = sysctl -w net.ipv4.conf.awg-exit-n1.rp_filter=0 2>/dev/null; awg set awg-exit-n1 i1 "<b 0x01>" i2 "<b 0x02>" i3 "<b 0x03>" i4 "<b 0x04>" i5 "<b 0x05>"`) {
+		t.Errorf("PostUp must chain rp_filter + CPS via awg set UAPI:\n%s", out)
+	}
+	// The PostUp (with CPS) must still sit BEFORE [Peer].
+	postUpIdx := strings.Index(out, "PostUp = ")
+	peerIdx := strings.Index(out, "[Peer]")
+	if postUpIdx < 0 || peerIdx < 0 || postUpIdx > peerIdx {
+		t.Errorf("PostUp (idx %d) must come BEFORE [Peer] (idx %d)", postUpIdx, peerIdx)
+	}
+}
+
+// TestRenderExitServerAWGConf_NoCPS verifies the exit server (responder of the
+// exit link) never carries I1-I5: the kernel receive path never reads ispecs,
+// and setconf on kernel 6.12 rejects them in the conf body.
+func TestRenderExitServerAWGConf_NoCPS(t *testing.T) {
+	out := RenderExitServerAWGConf(ExitServerConfParams{
+		ServerPrivateKey:  "EXIT_SERVER_PRIV",
+		ListenPort:        52000,
+		BalancerPublicKey: "BAL_CLIENT_PUB",
+		Amnezia: &config.AmneziaOptions{
+			JC: 4, JMIN: 212, JMAX: 837, S1: 1, S2: 2, S3: 3, S4: 4,
+			H1: "1-2", H2: "3-4", H3: "5-6", H4: "7-8",
+			I1: "<b 0x01>", I2: "<b 0x02>", I3: "<b 0x03>", I4: "<b 0x04>", I5: "<b 0x05>",
+		},
+	})
+	if !strings.Contains(out, "Jc = 4") || !strings.Contains(out, "H1 = 1-2") {
+		t.Error("exit server must carry the shared Jc/S/H block (handshake matching)")
+	}
+	for _, banned := range []string{"I1 =", "I2 =", "I3 =", "I4 =", "I5 ="} {
+		if strings.Contains(out, banned) {
+			t.Errorf("exit server conf must NOT contain %q (responder ignores CPS; setconf 6.12 rejects)", banned)
+		}
 	}
 }
 

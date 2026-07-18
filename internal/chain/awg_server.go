@@ -45,10 +45,16 @@ type AWGServerConfParams struct {
 	// MTU for the awg0 interface. 1420 matches the client .conf; AWG transit
 	// uses 1280. Zero defaults to 1420.
 	MTU int
-	// Amnezia is the obfuscation block (JC/JMIN/JMAX/S1-S4/H1-H4/I1-I5).
+	// Amnezia is the obfuscation block (JC/JMIN/JMAX/S1-S4/H1-H4).
 	// nil disables obfuscation (plain WireGuard). Server and client MUST share
-	// identical values — build it from the same *AWGObfsMaterial via
-	// BuildAmneziaSection so CPS I1-I5 / H1-H4 match.
+	// identical Jc/S/H values — build it from the same *AWGObfsMaterial via
+	// BuildAmneziaSection. I1-I5 (CPS decoy packets) are INITIATOR-ONLY: the
+	// kernel's receive path never reads ispecs (receive.c has zero ispec
+	// usage — the responder drops CPS packets as unknown junk), and awg
+	// setconf on kernel 6.12 REJECTS I1-I5 in the conf body (live-verified on
+	// Debian 13 — awg-quick up fails and rolls back the interface). They are
+	// therefore never written to a server conf; clients get them via
+	// RenderClientAWGConf (apps) or PostUp `awg set` (awg-quick on Linux).
 	Amnezia *config.AmneziaOptions
 	// Peers are the per-user [Peer] entries (one per connected user).
 	Peers []AWGServerPeer
@@ -97,9 +103,12 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 
 	// Amnezia obfuscation — must sit in [Interface], before [Peer]. Values are
 	// shared server↔client (built from the same persisted AWGObfsMaterial) so
-	// the CPS handshake matches. Itime is dropped on purpose (see file header).
+	// the handshake matches. Itime is dropped on purpose (see file header).
+	// I1-I5 are dropped too: the server is the responder and the kernel never
+	// reads ispecs on receive, while awg setconf on kernel 6.12 rejects them
+	// (see Amnezia field doc).
 	if p.Amnezia != nil {
-		writeAmneziaConfLines(&b, p.Amnezia)
+		writeAmneziaConfLines(&b, p.Amnezia, false)
 	}
 
 	// PostUp/PostDown: when a TUN overlay interface is specified, add iptables
@@ -146,11 +155,18 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	return b.String()
 }
 
-// writeAmneziaConfLines writes the Jc/Jmin/Jmax/S1-S4/H1-H4/I1-I5 fields into
-// the [Interface] section in the exact order awg-quick/awg setconf expects.
-// Itime is intentionally omitted (runtime-breaking in both awg setconf and
-// sing-box UAPI — see AGENTS.md Known Issues and commit 6f1a108).
-func writeAmneziaConfLines(b *strings.Builder, a *config.AmneziaOptions) {
+// writeAmneziaConfLines writes the Jc/Jmin/Jmax/S1-S4/H1-H4 fields into the
+// [Interface] section in the exact order awg-quick/awg setconf expects.
+// includeCPS controls I1-I5 emission: I1-I5 are CPS decoy packets sent by the
+// handshake INITIATOR before the initiation (the kernel's receive path never
+// reads ispecs — the responder drops them as unknown junk), and awg setconf on
+// kernel 6.12 rejects I1-I5 in the conf body (live-verified Debian 13). Server
+// confs therefore pass includeCPS=false; an initiator that runs under awg-quick
+// (exit-link client) gets I1-I5 via a PostUp `awg set` UAPI line instead, which
+// the kernel accepts on all kernel versions (netlink set path stores the desc
+// strings verbatim). Itime is intentionally omitted (runtime-breaking in both
+// awg setconf and sing-box UAPI — see AGENTS.md Known Issues and commit 6f1a108).
+func writeAmneziaConfLines(b *strings.Builder, a *config.AmneziaOptions, includeCPS bool) {
 	b.WriteString(fmt.Sprintf("Jc = %d\n", a.JC))
 	b.WriteString(fmt.Sprintf("Jmin = %d\n", a.JMIN))
 	b.WriteString(fmt.Sprintf("Jmax = %d\n", a.JMAX))
@@ -164,13 +180,29 @@ func writeAmneziaConfLines(b *strings.Builder, a *config.AmneziaOptions) {
 		b.WriteString(fmt.Sprintf("H3 = %s\n", a.H3))
 		b.WriteString(fmt.Sprintf("H4 = %s\n", a.H4))
 	}
-	if a.I1 != "" {
+	if includeCPS && a.I1 != "" {
 		b.WriteString(fmt.Sprintf("I1 = %s\n", a.I1))
 		b.WriteString(fmt.Sprintf("I2 = %s\n", a.I2))
 		b.WriteString(fmt.Sprintf("I3 = %s\n", a.I3))
 		b.WriteString(fmt.Sprintf("I4 = %s\n", a.I4))
 		b.WriteString(fmt.Sprintf("I5 = %s\n", a.I5))
 	}
+}
+
+// writeCPSPostUp appends a PostUp `awg set <iface> i1..i5` UAPI command to an
+// existing PostUp line being built for an awg-quick-managed INITIATOR conf
+// (exit-link client). I1-I5 cannot go into the conf body (kernel 6.12 setconf
+// rejects them), but the netlink set path accepts them on every kernel — and
+// awg-quick executes PostUp after setconf, so the CPS decoys land before the
+// first handshake completes (persistent-keepalive rekeys pick them up regardless).
+// The iface name is hardcoded (awg-quick does no %i substitution) and values are
+// double-quoted because CPS tags contain spaces ("<b 0x...>").
+func writeCPSPostUp(b *strings.Builder, iface string, a *config.AmneziaOptions) {
+	if a.I1 == "" {
+		return
+	}
+	b.WriteString(fmt.Sprintf("; awg set %s i1 %q i2 %q i3 %q i4 %q i5 %q",
+		iface, a.I1, a.I2, a.I3, a.I4, a.I5))
 }
 
 // ─── Exit tunnels (multi-exit balancer) ────────────────────────────────────
@@ -216,7 +248,9 @@ type ExitClientConfParams struct {
 	// host + its ExitAWGListenPort). Required.
 	ExitEndpoint string
 	// Amnezia, when non-nil, enables amnezia obfuscation on this exit link
-	// (fields go in [Interface] before [Peer], same as RenderServerAWGConf).
+	// (Jc/S/H go in [Interface] before [Peer]; I1-I5 CPS decoys — this conf
+	// is the link's initiator — are applied via a PostUp `awg set` UAPI line
+	// because awg setconf on kernel 6.12 rejects I1-I5 in the conf body).
 	Amnezia *config.AmneziaOptions
 }
 
@@ -249,7 +283,7 @@ func RenderExitAWGConf(p ExitClientConfParams) string {
 	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", p.ClientPrivateKey))
 	b.WriteString(fmt.Sprintf("MTU = %d\n", p.MTU))
 	if p.Amnezia != nil {
-		writeAmneziaConfLines(&b, p.Amnezia)
+		writeAmneziaConfLines(&b, p.Amnezia, false)
 	}
 	// rp_filter=0 on the exit-client interface is CRITICAL for balancer egress
 	// (live-verified 2026-07-04). sing-box direct outbounds use bind_interface:
@@ -264,7 +298,14 @@ func RenderExitAWGConf(p ExitClientConfParams) string {
 	if iface == "" {
 		iface = "awg-exit-n0"
 	}
-	b.WriteString(fmt.Sprintf("PostUp = sysctl -w net.ipv4.conf.%s.rp_filter=0 2>/dev/null\n", iface))
+	b.WriteString(fmt.Sprintf("PostUp = sysctl -w net.ipv4.conf.%s.rp_filter=0 2>/dev/null", iface))
+	// This interface is the handshake INITIATOR of the exit link — CPS I1-I5
+	// decoys belong to it, applied via PostUp UAPI (conf body rejected by
+	// setconf on kernel 6.12; see writeAmneziaConfLines doc).
+	if p.Amnezia != nil {
+		writeCPSPostUp(&b, iface, p.Amnezia)
+	}
+	b.WriteString("\n")
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", p.ExitPublicKey))
 	host, port := splitHostPort(p.ExitEndpoint)
@@ -296,8 +337,10 @@ type ExitServerConfParams struct {
 	// balancer's inner IP (AWGExitLink.Address), e.g. "10.10.0.2/32". Empty
 	// defaults to 10.10.0.2/32.
 	BalancerAllowedIPs string
-	// Amnezia, when non-nil, enables amnezia obfuscation (must match the
+	// Amnezia, when non-nil, enables amnezia obfuscation (Jc/S/H must match the
 	// balancer's ExitClientConfParams.Amnezia for the handshake to succeed).
+	// I1-I5 are never written here: this node is the responder (the kernel
+	// ignores ispecs on receive; setconf on kernel 6.12 rejects them).
 	Amnezia *config.AmneziaOptions
 	// MASQUERADENetwork, when non-empty, emits PostUp/PostDown lines with
 	// iptables MASQUERADE for each listed subnet — NATs tunneled traffic to
@@ -353,7 +396,9 @@ func RenderExitServerAWGConf(p ExitServerConfParams) string {
 	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", p.ServerPrivateKey))
 	b.WriteString(fmt.Sprintf("MTU = %d\n", p.MTU))
 	if p.Amnezia != nil {
-		writeAmneziaConfLines(&b, p.Amnezia)
+		// Responder side of the exit link — I1-I5 dropped (kernel never reads
+		// ispecs on receive; setconf on 6.12 rejects them).
+		writeAmneziaConfLines(&b, p.Amnezia, false)
 	}
 	// MASQUERADE + FORWARD for internet egress: when MASQUERADENetwork is set,
 	// emit PostUp/PostDown that NAT tunneled user traffic to the exit's public
