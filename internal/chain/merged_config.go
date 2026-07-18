@@ -214,6 +214,11 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 			ExitInterfaces:    exitInterfacesForNode(node),
 			BalancerTag:       balancerTagForNode(node),
 			FinalOutbound:     "direct",
+			// AutoRedirect is opt-in via AB_AWG_AUTO_REDIRECT=1 (egress-trial
+			// harness, PROGRESS §21): nftables prerouting capture of forwarded
+			// ingress. Requires the nftables package on the node (Debian 13
+			// ships nft only; without it sing-box fails to start).
+			AutoRedirect: awgAutoRedirectFromEnv(),
 			// A linear AWG chain entry with a downstream hop forwards TUN traffic
 			// to the inter-node outbound — without this the catch-all targets
 			// "direct" and every AWG user egresses from the entry node, never

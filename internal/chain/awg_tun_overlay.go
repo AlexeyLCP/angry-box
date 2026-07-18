@@ -23,6 +23,7 @@ package chain
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
@@ -325,6 +326,20 @@ func awgForwardOutboundForRoles(roles []chainRole) string {
 		return chainInterNodeOutboundTag(&r)
 	}
 	return ""
+}
+
+// awgAutoRedirectFromEnv returns non-nil true when AB_AWG_AUTO_REDIRECT=1 is
+// set — the opt-in egress-trial harness (PROGRESS §21). nil = the builder's
+// default (false). auto_redirect installs nftables prerouting rules that
+// capture forwarded ingress (the AWG client traffic arriving on awg0) into the
+// TUN — the candidate fix for the empty-egress symptom; it requires the
+// nftables package on the node or sing-box fails to start.
+func awgAutoRedirectFromEnv() *bool {
+	if os.Getenv("AB_AWG_AUTO_REDIRECT") == "1" {
+		t := true
+		return &t
+	}
+	return nil
 }
 
 // awgTUNOverlayNeeded reports whether this node runs a kernel AWG server that
