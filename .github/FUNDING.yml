@@ -1,0 +1,16 @@
+# These are supported funding model platforms
+
+# Crypto (USDT TON / ERC-20) is not supported by FUNDING.yml fields —
+# those addresses live in the README "Support the project" section.
+github: # Replace with up to 4 GitHub Sponsors-enabled usernames
+patreon: # Replace with a single Patreon username
+open_collective: # Replace with a single Open Collective username
+ko_fi: # Replace with a single Ko-fi username
+tidelift: # Replace with a single Tidelift platform-name/package-name
+community_bridge: # Replace with a single Community Bridge project-name
+liberapay: # Replace with a single Liberapay username
+issuehunt: # Replace with a single IssueHunt username
+lfx_crowdfunding: # Replace with a single LFX Crowdfunding project-name
+polar: # Replace with a single Polar username
+buy_me_a_coffee: # Replace with a single Buy Me a Coffee username
+custom: ["https://yoomoney.ru/to/41001989176429"]

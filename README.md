@@ -12,6 +12,7 @@ Management is done exclusively over SSH. Target nodes run **only** sing-box-exte
   <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
   <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
+  <a href="https://yoomoney.ru/to/41001989176429"><img src="https://img.shields.io/badge/donate-☕-yellow" alt="Donate"></a>
 </p>
 
 
@@ -37,6 +38,12 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 - **Users wizard + Service model:** add a user through a guided wizard (select chains → pick protocols → assign AWG per-user address), inspect the synthesized **Service** (the merged view of a user across all chains), and get a ready-to-share **subscription URL** that hands the client the right config per chain.
 - **Modern Web UI:** Spider-web topology editor (graph edges, persistent node positions, native SVG pan/zoom), deploy-status (pending-changes badge), audit log, profiles/services, unified clients, route rules — built with HTMX + TailwindCSS + DaisyUI + templ.
 - **Background auto-apply:** per-user/inbound mutations trigger a background SSH deploy (hybrid mode); per-host lock serializes.
+- **Auto-relocate (warm pool):** when the health monitor moves a node to down/unreachable, the orchestrator can automatically relocate it onto a **spare VPS** — opt-in per node AND globally, with a cooldown and every decision audited. The node keeps its identity (keys/ports), so existing clients never notice.
+- **Zero-downtime user management:** deploys that only change the peer set (user add/remove) apply **live via `awg set`** — no `awg-quick` restart, no dropped clients. Interface changes still restart (they must).
+- **AWG diagnostics:** one click on the node row (**Diagnose**) deep-probes the data plane over SSH — interface state, handshake freshness, ip_forward, rp_filter, FORWARD rules into the TUN overlay, sing-box health — each check with the evidence read on the node.
+- **Per-user traffic accounting:** kernel per-peer counters (`awg show transfer`) are folded into cumulative per-user bytes (peer = user AWG identity), restart-safe, shown in the users table.
+- **Self-healing NAT:** the health loop re-asserts FORWARD/MASQUERADE rules when fail2ban or Docker flushes iptables (a silent egress killer) — healed automatically, audited.
+- **Router packages (Keenetic + OpenWrt):** ready-made `.ipk` for Keenetic Entware (mipsel/mips/aarch64, with NDMS interface hooks) and OpenWrt (procd) — stripped + UPX-compressed (~3 MB), smoke-tested under qemu in CI. Deploy downloads also tolerate mirrors (`ANGRY_BINARY_MIRRORS`) when GitHub is unreachable from a node's network.
 - **100% Independent:** Angry-BOX ships its own **patched sing-box-extended** binary (deps/), so weak VPSes never compile Go — they just download.
 - **Zero-Footprint:** node servers run only the bare `sing-box` core; the orchestrator lives entirely on your control machine.
 
@@ -56,7 +63,7 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
   <em>Users — per-user protocols, chain access, lifecycle status</em>
 </div>
 
-> Screenshots reflect the current build (node health state machine, users wizard, clone/relocate, encrypted offsite backups, spider-web graph editor, deploy-status, takeover, audit).
+> Screenshots reflect the current build (node health state machine, users wizard + per-user traffic, clone/relocate/auto-relocate, encrypted offsite backups, AWG diagnostics, spider-web graph editor, deploy-status, takeover, audit).
 
 ## Architecture
 
@@ -121,6 +128,16 @@ angry-box restore panel-backup.json                 # auto-detects store vs node
 angry-box relocate entry-node --addr 9.9.9.9:22
 ```
 
+### 4. On a router (Keenetic / OpenWrt)
+
+```bash
+# Keenetic (Entware) — pick the package for your model from Releases:
+opkg install angry-box_v0.7.0_mipsel-3.4-kn.ipk      # MT7621 & co
+# OpenWrt:
+opkg install angry-box_v0.7.0_aarch64_cortex-a53.ipk
+# Panel comes up on 127.0.0.1:9080 (loopback) — reach it via an SSH tunnel.
+```
+
 **Takeover** (detect + convert an existing VPN server) is available from the Web UI: open a node → **Takeover** button. It detects AWG/sing-box/Xray/MTProxy, converts the config to sing-box with the same settings, disables the old VPN, and auto-rolls back if sing-box fails. **Backups + relocation** are also in the Web UI: Settings → Backups (export/import the panel), node row → **Export** (download one node's identity) + **Relocate** (move a blocked node to a new VPS).
 
 ## Third-Party Components
@@ -153,6 +170,18 @@ go build -o angry-box ./cmd/angry-box
 # Dev mode (static files from disk, edits without rebuild)
 ANGRY_BOX_DEV=1 go run ./cmd/angry-box serve
 ```
+
+## ☕ Support the project
+
+Angry-BOX is free for personal and non-commercial use. If the orchestrator saves you time, you can support development:
+
+| Method | Details |
+|---|---|
+| 🇷🇺 **YooMoney** (RUB, Russia) | [yoomoney.ru/to/41001989176429](https://yoomoney.ru/to/41001989176429) |
+| 💎 **USDT (TON)** | `UQC48dE4i35bjEU4jljx0h1CGeXMu77eKZwN5W4gbcibmqDs` |
+| 💠 **USDT (ERC-20)** | `0xA49aBc042c5BB3d682788D3DEB2eAC833343a873` |
+
+Donations are a thank-you, not a purchase: they do not grant a commercial license and do not change the license terms below.
 
 ## License
 
