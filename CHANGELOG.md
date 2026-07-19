@@ -4,6 +4,64 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.6.0] — 2026-07-18
+
+### Product roadmap complete: egress verified, warm-pool auto-relocate
+
+Minor bump: closes every item of the v0.6.0 roadmap (docs/PROGRESS.md §15).
+P0a (egress proof), P2b (auto-relocate), P2c (CLI deprecate + mirror) landed
+this cycle; P0b/P1a/P1b/P2a landed earlier in the cycle (users wizard +
+Service model + subscription URL, node health state machine, clone node,
+encrypted offsite backups — see git history §16–§20).
+
+#### P0a — client-tunnel egress VERIFIED (kernel 6.12, real cross-machine)
+- Full proof on the n1→n2 test pair (both Debian 13, kernel 6.12): orchestrator
+  deploy (standalone AWG, ApplyMergedNode) on n2 + awg-quick client on n1 →
+  `curl ifconfig.me` through the tunnel returns the server IP. A/B shows egress
+  works with and without `auto_redirect` — the earlier empty-egress symptom was
+  a same-host-client test-topology artifact, not a product bug.
+- `auto_redirect` is now an opt-in harness: `AB_AWG_AUTO_REDIRECT=1` wires
+  `AWGTUNOverlayParams.AutoRedirect` (previously declared but never populated).
+- Reproducible driver: `cmd/awgtrial` (deploy + client .conf render).
+
+#### kernel 6.12 (Debian 13) compatibility fixes
+- **I1-I5 removed from server-side awg confs** (`RenderServerAWGConf`,
+  `RenderExitServerAWGConf`): CPS packets are initiator-only (the module's
+  receive path never reads ispecs), and `awg setconf` on kernel 6.12 rejects
+  them in the conf body — awg-quick up rolled back the interface. Exit-link
+  initiators (`RenderExitAWGConf`) now apply I1-I5 via a PostUp `awg set` UAPI
+  line (accepted on all kernels). Client app confs are unchanged (AmneziaWG
+  apps parse inline I1-I5 natively).
+- Debian 13 node prerequisites documented: `apt install iptables nftables
+  openresolv` (PostUp MASQUERADE/FORWARD need the iptables shim; auto_redirect
+  needs nftables).
+- Finding (Known Issue #17): the default preset's Jc=120 junk flood kills the
+  handshake on lossy networks (budget hostings drop part of the flood,
+  including the init). Workaround: lower `jc` (e.g. `awg set <iface> jc 3`).
+
+#### P2b — warm-pool auto-relocate (opt-in, guardrails)
+- When the health state machine moves a node to down/unreachable, the
+  orchestrator can automatically relocate it onto a spare VPS via RelocateNode
+  (identity preserved — keys/ports/transit material unchanged, clients not
+  reconfigured).
+- Guardrails: global `PanelSettings.AutoRelocate.Enabled` (default off) AND
+  per-node `NodeInfo.AutoRelocate` (default off), cooldown per node (default
+  6h), spare = `NodeInfo.Spare` with no chains/inbounds, blocked nodes never
+  trigger. Every decision is audit-logged.
+- UI: node edit checkboxes (Spare / Auto-relocate), Settings → Auto-relocate
+  card (cooldown + global toggle). New `Store.DeleteNodeInfo`.
+- Fix along the way: `handleUpdateNode` no longer wipes Inbounds/Takeover/
+  P2b flags when editing a node (it rebuilt NodeInfo from scratch).
+
+#### P2c — deploy hardening
+- `ANGRY_BINARY_MIRRORS` (comma-separated): sing-box binary download now tries
+  primary + mirror URLs in order, each verified against the pinned sha256
+  (GitHub release assets were a SPOF, sometimes unreachable from RU networks).
+- All binary URLs are validated before reaching a root shell (shell-injection
+  hardening, same class as the earlier AWG tarball fix).
+- Legacy CLI standalone-AWG path carries a deprecation warning pointing at the
+  kernel-AWG deploy (web UI / apply-chain).
+
 ## [v0.5.0] — 2026-07-08
 
 ### Server backups + quick node relocation (chain auto-heal)
