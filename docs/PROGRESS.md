@@ -2254,3 +2254,34 @@ conf (`sed -n 's/^PostUp = //p' | sh`, наши PostUp идемпотентны)
 - Тесты (`migrate_v2_test.go`, 11 шт): схлопывание + сохранение per-node кредов, distinct-группы, chain entry profile + InboundRef, multi-entry/exit уровни, VLESS UUID, идемпотентность, **render-equivalence** (awg0.conf entry-ноды байт-в-байт совпадает до/после миграции), CRUD + delete-гард, EachNode/SetAllNodes, SaveChain sync. Полный suite + vet зелёные.
 
 Дальше: Stage B (applier/render под levels — mesh + strategy groups + entry render по InboundRef + multi-user VLESS), Stage C/D (UI Инбаунды/Цепочки/Spider), Stage E (Клиенты, удаление Services), Stage F (Дашборд + sidebar), Stage G (docs/релиз).
+
+## 27. IA/UX refactor v0.8 — Stages B–F: levels render, UI, Клиенты, Дашборд (2026-07-19)
+
+Завершение рефакторинга (Stage A — §26). План утверждён с 3 итерациями правок пользователя (source of truth = NodeInbound.ProfileID; InboundRef per-node на любом уровне; явная diff-семантика; никакого auto-deploy из формы цепочки).
+
+**Stage B — applier/render под levels (5799622):**
+- `resolveChainRoles`/`buildChainRoleInOut` level-aware: downstream group = весь следующий уровень; per-target outbounds + strategy-group wrapper при >1. `strategygroup.go`: fallback→патченый FallbackOutbound (дефолт, прод-проверен), urltest, failover≈urltest(tight), selector; `ValidateChainTopology` (экспортирована): пустые уровни и AWG-транспорт с группами — громкий отказ.
+- Entry render AWG читает материализованный инбаунд по `ChainNode.InboundRef` (`renderChainEntryAWGConf` → общий `renderAWGServerConfFromInbound`); legacy fallback по полям чейна. `EnsureChainEntryMaterialization` в ApplyChain (self-heal материализации, креды сохраняются, chain keypair preferred).
+- Chain-sourced инбаунды (`Source=chain:*`) пропускаются во ВСЕХ standalone-циклах (merged config, AWG confs, detectPortConflicts, TUN includes, web links) — фантомных двойных рендеров/конфликтов портов/awg1 нет (тесты).
+- Multi-user VLESS: entry + standalone vless-reality рендерят `users[]` = shared UUID первым (совместимость) + per-user VLESSUUID.
+- Client links: `RenderClientAWGConf` берёт креды из материализованного инбаунда через `EntryInboundResolver`.
+- Тесты: 10 новых (levels_mesh_test.go) + render-equivalence по InboundRef.
+
+**Stage C — UI Инбаунды + Ноды (ba8a9e7):**
+- `/ui/inbounds`: CRUD профилей, чекбоксы нод, Presets таб. `profile_deploy.go` `ApplyProfileToNodes`: pre-flight port-conflict ДО мутаций; add (креды один раз, AWG /24 allocateAWGServerSubnet), remove (отказ при chain InboundRef, warning при ForUsers), update (креды сохранены); auto-apply затронутых нод.
+- Ноды: NodeInboundsForm + роуты удалены; счётчик игнорирует chain-sourced; capture-форма + опции «sing-box»/«AWG module» (async postCaptureInstall + audit)/«detect VPN».
+
+**Stage D — levels editor + Spider (f2c2c07):**
+- Форма цепочки = редактор уровней (HTMX-фрагменты для transit-уровней), entry per-node селект только из развёрнутых профилей + «Создать/развернуть» → /ui/inbounds. parseLevelsForm: Rule-5 сохранение transit-материала, UserProtocol derive из entry-профилей, frozen-guard сохранён.
+- Spider: синтетические рёбра из levels (mesh K→K+1, бейдж «levels»), link create/delete для levelized — отказ; Topology таб.
+- Баг найденный тестами: `*c = *existing` затирал transport из формы — форма побеждает копию.
+
+**Stage E — Клиенты + удаление Services (1a9dd4a):**
+- Форма клиента: имя + цепочки (+exit-pin), Advanced-блок (контакты/expiry/квоты/MTProxy/импорт). Wizard удалён. Protocols derive из цепочек. Services: страница/роуты/applyServiceToUser удалены; PanelSettings.Services dormant; User.ServiceID игнорируется.
+
+**Stage F — Дашборд + sidebar (2de5af2):**
+- Sidebar = 6 пунктов. Дашборд: quick actions, pending-changes (computeDeployStatusRows), мини-топология, 10 событий аудита. /ui/audit, /ui/deploy-status, /ui/status — прямые ссылки.
+
+**Тест-статус:** полный suite зелёный (go build/vet/test; ~35 новых тестов за весь рефакторинг). На этой машине периодический флейк `TempDir RemoveAll cleanup: The directory is not empty` (OneDrive/Windows file-lock) — не кодовый, перезапуски проходят.
+
+**Follow-ups (не блокеры):** live QUIC capture UI на странице Инбаундов (capture endpoint жив; материал мигрирован на инбаунды); AWG inter-node transport multi-peer endpoints для групп; полный drag-edit групп в spider (сейчас — визуализация + форма).

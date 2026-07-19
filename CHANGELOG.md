@@ -4,6 +4,71 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.0] — 2026-07-19
+
+### Information-architecture refactor: first-class Inbounds, chain Levels with balancing strategies, simplified Clients
+
+The management model was rebuilt around a strict separation of concerns:
+**Nodes = infrastructure, Inbounds = listeners, Chains = routes + balancing,
+Clients = access**. Sidebar: Dashboard, Nodes, Inbounds, Chains, Clients,
+Settings.
+
+#### First-class inbound profiles (`/ui/inbounds`)
+- An **InboundProfile** is a node-independent listener template (AWG /
+  VLESS+REALITY / MTProxy) deployed onto nodes via checkboxes. One profile →
+  many nodes; per-node credentials are generated exactly once and never
+  rotated on re-save. Placement is derived from `NodeInbound.ProfileID`
+  (single source of truth — no two-way association to drift).
+- Explicit diff semantics on save: added node → fresh creds + deploy;
+  removed node → listener dropped + re-deploy (refused while a chain
+  references the profile there); changed port/preset → re-deploy only the
+  nodes hosting it. Port conflicts are pre-flighted before anything mutates.
+- Obfuscation **Presets** fold into the Inbounds page as a tab.
+
+#### Chain levels + balancing strategies
+- A chain is now an ordered list of **levels**; each level is a group of one
+  or more nodes with a selection strategy toward the next level: **Round-robin
+  (fallback)** (default — the patched, production-verified path), **urltest**,
+  **failover**, **selector**. Topologies like `Entry → [Hop-1, Hop-2] →
+  [Exit-1, Exit-2, Exit-3]` render as per-target outbounds wrapped in a
+  sing-box group outbound. AWG inter-node transport stays linear (single-node
+  levels) — grouped levels require XHTTP/Reality; the AWG multi-exit kernel
+  balancer is unchanged.
+- The **entry level references inbounds already deployed on its nodes**
+  (`ChainNode.InboundRef`) — chains never create user-facing listeners
+  anymore; entry credentials moved from chain fields into the materialized
+  inbound (existing chains migrated with keys preserved — clients keep
+  connecting).
+- The spider-web editor folds into the Chains page as the **Topology** tab;
+  levelized chains render their mesh as synthetic edges (topology is edited
+  in the chain form).
+
+#### Simplified Clients (Services removed)
+- Client creation = **name + chains** (per-chain exit pin optional);
+  credentials (AWG peer, VLESS UUID) derive automatically from the selected
+  chains. Contacts/expiry/quota/MTProxy live behind one Advanced disclosure.
+  The wizard and the Services catalog are gone (`PanelSettings.Services` kept
+  dormant for backup compatibility).
+
+#### Dashboard + sidebar
+- Sidebar reduced to six sections. Dashboard gains quick actions
+  (+Node/+Inbound/+Chain/+Client), a pending-changes card, a mini topology
+  view, and the recent audit feed. Deploy Status / Audit / Status stay
+  reachable from dashboard links.
+
+#### Schema v2 migration (automatic, on first start)
+- Standalone inbounds collapse into profiles by (protocol, port, preset)
+  across nodes (every collapse audit-logged); every chain gets a
+  `chain-entry-<name>` profile + a materialized entry inbound carrying the
+  chain's EXISTING credentials (AWG keypair, CPS I1-I5/H1-H4, subnet, VLESS
+  UUID) — byte-identical awg0.conf render before/after (render-equivalence
+  test in CI); flat node lists become levels by role.
+
+#### Multi-user VLESS
+- Chain entries and standalone VLESS+Reality inbounds now render a per-user
+  `users[]` (each client's own UUID) with the shared UUID kept first for
+  backward compatibility.
+
 ## [v0.7.0] — 2026-07-19
 
 ### AWG operations: deep diagnostics, per-user traffic, NAT self-heal + router packages (Keenetic/OpenWrt)
