@@ -3,6 +3,7 @@ package templates
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
@@ -155,14 +156,18 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 									<span class="font-mono">{ l.ToNodeID }</span>
 									<span class="text-base-content/50 ml-2">| { l.Transport } | { l.ChainName }</span>
 								</div>
-								<button
-									class="btn btn-ghost btn-xs text-error"
-									hx-delete={ "/ui/spider/links/" + l.ID }
-									hx-confirm={ i18n.T(ctx, "Delete connection ") + l.FromNodeID + "→" + l.ToNodeID + "?" }
-									hx-target="#main-content"
-									hx-swap="outerHTML">
-									{ i18n.T(ctx, "Delete") }
-								</button>
+								if strings.HasPrefix(l.ID, "synth:") {
+									<span class="badge badge-xs badge-outline" title={ i18n.T(ctx, "Derived from chain levels — edit in the chain form") }>{ i18n.T(ctx, "levels") }</span>
+								} else {
+									<button
+										class="btn btn-ghost btn-xs text-error"
+										hx-delete={ "/ui/spider/links/" + l.ID }
+										hx-confirm={ i18n.T(ctx, "Delete connection ") + l.FromNodeID + "→" + l.ToNodeID + "?" }
+										hx-target="#main-content"
+										hx-swap="outerHTML">
+										{ i18n.T(ctx, "Delete") }
+									</button>
+								}
 							</div>
 						}
 					</div>

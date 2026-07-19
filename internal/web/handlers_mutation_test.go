@@ -35,9 +35,23 @@ func (ts *testServer) createNode(id, addr string) {
 	}
 }
 
-// createUser helper: POSTs a user and returns its id.
-func (ts *testServer) createUser(id, name string) {
+// createDeployedProfile creates an inbound profile and materializes it on the
+// given nodes (v0.8: the chain form's entry level references DEPLOYED
+// profiles — "inbounds first, chains second").
+func (ts *testServer) createDeployedProfile(id, proto string, port int, nodeIDs ...string) {
 	ts.t.Helper()
+	st := ts.srv.store()
+	p := &model.InboundProfile{ID: id, Name: id, Protocol: proto, Port: port}
+	if err := st.SaveInboundProfile(p); err != nil {
+		ts.t.Fatalf("createDeployedProfile %s: SaveInboundProfile: %v", id, err)
+	}
+	if _, err := chain.ApplyProfileToNodes(st, p, nodeIDs); err != nil {
+		ts.t.Fatalf("createDeployedProfile %s: ApplyProfileToNodes: %v", id, err)
+	}
+}
+
+// createUser helper: POSTs a user and returns its id.
+func (ts *testServer) createUser(id, name string) {	ts.t.Helper()
 	form := url.Values{"id": {id}, "name": {name}}
 	w := ts.post("/ui/users", form)
 	if w.Code != http.StatusOK {

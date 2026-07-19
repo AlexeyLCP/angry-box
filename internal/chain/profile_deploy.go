@@ -253,6 +253,11 @@ func buildProfileInbound(prof *model.InboundProfile, ni *model.NodeInfo) (model.
 		ib.ServerPubKey = pub
 	case "mtproxy":
 		// Secrets are per-user (User.MTProxySecret); nothing per-node here.
+	case "tuic":
+		// Frozen legacy profile (edit-only — new tuic profiles are rejected at
+		// the UI by ValidateStandaloneProtocol, but migrated ones must still
+		// materialize so their chains keep rendering).
+		ib.UUID = generateStableUUID()
 	default:
 		return ib, fmt.Errorf("unsupported profile protocol %q", prof.Protocol)
 	}

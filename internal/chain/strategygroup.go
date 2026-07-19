@@ -92,7 +92,7 @@ func effectiveGroupStrategy(s model.Strategy) model.Strategy {
 	return s
 }
 
-// validateChainTopology rejects levelized chains the render layer cannot
+// ValidateChainTopology rejects levelized chains the render layer cannot
 // express. Loud failures here (before any SSH work) instead of a silently
 // misrendered config on the node:
 //   - every level must hold at least one node;
@@ -100,7 +100,10 @@ func effectiveGroupStrategy(s model.Strategy) model.Strategy {
 //     transit endpoint is point-to-point; multi-peer endpoints for grouped
 //     levels are a follow-up — the AWG multi-exit kernel balancer is a
 //     separate mechanism and unaffected).
-func validateChainTopology(c *model.Chain) error {
+//
+// Exported as ValidateChainTopology for the web layer (chain form validation);
+// validateChainTopology is the package-internal alias.
+func ValidateChainTopology(c *model.Chain) error {
 	if !c.IsLevelized() {
 		return nil
 	}
@@ -118,3 +121,6 @@ func validateChainTopology(c *model.Chain) error {
 	}
 	return nil
 }
+
+// validateChainTopology is the package-internal alias of ValidateChainTopology.
+func validateChainTopology(c *model.Chain) error { return ValidateChainTopology(c) }

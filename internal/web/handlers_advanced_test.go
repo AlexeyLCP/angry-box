@@ -22,12 +22,13 @@ func TestHandler_CreateChain_ThenList(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
 	ts.createNode("n2", "2.2.2.2:22")
+	ts.createDeployedProfile("prof-awg", "awg", 51840, "n1")
 	form := url.Values{
-		"name":           {"chain-X"},
-		"strategy":       {"urltest"},
-		"transport":      {"xhttp"},
-		"user_protocol":  {"awg"},
-		"nodes":          {"n1", "n2"},
+		"name":              {"chain-X"},
+		"transport":         {"xhttp"},
+		"level_0_nodes":     {"n1"},
+		"inboundref_n1":     {"prof-awg"},
+		"level_1_nodes":     {"n2"},
 	}
 	w := ts.post("/ui/chains", form)
 	ts.assertStatus(w, http.StatusOK)
@@ -40,7 +41,7 @@ func TestHandler_CreateChain_ThenList(t *testing.T) {
 // TestHandler_CreateChain_MissingName verifies name + >=1 node are required.
 func TestHandler_CreateChain_MissingName(t *testing.T) {
 	ts := newTestServer(t)
-	form := url.Values{"nodes": {"n1"}}
+	form := url.Values{"level_0_nodes": {"n1"}}
 	w := ts.post("/ui/chains", form)
 	ts.assertStatus(w, http.StatusBadRequest)
 }
@@ -49,7 +50,7 @@ func TestHandler_CreateChain_MissingName(t *testing.T) {
 // is rejected.
 func TestHandler_CreateChain_UnknownNode(t *testing.T) {
 	ts := newTestServer(t)
-	form := url.Values{"name": {"chain-Y"}, "nodes": {"ghost"}}
+	form := url.Values{"name": {"chain-Y"}, "level_0_nodes": {"ghost"}, "inboundref_ghost": {"prof-awg"}}
 	w := ts.post("/ui/chains", form)
 	ts.assertStatus(w, http.StatusBadRequest)
 }
@@ -59,7 +60,8 @@ func TestHandler_CreateChain_UnknownNode(t *testing.T) {
 func TestHandler_EditChainForm(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
-	ts.post("/ui/chains", url.Values{"name": {"chain-Z"}, "nodes": {"n1"}})
+	ts.createDeployedProfile("prof-awg", "awg", 51840, "n1")
+	ts.post("/ui/chains", url.Values{"name": {"chain-Z"}, "level_0_nodes": {"n1"}, "inboundref_n1": {"prof-awg"}})
 	w := ts.get("/ui/chains/chain-Z/edit")
 	ts.assertStatus(w, http.StatusOK)
 	ts.assertContains(w, "chain-Z")
@@ -76,7 +78,8 @@ func TestHandler_EditChainForm_NotFound(t *testing.T) {
 func TestHandler_DeleteChain_Ok(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
-	ts.post("/ui/chains", url.Values{"name": {"chain-D"}, "nodes": {"n1"}})
+	ts.createDeployedProfile("prof-awg", "awg", 51840, "n1")
+	ts.post("/ui/chains", url.Values{"name": {"chain-D"}, "level_0_nodes": {"n1"}, "inboundref_n1": {"prof-awg"}})
 	w := ts.delete("/ui/chains/chain-D")
 	ts.assertStatus(w, http.StatusOK)
 }
@@ -105,7 +108,13 @@ func TestHandler_ApplyChain_HappyPath(t *testing.T) {
 	ts := newTestServerWithConnector(t, &webFakeConnector{client: fake})
 	ts.createNode("n1", "1.1.1.1:22")
 	ts.createNode("n2", "2.2.2.2:22")
-	ts.post("/ui/chains", url.Values{"name": {"chain-OK"}, "nodes": {"n1", "n2"}})
+	ts.createDeployedProfile("prof-awg", "awg", 51840, "n1")
+	ts.post("/ui/chains", url.Values{
+		"name":          {"chain-OK"},
+		"level_0_nodes": {"n1"},
+		"inboundref_n1": {"prof-awg"},
+		"level_1_nodes": {"n2"},
+	})
 	w := ts.post("/ui/chains/chain-OK/apply", nil)
 	ts.assertStatus(w, http.StatusOK)
 	// ApplyResult success renders a success badge; an error message would mean

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/a-h/templ"
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
@@ -17,12 +18,60 @@ import (
 
 func (s *Server) handleSpiderWeb(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
+	s.renderContent(w, r, i18n.T(r.Context(), "Spider Web"), s.spiderView(st))
+}
+
+// spiderView assembles the spider page: persisted edges (legacy chains) plus
+// SYNTHETIC display edges derived from levelized chains (adjacent-level mesh)
+// so v2 chains are visible on the graph without ConnectionLink rows (the
+// levels are their source of truth, not edges).
+func (s *Server) spiderView(st *chain.Store) templ.Component {
 	hosts, _ := st.ListHosts()
 	chains, _ := st.ListChains()
 	infos, _ := st.ListNodeInfos()
 	links, _ := st.ListLinks()
 	metrics, _ := st.ListMetrics()
-	s.renderContent(w, r, i18n.T(r.Context(), "Spider Web"), templates.SpiderWeb(hosts, chains, infos, links, metrics))
+	return templates.SpiderWeb(hosts, chains, infos, mergeSyntheticLevelEdges(chains, links), metrics)
+}
+
+// synthEdgePrefix marks display-only edges derived from chain levels (they
+// have no ConnectionLink row, so the UI must not offer a delete button and
+// DELETE /ui/spider/links/{id} 404s on them by design).
+const synthEdgePrefix = "synth:"
+
+// mergeSyntheticLevelEdges appends display edges for levelized chains: full
+// mesh between adjacent levels (K → K+1). Persisted edges win on duplicates.
+func mergeSyntheticLevelEdges(chains []*model.Chain, links []*model.ConnectionLink) []*model.ConnectionLink {
+	seen := map[string]bool{}
+	out := make([]*model.ConnectionLink, 0, len(links)+8)
+	for _, l := range links {
+		seen[l.ChainName+"|"+l.FromNodeID+"|"+l.ToNodeID] = true
+		out = append(out, l)
+	}
+	for _, c := range chains {
+		if !c.IsLevelized() {
+			continue
+		}
+		for li := 0; li+1 < len(c.Levels); li++ {
+			for _, from := range c.Levels[li].Nodes {
+				for _, to := range c.Levels[li+1].Nodes {
+					key := c.Name + "|" + from.ID + "|" + to.ID
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+					out = append(out, &model.ConnectionLink{
+						ID:         synthEdgePrefix + key,
+						FromNodeID: from.ID,
+						ToNodeID:   to.ID,
+						Transport:  c.Transport,
+						ChainName:  c.Name,
+					})
+				}
+			}
+		}
+	}
+	return out
 }
 
 func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +129,13 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	// 2. Sync Chain.Nodes (materialized deploy path): insert toNode right after
 	// fromNode if not already present in the chain's ordered list.
 	existing, err := st.GetChain(chainName)
+	if err == nil && existing.IsLevelized() {
+		// v2 chains: the levels (chain form) are the topology source of truth.
+		// Spider edges materialize into the flat node list, which would fight
+		// the levels — refuse with a pointer to the right editor.
+		http.Error(w, i18n.T(r.Context(), "This chain uses levels — edit its topology in the chain form (Levels), spider links apply to legacy chains only"), http.StatusConflict)
+		return
+	}
 	var nodes []model.ChainNode
 	if err == nil {
 		nodes = existing.Nodes
@@ -184,6 +240,14 @@ func (s *Server) handleDeleteSpiderLink(w http.ResponseWriter, r *http.Request) 
 	chain.WriteAudit(st, "delete", "link", id, chain.AuditPayload{"chain": chainName, "from": fromNode, "to": toNode}, "operator")
 
 	// Sync Chain.Nodes: remove nodes that no longer have ANY edge in this chain.
+	// Levelized chains are skipped: their topology lives in Levels (the link was
+	// a stale pre-v2 edge); pruning the synced flat list would risk deleting the
+	// chain when its last stale edge goes away.
+	if c, err := st.GetChain(chainName); err == nil && c.IsLevelized() {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(""))
+		return
+	}
 	remainingLinks, _ := st.ListLinksForChain(chainName)
 	used := map[string]bool{}
 	for _, l := range remainingLinks {
@@ -230,12 +294,7 @@ func (s *Server) handleSaveNodePosition(w http.ResponseWriter, r *http.Request) 
 // renderSpider loads all spider data (hosts/chains/infos/links) and renders the
 // SpiderWeb template. Shared by handleSpiderWeb and the link create/delete flows.
 func (s *Server) renderSpider(w http.ResponseWriter, r *http.Request, st *chain.Store) {
-	allHosts, _ := st.ListHosts()
-	allChains, _ := st.ListChains()
-	allInfos, _ := st.ListNodeInfos()
-	allLinks, _ := st.ListLinks()
-	allMetrics, _ := st.ListMetrics()
-	s.render(w, r, templates.SpiderWeb(allHosts, allChains, allInfos, allLinks, allMetrics))
+	s.render(w, r, s.spiderView(st))
 }
 
 // indexOfChainNode returns the index of nodeID in nodes, or -1.

@@ -34,6 +34,12 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 			</button>
 		</div>
 
+		<div role="tablist" class="tabs tabs-bordered">
+			<button role="tab" class="tab tab-active">{ i18n.T(ctx, "Chains") }</button>
+			<button role="tab" class="tab" hx-get="/ui/spider" hx-target="#chains-tab-content" hx-swap="innerHTML">{ i18n.T(ctx, "Topology") }</button>
+		</div>
+		<div id="chains-tab-content" class="space-y-6">
+
 		if len(availableHosts) == 0 {
 			<div class="alert alert-warning">
 				<span>{ i18n.T(ctx, "No hosts registered yet. Add hosts first on the Hosts page before creating chains.") }</span>
@@ -69,25 +75,44 @@ templ Chains(chains []*model.Chain, availableHosts []*model.Host) {
 
 		<!-- Per-chain apply result area (OOB updates land here) -->
 		<div id="apply-results" class="space-y-2"></div>
+		</div>
 	</div>
 
 	<!-- Modal container -->
 	<div id="modal-container"></div>
 }
 
-// ChainRow renders one row in the chains table.
+// ChainRow renders one row in the chains table. For levelized (v2) chains the
+// nodes column shows level groups: [entry nodes] → [next level] → … with the
+// level strategy on multi-node groups.
 templ ChainRow(c *model.Chain) {
 	<tr id={"chain-" + c.Name}>
 		<td class="font-semibold text-sm whitespace-normal break-all">{ c.Name }</td>
 		<td class="whitespace-normal">
 			<div class="flex flex-wrap gap-0.5 items-center">
-				for i, n := range c.Nodes {
-					if i < 2 {
-						<span class="badge badge-outline badge-xs font-mono text-[10px] break-all h-auto py-0.5" title={ n.Addr }>{ n.ID }</span>
+				if c.IsLevelized() {
+					for li, lv := range c.Levels {
+						if li > 0 {
+							<span class="text-base-content/30 text-[10px] px-0.5">→</span>
+						}
+						<span class="inline-flex gap-0.5 items-center border border-base-300/60 rounded px-1 py-0.5" title={ levelTitle(lv) }>
+							for _, n := range lv.Nodes {
+								<span class="badge badge-outline badge-xs font-mono text-[10px] break-all h-auto py-0.5" title={ n.Addr }>{ n.ID }</span>
+							}
+							if len(lv.Nodes) > 1 && lv.Strategy != "" {
+								<span class="text-[9px] text-base-content/50 ml-0.5">{ string(lv.Strategy) }</span>
+							}
+						</span>
 					}
-				}
-				if len(c.Nodes) > 2 {
-					<span class="badge badge-ghost badge-xs text-[10px] h-auto" title={ nodeListStr(c.Nodes) }>+{ moreNodesStr(c.Nodes) }</span>
+				} else {
+					for i, n := range c.Nodes {
+						if i < 2 {
+							<span class="badge badge-outline badge-xs font-mono text-[10px] break-all h-auto py-0.5" title={ n.Addr }>{ n.ID }</span>
+						}
+					}
+					if len(c.Nodes) > 2 {
+						<span class="badge badge-ghost badge-xs text-[10px] h-auto" title={ nodeListStr(c.Nodes) }>+{ moreNodesStr(c.Nodes) }</span>
+					}
 				}
 			</div>
 		</td>
@@ -129,251 +154,6 @@ templ ChainRow(c *model.Chain) {
 			</div>
 		</td>
 	</tr>
-}
-
-// awgCPSSection renders the AWG CPS mimicry + QUIC capture-domain controls.
-// c may be nil (new chain). Shown/hidden by JS based on user_protocol=="awg".
-// The capture-domain wrap is always in the DOM (so hx-include="closest form"
-// always sends the input); its visibility is toggled by the mimicry select's
-// onchange and initialized by app.js toggleAWGCPSSection.
-templ awgCPSSection(c *model.Chain) {
-	<div id="awg-cps-section" class="space-y-3 hidden">
-		<div class="form-control">
-			<label class="label"><span class="label-text">{ i18n.T(ctx, "CPS Mimicry mode") }</span></label>
-			<select name="awg_cps_mimicry" class="select select-bordered" onchange="var sec=this.closest('#awg-cps-section');var w=sec.querySelector('.capture-domain-wrap');if(w){w.style.display=this.value==='quic-live'?'block':'none'}">
-				<option value="" if c == nil || c.AWGCPSMimicry == "" { selected }>{ i18n.T(ctx, "Default (from preset)") }</option>
-				<option value="quic-live" if c != nil && c.AWGCPSMimicry == "quic-live" { selected }>{ i18n.T(ctx, "quic-live (capture)") }</option>
-				<option value="quic" if c != nil && c.AWGCPSMimicry == "quic" { selected }>{ i18n.T(ctx, "quic") }</option>
-				<option value="sip" if c != nil && c.AWGCPSMimicry == "sip" { selected }>{ i18n.T(ctx, "sip") }</option>
-				<option value="dns" if c != nil && c.AWGCPSMimicry == "dns" { selected }>{ i18n.T(ctx, "dns") }</option>
-				<option value="none" if c != nil && c.AWGCPSMimicry == "none" { selected }>{ i18n.T(ctx, "none") }</option>
-			</select>
-		</div>
-		<div class="capture-domain-wrap form-control">
-			<label class="label"><span class="label-text">{ i18n.T(ctx, "QUIC Capture Domain") }</span></label>
-			<div class="join">
-				<input type="text" name="awg_cps_capture_domain" class="input input-bordered join-item"
-					if c != nil { value={ c.AWGCPSCaptureDomain } } placeholder="disk.yandex.ru" />
-				<button type="button" class="btn join-item"
-					hx-post="/ui/chains/capture-preview"
-					hx-target="#capture-preview-result"
-					hx-include="closest form">
-					{ i18n.T(ctx, "Capture now") }
-				</button>
-			</div>
-			<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "When set to quic-live, the orchestrator dials the domain over UDP 443, sends a real QUIC Initial, and captures the server's response packets as the AWG CPS silhouette (I1-I5). Falls back to synthesized QUIC packets if the domain is unreachable or doesn't speak QUIC. Capture runs once per domain and is cached; changing the domain re-captures.") }</span></label>
-		</div>
-		<div id="capture-preview-result" class="mt-2"></div>
-		if c != nil && c.AWGCPSCapturedDomain != "" {
-			@cpsStatus(c)
-		}
-	</div>
-}
-
-// cpsStatus renders a read-only summary of the chain's persisted AWG CPS
-// capture state (shown only on the Edit form for an existing chain).
-templ cpsStatus(c *model.Chain) {
-	<div class="alert alert-info">
-		<div class="text-xs space-y-1">
-			<div><strong>{ i18n.T(ctx, "Captured from") }:</strong> { c.AWGCPSCapturedDomain }</div>
-			if c.AWGCPSCaptureFailedDomain != "" {
-				<div class="text-warning"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { c.AWGCPSCaptureFailedDomain }</div>
-			}
-			if c.AWGCPSI1 != "" {
-				<div><strong>I1-I5:</strong>
-					<code class="text-[10px]">{ shortHex(c.AWGCPSI1, 40) }</code>
-					<code class="text-[10px]">{ shortHex(c.AWGCPSI2, 40) }</code>
-					<code class="text-[10px]">{ shortHex(c.AWGCPSI3, 40) }</code>
-					<code class="text-[10px]">{ shortHex(c.AWGCPSI4, 40) }</code>
-					<code class="text-[10px]">{ shortHex(c.AWGCPSI5, 40) }</code>
-				</div>
-			}
-		</div>
-	</div>
-}
-
-// NewChainForm is the modal for creating a new chain.
-templ NewChainForm(availableHosts []*model.Host, profiles []string) {
-	<dialog id="chain-modal" class="modal" open>
-		<div class="modal-box">
-			<h3 class="font-bold text-lg mb-4">{ i18n.T(ctx, "Create New Chain") }</h3>
-
-			<form
-				hx-post="/ui/chains"
-				hx-target="#chains-tbody"
-				hx-swap="beforeend"
-				hx-on::after-request="this.closest('dialog').close(); this.reset();"
-				class="space-y-4">
-
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Chain Name (unique)") }</span></label>
-					<input type="text" name="name" class="input input-bordered" required placeholder="my-exit-chain" />
-				</div>
-
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Transport") }</span></label>
-						<select name="transport" class="select select-bordered">
-							<option value="xhttp" selected>{ i18n.T(ctx, "XHTTP (max obfuscation, recommended)") }</option>
-							<option value="reality">{ i18n.T(ctx, "Reality + XHTTP (max obfuscation)") }</option>
-							<option value="awg">{ i18n.T(ctx, "AWG / AmneziaWG (encrypted tunnel)") }</option>
-						</select>
-					</div>
-
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "User Protocol (entry)") }</span></label>
-						<select name="user_protocol" class="select select-bordered" onchange="toggleAWGCPSSection()">
-							<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
-							<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-							<option value="vless-reality">{ i18n.T(ctx, "VLESS + Reality") }</option>
-						</select>
-					</div>
-
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation Profile") }</span></label>
-						<select name="profile" class="select select-bordered">
-							<option value="">{ i18n.T(ctx, "Use global default") }</option>
-							for _, p := range profiles {
-								<option value={p}>{p}</option>
-							}
-						</select>
-						<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Leave empty to use the global profile from config") }</span></div>
-					</div>
-				</div>
-
-				@awgCPSSection(nil)
-
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Routing Strategy") }</span></label>
-					<select name="strategy" class="select select-bordered">
-						<option value="urltest" selected>{ i18n.T(ctx, "urltest (best latency)") }</option>
-						<option value="failover">{ i18n.T(ctx, "failover") }</option>
-						<option value="selector">{ i18n.T(ctx, "selector (manual)") }</option>
-						<option value="bond">{ i18n.T(ctx, "bond (load balance)") }</option>
-					</select>
-				</div>
-
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Nodes (in order — first is entry)") }</span></label>
-					<div class="border border-base-300 rounded-lg p-3 max-h-48 overflow-auto space-y-1">
-						for _, h := range availableHosts {
-							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" name="nodes" value={ h.ID } class="checkbox checkbox-sm" />
-								<span class="font-mono text-sm">{ h.ID }</span>
-								<span class="text-xs text-base-content/50">({ h.Addr })</span>
-								<label class="flex items-center gap-1 ml-auto cursor-pointer" title={ i18n.T(ctx, "Mark this node as an entry (user-facing). Select several to load-balance across entries.") }>
-									<input type="checkbox" name="entry_nodes" value={ h.ID } class="checkbox checkbox-xs checkbox-primary" />
-									<span class="text-xs text-primary">{ i18n.T(ctx, "entry") }</span>
-								</label>
-							</label>
-						}
-					</div>
-					<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Select nodes in order: first = entry (user connects here), last = exit (traffic leaves here), middle = hops. Tick 'entry' on several nodes to load-balance across multiple entries.") }</span></div>
-				</div>
-
-				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
-					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Create Chain") }</button>
-				</div>
-			</form>
-		</div>
-		<form method="dialog" class="modal-backdrop">
-			<button>{ i18n.T(ctx, "Close") }</button>
-		</form>
-	</dialog>
-}
-
-// EditChainForm is the modal for editing an existing chain.
-templ EditChainForm(c *model.Chain, availableHosts []*model.Host, profiles []string) {
-	<dialog id="chain-modal" class="modal" open>
-		<div class="modal-box">
-			<h3 class="font-bold text-lg mb-4">{ i18n.T(ctx, "Edit Chain: ") }{ c.Name }</h3>
-
-			<form
-				hx-post={"/ui/chains/" + c.Name + "/edit"}
-				hx-target={"#chain-" + c.Name}
-				hx-swap="outerHTML"
-				hx-on::after-request="this.closest('dialog').close()"
-				class="space-y-4">
-
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Transport") }</span></label>
-						<select name="transport" class="select select-bordered">
-							<option value="xhttp" if c.Transport == "xhttp" { selected }>{ i18n.T(ctx, "XHTTP (max obfuscation, recommended)") }</option>
-							<option value="reality" if c.Transport == "reality" { selected }>{ i18n.T(ctx, "Reality + XHTTP (max obfuscation)") }</option>
-							<option value="awg" if c.Transport == "awg" { selected }>{ i18n.T(ctx, "AWG / AmneziaWG (encrypted tunnel)") }</option>
-							if c.Transport == "hysteria2" {
-								<option value="hysteria2" selected disabled>{ i18n.T(ctx, "Hysteria2 (paused — QUIC/TLS)") }</option>
-							}
-						</select>
-					</div>
-
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "User Protocol (entry)") }</span></label>
-						<select name="user_protocol" class="select select-bordered" onchange="toggleAWGCPSSection()">
-							<option value="telemt" if c.UserProtocol == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto)") }</option>
-							<option value="awg" if c.UserProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-							if c.UserProtocol == "tuic" {
-								<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused — QUIC/TLS)") }</option>
-							}
-							<option value="vless-reality" if c.UserProtocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS + Reality") }</option>
-						</select>
-					</div>
-
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation Profile") }</span></label>
-							<select name="profile" class="select select-bordered">
-								<option value="" if c.ObfuscationProfile == "" { selected }>{ i18n.T(ctx, "Use global default") }</option>
-								for _, p := range profiles {
-									<option value={p} if c.ObfuscationProfile == p { selected }>{p}</option>
-								}
-							</select>
-						</div>
-					</div>
-
-				@awgCPSSection(c)
-
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Routing Strategy") }</span></label>
-					<select name="strategy" class="select select-bordered">
-						<option value="urltest" if c.Strategy == "urltest" { selected }>{ i18n.T(ctx, "urltest (best latency)") }</option>
-						<option value="failover" if c.Strategy == "failover" { selected }>{ i18n.T(ctx, "failover") }</option>
-						<option value="selector" if c.Strategy == "selector" { selected }>{ i18n.T(ctx, "selector (manual)") }</option>
-						<option value="bond" if c.Strategy == "bond" { selected }>{ i18n.T(ctx, "bond (load balance)") }</option>
-					</select>
-				</div>
-
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Nodes (in order — first is entry)") }</span></label>
-					<div class="border border-base-300 rounded-lg p-3 max-h-48 overflow-auto space-y-1">
-						for _, h := range availableHosts {
-							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" name="nodes" value={ h.ID } class="checkbox checkbox-sm"
-									if chainHasNode(c, h.ID) { checked } />
-								<span class="font-mono text-sm">{ h.ID }</span>
-								<span class="text-xs text-base-content/50">({ h.Addr })</span>
-								<label class="flex items-center gap-1 ml-auto cursor-pointer" title={ i18n.T(ctx, "Mark this node as an entry (user-facing). Select several to load-balance across entries.") }>
-									<input type="checkbox" name="entry_nodes" value={ h.ID } class="checkbox checkbox-xs checkbox-primary"
-										if isChainEntry(c, h.ID) { checked } />
-									<span class="text-xs text-primary">{ i18n.T(ctx, "entry") }</span>
-								</label>
-							</label>
-						}
-					</div>
-					<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Current order: ") }{ nodeListStr(c.Nodes) }</span></div>
-				</div>
-
-				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
-					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Changes") }</button>
-				</div>
-			</form>
-		</div>
-		<form method="dialog" class="modal-backdrop">
-			<button>{ i18n.T(ctx, "Close") }</button>
-		</form>
-	</dialog>
 }
 
 // ApplyResult supports both simple mode and rich report mode (from backend ApplyReport)
@@ -501,26 +281,21 @@ func moreNodesStr(nodes []model.ChainNode) string {
 	return fmt.Sprintf("%d", len(nodes)-2)
 }
 
-func chainHasNode(c *model.Chain, nodeID string) bool {
-	for _, n := range c.Nodes {
-		if n.ID == nodeID {
-			return true
+// levelTitle summarizes a chain level for the row tooltip.
+func levelTitle(lv model.ChainLevel) string {
+	s := "level " + lv.ID + ": "
+	for i, n := range lv.Nodes {
+		if i > 0 {
+			s += ", "
 		}
+		s += n.ID
 	}
-	return false
+	if len(lv.Nodes) > 1 && lv.Strategy != "" {
+		s += " (strategy: " + string(lv.Strategy) + ")"
+	}
+	return s
 }
 
-// isChainEntry reports whether nodeID is a user-facing entry for the chain.
-// Honors the explicit ChainNode.Role field; falls back to "index 0 is entry"
-// for legacy chains with no explicit role (matches resolveChainRoles).
-func isChainEntry(c *model.Chain, nodeID string) bool {
-	for i, n := range c.Nodes {
-		if n.ID == nodeID {
-			return n.Role == model.NodeRoleEntry || (n.Role == "" && i == 0)
-		}
-	}
-	return false
-}
 
 func alertClass(success bool) string {
 	if success {

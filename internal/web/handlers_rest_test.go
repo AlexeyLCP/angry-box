@@ -15,14 +15,14 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
-// TestHandler_UpdateChain verifies a chain's strategy/transport can be updated.
-// Uses an allowed user protocol (vless-reality) — TUIC/Hysteria2 are frozen for
-// NEW selection (internal/chain/frozen.go), so switching to them is rejected.
+// TestHandler_UpdateChain verifies a chain's transport can be updated (levels
+// wire format; entry inbound reference preserved).
 func TestHandler_UpdateChain(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
-	ts.post("/ui/chains", url.Values{"name": {"chain-U"}, "nodes": {"n1"}})
-	form := url.Values{"strategy": {"random"}, "transport": {"reality"}, "user_protocol": {"vless-reality"}}
+	ts.createDeployedProfile("prof-awg", "awg", 51840, "n1")
+	ts.post("/ui/chains", url.Values{"name": {"chain-U"}, "level_0_nodes": {"n1"}, "inboundref_n1": {"prof-awg"}})
+	form := url.Values{"transport": {"reality"}, "level_0_nodes": {"n1"}, "inboundref_n1": {"prof-awg"}}
 	w := ts.post("/ui/chains/chain-U/edit", form)
 	ts.assertStatus(w, http.StatusOK)
 	ts.assertContains(w, "chain-U")
@@ -37,20 +37,22 @@ func TestHandler_UpdateChain_PreservedFrozenProtocol(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
 	// Create directly with a frozen protocol (bypassing the handler guard via
-	// the store) to simulate a legacy chain created before the freeze.
+	// the store) to simulate a legacy chain created before the freeze — its
+	// entry references a TUIC profile deployed on the node.
 	st := chain.NewStore(ts.storePath)
+	ts.createDeployedProfile("prof-tuic", "tuic", 8443, "n1")
 	if err := st.SaveChain(&model.Chain{
 		Name:         "chain-frozen",
-		Nodes:        []model.ChainNode{{ID: "n1", Addr: "1.1.1.1:22"}},
+		Levels:       []model.ChainLevel{{ID: "l0", Nodes: []model.ChainNode{{ID: "n1", Addr: "1.1.1.1:22", InboundRef: "prof-tuic"}}}},
 		Strategy:     model.StrategyURLTest,
 		Transport:    model.TransportXHTTP,
 		UserProtocol: model.UserProtocolTUIC,
 	}); err != nil {
 		t.Fatalf("SaveChain: %v", err)
 	}
-	// Edit WITHOUT sending user_protocol (as the disabled option would) and
-	// WITHOUT changing transport — only strategy. Must succeed and preserve TUIC.
-	form := url.Values{"strategy": {"failover"}}
+	// Edit preserving the same TUIC entry profile. Must succeed (frozen value
+	// preserved — the guard only fires on a CHANGE to a frozen protocol).
+	form := url.Values{"level_0_nodes": {"n1"}, "inboundref_n1": {"prof-tuic"}}
 	w := ts.post("/ui/chains/chain-frozen/edit", form)
 	ts.assertStatus(w, http.StatusOK)
 	c, err := st.GetChain("chain-frozen")
@@ -60,9 +62,6 @@ func TestHandler_UpdateChain_PreservedFrozenProtocol(t *testing.T) {
 	if c.UserProtocol != model.UserProtocolTUIC {
 		t.Errorf("frozen user protocol not preserved: got %q, want %q", c.UserProtocol, model.UserProtocolTUIC)
 	}
-	if c.Strategy != model.StrategyFailover {
-		t.Errorf("strategy not updated: got %q, want %q", c.Strategy, model.StrategyFailover)
-	}
 }
 
 // TestHandler_UpdateChain_RejectsSwitchToFrozen verifies that switching a
@@ -70,8 +69,11 @@ func TestHandler_UpdateChain_PreservedFrozenProtocol(t *testing.T) {
 func TestHandler_UpdateChain_RejectsSwitchToFrozen(t *testing.T) {
 	ts := newTestServer(t)
 	ts.createNode("n1", "1.1.1.1:22")
-	ts.post("/ui/chains", url.Values{"name": {"chain-sw"}, "nodes": {"n1"}})
-	form := url.Values{"strategy": {"urltest"}, "user_protocol": {"tuic"}}
+	ts.createDeployedProfile("prof-awg", "awg", 51840, "n1")
+	ts.createDeployedProfile("prof-tuic", "tuic", 8443, "n1")
+	ts.post("/ui/chains", url.Values{"name": {"chain-sw"}, "level_0_nodes": {"n1"}, "inboundref_n1": {"prof-awg"}})
+	// Switching the entry to a TUIC profile = switching TO a frozen protocol.
+	form := url.Values{"level_0_nodes": {"n1"}, "inboundref_n1": {"prof-tuic"}}
 	w := ts.post("/ui/chains/chain-sw/edit", form)
 	ts.assertStatus(w, http.StatusBadRequest)
 	ts.assertContains(w, "TUIC is paused")

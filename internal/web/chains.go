@@ -23,11 +23,197 @@ func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 	s.renderContent(w, r, i18n.T(r.Context(), "Chains"), templates.Chains(chains, hosts))
 }
 
+// buildNodeProfiles maps each host to the inbound profiles deployed on it —
+// the entry level's per-node inbound select only offers what is actually
+// materialized there ("inbounds first, chains second"; no auto-deploy from
+// the chain form).
+func buildNodeProfiles(st *chain.Store, hosts []*model.Host) map[string][]templates.ChainProfileOption {
+	profs, _ := st.ListInboundProfiles()
+	out := map[string][]templates.ChainProfileOption{}
+	for _, h := range hosts {
+		for _, p := range profs {
+			if st.ProfileInboundOn(h.ID, p.ID) != nil {
+				out[h.ID] = append(out[h.ID], templates.ChainProfileOption{ID: p.ID, Name: p.Name, Protocol: p.Protocol})
+			}
+		}
+	}
+	return out
+}
+
 func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	hosts, _ := st.ListHosts()
-	profiles := chain.ListPresets()
-	s.render(w, r, templates.NewChainForm(hosts, profiles))
+	s.render(w, r, templates.ChainLevelsForm(templates.ChainLevelsFormData{
+		Hosts:        hosts,
+		NodeProfiles: buildNodeProfiles(st, hosts),
+		Presets:      chain.ListPresets(),
+	}))
+}
+
+// handleChainLevelRow serves a transit-level fieldset for the "add level"
+// button (appended client-side via hx-swap="beforeend").
+func (s *Server) handleChainLevelRow(w http.ResponseWriter, r *http.Request) {
+	i := 0
+	if _, err := fmt.Sscanf(r.URL.Query().Get("i"), "%d", &i); err != nil || i < 1 {
+		i = 1
+	}
+	st := s.store()
+	hosts, _ := st.ListHosts()
+	s.render(w, r, templates.ChainLevelRow(i, templates.ChainLevelsFormData{Hosts: hosts}, false))
+}
+
+// parseLevelsForm reads the levels editor wire format (level_<i>_nodes[],
+// level_<i>_strategy, inboundref_<nodeID>) and builds the chain's Levels.
+// Per-node transit material is preserved from `existing` (Rule 5 — keys
+// never rotate on edit). The returned chain has UserProtocol derived from the
+// entry profiles (all entry nodes must share one protocol).
+func parseLevelsForm(r *http.Request, st *chain.Store, existing *model.Chain) (*model.Chain, error) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if existing != nil {
+		name = existing.Name
+	}
+	if name == "" {
+		return nil, fmt.Errorf("%s", i18n.T(r.Context(), "Chain name is required"))
+	}
+	transport := model.TransportType(strings.TrimSpace(r.FormValue("transport")))
+	if transport == "" {
+		if existing != nil && existing.Transport != "" {
+			transport = existing.Transport
+		} else {
+			transport = model.TransportXHTTP
+		}
+	}
+	// Frozen guard: switching TO a frozen transport is rejected; preserving an
+	// already-frozen one (unchanged submit) is allowed (AGENTS.md #11 nuance).
+	if existing == nil || transport != existing.Transport {
+		if err := chain.ValidateChainTransport(transport); err != nil {
+			return nil, err
+		}
+	}
+
+	c := &model.Chain{Name: name}
+	if existing != nil {
+		*c = *existing // carry chain-level material (legacy CPS fields, Strategy)
+		c.Levels = nil // rebuilt below
+	}
+	// Form values win over the carried-over copy (the copy exists to preserve
+	// material, not to override the edit).
+	c.Transport = transport
+	c.ObfuscationProfile = strings.TrimSpace(r.FormValue("profile"))
+
+	entryProto := ""
+	for i := 0; ; i++ {
+		key := fmt.Sprintf("level_%d_nodes", i)
+		if _, ok := r.Form[key]; !ok {
+			break
+		}
+		seen := map[string]bool{}
+		var ids []string
+		for _, id := range r.Form[key] {
+			if id = strings.TrimSpace(id); id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "level %d has no nodes selected"), i))
+		}
+		strategy := model.Strategy(strings.TrimSpace(r.FormValue(fmt.Sprintf("level_%d_strategy", i))))
+		switch strategy {
+		case "", model.StrategyFallback, model.StrategyURLTest, model.StrategyFailover, model.StrategySelector:
+		default:
+			return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "level %d: invalid strategy %q"), i, strategy))
+		}
+		lv := model.ChainLevel{ID: fmt.Sprintf("l%d", i), Strategy: strategy}
+		for _, id := range ids {
+			h, err := st.GetHost(id)
+			if err != nil {
+				if errors.Is(err, chain.ErrHostNotFound) {
+					return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), id))
+				}
+				return nil, fmt.Errorf("store: %w", err)
+			}
+			n := model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath}
+			if existing != nil {
+				if old := existing.NodeByID(id); old != nil {
+					// Preserve ALL persisted material (transit keys, exit
+					// links, ports) — re-editing the chain must never rotate.
+					n = *old
+					n.Addr, n.User, n.KeyPath = h.Addr, h.User, h.KeyPath
+				}
+			}
+			if i == 0 {
+				ref := strings.TrimSpace(r.FormValue("inboundref_" + id))
+				if ref == "" {
+					return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "entry node %q has no inbound selected — deploy one on the Inbounds page first"), id))
+				}
+				prof, err := st.GetInboundProfile(ref)
+				if err != nil {
+					return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "entry node %q: inbound profile %q not found"), id, ref))
+				}
+				if st.ProfileInboundOn(id, ref) == nil {
+					return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "inbound %q is not deployed on node %q — deploy it on the Inbounds page first"), prof.Name, id))
+				}
+				if entryProto == "" {
+					entryProto = prof.Protocol
+				} else if entryProto != prof.Protocol {
+					return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T(r.Context(), "entry nodes must use inbounds of one protocol (%s vs %s)"), entryProto, prof.Protocol))
+				}
+				n.InboundRef = ref
+				n.Role = "" // level position rules
+			} else if n.Role == model.NodeRoleExit && i < lastLevelIndex(r) {
+				// Role=exit is only meaningful on the last level (kernel AWG
+				// exit balancer); a node moved to a mid level loses the marker.
+				n.Role = ""
+			}
+			lv.Nodes = append(lv.Nodes, n)
+		}
+		c.Levels = append(c.Levels, lv)
+	}
+	if len(c.Levels) == 0 {
+		return nil, fmt.Errorf("%s", i18n.T(r.Context(), "at least one level is required"))
+	}
+	if entryProto == "" {
+		return nil, fmt.Errorf("%s", i18n.T(r.Context(), "entry level is required"))
+	}
+	c.UserProtocol = model.UserProtocol(entryProto)
+	// Frozen user-protocol guard: new selection rejected; preserving allowed.
+	if existing == nil || c.UserProtocol != existing.UserProtocol {
+		if err := chain.ValidateChainUserProtocol(c.UserProtocol); err != nil {
+			return nil, err
+		}
+	}
+	if err := chain.ValidateChainTopology(c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// lastLevelIndex returns the highest level index present in the form.
+func lastLevelIndex(r *http.Request) int {
+	last := 0
+	for i := 0; ; i++ {
+		if _, ok := r.Form[fmt.Sprintf("level_%d_nodes", i)]; !ok {
+			return last
+		}
+		last = i
+	}
+}
+
+// saveChainFromForm persists the parsed chain and materializes its entry
+// inbounds (per-node creds + AWG obfs material) so client links work before
+// the first apply.
+func (s *Server) saveChainFromForm(st *chain.Store, c *model.Chain) error {
+	if err := st.SaveChain(c); err != nil {
+		return err
+	}
+	preset := chain.GetEffectivePreset(c)
+	if c.ObfuscationProfile != "" {
+		if p, ok := chain.GetPreset(c.ObfuscationProfile); ok {
+			preset = p
+		}
+	}
+	return chain.EnsureChainEntryMaterialization(st, c, preset)
 }
 
 func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
@@ -35,137 +221,21 @@ func (s *Server) handleCreateChain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("name"))
-	strategy := strings.TrimSpace(r.FormValue("strategy"))
-	if strategy == "" {
-		strategy = "urltest"
-	}
-	transport := model.TransportType(strings.TrimSpace(r.FormValue("transport")))
-	if transport == "" {
-		transport = model.TransportXHTTP
-	}
-	if err := chain.ValidateChainTransport(transport); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	userProto := model.UserProtocol(strings.TrimSpace(r.FormValue("user_protocol")))
-	if userProto == "" {
-		userProto = model.UserProtocolAWG
-	}
-	if err := chain.ValidateChainUserProtocol(userProto); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	// AWG CPS mimicry + QUIC capture domain (chain-level override; preset only
-	// ever sets "quic", so "quic-live" must be chosen explicitly here).
-	awgCPSMimicry := strings.TrimSpace(r.FormValue("awg_cps_mimicry"))
-	awgCPSCaptureDomain := strings.TrimSpace(r.FormValue("awg_cps_capture_domain"))
-	if userProto == model.UserProtocol("awg") {
-		switch awgCPSMimicry {
-		case "", "quic-live", "quic", "sip", "dns", "none":
-			// ok
-		default:
-			http.Error(w, i18n.T(r.Context(), "Invalid CPS mimicry mode"), http.StatusBadRequest)
-			return
-		}
-		if awgCPSMimicry == "quic-live" && awgCPSCaptureDomain != "" {
-			awgCPSCaptureDomain = chain.NormalizeDomain(awgCPSCaptureDomain)
-			if !chain.IsValidDomain(awgCPSCaptureDomain) {
-				http.Error(w, i18n.T(r.Context(), "Invalid capture domain"), http.StatusBadRequest)
-				return
-			}
-		}
-	} else {
-		// Non-AWG: ignore any CPS fields silently (they shouldn't be sent).
-		awgCPSMimicry = ""
-		awgCPSCaptureDomain = ""
-	}
-	profile := strings.TrimSpace(r.FormValue("profile"))
-
-	nodeIDs := r.Form["nodes"]
-	if len(nodeIDs) == 0 {
-		nodeIDs = r.PostForm["nodes"]
-	}
-	seen := map[string]bool{}
-	uniqueNodes := []string{}
-	for _, id := range nodeIDs {
-		id = strings.TrimSpace(id)
-		if id != "" && !seen[id] {
-			seen[id] = true
-			uniqueNodes = append(uniqueNodes, id)
-		}
-	}
-	nodeIDs = uniqueNodes
-
-	if name == "" || len(nodeIDs) < 1 {
-		http.Error(w, i18n.T(r.Context(), "name and at least one node are required"), http.StatusBadRequest)
-		return
-	}
-
-	// entry_nodes are the user-designated entry (user-facing) nodes. When at
-	// least one is selected, those nodes get Role=entry and the rest transit.
-	// When none are selected, all roles stay empty -> legacy "index 0 is entry".
-	entrySet := map[string]bool{}
-	for _, id := range r.Form["entry_nodes"] {
-		entrySet[strings.TrimSpace(id)] = true
-	}
-
 	st := s.store()
-	nodes := make([]model.ChainNode, 0, len(nodeIDs))
-	for _, id := range nodeIDs {
-		h, err := st.GetHost(id)
-		if err != nil {
-			// CTO-review §2: distinguish not-found (400 — user input error)
-			// from store I/O failure (500 — server error). The sentinel is
-			// set by the store on a missing host; any other error (corrupt
-			// store, permission) surfaces as 500 with the real cause.
-			if errors.Is(err, chain.ErrHostNotFound) {
-				http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), id), http.StatusBadRequest)
-				return
-			}
-			http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "store error: %v"), err), http.StatusInternalServerError)
-			return
-		}
-		n := model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath}
-		if entrySet[id] {
-			n.Role = model.NodeRoleEntry
-		}
-		nodes = append(nodes, n)
+	if _, err := st.GetChain(strings.TrimSpace(r.FormValue("name"))); err == nil {
+		http.Error(w, i18n.T(r.Context(), "chain already exists"), http.StatusConflict)
+		return
 	}
-
-	c := &model.Chain{
-		Name:                name,
-		Nodes:               nodes,
-		Strategy:            model.Strategy(strategy),
-		Transport:           transport,
-		UserProtocol:        userProto,
-		ObfuscationProfile:  profile,
-		AWGCPSMimicry:       awgCPSMimicry,
-		AWGCPSCaptureDomain: awgCPSCaptureDomain,
+	c, err := parseLevelsForm(r, st, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-
-	// Generate stable AWG/TUIC creds at creation time
-	if userProto == model.UserProtocol("awg") {
-		priv, pub, err := chain.GenerateWireGuardKeypair()
-		if err == nil {
-			c.AWGEntryServerPriv = priv
-			c.AWGEntryServerPub = pub
-		}
-	}
-	if userProto == model.UserProtocol("tuic") {
-		uuid, password, err := chain.GenerateStableTUICUserCreds()
-		if err != nil {
-			http.Error(w, i18n.T(r.Context(), "failed to generate TUIC creds"), http.StatusInternalServerError)
-			return
-		}
-		c.TUICEntryUserUUID = uuid
-		c.TUICEntryUserPassword = password
-	}
-
-	if err := st.SaveChain(c); err != nil {
+	if err := s.saveChainFromForm(st, c); err != nil {
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
+	chain.WriteAudit(st, "create", "chain", c.Name, chain.AuditPayload{"levels": len(c.Levels), "transport": c.Transport}, "operator")
 	s.render(w, r, templates.ChainRow(c))
 }
 
@@ -178,8 +248,12 @@ func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hosts, _ := st.ListHosts()
-	profiles := chain.ListPresets()
-	s.render(w, r, templates.EditChainForm(c, hosts, profiles))
+	s.render(w, r, templates.ChainLevelsForm(templates.ChainLevelsFormData{
+		Chain:        c,
+		Hosts:        hosts,
+		NodeProfiles: buildNodeProfiles(st, hosts),
+		Presets:      chain.ListPresets(),
+	}))
 }
 
 func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
@@ -189,136 +263,21 @@ func (s *Server) handleUpdateChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.store()
-	c, err := st.GetChain(name)
+	existing, err := st.GetChain(name)
 	if err != nil {
 		http.Error(w, i18n.T(r.Context(), "chain not found"), http.StatusNotFound)
 		return
 	}
-
-	c.Strategy = model.Strategy(strings.TrimSpace(r.FormValue("strategy")))
-	if c.Strategy == "" {
-		c.Strategy = "urltest"
+	c, err := parseLevelsForm(r, st, existing)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	// Frozen-protocol guard: a chain that already uses a paused transport/user
-	// protocol (TUIC, Hysteria2) may be re-saved as-is (display/edit permitted
-	// per AGENTS.md — only NEW selection is blocked). So we only validate when
-	// the value actually CHANGES; submitting the unchanged frozen value (the
-	// `selected disabled` option) is preserved, while switching a non-frozen
-	// chain TO a frozen one is rejected. Mirrors the settings.go default_protocol
-	// guard (settings.DefaultProtocol != dp).
-	transport := model.TransportType(strings.TrimSpace(r.FormValue("transport")))
-	if transport != "" && transport != c.Transport {
-		if err := chain.ValidateChainTransport(transport); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		c.Transport = transport
-	}
-	userProto := model.UserProtocol(strings.TrimSpace(r.FormValue("user_protocol")))
-	if userProto != "" && userProto != c.UserProtocol {
-		if err := chain.ValidateChainUserProtocol(userProto); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		c.UserProtocol = userProto
-	}
-	// AWG CPS mimicry + QUIC capture domain.
-	awgCPSMimicry := strings.TrimSpace(r.FormValue("awg_cps_mimicry"))
-	awgCPSCaptureDomain := strings.TrimSpace(r.FormValue("awg_cps_capture_domain"))
-	if c.UserProtocol == model.UserProtocol("awg") {
-		switch awgCPSMimicry {
-		case "", "quic-live", "quic", "sip", "dns", "none":
-			// ok
-		default:
-			http.Error(w, i18n.T(r.Context(), "Invalid CPS mimicry mode"), http.StatusBadRequest)
-			return
-		}
-		if awgCPSMimicry == "quic-live" && awgCPSCaptureDomain != "" {
-			awgCPSCaptureDomain = chain.NormalizeDomain(awgCPSCaptureDomain)
-			if !chain.IsValidDomain(awgCPSCaptureDomain) {
-				http.Error(w, i18n.T(r.Context(), "Invalid capture domain"), http.StatusBadRequest)
-				return
-			}
-		}
-		// Cache reset: changing the capture domain invalidates the prior capture.
-		if awgCPSCaptureDomain != c.AWGCPSCaptureDomain {
-			c.AWGCPSCapturedDomain = ""
-			c.AWGCPSCaptureFailedDomain = ""
-		}
-		// Leaving quic-live: capture is irrelevant, drop all capture fields.
-		if awgCPSMimicry != "quic-live" {
-			c.AWGCPSCaptureDomain = ""
-			c.AWGCPSCapturedDomain = ""
-			c.AWGCPSCaptureFailedDomain = ""
-		} else {
-			c.AWGCPSCaptureDomain = awgCPSCaptureDomain
-		}
-		c.AWGCPSMimicry = awgCPSMimicry
-	} else {
-		// Non-AWG chain: clear any stale CPS fields (e.g. protocol switched away
-		// from AWG in this same edit).
-		c.AWGCPSMimicry = ""
-		c.AWGCPSCaptureDomain = ""
-		c.AWGCPSCapturedDomain = ""
-		c.AWGCPSCaptureFailedDomain = ""
-	}
-	c.ObfuscationProfile = strings.TrimSpace(r.FormValue("profile"))
-
-	// Update nodes if new ones selected
-	nodeIDs := r.Form["nodes"]
-	if len(nodeIDs) == 0 {
-		nodeIDs = r.PostForm["nodes"]
-	}
-	if len(nodeIDs) > 0 {
-		seen := map[string]bool{}
-		uniqueNodes := []string{}
-		for _, id := range nodeIDs {
-			id = strings.TrimSpace(id)
-			if id != "" && !seen[id] {
-				seen[id] = true
-				uniqueNodes = append(uniqueNodes, id)
-			}
-		}
-		// entry_nodes for this edit. Empty set -> clear explicit roles, reverting
-		// to the legacy "index 0 is entry" behavior.
-		entrySet := map[string]bool{}
-		for _, id := range r.Form["entry_nodes"] {
-			entrySet[strings.TrimSpace(id)] = true
-		}
-		nodes := make([]model.ChainNode, 0, len(uniqueNodes))
-		for _, id := range uniqueNodes {
-			h, err := st.GetHost(id)
-			if err != nil {
-				continue
-			}
-			n := model.ChainNode{ID: h.ID, Addr: h.Addr, User: h.User, KeyPath: h.KeyPath}
-			if entrySet[id] {
-				n.Role = model.NodeRoleEntry
-			}
-			// Preserve persisted transit key material when the node was already in
-			// the chain (re-applying an existing chain must not drop its keys).
-			for _, old := range c.Nodes {
-				if old.ID == id {
-					n.TransitPrivKey = old.TransitPrivKey
-					n.TransitShortID = old.TransitShortID
-					n.TransitUUID = old.TransitUUID
-					n.Port = old.Port
-					n.Inbounds = old.Inbounds
-					break
-				}
-			}
-			nodes = append(nodes, n)
-		}
-		if len(nodes) > 0 {
-			c.Nodes = nodes
-		}
-	}
-
-	if err := st.SaveChain(c); err != nil {
+	if err := s.saveChainFromForm(st, c); err != nil {
 		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "save: %v"), err), http.StatusInternalServerError)
 		return
 	}
-	// Return updated row
+	chain.WriteAudit(st, "update", "chain", c.Name, chain.AuditPayload{"levels": len(c.Levels), "transport": c.Transport}, "operator")
 	s.render(w, r, templates.ChainRow(c))
 }
 
@@ -516,6 +475,7 @@ func (s *Server) registerChainRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /ui/chains/{name}", s.auth(s.handleDeleteChain))
 	mux.HandleFunc("POST /ui/chains/{name}/apply", s.auth(s.handleApplyChain))
 	mux.HandleFunc("GET /ui/chains/new", s.auth(s.handleNewChainForm))
+	mux.HandleFunc("GET /ui/chains/level-row", s.auth(s.handleChainLevelRow))
 	mux.HandleFunc("GET /ui/chains/{name}/edit", s.auth(s.handleEditChainForm))
 	mux.HandleFunc("POST /ui/chains/{name}/edit", s.auth(s.handleUpdateChain))
 }
