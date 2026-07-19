@@ -101,13 +101,8 @@ func TestHandler_UpdateNode(t *testing.T) {
 	ts.assertContains(w, "9.9.9.9:22")
 }
 
-// TestHandler_NodeInboundsForm verifies the inbounds form renders for an existing node.
-func TestHandler_NodeInboundsForm(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createNode("node-G", "1.2.3.4:22")
-	w := ts.get("/ui/nodes/node-G/inbounds")
-	ts.assertStatus(w, http.StatusOK)
-}
+// TestHandler_NodeInboundsForm was removed with the node-scoped inbound
+// editor (v0.8 IA refactor) — inbounds live on /ui/inbounds now.
 
 // ─── Users ──────────────────────────────────────────────────────────────────
 

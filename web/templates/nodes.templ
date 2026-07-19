@@ -116,8 +116,8 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 								{ i18n.T(ctx, "Apply") }
 							}
 						</button>
-						if info != nil && len(info.Inbounds) > 0 {
-							<span class="text-[9px] opacity-60 mt-0.5">{ fmt.Sprintf("%d %s", len(info.Inbounds), i18n.T(ctx, "inbounds")) }</span>
+						if info != nil && standaloneInboundCount(info) > 0 {
+							<span class="text-[9px] opacity-60 mt-0.5">{ fmt.Sprintf("%d %s", standaloneInboundCount(info), i18n.T(ctx, "inbounds")) }</span>
 						} else {
 							<span class="text-[9px] opacity-60 mt-0.5 text-warning">{ "0 " + i18n.T(ctx, "inbounds") }</span>
 						}
@@ -172,13 +172,6 @@ templ NodeRow(h *model.Host, info *model.NodeInfo, m *model.NodeMetrics, chainNa
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
 					{ i18n.T(ctx, "Edit") }
-				</button>
-				<button
-					class="btn btn-ghost btn-xs"
-					hx-get={"/ui/nodes/" + h.ID + "/inbounds"}
-					hx-target="#modal-container"
-					hx-swap="innerHTML">
-					{ i18n.T(ctx, "Inbounds") }
 				</button>
 				<button
 					class="btn btn-ghost btn-xs text-error"
@@ -322,227 +315,6 @@ templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 		</div>
 	}
 
-// ─── Node Inbounds Form ─────────────────────────────────────────────────────────
-
-templ NodeInboundsForm(info *model.NodeInfo, users []*model.User, protocolPresetsJSON string) {
-	<dialog id="inbounds-modal" class="modal" open>
-		<span id="protocol-presets-data" style="display:none">{ protocolPresetsJSON }</span>
-		<div class="modal-box max-w-2xl">
-			<h3 class="font-bold text-lg mb-4">{ i18n.T(ctx, "Inbounds for ") }{ info.ID }</h3>
-
-			<form
-				hx-post={"/ui/nodes/" + info.ID + "/inbounds"}
-				hx-target="#inbounds-result"
-				hx-swap="innerHTML"
-				class="space-y-4">
-
-				<div id="inbounds-list" class="space-y-3">
-					if len(info.Inbounds) == 0 {
-						<div class="border border-base-300 rounded-lg p-3 relative inbound-row">
-							<input type="hidden" name="inbound_index" value="0" />
-							<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
-							<div class="grid grid-cols-5 gap-2">
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Protocol") }</span></label>
-									<select name="proto" class="select select-bordered select-sm" onchange="filterPresetsForRow(this)">
-										<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
-										<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-										<option value="vless-reality">{ i18n.T(ctx, "VLESS Reality") }</option>
-										<option value="shadowsocks">{ i18n.T(ctx, "Shadowsocks") }</option>
-										<option value="trojan">{ i18n.T(ctx, "Trojan") }</option>
-										<option value="vmess">{ i18n.T(ctx, "VMess") }</option>
-									</select>
-								</div>
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Port") }</span></label>
-									<input type="number" name="port" class="input input-bordered input-sm" value="8443" />
-								</div>
-								<div class="form-control col-span-2">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
-										<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-											if len(users) == 0 {
-												<div class="text-xs space-y-1">
-													<span class="text-base-content/50">{ i18n.T(ctx, "No clients yet. Create one in the Clients page first.") }</span>
-													<div class="flex gap-2 items-center">
-														<a href="/ui/clients" target="_blank" class="link link-primary">{ i18n.T(ctx, "Open Clients") }</a>
-														<button type="button" class="btn btn-ghost btn-xs"
-															hx-get={ fmt.Sprintf("/ui/nodes/%s/inbounds", info.ID) }
-															hx-target="#modal-container"
-															hx-swap="innerHTML">
-															{ i18n.T(ctx, "Refresh clients") }
-														</button>
-													</div>
-												</div>
-											}
-											for _, u := range users {
-												<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-													<input type="checkbox" name="for_users_0" value={ u.ID } class="checkbox checkbox-xs" />
-												<span>{ u.Name }</span>
-											</label>
-										}
-									</div>
-								</div>
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
-									<select name="obfuscation" class="select select-bordered select-sm">
-										<option value="">{ i18n.T(ctx, "None") }</option>
-									</select>
-								</div>
-							</div>
-						</div>
-					}
-					for i, ib := range info.Inbounds {
-						<div class={ "border rounded-lg p-3 relative inbound-row", templ.KV("border-base-300", ib.Source == ""), templ.KV("border-secondary/50 bg-secondary/5", ib.Source != "") }>
-							if ib.Source == "" {
-								<input type="hidden" name="inbound_index" value={ fmt.Sprintf("%d", i) } />
-								<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
-							} else {
-								<div class="absolute top-2 right-2 badge badge-secondary badge-sm">{ i18n.T(ctx, "[Chain] ") }{ ib.Source[6:] }</div>
-							}
-							<div class="grid grid-cols-5 gap-2">
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Protocol") }</span></label>
-									<select name={ templ.KV("proto", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" } onchange="filterPresetsForRow(this)">
-										<option value="telemt" if ib.Protocol == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto)") }</option>
-									<option value="awg" if ib.Protocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-										if ib.Protocol == "tuic" {
-											<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused)") }</option>
-										}
-										<option value="vless-reality" if ib.Protocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
-										<option value="shadowsocks" if ib.Protocol == "shadowsocks" { selected }>{ i18n.T(ctx, "Shadowsocks") }</option>
-										<option value="trojan" if ib.Protocol == "trojan" { selected }>{ i18n.T(ctx, "Trojan") }</option>
-										<option value="vmess" if ib.Protocol == "vmess" { selected }>{ i18n.T(ctx, "VMess") }</option>
-										if ib.Protocol == "hysteria2" {
-											<option value="hysteria2" selected disabled>{ i18n.T(ctx, "Hysteria2 (paused)") }</option>
-										}
-									</select>
-								</div>
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Port") }</span></label>
-									<input type="number" name={ templ.KV("port", ib.Source == "") } class="input input-bordered input-sm" value={ fmt.Sprintf("%d", ib.Port) } disabled?={ ib.Source != "" } />
-								</div>
-								<div class="form-control col-span-2">
-								<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
-									<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-										if len(users) == 0 {
-											<div class="text-xs space-y-1">
-												<span class="text-base-content/50">{ i18n.T(ctx, "No clients yet. Create one in the Clients page first.") }</span>
-												<div class="flex gap-2 items-center">
-													<a href="/ui/clients" target="_blank" class="link link-primary">{ i18n.T(ctx, "Open Clients") }</a>
-													<button type="button" class="btn btn-ghost btn-xs"
-														hx-get={ fmt.Sprintf("/ui/nodes/%s/inbounds", info.ID) }
-														hx-target="#modal-container"
-														hx-swap="innerHTML">
-														{ i18n.T(ctx, "Refresh clients") }
-													</button>
-												</div>
-											</div>
-										}
-										for _, u := range users {
-											<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-												<input type="checkbox" name={ templ.KV(fmt.Sprintf("for_users_%d", i), ib.Source == "") } value={ u.ID } class="checkbox checkbox-xs"
-													if containsStr(ib.ForUsers, u.ID) { checked } disabled?={ ib.Source != "" } />
-											<span>{ u.Name }</span>
-										</label>
-									}
-								</div>
-							</div>
-								<div class="form-control">
-									<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
-									<select name={ templ.KV("obfuscation", ib.Source == "") } class="select select-bordered select-sm" disabled?={ ib.Source != "" }>
-										<option value="">{ i18n.T(ctx, "None") }</option>
-										if ib.Obfuscation != "" {
-											<option value={ ib.Obfuscation } selected>{ ib.Obfuscation }</option>
-										}
-									</select>
-								</div>
-							</div>
-						</div>
-					}
-				</div>
-
-				<button type="button" class="btn btn-ghost btn-sm"
-					onclick="addInboundRow()">
-					{ i18n.T(ctx, "+ Add Inbound") }
-				</button>
-
-				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
-					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Inbounds") }</button>
-				</div>
-			</form>
-
-			<div id="inbounds-result" class="mt-2"></div>
-		</div>
-		<form method="dialog" class="modal-backdrop">
-			<button>{ i18n.T(ctx, "Close") }</button>
-		</form>
-
-	</dialog>
-
-	<template id="inbound-tmpl" class="hidden">
-		<div class="border border-base-300 rounded-lg p-3 relative inbound-row">
-			<button type="button" class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 text-error" onclick="this.closest('.inbound-row').remove()">✕</button>
-			<div class="grid grid-cols-5 gap-2">
-				<div class="form-control">
-					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Protocol") }</span></label>
-					<select name="proto" class="select select-bordered select-sm" onchange="filterPresetsForRow(this)">
-						<option value="telemt">{ i18n.T(ctx, "Telemt (MTProto)") }</option>
-						<option value="awg" selected>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-						<option value="vless-reality">{ i18n.T(ctx, "VLESS Reality") }</option>
-						<option value="shadowsocks">{ i18n.T(ctx, "Shadowsocks") }</option>
-						<option value="trojan">{ i18n.T(ctx, "Trojan") }</option>
-						<option value="vmess">{ i18n.T(ctx, "VMess") }</option>
-					</select>
-				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Port") }</span></label>
-					<input type="number" name="port" class="input input-bordered input-sm" value="0" />
-				</div>
-				<div class="form-control col-span-2">
-					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "For Users") }</span></label>
-						<div class="max-h-32 overflow-y-auto border border-base-300 rounded p-2">
-							if len(users) == 0 {
-								<div class="text-xs space-y-1">
-									<span class="text-base-content/50">{ i18n.T(ctx, "No clients yet. Create one in the Clients page first.") }</span>
-									<div class="flex gap-2 items-center">
-										<a href="/ui/clients" target="_blank" class="link link-primary">{ i18n.T(ctx, "Open Clients") }</a>
-										<button type="button" class="btn btn-ghost btn-xs"
-											hx-get={ fmt.Sprintf("/ui/nodes/%s/inbounds", info.ID) }
-											hx-target="#modal-container"
-											hx-swap="innerHTML">
-											{ i18n.T(ctx, "Refresh clients") }
-										</button>
-									</div>
-								</div>
-							}
-							for _, u := range users {
-								<label class="flex items-center gap-1 cursor-pointer text-xs py-0.5">
-									<input type="checkbox" name="for_users" value={ u.ID } class="checkbox checkbox-xs" />
-								<span>{ u.Name }</span>
-							</label>
-						}
-					</div>
-				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Obfuscation Preset") }</span></label>
-					<select name="obfuscation" class="select select-bordered select-sm">
-						<option value="">{ i18n.T(ctx, "None") }</option>
-					</select>
-				</div>
-			</div>
-		</div>
-	</template>
-}
-
-// ─── Node Capture Form (1-step wizard) ─────────────────────────────────────────
-//
-// Deviation from the plan's 2-step wizard: country/bandwidth metadata is
-// captured here in Step 1 so the wizard is a single POST (the capture handler
-// already saves NodeInfo with Country/Bandwidth on success). The plan's
-// "Step 2" is just the server-rendered success partial (OS / sing-box / AWG
-// status line + a "Refresh Nodes" button), not a separate client form.
-
 templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {
 	<dialog id="capture-modal" class="modal" open>
 		<div class="modal-box">
@@ -602,6 +374,22 @@ templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys [
 					</div>
 				</div>
 
+				<div class="form-control border border-base-300 rounded-lg p-3 space-y-1">
+					<span class="text-sm font-medium mb-1">{ i18n.T(ctx, "After connect") }</span>
+					<label class="label cursor-pointer justify-start gap-2 py-0.5">
+						<input type="checkbox" name="opt_deploy_singbox" class="checkbox checkbox-sm" checked />
+						<span class="label-text">{ i18n.T(ctx, "Deploy sing-box-extended (binary)") }</span>
+					</label>
+					<label class="label cursor-pointer justify-start gap-2 py-0.5">
+						<input type="checkbox" name="opt_install_awg" class="checkbox checkbox-sm" />
+						<span class="label-text">{ i18n.T(ctx, "Install AmneziaWG kernel module") }</span>
+					</label>
+					<label class="label cursor-pointer justify-start gap-2 py-0.5">
+						<input type="checkbox" name="opt_takeover" class="checkbox checkbox-sm" />
+						<span class="label-text">{ i18n.T(ctx, "Detect existing VPN (takeover wizard)") }</span>
+					</label>
+				</div>
+
 				<div class="modal-action">
 					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
 					<button type="button" class="btn btn-ghost btn-sm"
@@ -641,6 +429,24 @@ func findInfo(id string, infos []*model.NodeInfo) *model.NodeInfo {
 		}
 	}
 	return nil
+}
+
+// standaloneInboundCount counts the node's operator-managed inbounds (the
+// node table's read-only indicator). Chain-entry materializations
+// (Source "chain:*") are excluded — they belong to the chain, are rendered
+// by the chain machinery, and are not editable from the node row. Inbound
+// management lives on the /ui/inbounds page (first-class profiles).
+func standaloneInboundCount(info *model.NodeInfo) int {
+	if info == nil {
+		return 0
+	}
+	n := 0
+	for i := range info.Inbounds {
+		if !chain.IsChainSourcedInbound(&info.Inbounds[i]) {
+			n++
+		}
+	}
+	return n
 }
 
 func findMetric(id string, metrics []*model.NodeMetrics) *model.NodeMetrics {

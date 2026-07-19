@@ -433,6 +433,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	s.registerSettingsRoutes(mux)
 	s.registerMiscRoutes(mux)
 	s.registerClientRoutes(mux)
+	s.registerInboundRoutes(mux)
 	s.registerPresetRoutes(mux)
 	s.registerServiceRoutes(mux)
 	s.registerBackupRoutes(mux)

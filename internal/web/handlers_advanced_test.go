@@ -115,61 +115,9 @@ func TestHandler_ApplyChain_HappyPath(t *testing.T) {
 
 // ─── Inbounds ───────────────────────────────────────────────────────────────
 
-// TestHandler_SaveNodeInbounds verifies saving a standalone vless inbound
-// succeeds and records the inbound.
-func TestHandler_SaveNodeInbounds(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createNode("n1", "1.1.1.1:22")
-	form := url.Values{
-		"proto":         {"vless"},
-		"port":          {"8443"},
-		"inbound_index": {"0"},
-		"for_users_0":   {"u1"},
-	}
-	w := ts.post("/ui/nodes/n1/inbounds", form)
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "Inbounds saved")
-}
-
-// TestHandler_SaveNodeInbounds_InvalidPort verifies a non-numeric port is
-// rejected with an error alert.
-func TestHandler_SaveNodeInbounds_InvalidPort(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createNode("n1", "1.1.1.1:22")
-	form := url.Values{
-		"proto":         {"vless"},
-		"port":          {"not-a-port"},
-		"inbound_index": {"0"},
-	}
-	w := ts.post("/ui/nodes/n1/inbounds", form)
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "Invalid port")
-}
-
-// TestHandler_SaveNodeInbounds_OutOfRange verifies an out-of-range port is
-// rejected (validatePort, L6).
-func TestHandler_SaveNodeInbounds_OutOfRange(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createNode("n1", "1.1.1.1:22")
-	form := url.Values{
-		"proto":         {"vless"},
-		"port":          {"99999"},
-		"inbound_index": {"0"},
-	}
-	w := ts.post("/ui/nodes/n1/inbounds", form)
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "port")
-}
-
-// TestHandler_SaveNodeInbounds_ZeroInbounds verifies refusing to save zero
-// inbounds on a node with no chain inbounds.
-func TestHandler_SaveNodeInbounds_ZeroInbounds(t *testing.T) {
-	ts := newTestServer(t)
-	ts.createNode("n1", "1.1.1.1:22")
-	w := ts.post("/ui/nodes/n1/inbounds", url.Values{})
-	ts.assertStatus(w, http.StatusOK)
-	ts.assertContains(w, "zero inbounds")
-}
+// TestHandler_SaveNodeInbounds* were removed with the node-scoped inbound
+// editor (v0.8 IA refactor): inbounds are first-class profiles now — see
+// handlers_inbounds_test.go for the /ui/inbounds CRUD coverage.
 
 // ─── SSH Keys ───────────────────────────────────────────────────────────────
 

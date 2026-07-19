@@ -1,0 +1,206 @@
+package templates
+
+// inbounds.templ — the first-class InboundProfile page (/ui/inbounds).
+//
+// A profile is a node-independent listener template deployed onto nodes via
+// checkboxes (the diff is applied server-side: new nodes get fresh per-node
+// credentials, removed nodes drop the listener — refused while a chain
+// references the profile there). Placement is computed from
+// NodeInbound.ProfileID (single source of truth), never stored on the
+// profile. The page also hosts the Presets tab (obfuscation presets are
+// inbound parameters, folded here from the standalone page).
+
+import (
+	"fmt"
+
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
+
+// InboundProfileView pairs a profile with its computed deployment state.
+type InboundProfileView struct {
+	Profile    *model.InboundProfile
+	NodeIDs    []string
+	ChainRefs  []string
+	UsersTotal int
+}
+
+templ InboundsPage(views []InboundProfileView, nodes []*model.NodeInfo) {
+	<div class="space-y-4">
+		<div class="flex items-center justify-between">
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Inbounds") }</h2>
+			<button class="btn btn-primary btn-sm" hx-get="/ui/inbounds/new" hx-target="#modal-container">
+				{ i18n.T(ctx, "+ Add Inbound") }
+			</button>
+		</div>
+		<div role="tablist" class="tabs tabs-bordered">
+			<button role="tab" class="tab tab-active">{ i18n.T(ctx, "Inbounds") }</button>
+			<button role="tab" class="tab" hx-get="/ui/presets" hx-target="#inbounds-tab-content" hx-swap="innerHTML">{ i18n.T(ctx, "Presets") }</button>
+		</div>
+		<div id="inbounds-tab-content">
+			@InboundsList(views)
+		</div>
+	</div>
+}
+
+templ InboundsList(views []InboundProfileView) {
+	<div class="card bg-base-100/50 border border-base-content/5">
+		<div class="card-body p-0">
+			if len(views) == 0 {
+				<div class="p-6 text-sm text-base-content/50">
+					{ i18n.T(ctx, "No inbounds yet. Create one and deploy it onto your nodes — then reference it from a chain.") }
+				</div>
+			} else {
+				<table class="table table-sm">
+					<thead>
+						<tr>
+							<th>{ i18n.T(ctx, "Name") }</th>
+							<th>{ i18n.T(ctx, "Protocol") }</th>
+							<th>{ i18n.T(ctx, "Port") }</th>
+							<th>{ i18n.T(ctx, "Preset") }</th>
+							<th>{ i18n.T(ctx, "Nodes") }</th>
+							<th>{ i18n.T(ctx, "Chains") }</th>
+							<th class="w-px"></th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, v := range views {
+							@InboundRow(v)
+						}
+					</tbody>
+				</table>
+			}
+		</div>
+	</div>
+}
+
+templ InboundRow(v InboundProfileView) {
+	<tr>
+		<td class="font-medium">{ v.Profile.Name }</td>
+		<td><span class="badge badge-sm badge-outline">{ v.Profile.Protocol }</span></td>
+		<td class="font-mono text-sm">{ fmt.Sprintf("%d", v.Profile.Port) }</td>
+		<td class="text-sm text-base-content/60">
+			if v.Profile.Obfuscation != "" {
+				{ v.Profile.Obfuscation }
+			} else {
+				<span class="text-base-content/30">—</span>
+			}
+		</td>
+		<td>
+			if len(v.NodeIDs) == 0 {
+				<span class="text-sm text-base-content/40">{ i18n.T(ctx, "not deployed") }</span>
+			}
+			for _, id := range v.NodeIDs {
+				<span class="badge badge-sm badge-ghost mr-1">{ id }</span>
+			}
+			if v.UsersTotal > 0 {
+				<span class="text-xs text-base-content/50 ml-1">{ fmt.Sprintf(i18n.T(ctx, "(%d users)"), v.UsersTotal) }</span>
+			}
+		</td>
+		<td>
+			for _, cn := range v.ChainRefs {
+				<span class="badge badge-sm badge-primary badge-outline mr-1">{ cn }</span>
+			}
+		</td>
+		<td class="whitespace-nowrap">
+			<button class="btn btn-ghost btn-xs" hx-get={ "/ui/inbounds/" + v.Profile.ID + "/edit" } hx-target="#modal-container">
+				{ i18n.T(ctx, "Edit") }
+			</button>
+			<button class="btn btn-ghost btn-xs text-error"
+				hx-delete={ "/ui/inbounds/" + v.Profile.ID }
+				hx-confirm={ i18n.T(ctx, "Delete this inbound profile? It will be removed from all nodes.") }
+				hx-target="closest tr"
+				hx-swap="outerHTML">
+				{ i18n.T(ctx, "Delete") }
+			</button>
+		</td>
+	</tr>
+}
+
+templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []*model.NodeInfo, presets []string) {
+	<dialog id="inbound-modal" class="modal" open>
+		<div class="modal-box max-w-2xl">
+			<h3 class="font-bold text-lg mb-4">
+				if prof != nil {
+					{ i18n.T(ctx, "Edit inbound") }
+				} else {
+					{ i18n.T(ctx, "Add inbound") }
+				}
+			</h3>
+			<form class="space-y-4"
+				if prof != nil {
+					hx-post={ "/ui/inbounds/" + prof.ID + "/edit" }
+				} else {
+					hx-post="/ui/inbounds"
+				}
+				hx-target="#modal-container"
+				hx-swap="innerHTML">
+				<div class="grid grid-cols-2 gap-4">
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Name") }</span></label>
+						<input type="text" name="name" class="input input-bordered" required
+							if prof != nil {
+								value={ prof.Name }
+							}
+						/>
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Protocol") }</span></label>
+						<select name="protocol" class="select select-bordered" disabled?={ prof != nil }>
+							<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
+							<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
+							<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
+						</select>
+						if prof != nil {
+							// disabled selects don't submit — carry the value
+							<input type="hidden" name="protocol" value={ prof.Protocol }/>
+							<span class="text-xs text-base-content/40 mt-1">{ i18n.T(ctx, "Protocol is locked while the inbound is deployed (credentials are protocol-specific)") }</span>
+						}
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Port") }</span></label>
+						<input type="number" name="port" class="input input-bordered" min="1" max="65535"
+							if prof != nil {
+								value={ fmt.Sprintf("%d", prof.Port) }
+							}
+						/>
+					</div>
+					<div class="form-control">
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation preset") }</span></label>
+						<select name="obfuscation" class="select select-bordered">
+							<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Default preset") }</option>
+							for _, p := range presets {
+								<option value={ p } selected?={ prof != nil && prof.Obfuscation == p }>{ p }</option>
+							}
+						</select>
+					</div>
+				</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Deploy on nodes") }</span></label>
+					if len(nodes) == 0 {
+						<span class="text-sm text-base-content/50">{ i18n.T(ctx, "No nodes yet — add nodes first.") }</span>
+					}
+					<div class="grid grid-cols-2 gap-2">
+						for _, n := range nodes {
+							<label class="flex items-center gap-2 border border-base-300 rounded-lg p-2 cursor-pointer hover:bg-base-200/50">
+								<input type="checkbox" name="node_ids" value={ n.ID } class="checkbox checkbox-sm"
+									checked?={ deployed[n.ID] }
+								/>
+								<span class="text-sm font-medium">{ n.ID }</span>
+								<span class="text-xs text-base-content/40">{ n.Addr }</span>
+							</label>
+						}
+					</div>
+					<span class="text-xs text-base-content/40 mt-1">
+						{ i18n.T(ctx, "Checking a node deploys the inbound there with fresh per-node credentials; unchecking removes it (refused while a chain references it).") }
+					</span>
+				</div>
+				<div class="modal-action">
+					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>{ i18n.T(ctx, "Close") }</button></form>
+	</dialog>
+}

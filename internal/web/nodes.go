@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -342,11 +341,54 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	statusLine += fmt.Sprintf(" · %s: %s", i18n.T(r.Context(), "AWG kernel module"),
 		boolLabel(r.Context(), status.AWGModuleInstalled))
 
+	// Post-capture options: binary deploy + AWG module run async (the capture
+	// response returns immediately; outcomes land in the audit log). Takeover
+	// is a consent flow — surface a detect button instead of auto-running it.
+	if r.FormValue("opt_deploy_singbox") == "on" || r.FormValue("opt_install_awg") == "on" {
+		go s.postCaptureInstall(id, r.FormValue("opt_deploy_singbox") == "on", r.FormValue("opt_install_awg") == "on")
+		statusLine += " · " + i18n.T(r.Context(), "binary/AWG install queued")
+	}
+	takeoverBtn := ""
+	if r.FormValue("opt_takeover") == "on" {
+		takeoverBtn = `<button class="btn btn-sm btn-secondary ml-2" hx-get="/ui/nodes/` + escHTML(id) + `/detect-vpn" hx-target="#main-content" hx-push-url="true">` + i18n.T(r.Context(), "Detect VPN") + `</button>`
+	}
+
 	s.render(w, r, &simpleHTML{html: fmt.Sprintf(
 		`<div class="alert alert-success"><span>`+i18n.T(r.Context(), "Node %s captured! Running: %v, Version: %s.")+`%s%s</span>
-		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Refresh Nodes")+`</button></div>`,
-		escHTML(id), status.Running, escHTML(status.Version), statusLine, installMsg,
+		<button class="btn btn-sm btn-ghost" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Refresh Nodes")+`</button>%s</div>`,
+		escHTML(id), status.Running, escHTML(status.Version), statusLine, installMsg, takeoverBtn,
 	)})
+}
+
+// postCaptureInstall runs the optional post-capture provisioning steps
+// (sing-box-extended binary deploy, AmneziaWG kernel module install) in the
+// background. Outcomes are audited — failures surface in the audit log, not
+// in the (already-returned) capture response.
+func (s *Server) postCaptureInstall(nodeID string, deploySingBox, installAWG bool) {
+	st := s.store()
+	host, err := st.GetHost(nodeID)
+	if err != nil {
+		return
+	}
+	resolved := chain.ResolveHostKey(st, host)
+	b := s.factory.Create()
+	ctx := context.Background()
+	if deploySingBox {
+		if _, err := b.Deploy(ctx, *resolved); err != nil {
+			slog.Warn("post-capture sing-box deploy failed", "node", nodeID, "err", err)
+			chain.WriteAudit(st, "install", "node", nodeID, chain.AuditPayload{"step": "sing-box", "error": err.Error()}, "system")
+		} else {
+			chain.WriteAudit(st, "install", "node", nodeID, chain.AuditPayload{"step": "sing-box", "ok": true}, "system")
+		}
+	}
+	if installAWG {
+		if err := b.InstallAWGModule(ctx, *resolved); err != nil {
+			slog.Warn("post-capture AWG module install failed", "node", nodeID, "err", err)
+			chain.WriteAudit(st, "install", "node", nodeID, chain.AuditPayload{"step": "awg-module", "error": err.Error()}, "system")
+		} else {
+			chain.WriteAudit(st, "install", "node", nodeID, chain.AuditPayload{"step": "awg-module", "ok": true}, "system")
+		}
+	}
 }
 
 // boolLabel renders a localized yes/no-style label for a boolean status field.
@@ -531,214 +573,6 @@ func (s *Server) handleTestNodeConnection(w http.ResponseWriter, r *http.Request
 		escHTML(status.Version), escHTML(status.OS))})
 }
 
-func (s *Server) handleNodeInboundsForm(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	info, err := s.store().GetNodeInfo(id)
-	if err != nil {
-		info = &model.NodeInfo{Host: model.Host{ID: id}}
-	}
-	settings, _ := s.store().GetSettings()
-	if len(settings.CustomPresets) > 0 {
-		var customs []chain.ConnectionPreset
-		if json.Unmarshal(settings.CustomPresets, &customs) == nil && len(customs) > 0 {
-			if err := chain.LoadPresets(customs); err != nil {
-				slog.Warn("load custom presets failed", "err", err)
-			}
-		}
-	}
-	users, _ := s.store().ListUsers()
-
-	// Build protocol→presets JSON for client-side filtering (embedded in
-	// dialog data attribute). Only protocol-scoped presets are offered (legacy
-	// kitchen-sink presets with Protocol == "" are excluded by the strict
-	// filter). SS/Trojan/VMess/Telemt reuse the XHTTP preset set. TUIC/Hysteria2
-	// are frozen and omitted from new-selection dropdowns.
-	protocolPresets := map[string][]string{
-		"awg":           chain.ListPresetsForProtocol("awg"),
-		"vless-reality": chain.ListPresetsForProtocol("vless-reality"),
-		"xhttp":         chain.ListPresetsForProtocol("xhttp"),
-		"shadowsocks":   chain.ListPresetsForProtocol("xhttp"), // SS uses XHTTP presets
-		"trojan":        chain.ListPresetsForProtocol("xhttp"),
-		"vmess":         chain.ListPresetsForProtocol("xhttp"),
-		"telemt":        chain.ListPresetsForProtocol("xhttp"),
-		// tuic/hysteria2 frozen — omitted from new-selection dropdowns
-	}
-	presetsJSON, _ := json.Marshal(protocolPresets)
-
-	s.render(w, r, templates.NodeInboundsForm(info, users, string(presetsJSON)))
-}
-
-func (s *Server) handleSaveNodeInbounds(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
-		return
-	}
-	st := s.store()
-	info, err := st.GetNodeInfo(id)
-	if err != nil {
-		info = &model.NodeInfo{Host: model.Host{ID: id}}
-	}
-
-	protocols := r.Form["proto"]
-	ports := r.Form["port"]
-	indexes := r.Form["inbound_index"]
-	obfuscations := r.Form["obfuscation"]
-
-	// Guard: refuse to save zero inbounds if no chain-managed ones exist either.
-	chainInbounds := 0
-	for _, ib := range info.Inbounds {
-		if ib.Source != "" {
-			chainInbounds++
-		}
-	}
-	if len(protocols) == 0 && chainInbounds == 0 {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><span>` + i18n.T(r.Context(), "Cannot save zero inbounds. Add at least one inbound or delete the node instead.") + `</span></div>`})
-		return
-	}
-
-	// Port conflict check against all chains containing this node
-	chainsForNode, _ := st.GetChainsForNode(id)
-	chainPorts := make(map[int]string)
-	for _, c := range chainsForNode {
-		for i, n := range c.Nodes {
-			if n.ID != id {
-				continue
-			}
-			port := n.Port
-			if port == 0 {
-				if i == 0 {
-					port = 8443
-				} else {
-					port = 443
-				}
-			}
-			chainPorts[port] = c.Name
-		}
-	}
-
-	for _, pStr := range ports {
-		port, err := strconv.Atoi(pStr)
-		if err != nil {
-			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + fmt.Sprintf(i18n.T(r.Context(), "Invalid port %q: must be a number."), escHTML(pStr)) + `</span></div>`})
-			return
-		}
-		if verr := validatePort(port); verr != nil {
-			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + escHTML(verr.Error()) + `</span></div>`})
-			return
-		}
-		if cName, ok := chainPorts[port]; ok {
-			s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Port %d is reserved for chain %q on this node and cannot be used for standalone inbounds.")+`</div>`, port, escHTML(cName))})
-			return
-		}
-	}
-
-	// Start with existing chain-managed inbounds (preserved, not editable in this form)
-	inbounds := make([]model.NodeInbound, 0, len(protocols)+chainInbounds)
-	for _, oldIb := range info.Inbounds {
-		if oldIb.Source != "" {
-			inbounds = append(inbounds, oldIb)
-		}
-	}
-	for i := range protocols {
-		if i >= len(indexes) {
-			continue
-		}
-		port, _ := strconv.Atoi(ports[i])
-		idx := indexes[i]
-
-		forUsers := r.Form["for_users_"+idx]
-
-		obf := ""
-		if i < len(obfuscations) {
-			obf = obfuscations[i]
-		}
-
-		newIb := model.NodeInbound{
-			Protocol:    protocols[i],
-			Port:        port,
-			ForUsers:    forUsers,
-			Obfuscation: obf,
-		}
-
-		if chain.IsFrozenStandaloneProtocol(newIb.Protocol) {
-			allowed := false
-			for _, oldIb := range info.Inbounds {
-				if oldIb.Source == "" && oldIb.Protocol == newIb.Protocol && oldIb.Port == newIb.Port {
-					allowed = true
-					break
-				}
-			}
-			if !allowed {
-				http.Error(w, chain.ValidateStandaloneProtocol(newIb.Protocol).Error(), http.StatusBadRequest)
-				return
-			}
-		}
-
-		// Preserve existing generated credentials if port and protocol match
-		for _, oldIb := range info.Inbounds {
-			if oldIb.Protocol == newIb.Protocol && oldIb.Port == newIb.Port {
-				newIb.UUID = oldIb.UUID
-				newIb.ServerPrivKey = oldIb.ServerPrivKey
-				newIb.ServerPubKey = oldIb.ServerPubKey
-				newIb.ShortID = oldIb.ShortID
-				newIb.TLSCertificate = oldIb.TLSCertificate
-				newIb.TLSPrivateKey = oldIb.TLSPrivateKey
-				newIb.AWGClientPub = oldIb.AWGClientPub
-				newIb.AWGClientPriv = oldIb.AWGClientPriv
-				newIb.ObfsPassword = oldIb.ObfsPassword
-				newIb.Tag = oldIb.Tag
-				break
-			}
-		}
-		// Stable inbound tag (used as the sing-box inbound/endpoint tag + the
-		// users-by-inbound map key). Generated once, preserved across re-saves.
-		if newIb.Tag == "" {
-			tag, err := chain.GenerateInboundTag(newIb.Protocol)
-			if err != nil {
-				http.Error(w, i18n.T(r.Context(), "failed to generate inbound tag"), http.StatusInternalServerError)
-				return
-			}
-			newIb.Tag = tag
-		}
-
-		// Hysteria2: generate a per-node obfs password once and persist it, so
-		// the server and the client link share the same secret and the fleet
-		// does not use a single predictable obfs password.
-		if newIb.Protocol == "hysteria2" && newIb.ObfsPassword == "" {
-			newIb.ObfsPassword = chain.GenerateHysteria2ObfsPassword()
-		}
-
-		// Generate self-signed TLS certificate for protocols that need it (TUIC, Hysteria2, etc.)
-		// if not already present. This ensures the inbound can be applied without "missing certificate" errors.
-		if (newIb.Protocol == "tuic" || newIb.Protocol == "hysteria2") &&
-			(newIb.TLSCertificate == "" || newIb.TLSPrivateKey == "") {
-
-			preset := chain.GetDefaultPreset()
-			serverName := chain.ResolveServerName(&preset)
-
-			if cert, key, cerr := chain.GenerateSelfSignedCert(serverName); cerr == nil {
-				newIb.TLSCertificate = cert
-				newIb.TLSPrivateKey = key
-			}
-		}
-
-		if newIb.Protocol == "awg" && newIb.AWGClientPub == "" {
-			if priv, pub, cerr := chain.GenerateWireGuardKeypair(); cerr == nil {
-				newIb.AWGClientPub = pub
-				newIb.AWGClientPriv = priv
-			}
-		}
-
-		inbounds = append(inbounds, newIb)
-	}
-	info.Inbounds = inbounds
-	st.SaveNodeInfo(info)
-	chain.WriteAudit(st, "update", "node", info.ID, chain.AuditPayload{"inbounds": len(inbounds)}, "operator")
-	chain.ScheduleAutoApply(info.ID, "inbounds update")
-	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success">` + i18n.T(r.Context(), "Inbounds saved.") + `</div>`})
-}
-
 // handleMarkNodeBlocked sets a node's health state to NodeStateBlocked. This is
 // an operator-initiated action (the orchestrator SSHes from a free region and
 // cannot observe a DPI block itself — see AGENTS.md / P1a). Blocked is sticky:
@@ -812,8 +646,6 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/nodes/{id}/capture", s.auth(s.handleCaptureNode))
 	mux.HandleFunc("GET /ui/nodes/{id}/capture", s.auth(s.handleNodeCaptureForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/test", s.auth(s.handleTestNodeConnection))
-	mux.HandleFunc("GET /ui/nodes/{id}/inbounds", s.auth(s.handleNodeInboundsForm))
-	mux.HandleFunc("POST /ui/nodes/{id}/inbounds", s.auth(s.handleSaveNodeInbounds))
 	// apply is a node-path route but the handler shares chain apply logic —
 	// registered here by path, handler stays in chains.go.
 	mux.HandleFunc("POST /ui/nodes/{id}/apply", s.auth(s.handleApplyNode))
