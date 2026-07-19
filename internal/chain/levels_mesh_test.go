@@ -423,3 +423,75 @@ func TestDetectPortConflicts_ChainEntryNoSelfConflict(t *testing.T) {
 		t.Fatalf("phantom port conflict for chain-entry materialization: %v", err)
 	}
 }
+
+// TestRenderNodeAWGConfs_ProfileEntryNotDoubleRendered is the regression test
+// for the live deploy failure: a profile inbound (Source="standalone")
+// referenced as a chain entry must render EXACTLY ONE awg0.conf — the
+// standalone loop must skip it (previously it double-rendered on awg1 and the
+// second awg-quick unit failed on the duplicate listen port).
+func TestRenderNodeAWGConfs_ProfileEntryNotDoubleRendered(t *testing.T) {
+	prof := &model.InboundProfile{ID: "p1", Name: "AWG", Protocol: "awg", Port: 51840}
+	ni := &model.NodeInfo{
+		Host: model.Host{ID: "n1", Addr: "n1:22"},
+		Inbounds: []model.NodeInbound{{
+			Protocol: "awg", Port: 51840, Source: "standalone", Tag: "p1", ProfileID: "p1",
+			ServerPrivKey: "priv", ServerPubKey: "pub", AWGServerAddress: "10.8.0.1/24",
+		}},
+	}
+	c := &model.Chain{
+		Name:         "live",
+		UserProtocol: model.UserProtocolAWG,
+		Levels: []model.ChainLevel{
+			{ID: "l0", Nodes: []model.ChainNode{{ID: "n1", Addr: "n1:22", InboundRef: "p1"}}},
+		},
+	}
+	c.Nodes = c.AllNodes()
+	_ = prof
+	users := []model.User{{ID: "u1", Active: true, AWGPublicKey: "upub", AWGAddress: "10.8.0.2/32"}}
+	files, _ := RenderNodeAWGConfs(ni, []*model.Chain{c}, map[string][]model.User{"live": users}, nil)
+	awg0, awg1 := 0, 0
+	for _, f := range files {
+		if strings.Contains(f.Path, "awg0.conf") {
+			awg0++
+		}
+		if strings.Contains(f.Path, "awg1.conf") {
+			awg1++
+		}
+	}
+	if awg0 != 1 || awg1 != 0 {
+		t.Fatalf("double render: awg0=%d awg1=%d (files: %+v)", awg0, awg1, files)
+	}
+
+	// The merged config must also skip the profile inbound in the standalone
+	// loop (no phantom port conflict / duplicate listener).
+	_, _, err := buildMergedNodeConfig(MergedNodeConfigParams{
+		NodeInfo: ni, NodeChains: []*model.Chain{c},
+		UsersByChain: map[string][]model.User{"live": users},
+	})
+	if err != nil {
+		t.Fatalf("buildMergedNodeConfig: %v", err)
+	}
+}
+
+// TestIsChainEntryInbound covers the reference check directly.
+func TestIsChainEntryInbound(t *testing.T) {
+	c := &model.Chain{
+		Name: "c1",
+		Levels: []model.ChainLevel{
+			{ID: "l0", Nodes: []model.ChainNode{{ID: "n1", InboundRef: "p1"}}},
+			{ID: "l1", Nodes: []model.ChainNode{{ID: "n2"}}},
+		},
+	}
+	if !IsChainEntryInbound([]*model.Chain{c}, "n1", &model.NodeInbound{ProfileID: "p1"}) {
+		t.Error("profile referenced by entry node not detected")
+	}
+	if IsChainEntryInbound([]*model.Chain{c}, "n2", &model.NodeInbound{ProfileID: "p1"}) {
+		t.Error("different node must not match")
+	}
+	if IsChainEntryInbound([]*model.Chain{c}, "n1", &model.NodeInbound{ProfileID: "other"}) {
+		t.Error("different profile must not match")
+	}
+	if IsChainEntryInbound([]*model.Chain{c}, "n1", &model.NodeInbound{}) {
+		t.Error("empty ProfileID must not match")
+	}
+}

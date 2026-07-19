@@ -276,11 +276,11 @@ func tunIncludeInterfaces(node *model.ChainNode) []string {
 // when nodeInfo has a standalone AWG inbound with a distinct subnet (co-located
 // with a chain entry that claimed awg0). Used by the merged-config builder where
 // both the chain node and the nodeInfo are in scope.
-func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo) []string {
+func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo, nodeChains []*model.Chain) []string {
 	ifaces := tunIncludeInterfaces(node)
 	if nodeInfo != nil {
 		for _, ib := range nodeInfo.Inbounds {
-			if IsChainSourcedInbound(&ib) {
+			if IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
 				// Chain-entry materialized inbounds render on awg0 (the chain
 				// entry), not awg1 — they must not trigger the awg1 include.
 				continue

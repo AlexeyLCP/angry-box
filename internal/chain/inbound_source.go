@@ -23,6 +23,34 @@ func IsChainSourcedInbound(ib *model.NodeInbound) bool {
 	return strings.HasPrefix(ib.Source, "chain:")
 }
 
+// IsChainEntryInbound reports whether the inbound is rendered as a chain's
+// ENTRY listener on this node: its ProfileID is referenced by an entry-level
+// (level 0) ChainNode.InboundRef in one of the node's chains. The chain role
+// path (renderChainEntryAWGConf / buildChainRoleInOut) renders the listener
+// from the materialized inbound — every standalone render/claim loop must
+// skip it too, or the same listener is emitted TWICE on the same port (the
+// live deploy failure class: chain entry on awg0 + duplicate on awg1).
+//
+// Unlike IsChainSourcedInbound (a static Source flag), this is the REFERENCE
+// check — profile inbounds keep Source="standalone" when shared between
+// standalone use and chain entries, so Source alone cannot detect them.
+func IsChainEntryInbound(nodeChains []*model.Chain, nodeID string, ib *model.NodeInbound) bool {
+	if ib.ProfileID == "" {
+		return false
+	}
+	for _, c := range nodeChains {
+		if !c.IsLevelized() || len(c.Levels) == 0 {
+			continue
+		}
+		for _, n := range c.Levels[0].Nodes {
+			if n.ID == nodeID && n.InboundRef == ib.ProfileID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // inboundByProfileID finds the materialized inbound for a profile on the
 // node, or nil — the per-node credentials the InboundRef render paths read.
 func inboundByProfileID(nodeInfo *model.NodeInfo, profileID string) *model.NodeInbound {

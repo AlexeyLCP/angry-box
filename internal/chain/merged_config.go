@@ -123,7 +123,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
 	report := &MergeReport{NodeID: nodeInfo.ID}
 
-	if err := detectPortConflicts(nodeInfo, roles, report); err != nil {
+	if err := detectPortConflicts(nodeInfo, nodeChains, roles, report); err != nil {
 		return nil, report, err
 	}
 
@@ -161,11 +161,12 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	}
 
 	for i, ib := range nodeInfo.Inbounds {
-		if IsChainSourcedInbound(&ib) {
+		if IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
 			// Chain-entry materialized inbound — rendered via the chain role
 			// path (renderChainEntryAWGConf / buildChainRoleInOut), not as a
 			// standalone. Skipping here avoids a double listener on the same
-			// port.
+			// port (profile inbounds keep Source="standalone" when shared
+			// with a chain entry, hence the reference check too).
 			continue
 		}
 		tag := ib.Tag
@@ -189,7 +190,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	if len(enabledMTProxy) > 0 {
 		// Standalone MTProxy inbounds.
 		for i, ib := range nodeInfo.Inbounds {
-			if ib.Protocol != "mtproxy" || IsChainSourcedInbound(&ib) {
+			if ib.Protocol != "mtproxy" || IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
 				continue
 			}
 			tag := ib.Tag
@@ -225,7 +226,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	if overlay := awgTUNOverlayNeeded(roles, nodeInfo); overlay {
 		node := awgOverlayNode(roles, nodeInfo)
 		ins, outs, rts := BuildAWGTUNOverlay(AWGTUNOverlayParams{
-			IncludeInterfaces: tunIncludeInterfacesForNode(node, nodeInfo),
+			IncludeInterfaces: tunIncludeInterfacesForNode(node, nodeInfo, nodeChains),
 			ExitInterfaces:    exitInterfacesForNode(node),
 			BalancerTag:       balancerTagForNode(node),
 			FinalOutbound:     "direct",
@@ -571,7 +572,7 @@ func resolveChainPreset(c *model.Chain) ConnectionPreset {
 	return GetEffectivePreset(c)
 }
 
-func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *MergeReport) error {
+func detectPortConflicts(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, roles []chainRole, report *MergeReport) error {
 	type claim struct {
 		port     int
 		claimant string
@@ -596,7 +597,7 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *Me
 	}
 
 	for _, ib := range nodeInfo.Inbounds {
-		if IsChainSourcedInbound(&ib) {
+		if IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
 			// Chain-entry materialized inbound: its listen port is the chain
 			// entry port, already claimed via the role above — claiming it
 			// again here would report a phantom self-conflict.

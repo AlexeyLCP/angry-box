@@ -469,13 +469,13 @@ func TestTunIncludeInterfacesForNode_MultiAWG(t *testing.T) {
 			{Protocol: "awg", AWGServerAddress: "10.8.1.1/24"}, // standalone → awg1
 		},
 	}
-	got := tunIncludeInterfacesForNode(nil, nodeInfo)
+	got := tunIncludeInterfacesForNode(nil, nodeInfo, nil)
 	if len(got) != 2 || got[0] != "awg0" || got[1] != "awg1" {
 		t.Errorf("want [awg0, awg1], got %v", got)
 	}
 	// No standalone with distinct subnet → only awg0.
 	nodeInfo2 := &model.NodeInfo{Host: model.Host{ID: "n2"}, Inbounds: []model.NodeInbound{{Protocol: "awg"}}}
-	got2 := tunIncludeInterfacesForNode(nil, nodeInfo2)
+	got2 := tunIncludeInterfacesForNode(nil, nodeInfo2, nil)
 	if len(got2) != 1 || got2[0] != "awg0" {
 		t.Errorf("want [awg0] (no distinct subnet), got %v", got2)
 	}

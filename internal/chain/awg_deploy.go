@@ -92,11 +92,13 @@ func RenderNodeAWGConfs(
 		if ib.Protocol != "awg" {
 			continue
 		}
-		if IsChainSourcedInbound(ib) {
+		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {
 			// Chain-entry materialized inbound — rendered by the chain entry
 			// loop above (renderChainEntryAWGConf), not here. Without this
 			// skip its non-empty AWGServerAddress would trigger the awg1
-			// branch below and double-render the same listener.
+			// branch below and double-render the same listener (the profile
+			// keeps Source="standalone" when shared with a chain entry, so
+			// the reference check IsChainEntryInbound is required too).
 			continue
 		}
 		tag := ib.Tag
