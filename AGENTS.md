@@ -147,7 +147,7 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 ├── web/
 │   ├── static/          # CSS, JS, assets
 │   └── templates/       # .templ files for the UI
-└── scripts/             # install.sh, systemd service, Keenetic init, build-opkg
+└── scripts/             # install.sh, systemd service, Keenetic init (S99), ndm-hook.sh, build-ipk.sh (router packages)
 ```
 
 ---

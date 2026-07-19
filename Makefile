@@ -160,31 +160,37 @@ version:
 	@echo "version: $(VERSION)"
 
 # ==================== opkg / .ipk packaging (for Keenetic + OpenWRT) ====================
-# These targets produce installable .ipk packages for real router users.
-# The packaging logic lives entirely in scripts/build-opkg.sh (self-contained,
-# signature: <binary> <arch> <version> <outdir>). Requires a previously
-# cross-built binary (see build-* targets below or CI).
+# Router packages are built by scripts/build-ipk.sh (self-contained:
+# cross-compile with -s -w + optional UPX, then assemble per-flavor .ipk).
+# Keenetic (-kn suffix) ships the NDMS hook scripts
+# (/opt/etc/ndm/{iflayerchanged,ifcreated,ifdestroyed,ifipchanged}.d/50-angry-box.sh);
+# OpenWrt ships a procd init instead. Targets:
+#   keenetic-mipsel-3.4  (MT7621 & co, little-endian MIPS)
+#   keenetic-mips-3.4    (big-endian MIPS)
+#   keenetic-aarch64-3.10
+#   openwrt-mipsel_24kc
+#   openwrt-aarch64_cortex-a53
+ROUTER_TARGETS := keenetic-mipsel-3.4 keenetic-mips-3.4 keenetic-aarch64-3.10 openwrt-mipsel_24kc openwrt-aarch64_cortex-a53
 
-# Build proper .ipk package for Keenetic / Entware (mipsel_24kc). GOMIPS=
-# softfloat is required for Keenetic MIPS soft-float targets (the binary would
-# SIGILL on hard-float).
+.PHONY: build-router-ipk
+build-router-ipk:
+	@echo "==> Building router .ipk packages (version $(VERSION))..."
+	@mkdir -p dist
+	@for tgt in $(ROUTER_TARGETS); do \
+		echo "==> $$tgt"; \
+		COMMIT=$(COMMIT) DATE=$(DATE) ./scripts/build-ipk.sh $(VERSION) $$tgt dist; \
+	done
+	@echo "==> Router .ipk packages ready in dist/"
+
+# Legacy aliases (kept for muscle memory; they now build the full router set).
 .PHONY: build-keenetic-opkg
-build-keenetic-opkg: build-keenetic-mipsel
-	@echo "==> Building Keenetic (mipsel_24kc) .ipk package..."
-	@mkdir -p dist
-	@./scripts/build-opkg.sh dist/angry-box-keenetic-mipsel mipsel_24kc $(VERSION) dist
-	@echo "==> Keenetic .ipk ready in dist/"
+build-keenetic-opkg: build-router-ipk
 
-# arm64 OpenWRT / Entware .ipk (aarch64_cortex-a53).
 .PHONY: build-arm64-opkg
-build-arm64-opkg: build-linux-arm64
-	@echo "==> Building arm64 (aarch64_cortex-a53) .ipk package..."
-	@mkdir -p dist
-	@./scripts/build-opkg.sh dist/angry-box-linux-arm64 aarch64_cortex-a53 $(VERSION) dist
-	@echo "==> arm64 .ipk ready in dist/"
+build-arm64-opkg: build-router-ipk
 
 .PHONY: build-all-opkg
-build-all-opkg: build-keenetic-opkg build-arm64-opkg
+build-all-opkg: build-router-ipk
 	@echo "==> All router .ipk packages built in dist/"
 	@echo "commit:  $(COMMIT)"
 	@echo "date:    $(DATE)"

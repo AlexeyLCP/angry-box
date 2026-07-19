@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -251,6 +252,40 @@ func (s *Server) collectAllMetrics() {
 					chain.AuditPayload{"state": m.State, "skipped": reason}, "system")
 			}
 		}
+
+		// v0.7 background AWG maintenance on healthy nodes: fold per-peer
+		// kernel counters into per-user totals (CollectAWGTrafficForNode) and
+		// re-assert vanished iptables rules (SelfHealAWGRules — fail2ban/docker
+		// flushes silently kill egress). One extra SSH dial per healthy node
+		// per tick; failures are silent (the health probe already recorded
+		// reachability).
+		if err == nil && m.State == model.NodeStateHealthy {
+			s.maintainAWGNode(st, h.ID)
+		}
+	}
+}
+
+// maintainAWGNode runs the per-tick AWG maintenance (traffic fold + NAT
+// self-heal) on one healthy node. Best-effort, silent — a node without AWG is
+// the common case and every sub-step skips cleanly.
+func (s *Server) maintainAWGNode(st *chain.Store, nodeID string) {
+	host, err := st.GetHost(nodeID)
+	if err != nil {
+		return
+	}
+	resolved := chain.ResolveHostKey(st, host)
+	client, err := s.SSHConnector().Connect(resolved.Addr, resolved.User, resolved.KeyPath)
+	if err != nil {
+		return
+	}
+	defer client.Close()
+	ni, _ := st.GetNodeInfo(nodeID)
+	useSudo := ni != nil && ni.UseSudo
+	ctx := context.Background()
+	chain.CollectAWGTrafficForNode(ctx, client, st, nodeID, useSudo)
+	if healed, herr := chain.SelfHealAWGRules(ctx, client, "awg0", useSudo); herr == nil && healed {
+		chain.WriteAudit(st, "self-heal", "node", nodeID,
+			chain.AuditPayload{"what": "re-asserted awg0 PostUp iptables rules (FORWARD/rp_filter/ip_forward)"}, "system")
 	}
 }
 
@@ -301,8 +336,36 @@ func (s *Server) startAutoRelocate(nodeID string, spare *model.NodeInfo) {
 	}()
 }
 
-func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
-	return BasicAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// handleNDMHook receives interface events from Keenetic NDMS hook scripts
+// (/opt/etc/ndm/{iflayerchanged,ifcreated,ifdestroyed,ifipchanged}.d/
+// 50-angry-box.sh). Loopback-only: the hook runs on the router itself, so any
+// non-loopback source is a forgery (the panel may bind a LAN address for the
+// UI — the hook endpoint must stay local). v1 behavior: validate + log;
+// future use is triggering a re-probe when a WAN event suggests an outage.
+func (s *Server) handleNDMHook(w http.ResponseWriter, r *http.Request) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil || (host != "127.0.0.1" && host != "::1") {
+		http.Error(w, "loopback only", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	typ := r.FormValue("type")
+	switch typ {
+	case "iflayerchanged", "ifcreated", "ifdestroyed", "ifipchanged":
+	default:
+		http.Error(w, "unknown hook type", http.StatusBadRequest)
+		return
+	}
+	log.Printf("ndm hook: %s id=%s system_name=%s layer=%s level=%s address=%s up=%s connected=%s",
+		typ, r.FormValue("id"), r.FormValue("system_name"), r.FormValue("layer"),
+		r.FormValue("level"), r.FormValue("address"), r.FormValue("up"), r.FormValue("connected"))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {	return BasicAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Recover from any panic in the handler chain so a single malformed
 		// request/deploy (e.g. a generator panic in cryptogen/roles) cannot
 		// crash the whole orchestrator process. The error is logged with a
@@ -350,6 +413,12 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// Public subscription endpoint — OUTSIDE s.auth (client apps fetch it
 	// without Basic-Auth). GET passes CSRF automatically (safe-method bypass).
 	s.registerSubscriptionRoute(mux)
+
+	// NDMS hook receiver (Keenetic router installs): /opt/etc/ndm/*.d scripts
+	// forward interface events to the panel's loopback API. NOT under s.auth —
+	// guarded by a strict loopback check instead (the hook runs on the router
+	// itself; anything remote is rejected).
+	mux.HandleFunc("POST /api/hooks/ndm", s.handleNDMHook)
 
 	// Resource-scoped route registrations (CTO-review §4: split out of the old
 	// ~60-route monolith). Each register*Routes method lives next to its

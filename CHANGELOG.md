@@ -4,6 +4,42 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.7.0] — 2026-07-19
+
+### AWG operations: deep diagnostics, per-user traffic, NAT self-heal + router packages (Keenetic/OpenWrt)
+
+#### AWG diagnostics (node row → Diagnose)
+- Deep read-only probe of the AWG data plane (`chain.DiagnoseAWGNode`,
+  `GET /ui/nodes/{id}/awg-diagnostics` → modal): systemd unit, interface UP,
+  listen port, peers + handshake freshness, ip_forward, rp_filter, FORWARD
+  awg0→sing-box-tun, iptables package, sing-box service, sing-box-tun. Every
+  check carries the evidence read on the node. Where the health badge answers
+  "is it up", this answers "why is egress broken".
+
+#### Per-user AWG traffic accounting
+- The background health loop folds kernel per-peer counters (`awg show
+  transfer`, awg0+awg1) into cumulative per-user bytes (peer = user AWG
+  identity). Handles interface-restart counter resets; unknown peers are
+  baselined but not folded. Users table gets an "AWG traffic" column (↓/↑).
+
+#### NAT self-heal
+- Same health tick re-asserts vanished iptables rules: when the FORWARD
+  awg0→sing-box-tun check fails (fail2ban/docker flushes kill egress silently),
+  the node's on-disk PostUp is re-run (idempotent rules) + audit entry.
+
+#### Router packages (CI/CD): Keenetic Entware + OpenWrt
+- New `scripts/build-ipk.sh`: cross-compile with `-s -w` + UPX (`--best --lzma`),
+  five targets — `mipsel-3.4-kn`, `mips-3.4-kn`, `aarch64-3.10-kn` (Keenetic
+  Entware: S99 init + NDMS hook scripts) and `mipsel_24kc`,
+  `aarch64_cortex-a53` (OpenWrt: procd init). Makefile `build-router-ipk`.
+- Keenetic NDMS hooks (`/opt/etc/ndm/{iflayerchanged,ifcreated,ifdestroyed,
+  ifipchanged}.d/50-angry-box.sh`) forward interface events to the panel's
+  loopback-only endpoint `POST /api/hooks/ndm`.
+- Release workflow: upx + qemu-user-static, smoke-tests every router binary
+  under qemu (mipsel/mips/aarch64), uploads all five .ipk + checksums.
+- Size: stripped binaries ~11–13 MiB (Makefile LDFLAGS previously lacked
+  `-s -w`), UPX compresses ~3× further. Legacy `scripts/build-opkg.sh` removed.
+
 ## [v0.6.1] — 2026-07-19
 
 ### AWG ops hardening (LucX-UI ports): zero-downtime peer sync, proper standalone obfuscation

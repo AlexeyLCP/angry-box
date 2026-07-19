@@ -6,9 +6,14 @@
 #   - angry-box-<ver>-linux-armv7.tar.gz
 #   - angry-box-<ver>-keenetic-mipsel.tar.gz
 #   - angry-box-<ver>-windows-amd64.zip
-#   - angry-box_<ver>_mipsel_24kc.ipk
-#   - angry-box_<ver>_aarch64_cortex-a53.ipk
+#   - angry-box_<ver>_mipsel_24kc.ipk          (OpenWrt, procd init)
+#   - angry-box_<ver>_aarch64_cortex-a53.ipk   (OpenWrt, procd init)
+#   - angry-box_<ver>_mipsel-3.4-kn.ipk        (Keenetic Entware + NDMS hooks)
+#   - angry-box_<ver>_mips-3.4-kn.ipk          (Keenetic big-endian MIPS + NDMS hooks)
+#   - angry-box_<ver>_aarch64-3.10-kn.ipk      (Keenetic aarch64 + NDMS hooks)
 #   - checksums-sha256.txt
+# Router packages are stripped (-s -w) + UPX-compressed and smoke-tested under
+# qemu-user (see scripts/build-ipk.sh).
 # The tarballs carry the binary renamed to `angry-box` inside a version-named
 # subdirectory (the layout scripts/install.sh expects).
 name: Release
@@ -62,9 +67,26 @@ jobs:
         # Produces dist/angry-box-{linux-amd64,linux-arm64,linux-armv7,keenetic-mipsel,windows-amd64.exe}
         # with -ldflags injecting version=$(git describe) + commit + date.
 
-      - name: Build .ipk packages
-        run: make build-all-opkg
-        # Produces dist/angry-box_$(VERSION)_mipsel_24kc.ipk + _aarch64_cortex-a53.ipk
+      - name: Install packaging tools (upx, qemu-user-static)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq upx-ucl qemu-user-static || \
+            sudo apt-get install -y -qq upx qemu-user-static
+
+      - name: Build router .ipk packages (Keenetic + OpenWrt, stripped + UPX)
+        run: make build-router-ipk
+        # 5 targets (see Makefile ROUTER_TARGETS): keenetic mipsel/mips/aarch64
+        # (-kn, NDMS hooks) + openwrt mipsel_24kc/aarch64_cortex-a53 (procd).
+        # Binaries land in dist/angry-box-<pkgarch> for the smoke test below.
+
+      - name: Smoke-test router binaries under qemu-user
+        run: |
+          set -e
+          qemu-mipsel-static dist/angry-box-mipsel-3.4-kn version
+          qemu-mips-static   dist/angry-box-mips-3.4-kn version
+          qemu-aarch64-static dist/angry-box-aarch64-3.10-kn version
+          qemu-mipsel-static dist/angry-box-mipsel_24kc version
+          qemu-aarch64-static dist/angry-box-aarch64_cortex-a53 version
 
       - name: Package release archives
         run: |

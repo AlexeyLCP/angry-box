@@ -711,6 +711,13 @@ var locales = map[string]map[string]string{
 		"0 = 6 default": "0 = 6 default",
 		"Auto-relocate enabled (global)": "Auto-relocate enabled (global)",
 		"Auto-relocate settings saved": "Auto-relocate settings saved",
+		// v0.7 — AWG diagnostics.
+		"Diagnose": "Diagnose",
+		"AWG diagnostics": "AWG diagnostics",
+		"Deep AWG probe: interface, handshakes, FORWARD rules, sing-box overlay": "Deep AWG probe: interface, handshakes, FORWARD rules, sing-box overlay",
+		"Read-only probe of the AWG data plane: interface, handshakes, kernel forwarding rules, sing-box overlay. Fixes belong to re-deploy / node packages.": "Read-only probe of the AWG data plane: interface, handshakes, kernel forwarding rules, sing-box overlay. Fixes belong to re-deploy / node packages.",
+		"AWG traffic": "AWG traffic",
+		"Down / Up (cumulative, from kernel per-peer counters)": "Down / Up (cumulative, from kernel per-peer counters)",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1448,6 +1455,13 @@ var locales = map[string]map[string]string{
 		"0 = 6 default": "0 = 6 по умолчанию",
 		"Auto-relocate enabled (global)": "Авто-перенос включён (глобально)",
 		"Auto-relocate settings saved": "Настройки авто-переноса сохранены",
+		// v0.7 — AWG diagnostics.
+		"Diagnose": "Диагностика",
+		"AWG diagnostics": "Диагностика AWG",
+		"Deep AWG probe: interface, handshakes, FORWARD rules, sing-box overlay": "Глубокая проверка AWG: интерфейс, handshake'и, правила FORWARD, sing-box overlay",
+		"Read-only probe of the AWG data plane: interface, handshakes, kernel forwarding rules, sing-box overlay. Fixes belong to re-deploy / node packages.": "Read-only проверка data-plane AWG: интерфейс, handshake'и, kernel-правила форвардинга, sing-box overlay. Исправления — через передеплой / пакеты на ноде.",
+		"AWG traffic": "Трафик AWG",
+		"Down / Up (cumulative, from kernel per-peer counters)": "Вход / Исх (накопительно, из kernel per-peer счётчиков)",
 	},
 }
 

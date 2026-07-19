@@ -52,6 +52,14 @@ type User struct {
 	AWGPublicKey  string `json:"awg_public_key,omitempty"`
 	AWGAddress    string `json:"awg_address,omitempty"`
 
+	// Per-user AWG traffic counters (cumulative bytes, folded from the kernel's
+	// per-peer `awg show transfer` by the background metrics loop — v0.7).
+	// Counters survive node redeploys and interface restarts (the folder
+	// handles kernel counter resets); they are usage telemetry, not billing.
+	AWGRxBytes  int64     `json:"awg_rx_bytes,omitempty"`
+	AWGTxBytes  int64     `json:"awg_tx_bytes,omitempty"`
+	AWGTrafficAt time.Time `json:"awg_traffic_at,omitempty"` // last traffic observation
+
 	// MTProxy (Telegram FakeTLS) credentials. Optional — set when the user is
 	// also an MTProxy client. Empty MTProxySecret = user is not an MTProxy
 	// client on any node. MTProxyNodes lists the node IDs this user is an
@@ -304,6 +312,12 @@ type NodeMetrics struct {
 	OS                 string `json:"os,omitempty"`
 	SingBoxInstalled   bool   `json:"sing_box_installed,omitempty"`
 	AWGModuleInstalled bool   `json:"awg_module_installed,omitempty"`
+
+	// AWGPeerTransfer is the last observed per-peer kernel counters
+	// (`awg show <iface> transfer`: pubkey → [rx,tx] bytes) on this node — the
+	// baseline for the per-user traffic delta folding (v0.7). Updated by the
+	// metrics loop on every tick it successfully reads the counters.
+	AWGPeerTransfer map[string][2]int64 `json:"awg_peer_transfer,omitempty"`
 }
 
 // NodeInfo enriches a Host with metadata for the web UI (country, bandwidth, inbounds).

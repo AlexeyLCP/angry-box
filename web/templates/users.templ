@@ -42,6 +42,7 @@ templ Users(users []*model.User, chains []*model.Chain) {
 							<th>{ i18n.T(ctx, "Protocols") }</th>
 							<th>{ i18n.T(ctx, "Chains") }</th>
 							<th>{ i18n.T(ctx, "Expires") }</th>
+							<th>{ i18n.T(ctx, "AWG traffic") }</th>
 							<th>{ i18n.T(ctx, "Status") }</th>
 							<th class="w-px"></th>
 						</tr>
@@ -101,6 +102,13 @@ templ UserRow(u *model.User) {
 				<span class="text-error text-xs">{ u.ExpiresAt.Format("2006-01-02") }</span>
 			} else {
 				<span class="text-xs">{ fmtDuration(time.Until(u.ExpiresAt)) }</span>
+			}
+		</td>
+		<td>
+			if u.AWGRxBytes > 0 || u.AWGTxBytes > 0 {
+				<span class="text-xs" title={ i18n.T(ctx, "Down / Up (cumulative, from kernel per-peer counters)") }>{ fmtBytes(u.AWGRxBytes) } ↓ / { fmtBytes(u.AWGTxBytes) } ↑</span>
+			} else {
+				<span class="text-base-content/30 text-xs">—</span>
 			}
 		</td>
 		<td>
@@ -547,6 +555,20 @@ func ellipsis(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// fmtBytes renders a byte count compactly for the traffic column (KiB/MiB/GiB).
+func fmtBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func fmtDuration(d time.Duration) string {

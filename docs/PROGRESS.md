@@ -2186,3 +2186,54 @@ proper H (`172204942-486224380` вместо `1984-1984`) → client conf с т�
 - **NAT self-heal reconcile** (10s cron перепроверка iptables) — выживание
   правил при iptables flush от fail2ban/docker; требует agent-less дизайна
   (systemd timer на ноде или периодическая проверка из health monitor).
+
+## 25. v0.7 — AWG diagnostics, per-peer traffic, NAT self-heal, router CI/CD (2026-07-19)
+
+Четыре фичи из списка «кандидаты на v0.7» (§24.4) + CI/CD роутер-пакетов.
+
+### 25.1 AWG diagnostics (LucX diagnostics.go, адаптация под agent-less)
+
+`chain.DiagnoseAWGNode` — read-only probe chain из AGENTS debugging patterns:
+systemd unit, kernel interface UP, listen-port, peers + handshake freshness
+(<5min), ip_forward, rp_filter, FORWARD awg0→sing-box-tun, пакет iptables,
+sing-box service, sing-box-tun. Каждый check с evidence (что прочитано), не
+просто red/green. UI: кнопка "Diagnose" на строке ноды → modal
+(`GET /ui/nodes/{id}/awg-diagnostics`). Тесты: healthy (все OK), broken
+(service down/rp_filter=1/FORWARD missing/no iptables → FAIL).
+
+### 25.2 Per-peer traffic (LucX CollectTraffic)
+
+Kernel считает rx/tx per peer (`awg show transfer`); peer = наш per-user
+WireGuard identity → per-user usage без агента. `ParseAWGTransfer` +
+`FoldAWGTraffic` (delta против `NodeMetrics.AWGPeerTransfer`, обработка
+counter reset при рестарте интерфейса, unknown peers трекаются но не фолдятся)
++ `CollectAWGTrafficForNode` (awg0+awg1, silent per-iface). User:
+AWGRxBytes/AWGTxBytes/AWGTrafficAt. Сбор в health loop на healthy нодах
+(1 SSH dial). UI: колонка "AWG traffic" (↓rx ↑tx, fmtBytes) в таблице юзеров.
+
+### 25.3 NAT self-heal (LucX ensureNatRules, agent-less вариант)
+
+`SelfHealAWGRules` в том же health tick: `iptables -C FORWARD -i awg0 -o
+sing-box-tun` → если нет (fail2ban/docker flush) — re-run PostUp из on-disk
+conf (`sed -n 's/^PostUp = //p' | sh`, наши PostUp идемпотентны) + audit
+"self-heal". Без агента на ноде — проверка из оркестратора раз в metrics tick.
+
+### 25.4 Router CI/CD (Keenetic + OpenWrt ipk)
+
+Изучен hoaxisr/awg-manager (build-ipk.sh, ndm hooks, release.yml). Наш вариант:
+- `scripts/build-ipk.sh`: cross-compile (`-s -w`, GOMIPS=softfloat для MIPS),
+  UPX (--best --lzma, SKIP_UPX=1 для отладки), сборка .ipk. 5 таргетов:
+  keenetic mipsel-3.4 / mips-3.4 / aarch64-3.10 (суффикс -kn, Entware S99 +
+  NDMS hooks) + openwrt mipsel_24kc / aarch64_cortex-a53 (procd init).
+- NDMS hooks (`scripts/ndm-hook.sh`): 4 директории (iflayerchanged/ifcreated/
+  ifdestroyed/ifipchanged.d/50-angry-box.sh), форвард событий в loopback API
+  `POST /api/hooks/ndm` (busybox wget -T 3, HOOK_TYPE из dirname). Handler
+  loopback-only (не под auth — RemoteAddr 127.0.0.1/::1, валидация типа,
+  лог; v1 — приёмник, точка роста для реактивного health).
+- postinst: chmod hooks + start + вывод URL (br0 IP); prerm: stop/disable.
+- Makefile `build-router-ipk` (ROUTER_TARGETS), release.yml: upx/qemu-user-static,
+  smoke-тест бинарей под qemu-mipsel/mips/aarch64 (`version`), артефакты в
+  релиз. Старый scripts/build-opkg.sh удалён (build-ipk.sh — единственный
+  источник).
+- Размер: stripped ~11-13MB (было ~20MB+ без -s -w в Makefile LDFLAGS),
+  UPX сжимает дополнительно в ~3 раза.

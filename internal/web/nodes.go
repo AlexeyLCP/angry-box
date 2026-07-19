@@ -386,6 +386,32 @@ func (s *Server) handleRelocateForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, templates.RelocateForm(host, settings, allKeys))
 }
 
+// handleAWGDiagnostics runs the deep read-only AWG probe chain on the node
+// (chain.DiagnoseAWGNode) and renders the result modal. Where the health
+// badge answers "is it up", this answers "why is the AWG data plane broken"
+// (interface/handshakes/FORWARD rules/overlay/packages).
+func (s *Server) handleAWGDiagnostics(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.store()
+	host, err := st.GetHost(id)
+	if err != nil {
+		s.render(w, r, templates.AWGDiagnosticsError(id, i18n.T(r.Context(), "not found")))
+		return
+	}
+	resolved := chain.ResolveHostKey(st, host)
+	client, err := s.SSHConnector().Connect(resolved.Addr, resolved.User, resolved.KeyPath)
+	if err != nil {
+		s.render(w, r, templates.AWGDiagnosticsError(id, err.Error()))
+		return
+	}
+	defer client.Close()
+	iface := r.URL.Query().Get("iface")
+	ni, _ := st.GetNodeInfo(id)
+	useSudo := ni != nil && ni.UseSudo
+	checks := chain.DiagnoseAWGNode(r.Context(), client, iface, useSudo)
+	s.render(w, r, templates.AWGDiagnostics(id, checks))
+}
+
 // handleCloneForm renders the "clone this node to a new VPS" modal for the node
 // row's Clone button (P1b). The form posts to /ui/nodes/{id}/clone with a new
 // node ID (required, must not exist) + new VPS addr + optional SSH user/key.
@@ -797,6 +823,8 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	// clone: duplicate a node's config onto a new VPS with fresh identity (P1b).
 	mux.HandleFunc("GET /ui/nodes/{id}/clone", s.auth(s.handleCloneForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/clone", s.auth(s.handleCloneNode))
+	// awg-diagnostics: deep read-only probe of the node's AWG data plane.
+	mux.HandleFunc("GET /ui/nodes/{id}/awg-diagnostics", s.auth(s.handleAWGDiagnostics))
 	// health: operator mark/clear a DPI block (P1a). Not auto-detected — the
 	// orchestrator can't see a block from its free-region vantage point.
 	mux.HandleFunc("POST /ui/nodes/{id}/block", s.auth(s.handleMarkNodeBlocked))
