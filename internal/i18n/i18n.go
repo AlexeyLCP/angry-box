@@ -778,6 +778,18 @@ var locales = map[string]map[string]string{
 		"Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.": "Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.",
 		"Advanced (contacts, expiry, quota, MTProxy, import)": "Advanced (contacts, expiry, quota, MTProxy, import)",
 		"default": "default",
+		// v0.8 — dashboard widgets.
+		"+ Node": "+ Node",
+		"+ Inbound": "+ Inbound",
+		"+ Chain": "+ Chain",
+		"+ Client": "+ Client",
+		"%d pending changes": "%d pending changes",
+		"Nodes with un-deployed config changes — review and apply.": "Nodes with un-deployed config changes — review and apply.",
+		"Recent events": "Recent events",
+		"Full audit log": "Full audit log",
+		"System status": "System status",
+		"No events yet.": "No events yet.",
+		"No chains configured. Create one on the Chains page.": "No chains configured. Create one on the Chains page.",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1582,6 +1594,18 @@ var locales = map[string]map[string]string{
 		"Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.": "Креды (AWG-пир, VLESS UUID) генерируются автоматически из выбранных цепочек.",
 		"Advanced (contacts, expiry, quota, MTProxy, import)": "Расширенные (контакты, срок, квоты, MTProxy, импорт)",
 		"default": "по умолчанию",
+		// v0.8 — dashboard widgets.
+		"+ Node": "+ Нода",
+		"+ Inbound": "+ Инбаунд",
+		"+ Chain": "+ Цепочка",
+		"+ Client": "+ Клиент",
+		"%d pending changes": "изменений ожидает: %d",
+		"Nodes with un-deployed config changes — review and apply.": "Ноды с незадеплоенными изменениями конфига — проверьте и примените.",
+		"Recent events": "Последние события",
+		"Full audit log": "Полный журнал аудита",
+		"System status": "Статус системы",
+		"No events yet.": "Событий пока нет.",
+		"No chains configured. Create one on the Chains page.": "Цепочки не настроены. Создайте на странице «Цепочки».",
 	},
 }
 

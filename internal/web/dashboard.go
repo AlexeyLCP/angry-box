@@ -23,16 +23,28 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	hc := computeHealthCounts(metrics)
 
+	// Pending changes: nodes whose rendered config differs from the last
+	// deployed hash (or never deployed) — the "needs apply" count.
+	pending := 0
+	for _, row := range s.computeDeployStatusRows(r) {
+		if row.HasPending {
+			pending++
+		}
+	}
+	// Recent audit events (last 10 — the full log lives on /ui/audit).
+	audit, _ := st.ListAuditLogs(10)
+
 	stats := templates.DashboardStats{
-		TotalHosts:   len(hosts),
-		OnlineHosts:  hc.Online,
-		DownHosts:    hc.Down,
-		BlockedHosts: hc.Blocked,
-		TotalChains:  len(chains),
-		TotalUsers:   len(users),
+		TotalHosts:     len(hosts),
+		OnlineHosts:    hc.Online,
+		DownHosts:      hc.Down,
+		BlockedHosts:   hc.Blocked,
+		TotalChains:    len(chains),
+		TotalUsers:     len(users),
+		PendingChanges: pending,
 	}
 
-	s.renderContent(w, r, i18n.T(r.Context(), "Dashboard"), templates.Dashboard(stats, hosts, metrics, infos, chains))
+	s.renderContent(w, r, i18n.T(r.Context(), "Dashboard"), templates.Dashboard(stats, hosts, metrics, infos, chains, audit))
 }
 
 func (s *Server) handleTrustHostKey(w http.ResponseWriter, r *http.Request) {

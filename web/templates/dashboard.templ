@@ -20,6 +20,9 @@ type DashboardStats struct {
 	BlockedHosts int
 	TotalChains  int
 	TotalUsers   int
+	// PendingChanges counts nodes whose current rendered config differs from
+	// the last deployed hash (or never deployed) — "needs apply".
+	PendingChanges int
 }
 
 // StatsCards renders just the four stat cards (used for polling).
@@ -75,63 +78,37 @@ templ StatsCards(stats DashboardStats) {
 	</div>
 }
 
-// Dashboard renders the main dashboard page with stats, node list, and health.
-templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeMetrics, infos []*model.NodeInfo, chains []*model.Chain) {
+// Dashboard renders the main dashboard page: health stats, quick actions,
+// pending-changes card, node quick-status, mini topology, recent audit.
+templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeMetrics, infos []*model.NodeInfo, chains []*model.Chain, audit []*model.AuditLog) {
 	<div class="space-y-6">
-		<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Dashboard") }</h2>
-
-
-
-		<!-- Stats Cards (same as above but inside Dashboard for initial render) -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-6" id="dashboard-stats">
-			<div class="tn-card tn-card-hover">
-				<div class="card-body p-6 flex flex-row items-center justify-between">
-					<div>
-						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Nodes") }</div>
-						<div class="text-4xl font-bold text-base-content mt-1">{ stats.TotalHosts }</div>
-					</div>
-					<div class="w-12 h-12 bg-base-200/50 rounded-xl flex items-center justify-center opacity-80">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-base-content/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
-					</div>
-				</div>
-			</div>
-			<div class="tn-card tn-card-hover">
-				<div class="card-body p-6 flex flex-row items-center justify-between">
-					<div>
-						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Online") }</div>
-						<div class="text-4xl font-bold text-success mt-1 drop-shadow-sm">{ stats.OnlineHosts }</div>
-					</div>
-					<div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
-						<span class="relative flex h-4 w-4">
-						  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-						  <span class="relative inline-flex rounded-full h-4 w-4 bg-success"></span>
-						</span>
-					</div>
-				</div>
-			</div>
-			<div class="tn-card tn-card-hover">
-				<div class="card-body p-6 flex flex-row items-center justify-between">
-					<div>
-						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Chains") }</div>
-						<div class="text-4xl font-bold text-primary mt-1 drop-shadow-sm">{ stats.TotalChains }</div>
-					</div>
-					<div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-					</div>
-				</div>
-			</div>
-			<div class="tn-card tn-card-hover">
-				<div class="card-body p-6 flex flex-row items-center justify-between">
-					<div>
-						<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Users") }</div>
-						<div class="text-4xl font-bold text-secondary mt-1 drop-shadow-sm">{ stats.TotalUsers }</div>
-					</div>
-					<div class="w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center">
-						<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-					</div>
-				</div>
+		<div class="flex items-center justify-between flex-wrap gap-3">
+			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Dashboard") }</h2>
+			<div class="flex gap-2 flex-wrap">
+				<button class="btn btn-sm btn-outline"
+					onclick="location.href='/ui/nodes/'+('n'+Math.floor(Date.now()/1000))+Math.floor(Math.random()*100)+'/capture'">
+					{ i18n.T(ctx, "+ Node") }
+				</button>
+				<button class="btn btn-sm btn-outline" hx-get="/ui/inbounds/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Inbound") }</button>
+				<button class="btn btn-sm btn-outline" hx-get="/ui/chains/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Chain") }</button>
+				<button class="btn btn-sm btn-outline" hx-get="/ui/users/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Client") }</button>
 			</div>
 		</div>
+
+		<!-- Stats Cards (polled every 30s) -->
+		@StatsCards(stats)
+
+		if stats.PendingChanges > 0 {
+			<a hx-get="/ui/deploy-status" hx-target="#main-content" hx-push-url="true" class="tn-card tn-card-hover block border-l-4 border-warning cursor-pointer">
+				<div class="card-body p-4 flex flex-row items-center justify-between">
+					<div>
+						<div class="font-semibold text-warning">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
+						<div class="text-sm text-base-content/60">{ i18n.T(ctx, "Nodes with un-deployed config changes — review and apply.") }</div>
+					</div>
+					<span class="btn btn-sm btn-warning">{ i18n.T(ctx, "Review") }</span>
+				</div>
+			</a>
+		}
 
 		<!-- Node List with Quick Status -->
 		<div class="tn-card">
@@ -188,19 +165,49 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 			</div>
 		</div>
 
-		<!-- Chains overview -->
+		<!-- Mini topology: level groups per chain (click → chains topology tab) -->
 		<div class="tn-card">
 			<div class="card-body p-6">
 				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Chains") }</h3>
+					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Topology") }</h3>
 					<a hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">{ i18n.T(ctx, "Manage Chains") }</a>
 				</div>
 				if len(chains) == 0 {
-					<p class="text-sm text-base-content/50 py-6 text-center bg-base-200/30 rounded-xl border border-base-content/5 border-dashed">{ i18n.T(ctx, "No chains configured. Create one via the Spider Web or Chains page.") }</p>
+					<p class="text-sm text-base-content/50 py-6 text-center bg-base-200/30 rounded-xl border border-base-content/5 border-dashed">{ i18n.T(ctx, "No chains configured. Create one on the Chains page.") }</p>
 				} else {
-					<div class="flex flex-wrap gap-3">
+					<div class="space-y-3">
 						for _, c := range chains {
-							<div class="badge badge-primary badge-outline badge-lg p-4 font-semibold shadow-sm hover:shadow-md transition-shadow cursor-pointer">{ c.Name } <span class="opacity-60 ml-2 font-normal text-xs bg-base-content/10 px-2 py-0.5 rounded-full">{ fmt.Sprintf("%d %s", len(c.Nodes), i18n.T(ctx, "hops")) }</span></div>
+							<div class="flex items-center gap-2 flex-wrap">
+								<span class="font-semibold text-sm w-28 truncate">{ c.Name }</span>
+								@dashChainLevels(c)
+							</div>
+						}
+					</div>
+				}
+			</div>
+		</div>
+
+		<!-- Recent audit -->
+		<div class="tn-card">
+			<div class="card-body p-6">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Recent events") }</h3>
+					<div class="flex gap-1">
+						<a hx-get="/ui/status" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost">{ i18n.T(ctx, "System status") }</a>
+						<a hx-get="/ui/audit" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">{ i18n.T(ctx, "Full audit log") }</a>
+					</div>
+				</div>
+				if len(audit) == 0 {
+					<p class="text-sm text-base-content/50 py-4 text-center">{ i18n.T(ctx, "No events yet.") }</p>
+				} else {
+					<div class="space-y-1">
+						for _, a := range audit {
+							<div class="flex items-center gap-3 text-sm border-b border-base-content/5 py-1.5 last:border-0">
+								<span class="badge badge-xs badge-outline w-16 justify-center">{ a.Action }</span>
+								<span class="text-base-content/60 text-xs">{ a.TargetType }</span>
+								<span class="font-mono text-xs truncate">{ a.TargetID }</span>
+								<span class="ml-auto text-xs text-base-content/40 whitespace-nowrap">{ a.TS.Format("01-02 15:04") }</span>
+							</div>
 						}
 					</div>
 				}
@@ -216,6 +223,32 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 			class="hidden">
 		</div>
 	</div>
+
+	<div id="modal-container"></div>
+}
+
+// dashChainLevels renders the mini level-group visualization for one chain
+// ([entry] → [hop] → [exit] with per-level node badges).
+templ dashChainLevels(c *model.Chain) {
+	if c.IsLevelized() {
+		for li, lv := range c.Levels {
+			if li > 0 {
+				<span class="text-base-content/30 text-xs">→</span>
+			}
+			<span class="inline-flex gap-0.5 items-center border border-base-300/60 rounded px-1 py-0.5">
+				for _, n := range lv.Nodes {
+					<span class="badge badge-outline badge-xs font-mono text-[10px] h-auto py-0.5">{ n.ID }</span>
+				}
+			</span>
+		}
+	} else {
+		for i, n := range c.Nodes {
+			if i > 0 {
+				<span class="text-base-content/30 text-xs">→</span>
+			}
+			<span class="badge badge-outline badge-xs font-mono text-[10px] h-auto py-0.5">{ n.ID }</span>
+		}
+	}
 }
 
 // Helper: find NodeInfo for a host ID
