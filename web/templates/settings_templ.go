@@ -623,7 +623,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></div></form><div id=\"settings-result\" class=\"mt-2\"></div><!-- SSH Keys — kept OUTSIDE the main settings form. The SSHKeyList\r\n\t\t\t\t     component renders its own <form> elements (add/import/test/delete\r\n\t\t\t\t     each hit their own /ui/settings/ssh-keys* endpoints), and HTML\r\n\t\t\t\t     forbids nested <form>: a <form> inside the main settings <form>\r\n\t\t\t\t     makes the browser close the outer form early, which drops the\r\n\t\t\t\t     Save Settings button (and the language select's submit) out of\r\n\t\t\t\t     the form — so Save Settings silently no-op'd and the language\r\n\t\t\t\t     never changed. --><div class=\"border-t border-base-300 pt-4 mt-4\"><h4 class=\"font-medium mb-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></div></form><div id=\"settings-result\" class=\"mt-2\"></div><!-- SSH Keys — kept OUTSIDE the main settings form. The SSHKeyList\n\t\t\t\t     component renders its own <form> elements (add/import/test/delete\n\t\t\t\t     each hit their own /ui/settings/ssh-keys* endpoints), and HTML\n\t\t\t\t     forbids nested <form>: a <form> inside the main settings <form>\n\t\t\t\t     makes the browser close the outer form early, which drops the\n\t\t\t\t     Save Settings button (and the language select's submit) out of\n\t\t\t\t     the form — so Save Settings silently no-op'd and the language\n\t\t\t\t     never changed. --><div class=\"border-t border-base-300 pt-4 mt-4\"><h4 class=\"font-medium mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -657,7 +657,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><!-- Add new key form (outside the main settings form + the ssh-keys-list\r\n\t\t\t\t     so it is not re-rendered on every add/delete/test/delete swap). --><div class=\"mt-4 border border-dashed border-base-300 rounded-lg p-3\"><form hx-post=\"/ui/settings/ssh-keys\" hx-target=\"#ssh-keys-list\" hx-swap=\"outerHTML\" hx-on::after-request=\"this.reset()\" class=\"space-y-2\"><div class=\"text-sm font-medium mb-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><!-- Add new key form (outside the main settings form + the ssh-keys-list\n\t\t\t\t     so it is not re-rendered on every add/delete/test/delete swap). --><div class=\"mt-4 border border-dashed border-base-300 rounded-lg p-3\"><form hx-post=\"/ui/settings/ssh-keys\" hx-target=\"#ssh-keys-list\" hx-swap=\"outerHTML\" hx-on::after-request=\"this.reset()\" class=\"space-y-2\"><div class=\"text-sm font-medium mb-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -971,7 +971,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</li></ul></div></div><!-- Backups — full-panel export/import + per-node export (the import\r\n\t\t\t     endpoint is on Settings because it is panel-wide; per-node export\r\n\t\t\t     buttons live on the Nodes page). --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</li></ul></div></div><!-- Backups — full-panel export/import + per-node export (the import\n\t\t\t     endpoint is on Settings because it is panel-wide; per-node export\n\t\t\t     buttons live on the Nodes page). --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1075,7 +1075,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</button></form><div id=\"import-backup-result\" class=\"mt-1\"></div></div></div></div><!-- Auto-relocate (P2b) — global master switch for moving\r\n\t\t\t\t     down/unreachable nodes onto warm-pool spares. Double opt-in:\r\n\t\t\t\t     this toggle AND the per-node \"Auto-relocate on down\" checkbox. --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</button></form><div id=\"import-backup-result\" class=\"mt-1\"></div></div></div></div><!-- Auto-relocate (P2b) — global master switch for moving\n\t\t\t\t     down/unreachable nodes onto warm-pool spares. Double opt-in:\n\t\t\t\t     this toggle AND the per-node \"Auto-relocate on down\" checkbox. --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1176,7 +1176,7 @@ func Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mode
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</button></div></form><div id=\"auto-relocate-result\" class=\"mt-2\"></div></div></div><!-- Offsite backup target (P2a) — push an encrypted copy of the\r\n\t\t\t\t     store to an offsite SSH box on a schedule + on demand. The\r\n\t\t\t\t     blob is passphrase-encrypted (scrypt/AES-GCM), so it is\r\n\t\t\t\t     restorable without the host's master key. The master key\r\n\t\t\t\t     file never leaves this host. --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</button></div></form><div id=\"auto-relocate-result\" class=\"mt-2\"></div></div></div><!-- Offsite backup target (P2a) — push an encrypted copy of the\n\t\t\t\t     store to an offsite SSH box on a schedule + on demand. The\n\t\t\t\t     blob is passphrase-encrypted (scrypt/AES-GCM), so it is\n\t\t\t\t     restorable without the host's master key. The master key\n\t\t\t\t     file never leaves this host. --><div class=\"tn-card\"><div class=\"card-body p-4\"><h3 class=\"font-semibold mb-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
