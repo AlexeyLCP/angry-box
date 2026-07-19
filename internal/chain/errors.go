@@ -26,6 +26,15 @@ var ErrChainNotFound = errors.New("chain not found")
 // ID does not exist in the store.
 var ErrUserNotFound = errors.New("user not found")
 
+// ErrInboundProfileNotFound is returned by GetInboundProfile/DeleteInboundProfile
+// when the requested profile ID does not exist in the store.
+var ErrInboundProfileNotFound = errors.New("inbound profile not found")
+
+// ErrInboundProfileInUse is returned by DeleteInboundProfile when a chain node
+// still references the profile via ChainNode.InboundRef — the chain must be
+// edited first (no silent dangling references).
+var ErrInboundProfileInUse = errors.New("inbound profile in use by a chain")
+
 // ErrRollbackFailed is returned by the deploy path (pushConfig / pushConfigWithAWG)
 // when the config push or service restart failed AND the rollback to the
 // previous config also failed. Callers can use errors.Is(err, ErrRollbackFailed)

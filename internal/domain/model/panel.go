@@ -431,6 +431,14 @@ type NodeInbound struct {
 	// tag is used (backward compat for inbounds created before Tag existed).
 	Tag string `json:"tag,omitempty"`
 
+	// ProfileID links this materialized inbound back to its InboundProfile
+	// (the first-class, node-independent listener description). It is the
+	// SINGLE source of truth for "which nodes is profile X deployed on" —
+	// computed by scanning NodeInfo.Inbounds, never stored on the profile.
+	// Empty = an ad-hoc standalone inbound created before profiles existed
+	// (legacy) or a chain-materialized entry inbound (Source="chain:<name>").
+	ProfileID string `json:"profile_id,omitempty"`
+
 	// Persisted server-side credentials
 	UUID          string `json:"uuid,omitempty"`
 	ServerPrivKey string `json:"server_priv_key,omitempty"`

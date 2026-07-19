@@ -156,6 +156,12 @@ func (h *hopParams) publicKeyB64() (string, error) {
 // a MERGED config for each node (chain + standalone inbounds + other chains) to avoid
 // overwriting existing node configuration.
 func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Chain, awgClientPubKey string) (*ApplyReport, error) {
+	// Normalize the flat view from the levels (v2 source of truth) so every
+	// positional reader below (pre-flight, keygen indices, deploy loop) works
+	// uniformly for legacy and levelized chains.
+	if chain.IsLevelized() {
+		chain.Nodes = chain.AllNodes()
+	}
 	if len(chain.Nodes) < 1 {
 		return nil, fmt.Errorf("chain: chain %q has no nodes", chain.Name)
 	}
@@ -253,8 +259,14 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 	}
 
 	// Generate hop params and PERSIST them on chain nodes so buildMergedNodeConfig sees them.
-	for i := n - 1; i >= 0; i-- {
-		node := &chain.Nodes[i]
+	// EachNode yields mutable pointers into the chain's backing store (levels
+	// for v2 chains — the source of truth — flat slice for legacy), so the
+	// generated keys persist through SaveChain.
+	keygenErr := error(nil)
+	chain.EachNode(func(i int, node *model.ChainNode) {
+		if keygenErr != nil {
+			return
+		}
 		if node.Port == 0 {
 			node.Port = defaultTransportPort
 		}
@@ -262,7 +274,8 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		if node.TransitPrivKey == "" || node.TransitShortID == "" || node.TransitUUID == "" {
 			p, err := generateHopParams(node.Port, &preset)
 			if err != nil {
-				return nil, fmt.Errorf("chain: node %q: generate params: %w", node.ID, err)
+				keygenErr = fmt.Errorf("chain: node %q: generate params: %w", node.ID, err)
+				return
 			}
 			if node.TransitPrivKey == "" {
 				node.TransitPrivKey = p.PrivateKey
@@ -284,7 +297,8 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			if i > 0 && node.TransitAWGServerPriv == "" {
 				priv, pub, err := GenerateWireGuardKeypair()
 				if err != nil {
-					return nil, fmt.Errorf("chain: node %q: generate awg server keypair: %w", node.ID, err)
+					keygenErr = fmt.Errorf("chain: node %q: generate awg server keypair: %w", node.ID, err)
+					return
 				}
 				node.TransitAWGServerPriv = priv
 				node.TransitAWGServerPub = pub
@@ -292,7 +306,8 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 			if i < n-1 && node.TransitAWGClientPriv == "" {
 				priv, pub, err := GenerateWireGuardKeypair()
 				if err != nil {
-					return nil, fmt.Errorf("chain: node %q: generate awg client keypair: %w", node.ID, err)
+					keygenErr = fmt.Errorf("chain: node %q: generate awg client keypair: %w", node.ID, err)
+					return
 				}
 				node.TransitAWGClientPriv = priv
 				node.TransitAWGClientPub = pub
@@ -312,8 +327,12 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		}
 
 		if err := ensureAWGExitLinks(chain, node); err != nil {
-			return nil, fmt.Errorf("chain: node %q: ensure awg exit links: %w", node.ID, err)
+			keygenErr = fmt.Errorf("chain: node %q: ensure awg exit links: %w", node.ID, err)
+			return
 		}
+	})
+	if keygenErr != nil {
+		return nil, keygenErr
 	}
 
 	// Save chain to store so GetChainsForNode sees it.
@@ -813,8 +832,8 @@ func extractHost(addr string) string {
 // new node. Used during AWG inter-node transport key generation in ApplyChain.
 func transitAddresses(chain *model.Chain) []string {
 	var taken []string
-	for i := range chain.Nodes {
-		if a := chain.Nodes[i].TransitAWGAddress; a != "" {
+	for _, n := range chain.AllNodes() {
+		if a := n.TransitAWGAddress; a != "" {
 			taken = append(taken, a)
 		}
 	}
@@ -826,8 +845,8 @@ func transitAddresses(chain *model.Chain) []string {
 // new kernel awg-exit-nX interface.
 func exitAddresses(chain *model.Chain) []string {
 	var taken []string
-	for i := range chain.Nodes {
-		for _, link := range chain.Nodes[i].ExitAWGLinks {
+	for _, n := range chain.AllNodes() {
+		for _, link := range n.ExitAWGLinks {
 			if link.Address != "" {
 				taken = append(taken, link.Address)
 			}
@@ -836,16 +855,14 @@ func exitAddresses(chain *model.Chain) []string {
 	return taken
 }
 
+// chainNodeByID returns a MUTABLE pointer to the named node inside the
+// chain's backing store (levels for v2 chains, flat slice for legacy) —
+// mutations persist. Delegates to model.Chain.NodeByID.
 func chainNodeByID(chain *model.Chain, id string) *model.ChainNode {
 	if chain == nil {
 		return nil
 	}
-	for i := range chain.Nodes {
-		if chain.Nodes[i].ID == id {
-			return &chain.Nodes[i]
-		}
-	}
-	return nil
+	return chain.NodeByID(id)
 }
 
 func exitLinkByTarget(node *model.ChainNode, targetID string) *model.AWGExitLink {
@@ -1581,7 +1598,7 @@ func (a *Applier) applyMergedNodeLocked(
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolve chain %q: %w", c.Name, err)
 		}
-		c.Nodes = resolved
+		c.SetAllNodes(resolved)
 	}
 
 	for i := range info.Inbounds {

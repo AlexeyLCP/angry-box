@@ -8,6 +8,12 @@ const (
 	StrategyFailover Strategy = "failover"
 	StrategySelector Strategy = "selector"
 	StrategyBond     Strategy = "bond"
+	// StrategyFallback is the per-connection round-robin group rendered as the
+	// patched sing-box-extended "fallback" outbound (the production-verified
+	// multi-exit path). It is the DEFAULT strategy for multi-node chain
+	// levels — urltest is an explicit opt-in only. UI label: "Round-robin
+	// (fallback)".
+	StrategyFallback Strategy = "fallback"
 )
 
 // ChainNodeRole explicitly designates a node's role in a chain. Empty means
@@ -84,13 +90,28 @@ type ChainNode struct {
 	ExitAWGServerPub  string `json:"exit_awg_server_pub,omitempty"`
 	ExitAWGListenPort int    `json:"exit_awg_listen_port,omitempty"`
 
+	// InboundRef references an InboundProfile.ID materialized on this node.
+	// On the chain's entry level it selects the user-facing listener clients
+	// connect to (required for v2 chains). On transit/exit levels it
+	// parametrizes the chain-generated transport listener (protocol, port,
+	// obfuscation preset taken from the profile; credentials stay the chain's
+	// own persisted transit keys) — optional, the validation and render paths
+	// honor it from v2 onward.
+	InboundRef string `json:"inbound_ref,omitempty"`
+
 	Inbounds []NodeInbound `json:"inbounds,omitempty"` // Standalone inbounds configured for this node
 }
 
 // Chain is an ordered list of nodes forming a multi-hop proxy path.
 type Chain struct {
-	Name               string        `json:"name"`
-	Nodes              []ChainNode   `json:"nodes"`
+	Name  string      `json:"name"`
+	Nodes []ChainNode `json:"nodes"` // legacy flat path — read by the v1→v2 migration only; use AllNodes()
+	// Levels is the v2 authoring model: ordered hop levels, each a group of
+	// one or more nodes with a selection Strategy toward the next level.
+	// Level 0 is the user-facing entry, the last level is the exit. The flat
+	// Nodes slice is derived from Levels via AllNodes() — Levels is the
+	// single source of truth; nothing writes Nodes anymore.
+	Levels             []ChainLevel `json:"levels,omitempty"`
 	Strategy           Strategy      `json:"strategy"`
 	Transport          TransportType `json:"transport,omitempty"`           // transport between nodes (xhttp/reality)
 	UserProtocol       UserProtocol  `json:"user_protocol,omitempty"`       // user entry protocol (tuic/awg/vless-reality)
@@ -185,5 +206,144 @@ func (n ChainNode) Host() Host {
 		Addr:    n.Addr,
 		User:    n.User,
 		KeyPath: n.KeyPath,
+	}
+}
+
+// IsLevelized reports whether the chain uses the v2 levels model. Legacy
+// chains (pre-v2 store, not yet migrated) have only the flat Nodes slice.
+func (c *Chain) IsLevelized() bool { return len(c.Levels) > 0 }
+
+// AllNodes flattens the chain into the legacy ordered node list: level 0
+// nodes first (entry), then each subsequent level in order. It is the SINGLE
+// way to read the chain's nodes — Levels is the source of truth, the flat
+// Nodes field is read only by the v1→v2 migration. For a legacy (not yet
+// migrated) chain AllNodes falls back to the flat slice.
+func (c *Chain) AllNodes() []ChainNode {
+	if !c.IsLevelized() {
+		return c.Nodes
+	}
+	var out []ChainNode
+	for _, lv := range c.Levels {
+		out = append(out, lv.Nodes...)
+	}
+	return out
+}
+
+// NodeByID returns the chain node with the given ID, searching levels first
+// (falling back to the legacy flat list). Nil when absent.
+func (c *Chain) NodeByID(id string) *ChainNode {
+	if c.IsLevelized() {
+		for li := range c.Levels {
+			for ni := range c.Levels[li].Nodes {
+				if c.Levels[li].Nodes[ni].ID == id {
+					return &c.Levels[li].Nodes[ni]
+				}
+			}
+		}
+		return nil
+	}
+	for ni := range c.Nodes {
+		if c.Nodes[ni].ID == id {
+			return &c.Nodes[ni]
+		}
+	}
+	return nil
+}
+
+// LevelIndexOf returns the level index containing nodeID, or -1. For legacy
+// flat chains it derives the level from Role/position (entry nodes = 0, exit
+// nodes = last, transit in order) so callers can treat old chains uniformly.
+func (c *Chain) LevelIndexOf(nodeID string) int {
+	if !c.IsLevelized() {
+		for i, n := range c.Nodes {
+			if n.ID == nodeID {
+				return i
+			}
+		}
+		return -1
+	}
+	for li, lv := range c.Levels {
+		for _, n := range lv.Nodes {
+			if n.ID == nodeID {
+				return li
+			}
+		}
+	}
+	return -1
+}
+
+// NextLevelNodes returns the nodes of the level FOLLOWING the one containing
+// nodeID (the node's downstream group). Empty for the last level / unknown.
+func (c *Chain) NextLevelNodes(nodeID string) []ChainNode {
+	li := c.LevelIndexOf(nodeID)
+	if li < 0 {
+		return nil
+	}
+	if c.IsLevelized() {
+		if li+1 >= len(c.Levels) {
+			return nil
+		}
+		return c.Levels[li+1].Nodes
+	}
+	if li+1 >= len(c.Nodes) {
+		return nil
+	}
+	return []ChainNode{c.Nodes[li+1]}
+}
+
+// LevelStrategy returns the strategy the level containing nodeID uses to
+// distribute traffic across its downstream group. Empty means the default
+// (StrategyFallback for multi-node downstream groups).
+func (c *Chain) LevelStrategy(nodeID string) Strategy {
+	if !c.IsLevelized() {
+		return c.Strategy
+	}
+	if li := c.LevelIndexOf(nodeID); li >= 0 {
+		return c.Levels[li].Strategy
+	}
+	return ""
+}
+
+// EachNode calls fn for every node in flat order (level 0 first, then each
+// subsequent level) with a MUTABLE pointer into the chain's backing store —
+// the levels for v2 chains, the flat slice for legacy ones. Writers that
+// generate/persist per-node material (ApplyChain key generation) MUST use
+// this so the mutation lands in the levels (the v2 source of truth), not in
+// a throwaway copy returned by AllNodes().
+func (c *Chain) EachNode(fn func(flatIndex int, n *ChainNode)) {
+	i := 0
+	if c.IsLevelized() {
+		for li := range c.Levels {
+			for ni := range c.Levels[li].Nodes {
+				fn(i, &c.Levels[li].Nodes[ni])
+				i++
+			}
+		}
+		return
+	}
+	for ni := range c.Nodes {
+		fn(i, &c.Nodes[ni])
+		i++
+	}
+}
+
+// SetAllNodes writes a flat ordered node list back into the chain: for v2
+// chains it redistributes the nodes into their levels in flat order (the
+// slice must have come from AllNodes so lengths match); for legacy chains it
+// replaces the flat Nodes slice. Used by ResolveNodes to write the
+// host-resolved copies back without losing the levels structure.
+func (c *Chain) SetAllNodes(nodes []ChainNode) {
+	if !c.IsLevelized() {
+		c.Nodes = nodes
+		return
+	}
+	k := 0
+	for li := range c.Levels {
+		for ni := range c.Levels[li].Nodes {
+			if k < len(nodes) {
+				c.Levels[li].Nodes[ni] = nodes[k]
+				k++
+			}
+		}
 	}
 }

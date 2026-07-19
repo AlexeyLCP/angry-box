@@ -74,7 +74,8 @@ func (s *Store) migrateOnce() {
 	// migrations[i] brings the store from version i to i+1. Add new migrations
 	// here in order and bump currentSchemaVersion.
 	migrations := []func(*storeFile) error{
-		s.migrateMtproxyUsers, // v0 -> v1: legacy MtproxyUser -> User (subproject B)
+		s.migrateMtproxyUsers,     // v0 -> v1: legacy MtproxyUser -> User (subproject B)
+		s.migrateInboundProfiles,  // v1 -> v2: standalone inbounds -> profiles; chains -> levels
 	}
 	changed := false
 	for i := sf.SchemaVersion; i < len(migrations) && i < currentSchemaVersion; i++ {
@@ -197,13 +198,18 @@ type storeFile struct {
 	AuditLogs     []*model.AuditLog          `json:"audit_logs,omitempty"`
 	MtproxyUsers  []*model.MtproxyUser       `json:"mtproxy_users,omitempty"`
 	Links         []*model.ConnectionLink    `json:"links,omitempty"`
+	// InboundProfiles holds the first-class, node-independent listener
+	// descriptions (v2). Which nodes a profile is deployed on is NOT stored
+	// here — it is derived from NodeInfo.Inbounds[].ProfileID (single source
+	// of truth, see store.ProfileNodes).
+	InboundProfiles []*model.InboundProfile `json:"inbound_profiles,omitempty"`
 }
 
 // currentSchemaVersion is the schema version the orchestrator writes. New
 // stores are created at this version; existing stores at a lower version are
 // migrated up to it by migrateOnce. Bump this constant when adding a new
 // migration to the chain below.
-const currentSchemaVersion = 1
+const currentSchemaVersion = 2
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────
 
@@ -285,7 +291,7 @@ func (s *Store) DeleteHost(id string) error {
 
 	// Safety check: refuse delete if any chain still references this host
 	for _, c := range sf.Chains {
-		for _, n := range c.Nodes {
+		for _, n := range c.AllNodes() {
 			if n.ID == id {
 				return fmt.Errorf("store: cannot delete host %q: still referenced by chain %q", id, c.Name)
 			}
@@ -311,10 +317,17 @@ func (s *Store) DeleteHost(id string) error {
 
 // ─── Chains ───────────────────────────────────────────────────────────────────
 
-// SaveChain persists a chain (creates or updates).
+// SaveChain persists a chain (creates or updates). For v2 (levelized) chains
+// the flat Nodes slice is re-derived from Levels before writing — Levels is
+// the source of truth; Nodes stays in the file only so pre-v2 readers (and
+// downgraded backups) still see the topology.
 func (s *Store) SaveChain(chain *model.Chain) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if chain.IsLevelized() {
+		chain.Nodes = chain.AllNodes()
+	}
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
@@ -382,7 +395,7 @@ func (s *Store) GetChainsForNode(nodeID string) ([]*model.Chain, error) {
 	}
 	var result []*model.Chain
 	for _, c := range chains {
-		for _, n := range c.Nodes {
+		for _, n := range c.AllNodes() {
 			if n.ID == nodeID {
 				result = append(result, c)
 				break
@@ -423,9 +436,12 @@ func (s *Store) DeleteChain(name string) error {
 }
 
 // ResolveNodes resolves host references in a chain to full ChainNode entries.
+// Iterates AllNodes() so v2 (levelized) chains resolve every node in flat
+// order; callers write the result back with Chain.SetAllNodes.
 func (s *Store) ResolveNodes(chain *model.Chain) ([]model.ChainNode, error) {
-	resolved := make([]model.ChainNode, 0, len(chain.Nodes))
-	for _, n := range chain.Nodes {
+	nodes := chain.AllNodes()
+	resolved := make([]model.ChainNode, 0, len(nodes))
+	for _, n := range nodes {
 		host, err := s.GetHost(n.ID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve node %q: %w", n.ID, err)
@@ -455,6 +471,164 @@ func (s *Store) ResolveNodes(chain *model.Chain) ([]model.ChainNode, error) {
 		resolved = append(resolved, rn)
 	}
 	return resolved, nil
+}
+
+// ─── Inbound profiles ─────────────────────────────────────────────────────────
+//
+// A profile is a node-independent listener template. Which nodes it is
+// deployed on is derived from NodeInfo.Inbounds[].ProfileID (single source of
+// truth) — the profile itself deliberately does NOT carry a node list, so the
+// association cannot drift.
+
+// SaveInboundProfile persists a profile (creates or updates, keyed by ID).
+// It does NOT touch node materializations — deployment diffs are applied by
+// the caller (web handler) via NodeInfo.Inbounds so per-node credentials are
+// generated exactly once.
+func (s *Store) SaveInboundProfile(p *model.InboundProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		sf = &storeFile{}
+	} else if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = timeNow()
+	}
+	replaced := false
+	for i, existing := range sf.InboundProfiles {
+		if existing.ID == p.ID {
+			sf.InboundProfiles[i] = p
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		sf.InboundProfiles = append(sf.InboundProfiles, p)
+	}
+	return s.writeStore(sf)
+}
+
+// GetInboundProfile returns a profile by ID.
+func (s *Store) GetInboundProfile(id string) (*model.InboundProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("store: inbound profile %q not found: %w", id, ErrInboundProfileNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: read: %w", err)
+	}
+	for _, p := range sf.InboundProfiles {
+		if p.ID == id {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("store: inbound profile %q not found: %w", id, ErrInboundProfileNotFound)
+}
+
+// ListInboundProfiles returns all stored profiles.
+func (s *Store) ListInboundProfiles() ([]*model.InboundProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: read: %w", err)
+	}
+	return sf.InboundProfiles, nil
+}
+
+// DeleteInboundProfile removes a profile. It refuses (ErrInboundProfileInUse)
+// when any chain node still references the profile via InboundRef — the
+// caller must edit the chain first. Node materializations with this ProfileID
+// are the caller's responsibility (the web handler removes them beforehand).
+func (s *Store) DeleteInboundProfile(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+
+	found := false
+	filtered := sf.InboundProfiles[:0]
+	for _, p := range sf.InboundProfiles {
+		if p.ID == id {
+			found = true
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	if !found {
+		return fmt.Errorf("store: inbound profile %q not found: %w", id, ErrInboundProfileNotFound)
+	}
+	for _, c := range sf.Chains {
+		for _, n := range c.AllNodes() {
+			if n.InboundRef == id {
+				return fmt.Errorf("store: inbound profile %q in use by chain %q node %q: %w", id, c.Name, n.ID, ErrInboundProfileInUse)
+			}
+		}
+	}
+	sf.InboundProfiles = filtered
+	return s.writeStore(sf)
+}
+
+// ProfileNodes returns the IDs of nodes whose NodeInfo.Inbounds contain an
+// entry materialized from the given profile. This is the ONLY way to answer
+// "where is profile X deployed" — the inverse direction (NodeInbound.ProfileID)
+// is the stored truth.
+func (s *Store) ProfileNodes(profileID string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, ni := range sf.NodeInfos {
+		for _, ib := range ni.Inbounds {
+			if ib.ProfileID == profileID {
+				out = append(out, ni.ID)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// ProfileInboundOn returns the materialized NodeInbound for profileID on the
+// given node, or nil — the per-node credentials/config the render paths read.
+func (s *Store) ProfileInboundOn(nodeID, profileID string) *model.NodeInbound {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sf, err := s.readStore()
+	if err != nil {
+		return nil
+	}
+	for _, ni := range sf.NodeInfos {
+		if ni.ID != nodeID {
+			continue
+		}
+		for i := range ni.Inbounds {
+			if ni.Inbounds[i].ProfileID == profileID {
+				ib := ni.Inbounds[i]
+				return &ib
+			}
+		}
+	}
+	return nil
 }
 
 // ─── Users ─────────────────────────────────────────────────────────────────────

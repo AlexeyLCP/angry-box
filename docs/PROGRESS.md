@@ -2237,3 +2237,20 @@ conf (`sed -n 's/^PostUp = //p' | sh`, наши PostUp идемпотентны)
   источник).
 - Размер: stripped ~11-13MB (было ~20MB+ без -s -w в Makefile LDFLAGS),
   UPX сжимает дополнительно в ~3 раза.
+
+## 26. IA/UX refactor v0.8 — Stage A: first-class InboundProfile + Chain Levels (модель + store + миграция) (2026-07-19)
+
+Начат большой рефакторинг информационной архитектуры (план утверждён с 3 итерациями правок): sidebar = Дашборд/Ноды/Инбаунды/Цепочки/Клиенты/Настройки; инбаунды — first-class сущность; цепочки = упорядоченные уровни с группами нод + стратегиями; Users → упрощённые Клиенты (Services удаляются).
+
+**Stage A (этот коммит) — данные:**
+- `internal/domain/model/inbound.go` (новый): `InboundProfile` (node-independent listener template; НЕ хранит NodeIDs — размещение вычисляется), `ChainLevel` (группа нод + Strategy).
+- `model.Chain`: `+Levels []ChainLevel` (source of truth), хелперы `AllNodes()/NodeByID/LevelIndexOf/NextLevelNodes/LevelStrategy/EachNode (mutable!)/SetAllNodes/IsLevelized`. `Chain.Nodes` — только для чтения legacy + синк при SaveChain.
+- `model.ChainNode.InboundRef` — ссылка на профиль с любого уровня (level 0 = user-facing listener; transit/exit = параметризация transport listener, заложено в модель сразу).
+- `model.NodeInbound.ProfileID` — ЕДИНСТВЕННЫЙ source of truth «на каких нодах стоит профиль».
+- `StrategyFallback = "fallback"` (UI-лейбл "Round-robin (fallback)", дефолт для multi-node уровней; urltest — только явный opt-in).
+- Store: top-level `inbound_profiles` + CRUD + `ProfileNodes` (вычисляемое размещение) + `ProfileInboundOn`; `DeleteInboundProfile` отказывает с `ErrInboundProfileInUse`, если любой ChainNode ссылается через InboundRef. `SaveChain` ре-деривирует Nodes из Levels. `ResolveNodes`/`GetChainsForNode`/`DeleteHost`-guard переведены на `AllNodes()`.
+- **Миграция schema v1→v2** (`migrate_v2.go`): (1) standalone инбаунды схлопываются в профили по (protocol,port,obfuscation) cross-node — каждое схлопывание логируется + audit; (2) каждая цепочка получает entry-профиль `chain-entry-<name>` + материализованный NodeInbound на entry-нодах с СУЩЕСТВУЮЩИМИ кредами (AWGEntryServerPriv, CPS I1-I5/H1-H4, subnet 10.8.0.1/24, VLESS UUID = transit UUID entry) — клиенты не отваливаются; (3) flat Nodes → Levels по deploy-правилу resolveChainRoles (entry=Role|index0, transit — каждый свой уровень в порядке следования, exit — группа).
+- `ApplyChain`: keygen через `chain.EachNode` (мутации падают в levels), нормализация flat-view при входе; `chainNodeByID` → `NodeByID` (mutable в levels); `applyMergedNodeLocked` → `SetAllNodes`.
+- Тесты (`migrate_v2_test.go`, 11 шт): схлопывание + сохранение per-node кредов, distinct-группы, chain entry profile + InboundRef, multi-entry/exit уровни, VLESS UUID, идемпотентность, **render-equivalence** (awg0.conf entry-ноды байт-в-байт совпадает до/после миграции), CRUD + delete-гард, EachNode/SetAllNodes, SaveChain sync. Полный suite + vet зелёные.
+
+Дальше: Stage B (applier/render под levels — mesh + strategy groups + entry render по InboundRef + multi-user VLESS), Stage C/D (UI Инбаунды/Цепочки/Spider), Stage E (Клиенты, удаление Services), Stage F (Дашборд + sidebar), Stage G (docs/релиз).
