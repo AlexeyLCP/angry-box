@@ -771,6 +771,13 @@ var locales = map[string]map[string]string{
 		"levels": "levels",
 		"Derived from chain levels — edit in the chain form": "Derived from chain levels — edit in the chain form",
 		"This chain uses levels — edit its topology in the chain form (Levels), spider links apply to legacy chains only": "This chain uses levels — edit its topology in the chain form (Levels), spider links apply to legacy chains only",
+		// v0.8 — simplified clients.
+		"Edit Client: ": "Edit Client: ",
+		"Add Client": "Add Client",
+		"Create Client": "Create Client",
+		"Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.": "Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.",
+		"Advanced (contacts, expiry, quota, MTProxy, import)": "Advanced (contacts, expiry, quota, MTProxy, import)",
+		"default": "default",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1568,6 +1575,13 @@ var locales = map[string]map[string]string{
 		"levels": "уровни",
 		"Derived from chain levels — edit in the chain form": "Выведено из уровней цепочки — редактируется в форме цепочки",
 		"This chain uses levels — edit its topology in the chain form (Levels), spider links apply to legacy chains only": "Эта цепочка использует уровни — редактируйте её топологию в форме цепочки (Уровни); spider-связи — только для legacy-цепочек",
+		// v0.8 — simplified clients.
+		"Edit Client: ": "Редактировать клиента: ",
+		"Add Client": "Добавить клиента",
+		"Create Client": "Создать клиента",
+		"Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.": "Креды (AWG-пир, VLESS UUID) генерируются автоматически из выбранных цепочек.",
+		"Advanced (contacts, expiry, quota, MTProxy, import)": "Расширенные (контакты, срок, квоты, MTProxy, импорт)",
+		"default": "по умолчанию",
 	},
 }
 

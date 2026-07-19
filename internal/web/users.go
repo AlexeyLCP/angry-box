@@ -47,7 +47,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNewUserForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	chains, _ := st.ListChains()
-	s.render(w, r, templates.UserForm(nil, chains, s.servicesList(), subURLHost(r)))
+	s.render(w, r, templates.UserForm(nil, chains, subURLHost(r)))
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -103,21 +103,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:      time.Now(),
 	}
 
-	// P0b Slice 1: Service expansion. If a service_id was chosen (non-empty),
-	// expand it into the user's ChainNames/Protocols/ChainExit/MTProxy/ServiceID
-	// — the operator never picks those manually in the Service path. The
-	// Custom (advanced) path (service_id == "") keeps the form-supplied
-	// chainNames/protocols and reads per-chain exit pins (exit_<chainName>).
-	serviceID := strings.TrimSpace(r.FormValue("service_id"))
-	if serviceID != "" {
-		svc, ok := s.lookupService(serviceID)
-		if !ok {
-			http.Error(w, i18n.T(r.Context(), "service not found"), http.StatusBadRequest)
-			return
-		}
-		applyServiceToUser(u, svc)
-	} else if len(chainNames) > 0 {
-		// Custom path: build ChainExit from exit_<chainName> form values.
+	// Per-chain exit pins (exit_<chainName>) — the only per-client routing
+	// knob on the simplified client form.
+	if len(chainNames) > 0 {
 		u.ChainExit = map[string]string{}
 		for _, cn := range chainNames {
 			if exit := strings.TrimSpace(r.FormValue("exit_" + cn)); exit != "" {
@@ -129,6 +117,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Protocols are derived from the selected chains' entry protocols — the
+	// operator never picks them (v0.8 simplified client form).
+	if derived := deriveProtocolsFromChains(s.store(), u.ChainNames); len(derived) > 0 {
+		u.Protocols = derived
+	}
 	if len(u.Protocols) == 0 {
 		u.Protocols = []string{"awg"}
 	}
@@ -157,7 +150,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		// If MTProxy is enabled but no secret anywhere, auto-generate one
 		// (removes the blank-by-default footgun — operator no longer has to
 		// click the Generate button).
-		if u.MTProxySecret == "" && (mtproxyEnabled || (serviceID != "" && lookupServiceMTProxyEnabled(s, serviceID))) {
+		if u.MTProxySecret == "" && mtproxyEnabled {
 			u.MTProxySecret = chain.GenerateMTProxySecret()
 		}
 	}
@@ -240,7 +233,7 @@ func (s *Server) handleEditUserForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chains, _ := s.store().ListChains()
-	s.render(w, r, templates.UserForm(u, chains, s.servicesList(), subURLHost(r)))
+	s.render(w, r, templates.UserForm(u, chains, subURLHost(r)))
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -318,28 +311,15 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		u.MTProxyNodes = nil
 	}
 
-	// P0b Slice 1: Service expansion (same as create). On edit, switching to a
-	// Service re-applies its chain/exit/protocol/MTProxy; switching to Custom
-	// keeps the form-supplied chains and reads exit_<chainName> pins.
-	serviceID := strings.TrimSpace(r.FormValue("service_id"))
-	if serviceID != "" {
-		svc, ok := s.lookupService(serviceID)
-		if !ok {
-			http.Error(w, i18n.T(r.Context(), "service not found"), http.StatusBadRequest)
-			return
+	// Per-chain exit pins (exit_<chainName>).
+	u.ChainExit = map[string]string{}
+	for _, cn := range u.ChainNames {
+		if exit := strings.TrimSpace(r.FormValue("exit_" + cn)); exit != "" {
+			u.ChainExit[cn] = exit
 		}
-		applyServiceToUser(u, svc)
-	} else {
-		u.ServiceID = ""
-		u.ChainExit = map[string]string{}
-		for _, cn := range u.ChainNames {
-			if exit := strings.TrimSpace(r.FormValue("exit_" + cn)); exit != "" {
-				u.ChainExit[cn] = exit
-			}
-		}
-		if len(u.ChainExit) == 0 {
-			u.ChainExit = nil
-		}
+	}
+	if len(u.ChainExit) == 0 {
+		u.ChainExit = nil
 	}
 
 	// P0b Slice 1: expiry-strategy + quota fields (edit path).
@@ -367,6 +347,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	u.DataLimit, _ = strconv.ParseInt(r.FormValue("data_limit"), 10, 64)
 	u.DataLimitResetStrategy = strings.TrimSpace(r.FormValue("data_limit_reset_strategy"))
 
+	// Protocols are derived from the selected chains' entry protocols (v0.8).
+	if derived := deriveProtocolsFromChains(st, u.ChainNames); len(derived) > 0 {
+		u.Protocols = derived
+	}
 	if len(u.Protocols) == 0 {
 		u.Protocols = []string{"awg"}
 	}
@@ -942,56 +926,25 @@ func subURLHost(r *http.Request) string {
 	return "http://" + host
 }
 
-// lookupService finds a Service by ID in PanelSettings.Services. Returns the
-// Service and true on hit.
-func (s *Server) lookupService(id string) (model.Service, bool) {
-	for _, svc := range s.servicesList() {
-		if svc.ID == id {
-			return svc, true
+// deriveProtocolsFromChains returns the distinct user-entry protocols of the
+// given chains (v0.8: a client's protocols are implied by its chains, never
+// picked manually).
+func deriveProtocolsFromChains(st *chain.Store, chainNames []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, cn := range chainNames {
+		c, err := st.GetChain(cn)
+		if err != nil {
+			continue
+		}
+		proto := string(c.UserProtocol)
+		if proto == "" {
+			proto = "awg"
+		}
+		if !seen[proto] {
+			seen[proto] = true
+			out = append(out, proto)
 		}
 	}
-	return model.Service{}, false
-}
-
-// lookupServiceMTProxyEnabled reports whether a Service has MTProxy.Enabled
-// (used by the create path to decide whether to auto-generate a secret).
-func lookupServiceMTProxyEnabled(s *Server, id string) bool {
-	svc, ok := s.lookupService(id)
-	return ok && svc.MTProxy.Enabled
-}
-
-// applyServiceToUser expands a Service into the user's ChainNames / Protocols /
-// ChainExit (DefaultExitByChain) / MTProxy defaults / ServiceID. The operator
-// never picks those manually in the Service path. Per-user creds are generated
-// later by EnsureUserCreds (caller). Does NOT touch the user's existing
-// MTProxySecret (auto-generated by the caller if needed) — only the defaults.
-func applyServiceToUser(u *model.User, svc model.Service) {
-	u.ServiceID = svc.ID
-	u.ChainNames = svc.ChainNames
-	if len(svc.Protocols) > 0 {
-		u.Protocols = svc.Protocols
-	}
-	u.ChainExit = nil
-	if len(svc.DefaultExitByChain) > 0 {
-		u.ChainExit = map[string]string{}
-		for chain, exit := range svc.DefaultExitByChain {
-			if exit != "" {
-				u.ChainExit[chain] = exit
-			}
-		}
-		if len(u.ChainExit) == 0 {
-			u.ChainExit = nil
-		}
-	}
-	if svc.MTProxy.Enabled {
-		u.MTProxyDomain = svc.MTProxy.Domain
-		if u.MTProxyDomain == "" {
-			u.MTProxyDomain = "disk.yandex.ru"
-		}
-		u.MTProxyOrderIndex = svc.MTProxy.OrderIndex
-		if len(svc.MTProxy.NodeIDs) > 0 {
-			u.MTProxyNodes = svc.MTProxy.NodeIDs
-		}
-		// MTProxySecret is generated by the caller (after this) when empty.
-	}
+	return out
 }

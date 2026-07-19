@@ -27,61 +27,6 @@ func seedServiceForWizard(t *testing.T, ts *testServer, svc model.Service) {
 	st.SaveSettings(settings)
 }
 
-// TestWizard_CreateUser_WithService_ExpandsFields verifies that picking a
-// Service in the wizard expands it into the user's ChainNames/Protocols/
-// ChainExit/MTProxy/ServiceID, and that EnsureUserCreds runs (AWGAddress
-// populated for the AWG protocol).
-func TestWizard_CreateUser_WithService_ExpandsFields(t *testing.T) {
-	ts := newTestServer(t)
-	seedServiceForWizard(t, ts, model.Service{
-		ID:                 "tg-pro",
-		Name:               "Telegram Pro",
-		ChainNames:         []string{"c1"},
-		Protocols:          []string{"awg"},
-		DefaultExitByChain: map[string]string{"c1": "exit-1"},
-	})
-	// Seed the chain c1 so EnsureUserCreds/AWG-address allocation works.
-	st := chain.NewStore(ts.storePath)
-	if err := st.SaveChain(&model.Chain{
-		Name: "c1", UserProtocol: model.UserProtocolAWG,
-		Nodes: []model.ChainNode{{ID: "exit-1", Addr: "1.2.3.4:22"}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	form := url.Values{
-		"id":         {"alice"},
-		"name":       {"Alice"},
-		"service_id": {"tg-pro"},
-	}
-	w := ts.post("/ui/users", form)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-	got, err := st.GetUser("alice")
-	if err != nil {
-		t.Fatalf("GetUser: %v", err)
-	}
-	if got.ServiceID != "tg-pro" {
-		t.Errorf("ServiceID = %q, want tg-pro", got.ServiceID)
-	}
-	if len(got.ChainNames) != 1 || got.ChainNames[0] != "c1" {
-		t.Errorf("ChainNames = %v, want [c1]", got.ChainNames)
-	}
-	if got.ChainExit["c1"] != "exit-1" {
-		t.Errorf("ChainExit = %v, want c1=exit-1", got.ChainExit)
-	}
-	if got.AWGAddress == "" {
-		t.Error("AWGAddress empty — EnsureUserCreds/EnsureUserAWGAddress did not run")
-	}
-	if got.SubscriptionToken == "" {
-		t.Error("SubscriptionToken empty — create should mint one")
-	}
-	if got.ExpireStrategy != "never" {
-		t.Errorf("ExpireStrategy = %q, want never (default)", got.ExpireStrategy)
-	}
-}
-
 // TestWizard_CreateUser_CustomPath_ChainExitExposed verifies the Custom path
 // reads exit_<chainName> form values into User.ChainExit — the first UI
 // surface for the already-wired ChainExit map.
