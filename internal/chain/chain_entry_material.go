@@ -70,6 +70,20 @@ func ensureMaterializedEntryInbound(ni *model.NodeInfo, c *model.Chain, entry *m
 					changed = true
 				}
 			}
+			// Subnet alignment: a profile materialized as standalone (10.8.1+)
+			// that becomes a chain entry moves to the chain-entry subnet
+			// 10.8.0.1/24 when it is free on this node — chain users allocate
+			// in 10.8.0.0/24 by convention, and the peer IP must share the
+			// interface's /24. Safe for existing clients: the server pubkey
+			// and listen port are unchanged (the client conf carries neither
+			// the server's tunnel address nor its subnet). When 10.8.0.1/24 is
+			// already claimed (another chain entry or a legacy standalone),
+			// the allocated subnet stays and user allocation follows it.
+			if ib.AWGServerAddress != "" && ib.AWGServerAddress != "10.8.0.1/24" &&
+				!awgSubnetClaimedOnNode(ni, "10.8.0.1/24", prof.ID) {
+				ib.AWGServerAddress = "10.8.0.1/24"
+				changed = true
+			}
 			before := ib.AWGCPSI1
 			EnsureInboundAWGMaterial(ib, preset)
 			if ib.AWGCPSI1 != before {
@@ -115,4 +129,23 @@ func ensureMaterializedEntryInbound(ni *model.NodeInfo, c *model.Chain, entry *m
 	}
 	ni.Inbounds = append(ni.Inbounds, ib)
 	return true
+}
+
+// awgSubnetClaimedOnNode reports whether any OTHER AWG inbound on the node
+// already claims the given server subnet (explicitly, or implicitly via the
+// legacy default 10.8.0.1/24 when AWGServerAddress is empty).
+func awgSubnetClaimedOnNode(ni *model.NodeInfo, subnet string, excludeProfileID string) bool {
+	for _, other := range ni.Inbounds {
+		if other.Protocol != "awg" || other.ProfileID == excludeProfileID {
+			continue
+		}
+		addr := other.AWGServerAddress
+		if addr == "" {
+			addr = "10.8.0.1/24" // legacy default
+		}
+		if addr == subnet {
+			return true
+		}
+	}
+	return false
 }

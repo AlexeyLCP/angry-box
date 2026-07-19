@@ -274,6 +274,16 @@ func EnsureUserCreds(u *model.User) error {
 // address — so existing users keep their IP across re-applies. No-op when AWG
 // is not a protocol or the address is already set.
 func EnsureUserAWGAddress(u *model.User, existing []string) {
+	EnsureUserAWGAddressPrefix(u, existing, "10.8.0")
+}
+
+// EnsureUserAWGAddressPrefix is EnsureUserAWGAddress with an explicit subnet
+// prefix ("10.8.0" → 10.8.0.0/24). The caller derives the prefix from the
+// entry inbound's AWGServerAddress so the user's peer IP always lands in the
+// SAME /24 as the interface that accepts it (v0.8: entry profiles may carry
+// non-default subnets; a peer in 10.8.0.0/24 on a 10.8.1.1/24 interface
+// breaks egress NAT).
+func EnsureUserAWGAddressPrefix(u *model.User, existing []string, prefix string) {
 	if u == nil || u.AWGAddress != "" {
 		return
 	}
@@ -287,7 +297,10 @@ func EnsureUserAWGAddress(u *model.User, existing []string) {
 	if !has {
 		return
 	}
-	u.AWGAddress = allocateAWGPeerIP(existing)
+	if prefix == "" {
+		prefix = "10.8.0"
+	}
+	u.AWGAddress = allocateAWGPeerIPInSubnet(prefix, existing)
 }
 
 // allocateAWGPeerIP returns the first free address in 10.8.0.0/24 (host part

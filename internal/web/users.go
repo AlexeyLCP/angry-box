@@ -186,7 +186,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	// keys on the peer's inner IP). Gather addresses already taken by other
 	// users so allocation does not collide.
 	if existingAWGIPs, err := takenAWGAddresses(st, u.ID); err == nil {
-		chain.EnsureUserAWGAddress(u, existingAWGIPs)
+		chain.EnsureUserAWGAddressPrefix(u, existingAWGIPs, userAWGPrefix(st, u.ChainNames))
 	}
 
 	// P0b Slice 1: mint a subscription token at create time (stable identity
@@ -362,7 +362,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	// Allocate a unique AWG tunnel IP if AWG was just added and the user has
 	// none yet. Avoid colliding with other users' addresses.
 	if existingAWGIPs, err := takenAWGAddresses(st, u.ID); err == nil {
-		chain.EnsureUserAWGAddress(u, existingAWGIPs)
+		chain.EnsureUserAWGAddressPrefix(u, existingAWGIPs, userAWGPrefix(st, u.ChainNames))
 	}
 
 	// P0b Slice 1: re-mint a sub token if the operator cleared it (stable
@@ -924,6 +924,37 @@ func subURLHost(r *http.Request) string {
 		host = "localhost:9080"
 	}
 	return "http://" + host
+}
+
+// userAWGPrefix returns the "10.8.X" prefix of the entry inbound subnet for
+// the user's first AWG chain (so the peer IP lands in the same /24 as the
+// interface that accepts it). Defaults to "10.8.0" (chain-entry convention)
+// for legacy chains / non-AWG entries / missing materialization.
+func userAWGPrefix(st *chain.Store, chainNames []string) string {
+	for _, cn := range chainNames {
+		c, err := st.GetChain(cn)
+		if err != nil || !c.IsLevelized() || len(c.Levels) == 0 {
+			continue
+		}
+		for _, n := range c.Levels[0].Nodes {
+			if n.InboundRef == "" {
+				continue
+			}
+			ib := st.ProfileInboundOn(n.ID, n.InboundRef)
+			if ib == nil || ib.AWGServerAddress == "" {
+				continue
+			}
+			a := ib.AWGServerAddress
+			if i := strings.IndexByte(a, '/'); i >= 0 {
+				a = a[:i]
+			}
+			parts := strings.Split(a, ".")
+			if len(parts) == 4 {
+				return strings.Join(parts[:3], ".")
+			}
+		}
+	}
+	return "10.8.0"
 }
 
 // deriveProtocolsFromChains returns the distinct user-entry protocols of the
