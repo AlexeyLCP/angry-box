@@ -2285,3 +2285,21 @@ conf (`sed -n 's/^PostUp = //p' | sh`, наши PostUp идемпотентны)
 **Тест-статус:** полный suite зелёный (go build/vet/test; ~35 новых тестов за весь рефакторинг). На этой машине периодический флейк `TempDir RemoveAll cleanup: The directory is not empty` (OneDrive/Windows file-lock) — не кодовый, перезапуски проходят.
 
 **Follow-ups (не блокеры):** live QUIC capture UI на странице Инбаундов (capture endpoint жив; материал мигрирован на инбаунды); AWG inter-node transport multi-peer endpoints для групп; полный drag-edit групп в spider (сейчас — визуализация + форма).
+
+## 28. v0.8 LIVE-верификация на n1 + 2 live-бага + чистка n1 (2026-07-19)
+
+Рефакторинг v0.8 проверен живьём end-to-end (n1 = единственный тестовый сервер, n2 отдан под другой продукт).
+
+**Чистка n1:** снят lucx-ui (x-ui.service disabled+removed, xray убит, awg1 down; бэкап /root/cleanup-backup-20260719/). n1 теперь только angry-box.
+
+**Верифицировано:**
+1. **Миграция v1→v2 на реальной панели** (legacy store: AWG-цепь с кредами/CPS, multi-entry+exit цепь, standalone AWG) — 3 профиля (collapse standalone + 2 chain-entry), levels по ролям, InboundRef, креды/CPS/subnet сохранены, multi-entry порты 8443/8444.
+2. **UI API flow на n1:** capture (post-capture: sing-box+AWG module async install, audit ok) → профиль AWG :51840 → цепочка (levels, InboundRef) → клиент (креды derive) → **apply: live deploy OK** (kernel awg-quick@awg0 :51840 + sing-box TUN overlay, peer зарегистрирован).
+3. **Subscription conf**: pubkey = реальный интерфейсный, subnet 10.8.0.0/24 единый, H1-H4/CPS совпадают server↔client.
+4. **Handshake + egress** (netns-клиент, jc=3 workaround AGENTS #17): fresh handshake, ping gateway, ping 1.1.1.1 через туннель, **curl api.ipify.org → 144.31.224.212 (CODE=200)** — полный data-plane.
+
+**2 бага, найденные ТОЛЬКО живьём (unit-тесты не ловили):**
+- **Subnet-рассинхрон** (cd19d30): профиль материализовался как standalone (10.8.1.1/24), юзеры получали адреса из legacy 10.8.0.0/24 → peer и интерфейс в разных /24. Fix: align entry-subnet на 10.8.0.1/24 (свободен) + EnsureUserAWGAddressPrefix (аллокация в /24 entry-инбаунда).
+- **Double-render профиль-entry** (7f1f479): профиль (Source="standalone") референснутый как chain entry рендерился дважды (awg0 + awg1) → второй awg-quick падал на дублированном порту. Fix: IsChainEntryInbound (reference-проверка) + skip во всех standalone-циклах (AWG confs, merged config, MTProxy, port conflicts, TUN includes).
+
+**Диагностика same-host артефакта (повтор §13.4):** same-host клиент не может проверить egress — IP клиента (10.8.0.2) локален на том же kernel → серверный стек считает пакеты локальными (loop через policy-rule клиента / локальная доставка). Решение для одно-машинных тестов: **netns-изоляция клиента** (veth pair, endpoint на host-veth IP) — forwarded path exercised for real.

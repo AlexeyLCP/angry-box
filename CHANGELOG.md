@@ -64,6 +64,15 @@ Settings.
   UUID) — byte-identical awg0.conf render before/after (render-equivalence
   test in CI); flat node lists become levels by role.
 
+#### Live-verification fixes (verified end-to-end on n1: migration, deploy, handshake, tunnel egress)
+- **Subnet alignment:** a profile materialized as standalone (10.8.1+) that
+  becomes a chain entry now moves to the chain-entry subnet when free, and
+  user peer IPs allocate in the entry inbound's /24 — peer and interface
+  always share a subnet.
+- **Double-render guard:** a profile referenced as a chain entry no longer
+  renders twice (chain entry + standalone loops) — the duplicate listener on
+  the same port failed deploys with a second awg-quick unit.
+
 #### Multi-user VLESS
 - Chain entries and standalone VLESS+Reality inbounds now render a per-user
   `users[]` (each client's own UUID) with the shared UUID kept first for

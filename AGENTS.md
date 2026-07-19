@@ -191,8 +191,8 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 
 | Alias | IP | OS / kernel | Состояние / правила |
 |---|---|---|---|
-| `n1` | 144.31.224.212 | Debian 13, 6.12.95 | amneziawg-tools v1.0.20260618-2 + DKMS module 1.0.20260611 (srcversion 228EEA4FFBDDD0F66070E02, GitHub master build). **SHARED с lucx-ui: там живёт x-ui панель с боевым инбаундом тестеров (awg1)** — ничего деструктивного (не трогать awg1/x-ui; свои интерфейсы создавать с другими именами). Для деструктивных триалов предпочитай n2. |
-| `n2` | 144.31.157.106 | Debian 13, 6.12.90 | Чистая машина, полностью наша. С 2026-07-18: module 1.0.20260611 + tools v1.0.20260618-2 + `iptables`/`nftables`/`openresolv`. На ней живёт trial-деплой (standalone AWG :51840, sing-box + awg-quick@awg0) — harness для egress-тестов. |
+| `n1` | 144.31.224.212 | Debian 13, 6.12.95 | **ЕДИНСТВЕННЫЙ тестовый сервер, полностью наш** (2026-07-19: lucx-ui снят — x-ui disabled/removed, xray убит, awg1 down; бэкап /root/cleanup-backup-20260719/). amneziawg-tools v1.0.20260618-2 + DKMS module 1.0.20260611 + iptables/nftables/openresolv + tcpdump. Живёт v0.8 trial-деплой (awg-quick@awg0 :51840 + sing-box TUN overlay). Same-host клиент НЕ проверяет egress (IP клиента локален на kernel) — использовать **netns-изоляцию** (veth pair, endpoint на host-veth IP, PROGRESS §28). |
+| ~~`n2`~~ | 144.31.157.106 | — | **БОЛЬШЕ НЕ НАШ** (2026-07-19: отдан под тестирование другого продукта). НЕ ТРОГАТЬ. |
 
 ### GCloud тестовые (project `project-d4c6c72c-4f10-4288-902`) — могут быть ОСТАНОВЛЕНЫ, проверять доступность до использования:
   - `vps-de-test-1` — 34.40.120.7 (Debian 12, key: `google_compute_engine`)
