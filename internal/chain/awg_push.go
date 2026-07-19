@@ -142,9 +142,17 @@ func pushAWGConfs(ctx context.Context, client ports.SSHClient, files []AWGConfFi
 			return nil, err
 		}
 	}
-	// All files written — now enable+restart each service. If one fails, roll
-	// back all of them (the sing-box config push hasn't happened yet).
+	// All files written — now bring each service up. When the interface section
+	// is unchanged and the service is already active, sync the peer set live
+	// instead (awg set) — a restart drops every connected client on the node,
+	// so the frequent user add/remove deploy must not restart (LucX SyncPeers
+	// pattern). A failed sync falls back to the restart path. If a restart
+	// fails, roll back all files (the sing-box config push hasn't happened yet).
 	for _, rec := range records {
+		if tryPeerSync(ctx, client, rec.file, useSudo) {
+			log.Printf("pushAWGConfs: %s — interface unchanged, peers synced live (no restart)", rec.file.ServiceName)
+			continue
+		}
 		if err := enableAWGService(ctx, client, rec.file.ServiceName, useSudo); err != nil {
 			rollbackAWGConfs(client, records, useSudo)
 			return nil, err

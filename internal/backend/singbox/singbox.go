@@ -569,6 +569,13 @@ export DEBIAN_FRONTEND=noninteractive
 echo "[awg] Installing build prerequisites..."
 apt-get update -qq
 apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 curl
+# Debian 13+ prerequisites (LucX-UI install-awg-module.sh lesson, verified on
+# our n1/n2): iptables is no longer installed by default there — our server
+# confs' PostUp lines (MASQUERADE/FORWARD) use the iptables shim, without it
+# awg-quick up fails (exit 127) and rolls the interface back. openresolv is
+# called by awg-quick when a conf carries DNS= (client confs). nftables is
+# required for sing-box TUN auto_redirect (AB_AWG_AUTO_REDIRECT=1).
+apt-get install -y -qq iptables nftables openresolv || echo "[awg] WARNING: iptables/nftables/openresolv install failed (continuing)"
 
 if ! apt-cache show amneziawg 2>/dev/null | grep -q ^Package; then
   echo "[awg] Adding Amnezia PPA..."
