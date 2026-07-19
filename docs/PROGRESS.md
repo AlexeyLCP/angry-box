@@ -2083,3 +2083,40 @@ include_interface path на 6.12 корректно захватывает forwa
   capture-диагностика под junk-флудом lossy (tcpdump теряет пакеты).
 - n2 оставлен с trial-деплоем (:51840) как harness; n1 в исходном состоянии
   (lucx awg1 не трогали).
+
+## 23. P2b — Auto-relocate opt-in (warm pool + guardrails) (2026-07-18)
+
+Roadmap v0.6.0 закрыт полностью: последний пункт (P2b) реализован поверх P1a
+(health state machine) + v0.5.0 (RelocateNode).
+
+**Модель:** `NodeInfo.Spare` (тёплый пул — резервный VPS без юзеров/цепей),
+`NodeInfo.AutoRelocate` (per-node opt-in), `NodeInfo.LastAutoRelocateAt`
+(cooldown); `PanelSettings.AutoRelocate *AutoRelocateConfig{Enabled,
+CooldownHours}` — глобальный рубильник (nil/false = ничего не происходит,
+операторский ручной relocate остаётся). Double opt-in by design: глобальный
+рубильник И чекбокс на ноде.
+
+**Решалка** (`internal/chain/autorelocate.go`, чистая, без SSH):
+`AutoRelocateDecision` проверяет по порядку: global enabled → not spare →
+node opt-in → cooldown (default 6h) → spare exists (`PickSpare`: Spare && not
+self && не в цепях && без инбаундов). `ConsumeSpare` убирает identity запасной
+ноды после переноса (новый `Store.DeleteNodeInfo` + DeleteHost, идемпотентно).
+
+**Триггер** (`server.go collectAllMetrics`): при переходе в down/unreachable —
+async `startAutoRelocate` с in-flight guard (sync.Mutex map — один перенос на
+ноду, relocate делает SSH-деплои минутами). blocked НЕ триггерит (operator-set
+sticky state). Каждое решение (start/done/failed/интересные skip'ы) — в audit
+(actor system). После успеха: spare consumed, `LastAutoRelocateAt` = now.
+
+**UI:** node edit form — чекбоксы "Spare (warm pool)" + "Auto-relocate on
+down"; Settings — карточка Auto-relocate (cooldown + global toggle), отдельный
+endpoint `POST /ui/settings/auto-relocate` (по образцу offsite, partial form
+не затирает другие настройки). 8 новых i18n-ключей en+ru.
+
+**Багфикс попутно:** `handleUpdateNode` пересобирал NodeInfo с нуля и молча
+затирал Inbounds/Takeover/PendingHostKeyFingerprint/P2b-флаги — теперь
+загружает существующую запись и мутирует только поля формы.
+
+**Тесты:** матрица guardrails (7 кейсов), no-spare, spare-never-relocated,
+PickSpare (пропуск chained/busy), ConsumeSpare идемпотентность. Все зелёные
+(chain 27.5s, web 2.6s).

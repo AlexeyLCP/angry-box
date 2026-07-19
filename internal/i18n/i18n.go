@@ -702,6 +702,15 @@ var locales = map[string]map[string]string{
 		"0 = 5 default": "0 = 5 default",
 		"scrypt N (memory cost)": "scrypt N (memory cost)",
 		"0 = 65536 default; lower = weaker/faster": "0 = 65536 default; lower = weaker/faster",
+		// P2b — auto-relocate (warm pool).
+		"Spare (warm pool)": "Spare (warm pool)",
+		"Auto-relocate on down": "Auto-relocate on down",
+		"Auto-relocate": "Auto-relocate",
+		"Automatically move a node to a spare (warm pool) VPS when its health check goes down/unreachable. Requires the per-node opt-in checkbox; the spare keeps the node's identity — existing clients are not reconfigured.": "Automatically move a node to a spare (warm pool) VPS when its health check goes down/unreachable. Requires the per-node opt-in checkbox; the spare keeps the node's identity — existing clients are not reconfigured.",
+		"Cooldown (hours between relocations of one node)": "Cooldown (hours between relocations of one node)",
+		"0 = 6 default": "0 = 6 default",
+		"Auto-relocate enabled (global)": "Auto-relocate enabled (global)",
+		"Auto-relocate settings saved": "Auto-relocate settings saved",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1430,6 +1439,15 @@ var locales = map[string]map[string]string{
 		"0 = 5 default": "0 = 5 по умолчанию",
 		"scrypt N (memory cost)": "scrypt N (память)",
 		"0 = 65536 default; lower = weaker/faster": "0 = 65536 по умолчанию; ниже = слабее/быстрее",
+		// P2b — auto-relocate (warm pool).
+		"Spare (warm pool)": "Запасная (тёплый пул)",
+		"Auto-relocate on down": "Авто-перенос при падении",
+		"Auto-relocate": "Авто-перенос",
+		"Automatically move a node to a spare (warm pool) VPS when its health check goes down/unreachable. Requires the per-node opt-in checkbox; the spare keeps the node's identity — existing clients are not reconfigured.": "Автоматически переносить ноду на запасной VPS (тёплый пул), когда health-check уходит в down/unreachable. Требуется и чекбокс на самой ноде; нода сохраняет идентичность — существующие клиенты не перенастраиваются.",
+		"Cooldown (hours between relocations of one node)": "Кулдаун (часов между переносами одной ноды)",
+		"0 = 6 default": "0 = 6 по умолчанию",
+		"Auto-relocate enabled (global)": "Авто-перенос включён (глобально)",
+		"Auto-relocate settings saved": "Настройки авто-переноса сохранены",
 	},
 }
 

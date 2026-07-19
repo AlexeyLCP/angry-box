@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/a-h/templ"
@@ -39,6 +40,13 @@ type Server struct {
 	// nil means "use the production connector"; tests inject a fake to avoid
 	// real network connections (CTO-review C3).
 	connector ports.SSHConnector
+	// relocateMu + relocating guard the P2b auto-relocate path: a node whose
+	// health transitions to down/unreachable is relocated asynchronously, and
+	// the guard prevents a second relocation starting for the same node while
+	// one is in flight (RelocateNode does sequential SSH deploys and may take
+	// minutes — several metrics ticks can observe the same down state).
+	relocateMu sync.Mutex
+	relocating map[string]bool
 }
 
 // SSHConnector returns the connector used by deploy/apply handlers. Exposed so
@@ -223,7 +231,74 @@ func (s *Server) collectAllMetrics() {
 				chain.AuditPayload{"from": oldState, "to": m.State, "reason": m.StateReason},
 				"system")
 		}
+
+		// P2b auto-relocate: a node that just entered an incident-class state
+		// (down = sing-box dead, unreachable = SSH dead) may be moved onto a
+		// warm-pool spare. The decision is pure (chain.AutoRelocateDecision);
+		// the relocation itself runs async — it does sequential SSH deploys
+		// and must not stall the metrics loop. blocked is deliberately NOT a
+		// trigger: it is an operator-set sticky state (a manual relocate is one
+		// click away and the operator may be diagnosing).
+		if m.State != oldState &&
+			(m.State == model.NodeStateDown || m.State == model.NodeStateUnreachable) {
+			if spare, reason, ok := chain.AutoRelocateDecision(st, h.ID, time.Now()); ok {
+				s.startAutoRelocate(h.ID, spare)
+			} else if reason != "disabled-global" && reason != "disabled-node" && reason != "is-spare" {
+				// Interesting skips only (cooldown / no-spare / errors) — the
+				// double-opt-in disabled states are the normal case and would
+				// just spam the audit log on every incident.
+				chain.WriteAudit(st, "auto-relocate", "node", h.ID,
+					chain.AuditPayload{"state": m.State, "skipped": reason}, "system")
+			}
+		}
 	}
+}
+
+// startAutoRelocate launches an async relocation of nodeID onto the spare,
+// guarded so only one relocation per node runs at a time (P2b).
+func (s *Server) startAutoRelocate(nodeID string, spare *model.NodeInfo) {
+	s.relocateMu.Lock()
+	if s.relocating == nil {
+		s.relocating = map[string]bool{}
+	}
+	if s.relocating[nodeID] {
+		s.relocateMu.Unlock()
+		return
+	}
+	s.relocating[nodeID] = true
+	s.relocateMu.Unlock()
+
+	st := s.store()
+	chain.WriteAudit(st, "auto-relocate", "node", nodeID,
+		chain.AuditPayload{"spare": spare.ID, "spare_addr": spare.Addr, "phase": "start"}, "system")
+
+	go func() {
+		defer func() {
+			s.relocateMu.Lock()
+			delete(s.relocating, nodeID)
+			s.relocateMu.Unlock()
+		}()
+		ctx := context.Background()
+		applier := chain.NewApplier(s.factory, s.SSHConnector())
+		report, err := chain.RelocateNode(ctx, st, applier, nodeID, spare.Addr, spare.User, spare.KeyPath, "")
+		if err != nil {
+			chain.WriteAudit(st, "auto-relocate", "node", nodeID,
+				chain.AuditPayload{"spare": spare.ID, "phase": "failed", "error": err.Error()}, "system")
+			return
+		}
+		// Relocation succeeded — the spare's address now belongs to the node;
+		// remove the spare's own identity and stamp the cooldown.
+		if cerr := chain.ConsumeSpare(st, spare.ID); cerr != nil {
+			chain.WriteAudit(st, "auto-relocate", "node", nodeID,
+				chain.AuditPayload{"spare": spare.ID, "phase": "consume-warning", "error": cerr.Error()}, "system")
+		}
+		if ni, nerr := st.GetNodeInfo(nodeID); nerr == nil {
+			ni.LastAutoRelocateAt = time.Now()
+			_ = st.SaveNodeInfo(ni)
+		}
+		chain.WriteAudit(st, "auto-relocate", "node", nodeID,
+			chain.AuditPayload{"spare": spare.ID, "phase": "done", "old_addr": report.OldAddr, "new_addr": report.NewAddr}, "system")
+	}()
 }
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {

@@ -247,6 +247,38 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 					</div>
 				</div>
 
+				<!-- Auto-relocate (P2b) — global master switch for moving
+				     down/unreachable nodes onto warm-pool spares. Double opt-in:
+				     this toggle AND the per-node "Auto-relocate on down" checkbox. -->
+				<div class="tn-card">
+					<div class="card-body p-4">
+						<h3 class="font-semibold mb-3">{ i18n.T(ctx, "Auto-relocate") }</h3>
+						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Automatically move a node to a spare (warm pool) VPS when its health check goes down/unreachable. Requires the per-node opt-in checkbox; the spare keeps the node's identity — existing clients are not reconfigured.") }</p>
+						<form
+							hx-post="/ui/settings/auto-relocate"
+							hx-target="#auto-relocate-result"
+							hx-swap="innerHTML"
+							class="space-y-3">
+							<div class="grid grid-cols-2 gap-3">
+								<div class="form-control">
+									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Cooldown (hours between relocations of one node)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 6 default") }</span></label>
+									<input type="number" name="auto_relocate_cooldown" class="input input-bordered input-sm"
+										value={ autoRelocateCooldownVal(settings) } placeholder="6" />
+								</div>
+							</div>
+							<label class="label cursor-pointer gap-2">
+								<input type="checkbox" name="auto_relocate_enabled" class="checkbox checkbox-sm"
+									if settings.AutoRelocate != nil && settings.AutoRelocate.Enabled { checked } />
+								<span class="label-text text-xs">{ i18n.T(ctx, "Auto-relocate enabled (global)") }</span>
+							</label>
+							<div class="flex gap-2 flex-wrap">
+								<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save") }</button>
+							</div>
+						</form>
+						<div id="auto-relocate-result" class="mt-2"></div>
+					</div>
+				</div>
+
 				<!-- Offsite backup target (P2a) — push an encrypted copy of the
 				     store to an offsite SSH box on a schedule + on demand. The
 				     blob is passphrase-encrypted (scrypt/AES-GCM), so it is
@@ -336,6 +368,16 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 // offsiteVal returns a field of the OffsiteBackupConfig for pre-filling the
 // settings form, returning "" when offsite backup is not configured yet (nil
 // cfg). field is one of "Host","User","SSHKeyID","RemotePath","IntervalMin".
+// autoRelocateCooldownVal returns the configured auto-relocate cooldown in
+// hours for pre-filling the settings form ("" when not configured — the
+// placeholder shows the default 6).
+func autoRelocateCooldownVal(settings *model.PanelSettings) string {
+	if settings == nil || settings.AutoRelocate == nil || settings.AutoRelocate.CooldownHours == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", settings.AutoRelocate.CooldownHours)
+}
+
 func offsiteVal(settings *model.PanelSettings, field string) string {
 	if settings == nil || settings.OffsiteBackup == nil {
 		return ""

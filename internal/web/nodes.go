@@ -93,12 +93,20 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	st.SaveHost(host)
 
-	info := &model.NodeInfo{
-		Host:      *host,
-		Country:   strings.TrimSpace(r.FormValue("country")),
-		Bandwidth: strings.TrimSpace(r.FormValue("bandwidth")),
-		Source:    strings.TrimSpace(r.FormValue("source")),
+	// Preserve the existing NodeInfo record (Inbounds, Takeover,
+	// PendingHostKeyFingerprint, P2b flags) — rebuilding from scratch here
+	// used to silently wipe every field the form does not carry.
+	info, _ := st.GetNodeInfo(id)
+	if info == nil {
+		info = &model.NodeInfo{}
 	}
+	info.Host = *host
+	info.Country = strings.TrimSpace(r.FormValue("country"))
+	info.Bandwidth = strings.TrimSpace(r.FormValue("bandwidth"))
+	info.Source = strings.TrimSpace(r.FormValue("source"))
+	// P2b warm-pool / auto-relocate flags (checkboxes — absent = off).
+	info.Spare = r.FormValue("spare") == "on"
+	info.AutoRelocate = r.FormValue("auto_relocate") == "on"
 	st.SaveNodeInfo(info)
 
 	if isHTMXRequest(r) {

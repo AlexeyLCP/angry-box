@@ -293,16 +293,26 @@ templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 			<label class="label"><span class="label-text">{ i18n.T(ctx, "Bandwidth") }</span></label>
 			<input type="text" name="bandwidth" class="input input-bordered" value={ niBandwidth(nodeInfo) } placeholder="1 Gbps" />
 		</div>
-		<div class="form-control">
-			<label class="label"><span class="label-text">{ i18n.T(ctx, "Source") }</span></label>
-			<select name="source" class="select select-bordered">
-				<option value="ssh_key" if niSource(nodeInfo) == "" || niSource(nodeInfo) == "ssh_key" { selected }>{ i18n.T(ctx, "SSH Key") }</option>
-				<option value="password" if niSource(nodeInfo) == "password" { selected }>{ i18n.T(ctx, "Password") }</option>
-				<option value="captured" if niSource(nodeInfo) == "captured" { selected }>{ i18n.T(ctx, "Captured") }</option>
-			</select>
+			<div class="form-control">
+				<label class="label"><span class="label-text">{ i18n.T(ctx, "Source") }</span></label>
+				<select name="source" class="select select-bordered">
+					<option value="ssh_key" if niSource(nodeInfo) == "" || niSource(nodeInfo) == "ssh_key" { selected }>{ i18n.T(ctx, "SSH Key") }</option>
+					<option value="password" if niSource(nodeInfo) == "password" { selected }>{ i18n.T(ctx, "Password") }</option>
+					<option value="captured" if niSource(nodeInfo) == "captured" { selected }>{ i18n.T(ctx, "Captured") }</option>
+				</select>
+			</div>
 		</div>
-	</div>
-}
+		<div class="grid grid-cols-2 gap-3 mt-3">
+			<label class="label cursor-pointer justify-start gap-2">
+				<input type="checkbox" name="spare" class="checkbox checkbox-sm" if niSpare(nodeInfo) { checked } />
+				<span class="label-text">{ i18n.T(ctx, "Spare (warm pool)") }</span>
+			</label>
+			<label class="label cursor-pointer justify-start gap-2">
+				<input type="checkbox" name="auto_relocate" class="checkbox checkbox-sm" if niAutoRelocate(nodeInfo) { checked } />
+				<span class="label-text">{ i18n.T(ctx, "Auto-relocate on down") }</span>
+			</label>
+		</div>
+	}
 
 // ─── Node Inbounds Form ─────────────────────────────────────────────────────────
 
@@ -700,6 +710,14 @@ func niSource(nodeInfo []*model.NodeInfo) string {
 		return nodeInfo[0].Source
 	}
 	return ""
+}
+
+func niSpare(nodeInfo []*model.NodeInfo) bool {
+	return len(nodeInfo) > 0 && nodeInfo[0] != nil && nodeInfo[0].Spare
+}
+
+func niAutoRelocate(nodeInfo []*model.NodeInfo) bool {
+	return len(nodeInfo) > 0 && nodeInfo[0] != nil && nodeInfo[0].AutoRelocate
 }
 
 // defaultKeyName returns the Name of the panel default SSH key (looked up in

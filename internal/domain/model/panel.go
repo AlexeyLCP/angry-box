@@ -151,6 +151,26 @@ type PanelSettings struct {
 	// is encrypted with a passphrase-derived key (see chain.backup_crypto).
 	// The master-key file never leaves the host.
 	OffsiteBackup *OffsiteBackupConfig `json:"offsite_backup,omitempty"`
+
+	// AutoRelocate is the global master switch + tuning for automatic node
+	// relocation (P2b). nil/Enabled=false = the health monitor never relocates
+	// on its own (operator relocates manually via the node row button). Even
+	// when enabled globally, a node is only relocated if its own
+	// NodeInfo.AutoRelocate opt-in is set — double opt-in by design.
+	AutoRelocate *AutoRelocateConfig `json:"auto_relocate,omitempty"`
+}
+
+// AutoRelocateConfig configures automatic relocation of failed nodes onto
+// warm-pool spares (P2b). Trigger: the background health monitor transitions
+// a node to down/unreachable. Guardrails: global Enabled + per-node
+// NodeInfo.AutoRelocate opt-in + CooldownHours between relocations + a spare
+// must exist (Spare nodes with no chains/inbounds). Every decision (taken or
+// skipped) is written to the audit log.
+type AutoRelocateConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// CooldownHours is the minimum interval between two auto-relocations of the
+	// SAME node. 0 = default 6. Prevents relocation loops on a flapping VPS.
+	CooldownHours int `json:"cooldown_hours,omitempty"`
 }
 
 // OffsiteBackupConfig describes an encrypted offsite backup target (P2a).
@@ -332,6 +352,21 @@ type NodeInfo struct {
 	// (awg/singbox/xray/mtproxy). Carries the old service name + config backup
 	// paths so the takeover can be rolled back to the old VPN if sing-box fails.
 	Takeover *TakeoverState `json:"takeover,omitempty"`
+
+	// Spare marks the node as a warm-pool standby (P2b): a healthy VPS with no
+	// users/chains that auto-relocation can consume as the replacement address
+	// for a down node. Spare nodes are excluded from chain building (they are
+	// inventory, not topology) and shown separately in the UI.
+	Spare bool `json:"spare,omitempty"`
+	// AutoRelocate is the per-node opt-in for automatic relocation (P2b): when
+	// the health state machine transitions this node to down/unreachable AND
+	// the global PanelSettings.AutoRelocate.Enabled master switch is on, the
+	// orchestrator relocates it onto a warm-pool spare (see chain.RelocateNode).
+	AutoRelocate bool `json:"auto_relocate,omitempty"`
+	// LastAutoRelocateAt records the last successful auto-relocation — the
+	// cooldown guard (PanelSettings.AutoRelocate.CooldownHours) keys off it so
+	// a flapping VPS is not relocated repeatedly.
+	LastAutoRelocateAt time.Time `json:"last_auto_relocate_at,omitempty"`
 }
 
 // TakeoverState records what angry-box found on the node and what it did to

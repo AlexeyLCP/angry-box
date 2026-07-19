@@ -438,4 +438,36 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/settings/ssh-keys/import-system", s.auth(s.handleImportSystemKey))
 	mux.HandleFunc("GET /ui/settings/ssh-keys/export", s.auth(s.handleExportKeys))
 	mux.HandleFunc("POST /ui/settings/ssh-keys/import", s.auth(s.handleImportKeys))
+	mux.HandleFunc("POST /ui/settings/auto-relocate", s.auth(s.handleSaveAutoRelocate))
+}
+
+// handleSaveAutoRelocate saves the global P2b auto-relocate master switch +
+// cooldown (own HTMX endpoint, mirroring handleSaveOffsite, so a partial form
+// never blanks unrelated settings). The per-node opt-in + spare flags live on
+// the node edit form.
+func (s *Server) handleSaveAutoRelocate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	settings, err := st.GetSettings()
+	if err != nil {
+		http.Error(w, i18n.T(r.Context(), "save: %v"), http.StatusInternalServerError)
+		return
+	}
+	ar := settings.AutoRelocate
+	if ar == nil {
+		ar = &model.AutoRelocateConfig{}
+	}
+	ar.Enabled = r.FormValue("auto_relocate_enabled") == "on"
+	if cv := strings.TrimSpace(r.FormValue("auto_relocate_cooldown")); cv != "" {
+		ar.CooldownHours, _ = strconv.Atoi(cv)
+	}
+	settings.AutoRelocate = ar
+	if err := st.SaveSettings(settings); err != nil {
+		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "save: %v") + `: ` + err.Error() + `</span></div>`})
+		return
+	}
+	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Auto-relocate settings saved") + `</span></div>`})
 }

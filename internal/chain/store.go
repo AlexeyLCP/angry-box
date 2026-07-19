@@ -673,6 +673,46 @@ func (s *Store) ListNodeInfos() ([]*model.NodeInfo, error) {
 	return sf.NodeInfos, nil
 }
 
+// DeleteNodeInfo removes a node's NodeInfo + Metrics records (P2b spare
+// consumption: after a warm-pool spare's address is taken over by a relocated
+// node, the spare's own identity must disappear). It does NOT touch the Host
+// record — callers pair it with DeleteHost when the host itself goes away.
+// Not-found is not an error (idempotent cleanup).
+func (s *Store) DeleteNodeInfo(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sf, err := s.readStore()
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("store: read: %w", err)
+	}
+	changed := false
+	infos := sf.NodeInfos[:0]
+	for _, n := range sf.NodeInfos {
+		if n.ID == id {
+			changed = true
+			continue
+		}
+		infos = append(infos, n)
+	}
+	sf.NodeInfos = infos
+	metrics := sf.Metrics[:0]
+	for _, m := range sf.Metrics {
+		if m.HostID == id {
+			changed = true
+			continue
+		}
+		metrics = append(metrics, m)
+	}
+	sf.Metrics = metrics
+	if !changed {
+		return nil
+	}
+	return s.writeStore(sf)
+}
+
 // ─── Metrics ───────────────────────────────────────────────────────────────────
 
 func (s *Store) SaveMetrics(m *model.NodeMetrics) error {
