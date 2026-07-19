@@ -107,3 +107,66 @@ func TestTryPeerSync_ServiceDownRestarts(t *testing.T) {
 		t.Fatal("inactive service must refuse peer sync (restart path)")
 	}
 }
+
+// pushAWGConfs-level regression tests for the compare-before-write ordering
+// (live-found 2026-07-19): the peer-sync decision MUST read the CURRENT
+// on-disk conf; comparing after the overwrite always yields "identical" and
+// the interface change would never restart (node silently runs old config).
+
+func pushAWGConfsRules(diskConf string) []fakeRule {
+	return []fakeRule{
+		{substring: "echo UP || echo DOWN", out: "UP"},    // probeServiceUp (post-restart)
+		{substring: "systemctl is-active", out: "active\n"}, // serviceActive (peer sync)
+		{substring: "cat /etc/amnezia/amneziawg/awg0.conf", out: diskConf},
+		{substring: "awg show awg0 peers", out: "PUB_ALICE\n"},
+		{substring: "sing-box-orch-backup", out: "/tmp/bak/config.json.bak"},
+		{substring: "mkdir -p /etc/amnezia/amneziawg", out: ""},
+		{substring: "sysctl", out: ""},
+		{substring: "", out: ""},
+	}
+}
+
+func TestPushAWGConfs_PeerOnlyChangeSyncsLive(t *testing.T) {
+	newConf := strings.Replace(peersyncServerConf,
+		"[Peer]\nPublicKey = PUB_ALICE\nAllowedIPs = 10.8.0.2/32\n",
+		"[Peer]\nPublicKey = PUB_ALICE\nAllowedIPs = 10.8.0.2/32\n\n[Peer]\nPublicKey = PUB_BOB\nAllowedIPs = 10.8.0.3/32\n", 1)
+	client := newFakeSSH(pushAWGConfsRules(peersyncServerConf)...)
+	_, err := pushAWGConfs(context.Background(), client, []AWGConfFile{
+		{Path: "/etc/amnezia/amneziawg/awg0.conf", ServiceName: "awg-quick@awg0", Content: newConf},
+	}, false)
+	if err != nil {
+		t.Fatalf("pushAWGConfs: %v", err)
+	}
+	joined := strings.Join(client.Commands(), "\n")
+	if strings.Contains(joined, "restart awg-quick@awg0") {
+		t.Error("peer-only change must NOT restart awg-quick:\n" + joined)
+	}
+	if !strings.Contains(joined, "awg set awg0 peer PUB_BOB allowed-ips 10.8.0.3/32") {
+		t.Error("new peer BOB must be added via awg set:\n" + joined)
+	}
+	// The new conf file must still be written (source of truth on disk).
+	found := false
+	for _, u := range client.Uploads() {
+		if strings.Contains(u.Content, "PUB_BOB") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("conf file with the new peer must still be uploaded")
+	}
+}
+
+func TestPushAWGConfs_InterfaceChangeRestarts(t *testing.T) {
+	changed := strings.Replace(peersyncServerConf, "Jc = 120", "Jc = 8", 1)
+	client := newFakeSSH(pushAWGConfsRules(peersyncServerConf)...)
+	_, err := pushAWGConfs(context.Background(), client, []AWGConfFile{
+		{Path: "/etc/amnezia/amneziawg/awg0.conf", ServiceName: "awg-quick@awg0", Content: changed},
+	}, false)
+	if err != nil {
+		t.Fatalf("pushAWGConfs: %v", err)
+	}
+	if !client.SawCommand("restart awg-quick@awg0") {
+		joined := strings.Join(client.Commands(), "\n")
+		t.Error("interface change (Jc) MUST restart awg-quick — the pre-write compare catches it:\n" + joined)
+	}
+}

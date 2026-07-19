@@ -1614,6 +1614,21 @@ func (a *Applier) applyMergedNodeLocked(
 		if ib.Protocol == "hysteria2" && ib.ObfsPassword == "" {
 			ib.ObfsPassword = GenerateHysteria2ObfsPassword()
 		}
+		// AWG: ensure the persisted obfs material (proper quadrant H1-H4 +
+		// CPS I1-I5) exists so the standalone server render stops using the
+		// preset's degenerate "N-N" H ranges, and the client conf renders the
+		// identical values. Idempotent (cache-valid material is kept).
+		if ib.Protocol == "awg" {
+			preset := ResolveStandaloneAWGPreset(ib)
+			EnsureInboundAWGMaterial(ib, preset)
+		}
+	}
+
+	// Persist the ensured per-inbound material (UUIDs, server keys, AWG obfs
+	// material) — it must survive restarts so re-deploys and client-config
+	// renders reuse, not regenerate (AGENTS.md Rule 5).
+	if err := store.SaveNodeInfo(info); err != nil {
+		log.Printf("apply: persist ensured inbound material for %s: %v", info.ID, err)
 	}
 
 	// buildMergedNodeConfig derives the per-chain/standalone user maps and the

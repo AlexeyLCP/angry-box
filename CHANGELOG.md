@@ -4,6 +4,39 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.6.1] — 2026-07-19
+
+### AWG ops hardening (LucX-UI ports): zero-downtime peer sync, proper standalone obfuscation
+
+#### Live peer sync without awg-quick restart (LucX SyncPeers port)
+- Deploys that only change the peer set (user add/remove — the most frequent
+  operation) no longer restart `awg-quick@`: when the pushed conf's [Interface]
+  section matches the on-disk one and the service is active, peers are applied
+  live via `awg set` (add/update/remove) — existing clients never drop.
+  [Interface] changes (keys/amnezia/PostUp) still take the restart path, and a
+  failed sync falls back to restart.
+- Order-bug found live during validation: the sync decision must compare
+  BEFORE the conf overwrite, otherwise interface changes are silently skipped
+  (the node keeps running the old config). Fixed + regression tests at the
+  pushAWGConfs level.
+
+#### Standalone AWG: persisted obfuscation material
+- Standalone AWG servers rendered H1-H4 as degenerate zero-width "N-N" ranges
+  (e.g. 1984-1984) — header-junk randomization off, fingerprintable. NodeInbound
+  now persists proper quadrant H1-H4 + CPS I1-I5 (mirroring model.Chain):
+  EnsureInboundAWGMaterial (deploy + lazy on client-conf render),
+  ResolveStandaloneAWGPreset. Bonus fix: the standalone client conf always used
+  the DEFAULT preset (silent mismatch on custom-preset inbounds).
+- The applier now persists ensured per-inbound fields (UUID/keys/material) —
+  they were in-memory only before.
+- Live-verified n1→n2 (kernel 6.12): proper H ranges server↔client, handshake
+  PASS, egress through the tunnel OK.
+
+#### Deploy: Debian 13 prerequisites
+- InstallAWGModule now installs `iptables nftables openresolv` (Debian 13
+  doesn't ship iptables by default; awg-quick PostUp MASQUERADE/FORWARD fails
+  without the shim — reproduced on n2).
+
 ## [v0.6.0] — 2026-07-18
 
 ### Product roadmap complete: egress verified, warm-pool auto-relocate

@@ -2120,3 +2120,69 @@ endpoint `POST /ui/settings/auto-relocate` (по образцу offsite, partial
 **Тесты:** матрица guardrails (7 кейсов), no-spare, spare-never-relocated,
 PickSpare (пропуск chained/busy), ConsumeSpare идемпотентность. Все зелёные
 (chain 27.5s, web 2.6s).
+
+## 24. LucX-UI ports — SyncPeers, Debian-13 пакеты, standalone obfs material (2026-07-19)
+
+По запросу «что ещё взять из lucx-ui» сделан сравнительный аудит прод-панели
+lucx-ui (та же нода n1 = их test1). Взято три вещи, четвёртая (order-баг)
+найдена и починена по пути; остальное задокументировано ниже.
+
+### 24.1 SyncPeers — live peer updates без restart awg-quick
+
+Проблема: `pushAWGConfs` делал `systemctl restart awg-quick@` на КАЖДОМ деплое —
+добавление/удаление одного юзера дропало всех клиентов ноды (handshake reset).
+Паттерн из lucx `Manager.SyncPeers`: если [Interface]-секция conf не изменилась
+и сервис активен, peer-сет применяется live через `awg set` (add/update/remove)
+— остальные клиенты ничего не замечают. Реализация: `awg_peersync.go`
+(splitAWGConf нормализация + syncAWGPeers diff через `awg show peers` +
+tryPeerSync). [Interface] изменился / сервис неактивен / sync упал → restart.
+
+**Live-найденный order-баг (2026-07-19):** первая версия вызывала tryPeerSync
+ПОСЛЕ записи нового conf на диск — сравнение «remote vs new» всегда давало
+identical → restart не происходил НИКОГДА, нода молча работала на старом
+[Interface] (старые ключи/H). Обнаружено при валидации на n2 (handshake=0:
+клиент с новым conf, сервер на 12-часовой давности конфиге). Фикс: решение
+sync/restart принимается ДО перезаписи файла (порядок в pushAWGConfs), +
+регрессионные тесты на уровне pushAWGConfs.
+
+### 24.2 Debian 13 пакеты в InstallAWGModule
+
+Из lucx `install-awg-module.sh`: `iptables`/`nftables`/`openresolv` добавлены
+в apt-строку установки модуля. Debian 13 не ставит их из коробки; без
+iptables-shim наши PostUp MASQUERADE/FORWARD падают (exit 127), awg-quick
+откатывает интерфейс (мы сами наступили на n2 в §22).
+
+### 24.3 Standalone AWG: persisted obfs material (proper H1-H4)
+
+Standalone AWG рендерил H1-H4 деградацией `1984-1984` (nil-material fallback
+из int-пресета) — fingerprintable (фиксированные маленькие type-значения) и
+другая крайность vs chain-путь (persisted material с quadrant ranges).
+Теперь `NodeInbound` несёт persisted material (AWGCPSLevel/Mimicry/I1-I5/H1-H4,
+зеркало model.Chain): `EnsureInboundAWGMaterial` (deploy-цикл +
+lazy-ensure при рендере client conf), `InboundAWGObfsMaterial`,
+`ResolveStandaloneAWGPreset`. Bonus-фикс: client conf для standalone раньше
+ВСЕГДА использовал default preset (молчаливый mismatch для custom-preset
+инбаундов) — теперь пресет резолвится из инбаунда. Попутно: applier теперь
+персистит ensured per-inbound поля (UUID/ключи/material) через SaveNodeInfo
+(раньше были in-memory only).
+
+**Live-verify на n1→n2 (kernel 6.12):** деплой с material → сервер conf с
+proper H (`172204942-486224380` вместо `1984-1984`) → client conf с теми же
+значениями → handshake PASS + `curl ifconfig.me` = IP n2. Попутно подтверждено:
+серверный Jc=120 роняет RESPONSE на return-path (AGENTS #17 дополнен).
+
+### 24.4 Оценено, не взято (с указанием почему)
+
+- **CPS browser profiles (Firefox/Safari TLS ClientHello)** — у нас mimicry
+  quic/sip/dns, TLS-hello режим не используется; Chrome-QUIC (рекомендованный
+  для RU 2026) уже есть. Портировать ~200 строк fingerprints для неиспользуемого
+  режима не рентабельно. QUIC capture (lucx signature/) — тот же hoaxisr-порт,
+  что наш awgcapture.go.
+- **AWG diagnostics** (probe chain: interface/ip_forward/handshakes/NAT rules)
+  — ценно операционно, но это полная фича (SSH probes + endpoint + UI modal);
+  P1a health machine покрывает systemd-уровень. Кандидат v0.7.
+- **Per-peer traffic accounting** (`awg show transfer` → per-user bytes) —
+  нужен для будущих квот; кандидат туда же.
+- **NAT self-heal reconcile** (10s cron перепроверка iptables) — выживание
+  правил при iptables flush от fail2ban/docker; требует agent-less дизайна
+  (systemd timer на ноде или периодическая проверка из health monitor).

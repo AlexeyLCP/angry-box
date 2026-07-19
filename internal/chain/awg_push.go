@@ -130,7 +130,17 @@ func pushAWGConfs(ctx context.Context, client ports.SSHClient, files []AWGConfFi
 		return nil, err
 	}
 	var records []awgPushRecord
+	var needRestart []awgPushRecord
 	for _, f := range files {
+		// Decide BEFORE the file is overwritten: when the CURRENT on-disk
+		// conf's [Interface] section is identical to the new one and the
+		// service is active, the peer set can be synced live (awg set) — a
+		// restart drops every connected client, so the frequent user
+		// add/remove deploy must not restart (LucX SyncPeers pattern). The
+		// comparison MUST happen pre-write: after the overwrite the on-disk
+		// conf always equals the new one and interface changes would be
+		// silently skipped (live-found bug 2026-07-19).
+		synced := tryPeerSync(ctx, client, f, useSudo)
 		backupPath, backupErr := createBackup(client, f.Path)
 		if backupErr != nil {
 			log.Printf("pushAWGConfs: backup warning for %s: %v", f.Path, backupErr)
@@ -141,18 +151,17 @@ func pushAWGConfs(ctx context.Context, client ports.SSHClient, files []AWGConfFi
 			rollbackAWGConfs(client, records[:len(records)-1], useSudo)
 			return nil, err
 		}
-	}
-	// All files written — now bring each service up. When the interface section
-	// is unchanged and the service is already active, sync the peer set live
-	// instead (awg set) — a restart drops every connected client on the node,
-	// so the frequent user add/remove deploy must not restart (LucX SyncPeers
-	// pattern). A failed sync falls back to the restart path. If a restart
-	// fails, roll back all files (the sing-box config push hasn't happened yet).
-	for _, rec := range records {
-		if tryPeerSync(ctx, client, rec.file, useSudo) {
-			log.Printf("pushAWGConfs: %s — interface unchanged, peers synced live (no restart)", rec.file.ServiceName)
-			continue
+		if synced {
+			log.Printf("pushAWGConfs: %s — interface unchanged, peers synced live (no restart)", f.ServiceName)
+		} else {
+			needRestart = append(needRestart, awgPushRecord{file: f, backupPath: backupPath})
 		}
+	}
+	// All files written — now restart the services whose interface section
+	// changed (or that failed peer sync — the restart re-reads the full conf
+	// and self-heals a half-applied sync). If a restart fails, roll back all
+	// files (the sing-box config push hasn't happened yet).
+	for _, rec := range needRestart {
 		if err := enableAWGService(ctx, client, rec.file.ServiceName, useSudo); err != nil {
 			rollbackAWGConfs(client, records, useSudo)
 			return nil, err

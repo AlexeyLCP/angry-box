@@ -445,6 +445,26 @@ type NodeInbound struct {
 	// avoids the collision — peers for this inbound then get IPs in the same
 	// /24 via allocateAWGPeerIPInSubnet. AGENTS.md Known Issue #10 follow-up.
 	AWGServerAddress string `json:"awg_server_address,omitempty"`
+
+	// Standalone-AWG obfuscation material (v0.6.x follow-up to the chain-side
+	// AWGCPS*/AWGH* persistence on model.Chain). Generated ONCE by
+	// chain.EnsureInboundAWGMaterial (deploy + client-conf render paths) and
+	// persisted so server and client render IDENTICAL values: without it the
+	// standalone path rendered H1-H4 as degenerate zero-width "N-N" ranges
+	// (header-junk randomization off — fingerprintable) and fresh random CPS
+	// I1-I5 on every render. Level/Mimicry record what the material was built
+	// for (a preset change invalidates the cache → regenerated).
+	AWGCPSLevel   int    `json:"awg_cps_level,omitempty"`
+	AWGCPSMimicry string `json:"awg_cps_mimicry,omitempty"`
+	AWGCPSI1      string `json:"awg_cps_i1,omitempty"`
+	AWGCPSI2      string `json:"awg_cps_i2,omitempty"`
+	AWGCPSI3      string `json:"awg_cps_i3,omitempty"`
+	AWGCPSI4      string `json:"awg_cps_i4,omitempty"`
+	AWGCPSI5      string `json:"awg_cps_i5,omitempty"`
+	AWGH1         string `json:"awg_h1,omitempty"`
+	AWGH2         string `json:"awg_h2,omitempty"`
+	AWGH3         string `json:"awg_h3,omitempty"`
+	AWGH4         string `json:"awg_h4,omitempty"`
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).

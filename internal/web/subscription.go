@@ -127,6 +127,7 @@ func (s *Server) collectUserLinks(u *model.User, st *chain.Store) []string {
 	}
 
 	nodes, _ := st.ListNodeInfos()
+	ensureStandaloneAWGMaterial(st, nodes)
 	for _, node := range nodes {
 		for _, ib := range node.Inbounds {
 			if contains(ib.ForUsers, u.ID) {

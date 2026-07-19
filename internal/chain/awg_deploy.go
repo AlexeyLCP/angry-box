@@ -248,12 +248,7 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 // ifaceName is the kernel AWG interface name (awg0 / awg1) — a standalone
 // co-located with a chain entry uses awg1 with a distinct subnet (AGENTS.md #10).
 func renderStandaloneAWGConf(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User, ifaceName string) AWGConfFile {
-	preset := GetDefaultPreset()
-	if ib.Obfuscation != "" {
-		if p, ok := GetPreset(ib.Obfuscation); ok {
-			preset = p
-		}
-	}
+	preset := ResolveStandaloneAWGPreset(ib)
 	awg := preset.AWG
 	if awg == nil {
 		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
@@ -269,7 +264,10 @@ func renderStandaloneAWGConf(ib *model.NodeInbound, tag string, usersByInbound m
 	}
 	var amnezia *config.AmneziaOptions
 	if awg.CPSLevel > 0 || preset.CPSLevel > 0 {
-		amnezia = BuildAWGAmnezia(awg, &preset, nil)
+		// Persisted material (EnsureInboundAWGMaterial at deploy/conf render):
+		// proper quadrant H1-H4 instead of the preset's degenerate "N-N", and
+		// CPS I1-I5 identical to what the client conf renders.
+		amnezia = BuildAWGAmnezia(awg, &preset, InboundAWGObfsMaterial(ib))
 	}
 	// Per-inbound server tunnel address (AGENTS.md #10): default 10.8.0.1/24 for
 	// backward compat (existing standalone inbounds stay on the chain-entry

@@ -18,6 +18,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 	"github.com/alexeylcp/angry-box/web/templates"
 )
 
@@ -514,6 +515,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Generate configs for standalone inbounds assigned to this user
 	nodes, _ := st.ListNodeInfos()
+	ensureStandaloneAWGMaterial(st, nodes)
 	for _, node := range nodes {
 		for _, ib := range node.Inbounds {
 			if contains(ib.ForUsers, u.ID) {
@@ -629,17 +631,45 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 	return buildClientURI(proto, ip, 8443, uuid, password, c.AWGEntryServerPub, "", c.Name, u, "", false)
 }
 
+
+// ensureStandaloneAWGMaterial lazily generates and persists obfs material on
+// standalone AWG inbounds that predate the persistence (v0.6.x): the deploy
+// path ensures it in the applier, but a client-conf render can happen before
+// the next deploy — without this the render would fall back to the preset's
+// degenerate H ranges and diverge from the server after the deploy ensures.
+// Best-effort: render proceeds even if the save fails.
+func ensureStandaloneAWGMaterial(st *chain.Store, nodes []*model.NodeInfo) {
+	for _, node := range nodes {
+		changed := false
+		for i := range node.Inbounds {
+			ib := &node.Inbounds[i]
+			if ib.Protocol != "awg" {
+				continue
+			}
+			preset := chain.ResolveStandaloneAWGPreset(ib)
+			before := ib.AWGCPSI1 + ib.AWGH1
+			chain.EnsureInboundAWGMaterial(ib, preset)
+			if ib.AWGCPSI1+ib.AWGH1 != before {
+				changed = true
+			}
+		}
+		if changed {
+			_ = st.SaveNodeInfo(node)
+		}
+	}
+}
+
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
 	ip := strings.Split(addr, ":")[0]
 	if ib.Protocol == "awg" && u.ImportedSecret == "" && ib.AWGClientPriv != "" {
 		// Full AWG client .conf with Amnezia obfuscation params from the active
 		// preset (Jc/Jmin/Jmax/S1-S4/H1-H4 + I1-I5 when CPS is enabled). This
 		// matches the server-side amnezia block so the client connects.
-		return buildAWGClientConf(ip, ib.Port, ib.AWGClientPriv, ib.ServerPubKey, ib.AWGClientPub, "", "")
+		return buildAWGClientConf(ip, ib.Port, ib.AWGClientPriv, ib.ServerPubKey, ib.AWGClientPub, "", "", &ib)
 	}
 	if ib.Protocol == "awg" && u.ImportedSecret != "" && u.SecretType == "awg" {
 		// Imported AWG private key — build a .conf using it.
-		return buildAWGClientConf(ip, ib.Port, u.ImportedSecret, ib.ServerPubKey, "", "", "")
+		return buildAWGClientConf(ip, ib.Port, u.ImportedSecret, ib.ServerPubKey, "", "", "", &ib)
 	}
 	if ib.Protocol == "mtproxy" {
 		full, err := chain.MTProxyFullSecret(ib.UUID, defaultFakeTLSDomain(ib))
@@ -669,8 +699,12 @@ func defaultFakeTLSDomain(ib model.NodeInbound) string {
 // the client's tunnel IP (its peer AllowedIPs on the server); empty falls back
 // to the legacy single-client "10.8.0.2/24". For per-user (chain) configs the
 // caller passes the user's AWGAddress so each client gets a unique inner IP —
-// this is what source_ip_cidr per-client routing matches on.
-func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride, address string) string {
+// this is what source_ip_cidr per-client routing matches on. ib, when non-nil,
+// is the standalone AWG inbound the conf belongs to: its preset + persisted
+// obfs material (proper quadrant H1-H4 + stable CPS I1-I5) are rendered so the
+// client matches the server exactly. nil = legacy fallback (default preset,
+// fresh material — imported-secret paths without an inbound context).
+func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride, address string, ib *model.NodeInbound) string {
 	host := hostOverride
 	if host == "" {
 		host = ip
@@ -686,30 +720,36 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 	// Amnezia params belong in [Interface] (BEFORE [Peer]) — awg-quick passes
 	// the stripped config to `awg setconf`, which parses amnezia fields only
 	// within [Interface]; after [Peer] setconf fails with "Line unrecognized".
-	if preset := chain.GetDefaultPreset(); preset.AWG != nil {
-		amn := chain.BuildAWGAmnezia(preset.AWG, &preset, nil)
-		if amn != nil {
-			b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))
-			b.WriteString(fmt.Sprintf("Jmin = %d\n", amn.JMIN))
-			b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
-			b.WriteString(fmt.Sprintf("S1 = %d\n", amn.S1))
-			b.WriteString(fmt.Sprintf("S2 = %d\n", amn.S2))
-			b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
-			b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
-			b.WriteString(fmt.Sprintf("H1 = %s\n", amn.H1))
-			b.WriteString(fmt.Sprintf("H2 = %s\n", amn.H2))
-			b.WriteString(fmt.Sprintf("H3 = %s\n", amn.H3))
-			b.WriteString(fmt.Sprintf("H4 = %s\n", amn.H4))
-			if amn.I1 != "" {
-				b.WriteString(fmt.Sprintf("I1 = %s\n", amn.I1))
-				b.WriteString(fmt.Sprintf("I2 = %s\n", amn.I2))
-				b.WriteString(fmt.Sprintf("I3 = %s\n", amn.I3))
-				b.WriteString(fmt.Sprintf("I4 = %s\n", amn.I4))
-				b.WriteString(fmt.Sprintf("I5 = %s\n", amn.I5))
-			}
-			// Itime intentionally omitted — awg setconf and sing-box-extended
-			// endpoint both reject it; the default cache lifetime works.
+	var amn *config.AmneziaOptions
+	if ib != nil {
+		preset := chain.ResolveStandaloneAWGPreset(ib)
+		if preset.AWG != nil {
+			amn = chain.BuildAWGAmnezia(preset.AWG, &preset, chain.InboundAWGObfsMaterial(ib))
 		}
+	} else if preset := chain.GetDefaultPreset(); preset.AWG != nil {
+		amn = chain.BuildAWGAmnezia(preset.AWG, &preset, nil)
+	}
+	if amn != nil {
+		b.WriteString(fmt.Sprintf("Jc = %d\n", amn.JC))
+		b.WriteString(fmt.Sprintf("Jmin = %d\n", amn.JMIN))
+		b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
+		b.WriteString(fmt.Sprintf("S1 = %d\n", amn.S1))
+		b.WriteString(fmt.Sprintf("S2 = %d\n", amn.S2))
+		b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
+		b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+		b.WriteString(fmt.Sprintf("H1 = %s\n", amn.H1))
+		b.WriteString(fmt.Sprintf("H2 = %s\n", amn.H2))
+		b.WriteString(fmt.Sprintf("H3 = %s\n", amn.H3))
+		b.WriteString(fmt.Sprintf("H4 = %s\n", amn.H4))
+		if amn.I1 != "" {
+			b.WriteString(fmt.Sprintf("I1 = %s\n", amn.I1))
+			b.WriteString(fmt.Sprintf("I2 = %s\n", amn.I2))
+			b.WriteString(fmt.Sprintf("I3 = %s\n", amn.I3))
+			b.WriteString(fmt.Sprintf("I4 = %s\n", amn.I4))
+			b.WriteString(fmt.Sprintf("I5 = %s\n", amn.I5))
+		}
+		// Itime intentionally omitted — awg setconf and sing-box-extended
+		// endpoint both reject it; the default cache lifetime works.
 	}
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
@@ -734,7 +774,7 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 	switch proto {
 	case "awg":
 		if u != nil && u.ImportedSecret != "" && u.SecretType == "awg" {
-			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "", "")
+			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "", "", nil)
 		}
 		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420", ip, port, pubKey)
 	case "tuic":

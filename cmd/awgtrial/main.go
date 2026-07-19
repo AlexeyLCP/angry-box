@@ -80,11 +80,11 @@ func main() {
 	ib := &ni.Inbounds[0]
 	fmt.Printf("server pub=%s port=%d\n", ib.ServerPubKey, ib.Port)
 
-	// Client conf: amnezia from the default preset (the server renders the same
-	// preset; I1-I5 fresh here — the server ignores them, they are client-side
-	// decoys).
-	preset := chain.GetDefaultPreset()
-	amn := chain.BuildAWGAmnezia(preset.AWG, &preset, nil)
+	// Client conf: amnezia from the inbound's preset + its PERSISTED obfs
+	// material (proper quadrant H1-H4 + CPS I1-I5) — must match the server
+	// conf exactly, or the handshake fails on the header check.
+	preset := chain.ResolveStandaloneAWGPreset(ib)
+	amn := chain.BuildAWGAmnezia(preset.AWG, &preset, chain.InboundAWGObfsMaterial(ib))
 	confPath := filepath.Join(dir, "awgc0.conf")
 	f2, err := os.Create(confPath)
 	must(err)
