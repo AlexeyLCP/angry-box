@@ -53,7 +53,7 @@ func RenderNodeAWGConfs(
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
 			users := usersForChain(usersByChain, r.Chain.Name)
-			files = append(files, renderChainEntryAWG0Conf(r, users))
+			files = append(files, renderChainEntryAWGConf(nodeInfo, r, users))
 			chainEntryPresent = true
 			break // one awg0.conf per node
 		}
@@ -92,6 +92,13 @@ func RenderNodeAWGConfs(
 		if ib.Protocol != "awg" {
 			continue
 		}
+		if IsChainSourcedInbound(ib) {
+			// Chain-entry materialized inbound — rendered by the chain entry
+			// loop above (renderChainEntryAWGConf), not here. Without this
+			// skip its non-empty AWGServerAddress would trigger the awg1
+			// branch below and double-render the same listener.
+			continue
+		}
 		tag := ib.Tag
 		if tag == "" {
 			tag = fmt.Sprintf("sa-%d-awg", i)
@@ -121,6 +128,21 @@ func RenderNodeAWGConfs(
 	_ = standaloneAdded
 
 	return files, warnings
+}
+
+// renderChainEntryAWGConf renders the user-entry awg0.conf for a chain AWG
+// entry node. v2 (InboundRef set): reads the MATERIALIZED entry inbound from
+// the node's NodeInfo (profile credentials, port, subnet, CPS/H material) —
+// the profile is the source of truth. Legacy fallback (no InboundRef, or the
+// materialization is missing): renders from the chain's own fields exactly as
+// before, so un-migrated chains keep working.
+func renderChainEntryAWGConf(nodeInfo *model.NodeInfo, r chainRole, users []model.User) AWGConfFile {
+	if r.Node.InboundRef != "" {
+		if ib := inboundByProfileID(nodeInfo, r.Node.InboundRef); ib != nil {
+			return renderAWGServerConfFromInbound(ib, r.Preset, users, "awg0")
+		}
+	}
+	return renderChainEntryAWG0Conf(r, users)
 }
 
 // renderChainEntryAWG0Conf renders the user-entry awg0.conf for a chain AWG
@@ -241,26 +263,31 @@ func renderExitServerConf(r chainRole) (AWGConfFile, bool) {
 	}, true
 }
 
-// renderStandaloneAWG0Conf renders the awg0.conf for a standalone AWG inbound
+// renderStandaloneAWGConf renders the awg0.conf for a standalone AWG inbound
 // (no chain): kernel AWG server with one [Peer] per credentialed user. Amnezia
 // comes from the inbound's preset (nil material → degenerate H1-H4, fresh
 // I1-I5 — the standalone path has no chain to persist material on).
 // ifaceName is the kernel AWG interface name (awg0 / awg1) — a standalone
 // co-located with a chain entry uses awg1 with a distinct subnet (AGENTS.md #10).
 func renderStandaloneAWGConf(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User, ifaceName string) AWGConfFile {
-	preset := ResolveStandaloneAWGPreset(ib)
+	return renderAWGServerConfFromInbound(ib, ResolveStandaloneAWGPreset(ib), usersByInbound[tag], ifaceName)
+}
+
+// renderAWGServerConfFromInbound is the shared kernel AWG server conf renderer
+// for BOTH standalone AWG inbounds and chain-entry materialized inbounds: one
+// [Peer] per credentialed user, the inbound's persisted obfs material, its
+// per-inbound subnet, and the TUN-overlay FORWARD rules.
+func renderAWGServerConfFromInbound(ib *model.NodeInbound, preset ConnectionPreset, users []model.User, ifaceName string) AWGConfFile {
 	awg := preset.AWG
 	if awg == nil {
 		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
 	}
 	var peers []AWGServerPeer
-	if users := usersByInbound[tag]; users != nil {
-		for _, u := range users {
-			if !u.Active || u.AWGPublicKey == "" || u.AWGAddress == "" {
-				continue
-			}
-			peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress})
+	for _, u := range users {
+		if !u.Active || u.AWGPublicKey == "" || u.AWGAddress == "" {
+			continue
 		}
+		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress})
 	}
 	var amnezia *config.AmneziaOptions
 	if awg.CPSLevel > 0 || preset.CPSLevel > 0 {

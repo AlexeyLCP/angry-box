@@ -37,6 +37,14 @@ type chainRole struct {
 	IsTransit   bool
 	HasOutbound bool
 	Preset      ConnectionPreset
+	// LevelIndex is the node's level in the v2 levels model (-1 for legacy
+	// flat chains). Level 0 is the user-facing entry level.
+	LevelIndex int
+	// NextNodes is the downstream group this node forwards to (the nodes of
+	// the next level). Empty on the last level. For legacy flat chains it
+	// holds at most the single next node, so all readers can treat it
+	// uniformly.
+	NextNodes []model.ChainNode
 }
 
 // MergedNodeConfigParams carries everything buildMergedNodeConfig needs.
@@ -153,6 +161,13 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	}
 
 	for i, ib := range nodeInfo.Inbounds {
+		if IsChainSourcedInbound(&ib) {
+			// Chain-entry materialized inbound — rendered via the chain role
+			// path (renderChainEntryAWGConf / buildChainRoleInOut), not as a
+			// standalone. Skipping here avoids a double listener on the same
+			// port.
+			continue
+		}
 		tag := ib.Tag
 		if tag == "" {
 			tag = fmt.Sprintf("sa-%d-%s", i, ib.Protocol) // legacy index-based tag (backward compat)
@@ -174,7 +189,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	if len(enabledMTProxy) > 0 {
 		// Standalone MTProxy inbounds.
 		for i, ib := range nodeInfo.Inbounds {
-			if ib.Protocol != "mtproxy" {
+			if ib.Protocol != "mtproxy" || IsChainSourcedInbound(&ib) {
 				continue
 			}
 			tag := ib.Tag
@@ -487,6 +502,41 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain 
 func resolveChainRoles(nodeID string, chains []*model.Chain) []chainRole {
 	var roles []chainRole
 	for _, c := range chains {
+		if c.IsLevelized() {
+			// v2 levels: the level position IS the role. Level 0 = entry;
+			// last level = exit side; nodes in between are transit. An
+			// explicit Role=exit marker inside a level still suppresses the
+			// sing-box transit inbound (the kernel AWG exit-link owns it).
+			flatIdx := 0
+			found := false
+			for li := range c.Levels {
+				for ni := range c.Levels[li].Nodes {
+					n := &c.Levels[li].Nodes[ni]
+					if n.ID == nodeID {
+						var next []model.ChainNode
+						if li+1 < len(c.Levels) {
+							next = c.Levels[li+1].Nodes
+						}
+						roles = append(roles, chainRole{
+							Chain: c, NodeIndex: flatIdx, Node: n,
+							IsEntry:     li == 0,
+							IsTransit:   li > 0 && n.Role != model.NodeRoleExit,
+							HasOutbound: li+1 < len(c.Levels),
+							Preset:      resolveChainPreset(c),
+							LevelIndex:  li,
+							NextNodes:   next,
+						})
+						found = true
+						break
+					}
+					flatIdx++
+				}
+				if found {
+					break
+				}
+			}
+			continue
+		}
 		for i := range c.Nodes {
 			n := &c.Nodes[i]
 			if n.ID != nodeID {
@@ -494,11 +544,17 @@ func resolveChainRoles(nodeID string, chains []*model.Chain) []chainRole {
 			}
 			isEntry := n.Role == model.NodeRoleEntry || (n.Role == "" && i == 0)
 			isTransit := n.Role == model.NodeRoleTransit || (n.Role == "" && i > 0)
+			var next []model.ChainNode
+			if i+1 < len(c.Nodes) {
+				next = []model.ChainNode{c.Nodes[i+1]}
+			}
 			roles = append(roles, chainRole{
 				Chain: c, NodeIndex: i, Node: n,
 				IsEntry: isEntry, IsTransit: isTransit,
 				HasOutbound: i < len(c.Nodes)-1,
 				Preset:      resolveChainPreset(c),
+				LevelIndex:  -1,
+				NextNodes:   next,
 			})
 			break
 		}
@@ -540,6 +596,12 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, roles []chainRole, report *Me
 	}
 
 	for _, ib := range nodeInfo.Inbounds {
+		if IsChainSourcedInbound(&ib) {
+			// Chain-entry materialized inbound: its listen port is the chain
+			// entry port, already claimed via the role above — claiming it
+			// again here would report a phantom self-conflict.
+			continue
+		}
 		// Claim the EFFECTIVE listen port, not the raw NodeInbound.Port. A
 		// standalone MTProxy inbound with Port=0 renders on 443 (mtproxyInboundPort
 		// default — MTProxy's canonical FakeTLS port); claiming 0 would bypass
@@ -670,7 +732,7 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 			_ = inTag
 
 		default:
-			inb := buildUserInbound(userPort, p.UUID, inTag)
+			inb := buildUserInboundMulti(userPort, p.UUID, inTag, users)
 			inbounds = append(inbounds, inb)
 		}
 	}
@@ -705,61 +767,98 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 	}
 
 	if role.HasOutbound {
-		next := c.Nodes[role.NodeIndex+1]
-		np := &hopParams{
-			UUID:       next.TransitUUID,
-			PrivateKey: next.TransitPrivKey,
-			ShortID:    next.TransitShortID,
-			Port:       next.Port,
-			ServerName: ResolveServerName(&role.Preset),
+		// Downstream group: for v2 chains the whole next level; for legacy
+		// flat chains the single next node. Each target gets its own outbound
+		// (from its persisted transit material); a multi-target group is
+		// wrapped in a strategy group outbound (default: fallback round-robin).
+		nextNodes := role.NextNodes
+		if len(nextNodes) == 0 && role.NodeIndex+1 < len(c.Nodes) {
+			nextNodes = []model.ChainNode{c.Nodes[role.NodeIndex+1]}
 		}
-		if np.Port == 0 {
-			np.Port = defaultTransportPort
-		}
-		if np.ServerName == "" {
-			np.ServerName = EffectiveDefaultSNI()
-		}
+		group := len(nextNodes) > 1
+		var memberTags []string
+		for _, next := range nextNodes {
+			next := next
+			np := &hopParams{
+				UUID:       next.TransitUUID,
+				PrivateKey: next.TransitPrivKey,
+				ShortID:    next.TransitShortID,
+				Port:       next.Port,
+				ServerName: ResolveServerName(&role.Preset),
+			}
+			if np.Port == 0 {
+				np.Port = defaultTransportPort
+			}
+			if np.ServerName == "" {
+				np.ServerName = EffectiveDefaultSNI()
+			}
 
-		var outTag string
-		var outb json.RawMessage
-		var err error
-		isAWGOut := false
-		switch c.Transport {
-		case model.TransportXHTTP:
-			outTag = fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
-			outb, err = buildXHTTPTransportOutbound(np, extractHost(next.Addr), outTag, &role.Preset)
-		case model.TransportAWG:
-			// AWG has no SNI; label the outbound by the next node's ID. The
-			// client side is a WireGuard endpoint (sing-box-extended 1.13 has
-			// no wireguard outbound), so it goes into endpoints[], not
-			// outbounds[] — route rules still reference it by tag.
-			outTag = fmt.Sprintf("ch-%s-out-awg-%s", cn, safeSNILabel(next.ID))
-			outb, err = buildAWGTransportOutbound(role.Node, &next, extractHost(next.Addr), outTag, &role.Preset, ChainAWGObfsMaterial(c))
-			isAWGOut = true
-		case model.TransportHysteria2:
-			// Hysteria2 inter-node transport is FROZEN (AGENTS.md #11). Refuse
-			// loudly — no outbound emitted, a warning recorded so the operator
-			// sees the chain chose Hysteria2 but got nothing (rather than a
-			// silent Reality fallback with mismatched keys/params).
-			warnings = append(warnings, fmt.Sprintf(
-				"chain %q: Hysteria2 transport outbound is not implemented (frozen, see AGENTS.md #11); use AWG/XHTTP/Reality", cn))
-		default: // Reality
-			outTag = fmt.Sprintf("ch-%s-out-%s", cn, safeSNILabel(np.ServerName))
-			outb, err = buildTransportOutbound(np, extractHost(next.Addr), outTag)
+			var outTag string
+			var outb json.RawMessage
+			var err error
+			isAWGOut := false
+			switch c.Transport {
+			case model.TransportXHTTP:
+				outTag = transportOutTag(cn, np.ServerName, next.ID, group)
+				outb, err = buildXHTTPTransportOutbound(np, extractHost(next.Addr), outTag, &role.Preset)
+			case model.TransportAWG:
+				// AWG has no SNI; label the outbound by the next node's ID. The
+				// client side is a WireGuard endpoint (sing-box-extended 1.13 has
+				// no wireguard outbound), so it goes into endpoints[], not
+				// outbounds[] — route rules still reference it by tag.
+				outTag = fmt.Sprintf("ch-%s-out-awg-%s", cn, safeSNILabel(next.ID))
+				outb, err = buildAWGTransportOutbound(role.Node, &next, extractHost(next.Addr), outTag, &role.Preset, ChainAWGObfsMaterial(c))
+				isAWGOut = true
+			case model.TransportHysteria2:
+				// Hysteria2 inter-node transport is FROZEN (AGENTS.md #11). Refuse
+				// loudly — no outbound emitted, a warning recorded so the operator
+				// sees the chain chose Hysteria2 but got nothing (rather than a
+				// silent Reality fallback with mismatched keys/params).
+				warnings = append(warnings, fmt.Sprintf(
+					"chain %q: Hysteria2 transport outbound is not implemented (frozen, see AGENTS.md #11); use AWG/XHTTP/Reality", cn))
+			default: // Reality
+				outTag = transportOutTag(cn, np.ServerName, next.ID, group)
+				outb, err = buildTransportOutbound(np, extractHost(next.Addr), outTag)
+			}
+			if err == nil && outb != nil {
+				if isAWGOut {
+					endpoints = append(endpoints, outb)
+				} else {
+					outbounds = append(outbounds, outb)
+					memberTags = append(memberTags, outTag)
+				}
+			}
 		}
-		if err == nil {
-			if isAWGOut {
-				endpoints = append(endpoints, outb)
+		if len(memberTags) > 1 {
+			// Multi-node downstream level: wrap the per-target outbounds in the
+			// level's strategy group (default fallback = round-robin, the
+			// production-verified path). Linear single-target chains keep the
+			// bare outbound — wrapping a single hop in urltest probes gstatic
+			// through the hop and returns EOF while transit is still failing,
+			// which breaks routing and masks the real error.
+			grp, err := buildStrategyGroupOutbound(
+				effectiveGroupStrategy(role.Chain.LevelStrategy(role.Node.ID)),
+				levelGroupTag(cn, role.LevelIndex+1), memberTags)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("chain %q: %v", cn, err))
 			} else {
-				outbounds = append(outbounds, outb)
-				// Linear chains have a single inter-node outbound; wrapping it in
-				// urltest probes gstatic through the hop and returns EOF while transit
-				// is still failing, which breaks routing and masks the real error.
+				outbounds = append(outbounds, grp)
 			}
 		}
 	}
 
 	return
+}
+
+// transportOutTag builds the inter-node outbound tag. Single-target chains
+// keep the legacy SNI-derived tag (existing route rules/tests match it); a
+// multi-target group suffixes the target node ID so each member is unique.
+func transportOutTag(chainName, serverName, targetID string, group bool) string {
+	base := fmt.Sprintf("ch-%s-out-%s", chainName, safeSNILabel(serverName))
+	if group {
+		return fmt.Sprintf("%s-%s", base, safeSNILabel(targetID))
+	}
+	return base
 }
 
 func ensureHopParams(role *chainRole) *hopParams {
@@ -824,9 +923,20 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 
 	switch ib.Protocol {
 	case "vless-reality":
+		// Shared inbound UUID first (keeps pre-multi-user clients working),
+		// then one entry per credentialed user (per-client access).
+		vusers := []config.VLESSUser{{Name: "user", UUID: ib.UUID, Flow: "xtls-rprx-vision"}}
+		seen := map[string]bool{ib.UUID: true}
+		for _, u := range usersByInbound[tag] {
+			if !u.Active || u.VLESSUUID == "" || seen[u.VLESSUUID] {
+				continue
+			}
+			seen[u.VLESSUUID] = true
+			vusers = append(vusers, config.VLESSUser{Name: u.Name, UUID: u.VLESSUUID, Flow: "xtls-rprx-vision"})
+		}
 		inb := config.VLESSInbound{
 			Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
-			Users: []config.VLESSUser{{Name: "user", UUID: ib.UUID, Flow: "xtls-rprx-vision"}},
+			Users: vusers,
 			TLS: &config.InboundTLSOptions{
 				Enabled: true, ServerName: serverName,
 				Reality: &config.InboundRealityOptions{
@@ -991,10 +1101,18 @@ func chainUserPort(c *model.Chain) int {
 	return defaultUserPort
 }
 
-// chainEntryNodes returns the chain's entry nodes — those with an explicit
+// chainEntryNodes returns the chain's entry nodes. For v2 (levelized) chains
+// that is simply level 0. For legacy flat chains: nodes with an explicit
 // Role=entry, falling back to index 0 when no node carries an explicit role
 // (backward compat: a legacy chain has one entry at index 0).
 func chainEntryNodes(c *model.Chain) []*model.ChainNode {
+	if c.IsLevelized() {
+		var entries []*model.ChainNode
+		for i := range c.Levels[0].Nodes {
+			entries = append(entries, &c.Levels[0].Nodes[i])
+		}
+		return entries
+	}
 	var entries []*model.ChainNode
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
@@ -1041,12 +1159,16 @@ func chainUserInboundTag(c *model.Chain, nodeID string) string {
 	return fmt.Sprintf("ch-%s-user-in", c.Name)
 }
 
-// chainInterNodeOutboundTag is the vless/xhttp outbound tag for the next hop in
-// a linear chain (no urltest wrapper). The tag MUST match the one emitted by
-// buildChainRoleInOut's HasOutbound branch, so route rules can steer traffic to
-// it. For Reality/XHTTP the tag is derived from the SNI; for AWG transport
-// (no SNI) it is derived from the next node's ID.
+// chainInterNodeOutboundTag is the outbound tag route rules steer traffic to
+// for the node's downstream hop. With a multi-node downstream level it is the
+// strategy GROUP tag (levelGroupTag); single-target chains keep the legacy
+// per-hop tag so existing route rules and tests continue to match. For
+// Reality/XHTTP the tag is derived from the SNI; for AWG transport (no SNI)
+// from the next node's ID.
 func chainInterNodeOutboundTag(role *chainRole) string {
+	if len(role.NextNodes) > 1 {
+		return levelGroupTag(role.Chain.Name, role.LevelIndex+1)
+	}
 	if role.Chain.Transport == model.TransportAWG {
 		nextID := ""
 		if role.HasOutbound && role.NodeIndex+1 < len(role.Chain.Nodes) {

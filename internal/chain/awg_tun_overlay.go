@@ -280,6 +280,11 @@ func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo
 	ifaces := tunIncludeInterfaces(node)
 	if nodeInfo != nil {
 		for _, ib := range nodeInfo.Inbounds {
+			if IsChainSourcedInbound(&ib) {
+				// Chain-entry materialized inbounds render on awg0 (the chain
+				// entry), not awg1 — they must not trigger the awg1 include.
+				continue
+			}
 			if ib.Protocol == "awg" && ib.AWGServerAddress != "" {
 				// A standalone AWG inbound with a distinct subnet → deployed on
 				// awg1 (see RenderNodeAWGConfs). The TUN overlay must include it.

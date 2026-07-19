@@ -154,7 +154,7 @@ func TestBuildClientURI_Unknown(t *testing.T) {
 // TestBuildConnectionLink_NoNodes verifies a chain with no nodes returns a
 // placeholder.
 func TestBuildConnectionLink_NoNodes(t *testing.T) {
-	link := buildConnectionLink(&model.Chain{Name: "empty"}, &model.User{})
+	link := buildConnectionLink(nil, &model.Chain{Name: "empty"}, &model.User{})
 	if !strings.Contains(link, "no nodes") {
 		t.Errorf("got %q, want no-nodes placeholder", link)
 	}
@@ -169,7 +169,7 @@ func TestBuildConnectionLink_AWG(t *testing.T) {
 		AWGEntryServerPub: "awg-pub",
 		Nodes:             []model.ChainNode{{ID: "n0", Addr: "1.2.3.4:22"}},
 	}
-	link := buildConnectionLink(c, &model.User{})
+	link := buildConnectionLink(nil, c, &model.User{})
 	if !strings.Contains(link, "[Interface]") {
 		t.Errorf("got %q, want a .conf", link)
 	}

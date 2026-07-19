@@ -175,6 +175,13 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		chain.UserProtocol = model.UserProtocolAWG
 	}
 
+	// v2 levels topology validation — reject what the render layer cannot
+	// express (empty levels, AWG transport with grouped levels) BEFORE any
+	// SSH work, instead of shipping a misrendered config.
+	if err := validateChainTopology(chain); err != nil {
+		return nil, err
+	}
+
 	// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
 	for _, node := range chain.Nodes {
 		resolved := resolveHostKey(store, &model.Host{ID: node.ID, Addr: node.Addr, User: node.User, KeyPath: node.KeyPath})
@@ -338,6 +345,13 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 	// Save chain to store so GetChainsForNode sees it.
 	if err := store.SaveChain(chain); err != nil {
 		return nil, fmt.Errorf("save chain: %w", err)
+	}
+
+	// v2 levels: materialize the entry inbound (from its referenced profile)
+	// onto every entry node — per-node creds + AWG obfs material — so the
+	// entry render and client links read them. Idempotent, creds-preserving.
+	if err := EnsureChainEntryMaterialization(store, chain, preset); err != nil {
+		return nil, err
 	}
 
 	// Build + push merged config for each node.
@@ -597,18 +611,30 @@ func buildTransportInbound(p *hopParams, tag string) json.RawMessage {
 }
 
 func buildUserInbound(port int, uuid, tag string) json.RawMessage {
+	return buildUserInboundMulti(port, uuid, tag, nil)
+}
+
+// buildUserInboundMulti renders the chain VLESS user-entry inbound. The
+// shared (chain-wide) UUID is always present as the FIRST user so existing
+// clients keep connecting; each credentialed chain user adds their per-user
+// VLESSUUID entry (per-client access: distinct UUIDs enable per-user
+// auth_user routing and later revocation without rotating the shared UUID).
+func buildUserInboundMulti(port int, uuid, tag string, users []model.User) json.RawMessage {
+	vusers := []config.VLESSUser{{Name: tag, UUID: uuid, Flow: "xtls-rprx-vision"}}
+	seen := map[string]bool{uuid: true}
+	for _, u := range users {
+		if !u.Active || u.VLESSUUID == "" || seen[u.VLESSUUID] {
+			continue
+		}
+		seen[u.VLESSUUID] = true
+		vusers = append(vusers, config.VLESSUser{Name: u.Name, UUID: u.VLESSUUID, Flow: "xtls-rprx-vision"})
+	}
 	inb := config.VLESSInbound{
 		Type:       "vless",
 		Tag:        tag,
 		Listen:     "0.0.0.0",
 		ListenPort: port,
-		Users: []config.VLESSUser{
-			{
-				Name: tag,
-				UUID: uuid,
-				Flow: "xtls-rprx-vision",
-			},
-		},
+		Users:      vusers,
 		TLS: &config.InboundTLSOptions{
 			Enabled: false,
 		},

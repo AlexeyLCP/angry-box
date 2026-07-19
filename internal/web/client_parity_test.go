@@ -55,7 +55,7 @@ func TestClientLink_AWG_ChainCarriesServerPublicKey(t *testing.T) {
 		AWGEntryServerPub: "SERVERPUB_BASE64_43chars___________",
 		Nodes:             []model.ChainNode{{ID: "n1", Addr: "203.0.113.7:22"}},
 	}
-	link := buildConnectionLink(c, &model.User{ID: "u1"})
+	link := buildConnectionLink(nil, c, &model.User{ID: "u1"})
 	mustContain(t, link, "203.0.113.7", "AWG chain IP")
 	mustContain(t, link, "SERVERPUB_BASE64_43chars___________", "AWG server public key")
 	mustContain(t, link, "[Interface]", "AWG .conf [Interface] section")
@@ -94,7 +94,7 @@ func TestClientLink_TUIC_ChainCarriesUUIDAndPassword(t *testing.T) {
 		TUICEntryUserPassword: "tuic-pass-xyz",
 		Nodes:                []model.ChainNode{{ID: "n1", Addr: "203.0.113.7:22"}},
 	}
-	link := buildConnectionLink(c, &model.User{ID: "u1"})
+	link := buildConnectionLink(nil, c, &model.User{ID: "u1"})
 	mustContain(t, link, "tuic://", "TUIC scheme")
 	mustContain(t, link, "11111111-2222-3333-4444-555555555555", "TUIC uuid parity")
 	mustContain(t, link, "tuic-pass-xyz", "TUIC password parity")

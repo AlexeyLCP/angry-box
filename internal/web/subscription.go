@@ -123,13 +123,16 @@ func (s *Server) collectUserLinks(u *model.User, st *chain.Store) []string {
 		if err != nil {
 			continue
 		}
-		links = append(links, buildConnectionLink(c, u))
+		links = append(links, buildConnectionLink(st, c, u))
 	}
 
 	nodes, _ := st.ListNodeInfos()
 	ensureStandaloneAWGMaterial(st, nodes)
 	for _, node := range nodes {
 		for _, ib := range node.Inbounds {
+			if chain.IsChainSourcedInbound(&ib) {
+				continue // chain-entry materialization — served via the chain link above
+			}
 			if contains(ib.ForUsers, u.ID) {
 				links = append(links, buildStandaloneLink(node.Addr, ib, u))
 			}

@@ -504,7 +504,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// Build a config link for this chain
-		link := buildConnectionLink(c, u)
+		link := buildConnectionLink(st, c, u)
 		configs = append(configs, templates.UserChainConfig{
 			ChainName:   chainName,
 			Protocol:    string(c.UserProtocol),
@@ -518,6 +518,9 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 	ensureStandaloneAWGMaterial(st, nodes)
 	for _, node := range nodes {
 		for _, ib := range node.Inbounds {
+			if chain.IsChainSourcedInbound(&ib) {
+				continue // chain-entry materialization — served via the chain link above
+			}
 			if contains(ib.ForUsers, u.ID) {
 				link := buildStandaloneLink(node.Addr, ib, u)
 				configs = append(configs, templates.UserChainConfig{
@@ -591,11 +594,12 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, templates.UserConfigView(u, configs))
 }
 
-func buildConnectionLink(c *model.Chain, u *model.User) string {
-	if len(c.Nodes) == 0 {
+func buildConnectionLink(st *chain.Store, c *model.Chain, u *model.User) string {
+	nodes := c.AllNodes()
+	if len(nodes) == 0 {
 		return "# no nodes in chain"
 	}
-	entry := c.Nodes[0]
+	entry := nodes[0]
 	proto := string(c.UserProtocol)
 	if proto == "" {
 		proto = "awg"
@@ -607,6 +611,14 @@ func buildConnectionLink(c *model.Chain, u *model.User) string {
 		conf, err := chain.RenderClientAWGConf(chain.ClientConfigParams{
 			Chain: c,
 			User:  u,
+			// v2: resolve the selected entry's materialized inbound (profile
+			// credentials) — chain-level AWG creds are empty on v2 chains.
+			EntryInboundResolver: func(nodeID, profileID string) *model.NodeInbound {
+				if st == nil {
+					return nil
+				}
+				return st.ProfileInboundOn(nodeID, profileID)
+			},
 		})
 		if err != nil {
 			return "# " + err.Error()

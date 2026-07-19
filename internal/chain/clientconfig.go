@@ -32,6 +32,12 @@ type ClientConfigParams struct {
 	// User is optional; when set and populated with per-user creds, the client
 	// authenticates as that user (per-client routing). Nil -> chain-wide creds.
 	User *model.User
+	// EntryInboundResolver, when set, resolves the materialized chain-entry
+	// inbound for (nodeID, profileID) — the web layer passes
+	// store.ProfileInboundOn. The AWG client conf reads the selected entry's
+	// profile credentials (server pubkey, port, obfs material) through it
+	// instead of the chain's legacy fields (empty for v2-created chains).
+	EntryInboundResolver func(nodeID, profileID string) *model.NodeInbound
 	// LocalProxyAddr is the SOCKS/HTTP listen address for the client's inbound
 	// (e.g. "127.0.0.1:1080"). Defaults to 127.0.0.1:1080 (SOCKS) + mixed.
 	LocalProxyAddr string
@@ -311,6 +317,24 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 	}
 	serverPub := c.AWGEntryServerPub
 	port := chainEntryPort(c, entry.ID)
+	preset := resolveChainPreset(c)
+	material := ChainAWGObfsMaterial(c)
+	// v2: the selected entry's materialized inbound (profile credentials) wins
+	// over the chain's legacy fields — for chains created after the v2 model
+	// the chain-level AWGEntry*/CPS fields are empty and only the profile
+	// materialization carries them.
+	if params.EntryInboundResolver != nil && entry.InboundRef != "" {
+		if ib := params.EntryInboundResolver(entry.ID, entry.InboundRef); ib != nil {
+			if ib.ServerPubKey != "" {
+				serverPub = ib.ServerPubKey
+			}
+			if ib.Port > 0 {
+				port = ib.Port
+			}
+			preset = ResolveStandaloneAWGPreset(ib)
+			material = InboundAWGObfsMaterial(ib)
+		}
+	}
 
 	host := params.EntryHostOverride
 	if host == "" {
@@ -321,8 +345,7 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 	// endpoint — a mismatch breaks the AWG handshake. Previously this hardcoded
 	// GetDefaultPreset(), which diverged whenever the chain used a non-default
 	// ObfuscationProfile.
-	preset := resolveChainPreset(c)
-	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, ChainAWGObfsMaterial(c)), nil
+	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, material), nil
 }
 
 // renderAWGQuickConf builds the awg-quick .conf text. preset + material supply
