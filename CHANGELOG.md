@@ -4,6 +4,25 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.1] — 2026-07-20
+
+### Live QUIC signature capture on the Inbounds page
+
+- The AWG entry profile now owns the live QUIC capture (moved from the chain
+  form): CPS mimicry select (default/quic-live/quic/sip/dns/none) + capture
+  domain + "Capture now" preview + captured/failed status on edit.
+- **One capture per profile+domain, shared by every node**: the captured
+  I1-I5 + H1-H4 live on the profile; all materialized inbounds copy them (all
+  nodes of a profile mimic the same domain). Synthesized CPS stays per-node
+  when no capture domain is set.
+- Cache semantics mirror the chain: success cached per domain (a domain
+  change re-captures), the failed-domain marker suppresses re-dialing a flaky
+  domain on every deploy, a capture failure falls back to synthesized packets
+  (verified live: fallback end-to-end on n1; the capture algorithm itself
+  answered by a real QUIC server from the test VPS).
+- Fixes since v0.8.0: entry-subnet/user-address alignment (peer and interface
+  always share a /24), profile-entry double-render guard.
+
 ## [v0.8.0] — 2026-07-19
 
 ### Information-architecture refactor: first-class Inbounds, chain Levels with balancing strategies, simplified Clients

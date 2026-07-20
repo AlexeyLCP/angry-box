@@ -28,7 +28,31 @@ type InboundProfile struct {
 	// profiles (moved from Chain.AWGCPSCaptureDomain): dial domain:443 over
 	// UDP, send a real QUIC Initial, capture server responses as CPS I1-I5.
 	// Empty = synthesized CPS packets (default).
-	AWGCPSCaptureDomain string    `json:"awg_cps_capture_domain,omitempty"`
+	AWGCPSCaptureDomain string `json:"awg_cps_capture_domain,omitempty"`
+	// AWGCPSMimicry is the mimicry override: "" = from the preset, "quic-live"
+	// = live capture against AWGCPSCaptureDomain. Other explicit modes
+	// (quic/sip/dns/none) force the synthesized generator's mode.
+	AWGCPSMimicry string `json:"awg_cps_mimicry,omitempty"`
+
+	// ── Shared live-capture material (one capture per profile+domain, shared
+	// by every materialized inbound — all nodes of one profile mimic the same
+	// domain). Populated by chain.EnsureProfileAWGMaterial when
+	// AWGCPSCaptureDomain is set; AWGCPSCapturedDomain records which domain the
+	// I1-I5 came from (a domain change re-captures), AWGCPSCaptureFailedDomain
+	// suppresses re-dialing a flaky domain on every deploy.
+	AWGCPSLevel          int    `json:"awg_cps_level,omitempty"`
+	AWGCPSI1             string `json:"awg_cps_i1,omitempty"`
+	AWGCPSI2             string `json:"awg_cps_i2,omitempty"`
+	AWGCPSI3             string `json:"awg_cps_i3,omitempty"`
+	AWGCPSI4             string `json:"awg_cps_i4,omitempty"`
+	AWGCPSI5             string `json:"awg_cps_i5,omitempty"`
+	AWGH1                string `json:"awg_h1,omitempty"`
+	AWGH2                string `json:"awg_h2,omitempty"`
+	AWGH3                string `json:"awg_h3,omitempty"`
+	AWGH4                string `json:"awg_h4,omitempty"`
+	AWGCPSCapturedDomain string `json:"awg_cps_captured_domain,omitempty"`
+	AWGCPSCaptureFailedDomain string `json:"awg_cps_capture_failed_domain,omitempty"`
+
 	CreatedAt          time.Time `json:"created_at"`
 }
 

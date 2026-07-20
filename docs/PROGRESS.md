@@ -2303,3 +2303,14 @@ conf (`sed -n 's/^PostUp = //p' | sh`, наши PostUp идемпотентны)
 - **Double-render профиль-entry** (7f1f479): профиль (Source="standalone") референснутый как chain entry рендерился дважды (awg0 + awg1) → второй awg-quick падал на дублированном порту. Fix: IsChainEntryInbound (reference-проверка) + skip во всех standalone-циклах (AWG confs, merged config, MTProxy, port conflicts, TUN includes).
 
 **Диагностика same-host артефакта (повтор §13.4):** same-host клиент не может проверить egress — IP клиента (10.8.0.2) локален на том же kernel → серверный стек считает пакеты локальными (loop через policy-rule клиента / локальная доставка). Решение для одно-машинных тестов: **netns-изоляция клиента** (veth pair, endpoint на host-veth IP) — forwarded path exercised for real.
+
+
+## 29. v0.8.1 — live QUIC capture на странице Инбаундов (2026-07-20)
+
+Follow-up из §27 закрыт: entry-профиль владеет live capture (UI был сиротой после Stage D).
+
+- **Модель:** `InboundProfile` +capture-material поля (I1-I5, H1-H4, Level, Mimicry-request, Captured/FailedDomain). Семантика полей зеркалит chain: `AWGCPSMimicry` = REQUEST-override (никогда не перезаписывается ensure), CapturedDomain = успех (смена домена → re-capture), FailedDomain = подавление re-dial flaky домена.
+- **`EnsureProfileAWGMaterial`** (awg_inbound_material.go): один capture на profile+domain, материал SHARED по всем нодам профиля (все мимикрируют под один домен); synthesized CPS — per-node когда домена нет. `ApplyProfileMaterialToInbound` — единая точка применения (profile-backed material → иначе per-node ensure), вwired в buildProfileInbound, ApplyProfileToNodes update, ensureMaterializedEntryInbound, ensureStandaloneAWGMaterial (client-conf render).
+- **UI (InboundForm):** AWG-секция — mimicry select, capture domain (виден при quic-live), "Capture now" (переиспользует /ui/chains/capture-preview), статус captured/failed на edit. Handler: валидация домена, capture при save (best-effort, fallback synthesized), carry-over + инвалидация кэша при смене домена/mimicry на update.
+- **Тесты:** profile_capture_test.go (no-domain, synthesized shared, failure-marker suppresses re-dial без сетевого дайла, apply copy, fallback per-node).
+- **Live-verify n1:** профиль quic-live+disk.yandex.ru — capture failed (UDP/443 с оркестратора закрыт) → **fallback корректно отработал end-to-end** (marker persisted, shared synthesized material скопирован на ноду, client/server конфиги консистентны). Сам алгоритм capture проверен отдельным harness'ом с n1: www.cloudflare.com ОТВЕТИЛ на реальный QUIC Initial (OK=true, 2 пакета); google/youtube/bing оттуда не отвечают (>=5 пакетов для материала нужен домен с большой cert-цепочкой — поведение серверов варьируется, fallback покрывает).

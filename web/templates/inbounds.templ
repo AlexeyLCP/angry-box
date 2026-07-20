@@ -144,37 +144,84 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 							}
 						/>
 					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Protocol") }</span></label>
-						<select name="protocol" class="select select-bordered" disabled?={ prof != nil }>
-							<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
-							<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
-							<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
-						</select>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Protocol") }</span></label>
+					<select name="protocol" class="select select-bordered" disabled?={ prof != nil }
+						onchange="var s=this.closest('form').querySelector('.awg-capture-section');if(s){s.style.display=this.value==='awg'?'block':'none'}">
+						<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
+						<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
+						<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
+					</select>
+					if prof != nil {
+						// disabled selects don't submit — carry the value
+						<input type="hidden" name="protocol" value={ prof.Protocol }/>
+						<span class="text-xs text-base-content/40 mt-1">{ i18n.T(ctx, "Protocol is locked while the inbound is deployed (credentials are protocol-specific)") }</span>
+					}
+				</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Port") }</span></label>
+					<input type="number" name="port" class="input input-bordered" min="1" max="65535"
 						if prof != nil {
-							// disabled selects don't submit — carry the value
-							<input type="hidden" name="protocol" value={ prof.Protocol }/>
-							<span class="text-xs text-base-content/40 mt-1">{ i18n.T(ctx, "Protocol is locked while the inbound is deployed (credentials are protocol-specific)") }</span>
+							value={ fmt.Sprintf("%d", prof.Port) }
 						}
-					</div>
+					/>
+				</div>
+				<div class="form-control">
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation preset") }</span></label>
+					<select name="obfuscation" class="select select-bordered">
+						<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Default preset") }</option>
+						for _, p := range presets {
+							<option value={ p } selected?={ prof != nil && prof.Obfuscation == p }>{ p }</option>
+						}
+					</select>
+				</div>
+			</div>
+
+			<div class="awg-capture-section form-control border border-base-300 rounded-lg p-3 space-y-3" style={ templ.KV("display:none", prof != nil && prof.Protocol != "awg") }>
+				<span class="text-sm font-medium">{ i18n.T(ctx, "AWG CPS obfuscation") }</span>
+				<div class="grid grid-cols-2 gap-3">
 					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Port") }</span></label>
-						<input type="number" name="port" class="input input-bordered" min="1" max="65535"
-							if prof != nil {
-								value={ fmt.Sprintf("%d", prof.Port) }
-							}
-						/>
-					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation preset") }</span></label>
-						<select name="obfuscation" class="select select-bordered">
-							<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Default preset") }</option>
-							for _, p := range presets {
-								<option value={ p } selected?={ prof != nil && prof.Obfuscation == p }>{ p }</option>
-							}
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "CPS Mimicry mode") }</span></label>
+						<select name="awg_cps_mimicry" class="select select-bordered select-sm"
+							onchange="var w=this.closest('.awg-capture-section').querySelector('.capture-domain-wrap');if(w){w.style.display=this.value==='quic-live'?'block':'none'}">
+							<option value="" selected?={ prof == nil || prof.AWGCPSMimicry == "" }>{ i18n.T(ctx, "Default (from preset)") }</option>
+							<option value="quic-live" selected?={ prof != nil && prof.AWGCPSMimicry == "quic-live" }>{ i18n.T(ctx, "quic-live (capture)") }</option>
+							<option value="quic" selected?={ prof != nil && prof.AWGCPSMimicry == "quic" }>{ i18n.T(ctx, "quic") }</option>
+							<option value="sip" selected?={ prof != nil && prof.AWGCPSMimicry == "sip" }>{ i18n.T(ctx, "sip") }</option>
+							<option value="dns" selected?={ prof != nil && prof.AWGCPSMimicry == "dns" }>{ i18n.T(ctx, "dns") }</option>
+							<option value="none" selected?={ prof != nil && prof.AWGCPSMimicry == "none" }>{ i18n.T(ctx, "none") }</option>
 						</select>
+					</div>
+					<div class="capture-domain-wrap form-control" style={ templ.KV("display:none", prof == nil || prof.AWGCPSMimicry != "quic-live") }>
+						<label class="label"><span class="label-text">{ i18n.T(ctx, "QUIC Capture Domain") }</span></label>
+						<div class="join">
+							<input type="text" name="awg_cps_capture_domain" class="input input-bordered input-sm join-item"
+								if prof != nil {
+									value={ prof.AWGCPSCaptureDomain }
+								}
+								placeholder="disk.yandex.ru" />
+							<button type="button" class="btn btn-sm join-item"
+								hx-post="/ui/chains/capture-preview"
+								hx-target="#inbound-capture-preview-result"
+								hx-include="closest form">
+								{ i18n.T(ctx, "Capture now") }
+							</button>
+						</div>
 					</div>
 				</div>
+				<div id="inbound-capture-preview-result"></div>
+				if prof != nil && prof.AWGCPSCapturedDomain != "" {
+					<div class="alert alert-info py-2">
+						<span class="text-xs"><strong>{ i18n.T(ctx, "Captured from") }:</strong> { prof.AWGCPSCapturedDomain }</span>
+					</div>
+				}
+				if prof != nil && prof.AWGCPSCaptureFailedDomain != "" {
+					<div class="alert alert-warning py-2">
+						<span class="text-xs"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { prof.AWGCPSCaptureFailedDomain } { i18n.T(ctx, "(synthesized packets in use)") }</span>
+					</div>
+				}
+			</div>
+
 				<div class="form-control">
 					<label class="label"><span class="label-text">{ i18n.T(ctx, "Deploy on nodes") }</span></label>
 					if len(nodes) == 0 {

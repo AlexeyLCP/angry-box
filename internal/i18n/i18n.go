@@ -790,6 +790,9 @@ var locales = map[string]map[string]string{
 		"System status": "System status",
 		"No events yet.": "No events yet.",
 		"No chains configured. Create one on the Chains page.": "No chains configured. Create one on the Chains page.",
+		// v0.8.1 — profile live QUIC capture.
+		"AWG CPS obfuscation": "AWG CPS obfuscation",
+		"(synthesized packets in use)": "(synthesized packets in use)",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1606,6 +1609,9 @@ var locales = map[string]map[string]string{
 		"System status": "Статус системы",
 		"No events yet.": "Событий пока нет.",
 		"No chains configured. Create one on the Chains page.": "Цепочки не настроены. Создайте на странице «Цепочки».",
+		// v0.8.1 — profile live QUIC capture.
+		"AWG CPS obfuscation": "AWG CPS обфускация",
+		"(synthesized packets in use)": "(используются синтезированные пакеты)",
 	},
 }
 

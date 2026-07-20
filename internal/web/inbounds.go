@@ -105,18 +105,57 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 			nodeIDs = append(nodeIDs, id)
 		}
 	}
-	return &model.InboundProfile{
+	p := &model.InboundProfile{
 		Name:        name,
 		Protocol:    proto,
 		Port:        port,
 		Obfuscation: strings.TrimSpace(r.FormValue("obfuscation")),
-	}, nodeIDs, nil
+	}
+	// AWG live-capture fields (moved from the chain form in v0.8 — the entry
+	// profile owns the obfuscation). Mimicry "quic-live" requires a valid
+	// capture domain; non-AWG profiles ignore both silently.
+	if proto == "awg" {
+		mimicry := strings.TrimSpace(r.FormValue("awg_cps_mimicry"))
+		switch mimicry {
+		case "", "quic-live", "quic", "sip", "dns", "none":
+		default:
+			return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "Invalid CPS mimicry mode"))
+		}
+		domain := strings.TrimSpace(r.FormValue("awg_cps_capture_domain"))
+		if mimicry == "quic-live" {
+			if domain == "" {
+				return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "Invalid capture domain"))
+			}
+			domain = chain.NormalizeDomain(domain)
+			if !chain.IsValidDomain(domain) {
+				return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "Invalid capture domain"))
+			}
+		} else {
+			domain = ""
+		}
+		p.AWGCPSMimicry = mimicry
+		p.AWGCPSCaptureDomain = domain
+	}
+	return p, nodeIDs, nil
 }
 
 // applyProfileAndDeploy saves the profile, applies the node diff, and
 // schedules background deploys on every affected node.
 func (s *Server) applyProfileAndDeploy(w http.ResponseWriter, r *http.Request, prof *model.InboundProfile, nodeIDs []string, action string) {
 	st := s.store()
+	// Live QUIC capture: run it (once per profile+domain) at save time so the
+	// UI reflects the outcome immediately; the captured material is shared by
+	// every materialized inbound. Best-effort — a capture failure falls back
+	// to synthesized packets (the profile still saves).
+	if prof.AWGCPSCaptureDomain != "" {
+		preset := chain.GetDefaultPreset()
+		if prof.Obfuscation != "" {
+			if p, ok := chain.GetPreset(prof.Obfuscation); ok {
+				preset = p
+			}
+		}
+		_ = chain.EnsureProfileAWGMaterial(prof, preset)
+	}
 	if err := st.SaveInboundProfile(prof); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -180,6 +219,28 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 	}
 	prof.ID = existing.ID
 	prof.CreatedAt = existing.CreatedAt
+	// Carry over the capture cache so EnsureProfileAWGMaterial can decide
+	// validity; a domain/mimicry change invalidates it (re-capture or reset).
+	if prof.AWGCPSCaptureDomain != existing.AWGCPSCaptureDomain || prof.AWGCPSMimicry != existing.AWGCPSMimicry {
+		prof.AWGCPSLevel = 0
+		prof.AWGCPSI1, prof.AWGCPSI2, prof.AWGCPSI3, prof.AWGCPSI4, prof.AWGCPSI5 = "", "", "", "", ""
+		prof.AWGH1, prof.AWGH2, prof.AWGH3, prof.AWGH4 = "", "", "", ""
+		prof.AWGCPSCapturedDomain = ""
+		prof.AWGCPSCaptureFailedDomain = ""
+	} else {
+		prof.AWGCPSLevel = existing.AWGCPSLevel
+		prof.AWGCPSI1 = existing.AWGCPSI1
+		prof.AWGCPSI2 = existing.AWGCPSI2
+		prof.AWGCPSI3 = existing.AWGCPSI3
+		prof.AWGCPSI4 = existing.AWGCPSI4
+		prof.AWGCPSI5 = existing.AWGCPSI5
+		prof.AWGH1 = existing.AWGH1
+		prof.AWGH2 = existing.AWGH2
+		prof.AWGH3 = existing.AWGH3
+		prof.AWGH4 = existing.AWGH4
+		prof.AWGCPSCapturedDomain = existing.AWGCPSCapturedDomain
+		prof.AWGCPSCaptureFailedDomain = existing.AWGCPSCaptureFailedDomain
+	}
 	s.applyProfileAndDeploy(w, r, prof, nodeIDs, "update")
 }
 

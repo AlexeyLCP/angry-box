@@ -644,7 +644,15 @@ func ensureStandaloneAWGMaterial(st *chain.Store, nodes []*model.NodeInfo) {
 			}
 			preset := chain.ResolveStandaloneAWGPreset(ib)
 			before := ib.AWGCPSI1 + ib.AWGH1
-			chain.EnsureInboundAWGMaterial(ib, preset)
+			// Profile-backed inbounds take the profile's shared material (e.g.
+			// a live-captured signature); ad-hoc ones use the per-node ensure.
+			var prof *model.InboundProfile
+			if ib.ProfileID != "" {
+				if p, err := st.GetInboundProfile(ib.ProfileID); err == nil {
+					prof = p
+				}
+			}
+			chain.ApplyProfileMaterialToInbound(ib, prof, preset)
 			if ib.AWGCPSI1+ib.AWGH1 != before {
 				changed = true
 			}

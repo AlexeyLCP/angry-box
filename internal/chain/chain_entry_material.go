@@ -85,7 +85,7 @@ func ensureMaterializedEntryInbound(ni *model.NodeInfo, c *model.Chain, entry *m
 				changed = true
 			}
 			before := ib.AWGCPSI1
-			EnsureInboundAWGMaterial(ib, preset)
+			ApplyProfileMaterialToInbound(ib, prof, preset)
 			if ib.AWGCPSI1 != before {
 				changed = true
 			}
@@ -118,7 +118,7 @@ func ensureMaterializedEntryInbound(ni *model.NodeInfo, c *model.Chain, entry *m
 			ib.ServerPubKey = pub
 		}
 		ib.AWGServerAddress = "10.8.0.1/24"
-		EnsureInboundAWGMaterial(&ib, preset)
+		ApplyProfileMaterialToInbound(&ib, prof, preset)
 	case string(model.UserProtocolTUIC):
 		ib.UUID = c.TUICEntryUserUUID
 	default: // vless-reality: the chain entry historically used the entry's transit UUID

@@ -143,7 +143,7 @@ func ApplyProfileToNodes(st *Store, prof *model.InboundProfile, desired []string
 			if ib.Protocol == string(model.UserProtocolAWG) {
 				before := ib.AWGCPSI1 + ib.AWGH1
 				preset := ResolveStandaloneAWGPreset(ib)
-				EnsureInboundAWGMaterial(ib, preset)
+				ApplyProfileMaterialToInbound(ib, prof, preset)
 				if ib.AWGCPSI1+ib.AWGH1 != before {
 					changed = true
 				}
@@ -237,7 +237,7 @@ func buildProfileInbound(prof *model.InboundProfile, ni *model.NodeInfo) (model.
 		ib.ServerPrivKey = priv
 		ib.ServerPubKey = pub
 		ib.AWGServerAddress = allocateAWGServerSubnet(awgSubnetsInUseOnNode(ni))
-		EnsureInboundAWGMaterial(&ib, preset)
+		ApplyProfileMaterialToInbound(&ib, prof, preset)
 	case "vless-reality":
 		p, err := generateHopParams(prof.Port, &preset)
 		if err != nil {
