@@ -2314,3 +2314,28 @@ Follow-up из §27 закрыт: entry-профиль владеет live captu
 - **UI (InboundForm):** AWG-секция — mimicry select, capture domain (виден при quic-live), "Capture now" (переиспользует /ui/chains/capture-preview), статус captured/failed на edit. Handler: валидация домена, capture при save (best-effort, fallback synthesized), carry-over + инвалидация кэша при смене домена/mimicry на update.
 - **Тесты:** profile_capture_test.go (no-domain, synthesized shared, failure-marker suppresses re-dial без сетевого дайла, apply copy, fallback per-node).
 - **Live-verify n1:** профиль quic-live+disk.yandex.ru — capture failed (UDP/443 с оркестратора закрыт) → **fallback корректно отработал end-to-end** (marker persisted, shared synthesized material скопирован на ноду, client/server конфиги консистентны). Сам алгоритм capture проверен отдельным harness'ом с n1: www.cloudflare.com ОТВЕТИЛ на реальный QUIC Initial (OK=true, 2 пакета); google/youtube/bing оттуда не отвечают (>=5 пакетов для материала нужен домен с большой cert-цепочкой — поведение серверов варьируется, fallback покрывает).
+
+## 30. AWG3 — спайк amneziawg-go feat/awg3 на n1 (2026-07-21)
+
+Спайк ДО кода в проекте (Stage 0 плана AWG3): доказать что userspace AmneziaWG-go `feat/awg3` работает в нашей среде и coexists с sing-box TUN-overlay на data plane. Решение: userspace = **fallback-бэкенд** (kernel awg-quick остаётся default, AGENTS #10/#11 не откатываются), AWG3-поля per-chain-entry (shared HeaderProtectionKey).
+
+**Бинарь:** `amneziawg-go` собран из `github.com/amnezia-vpn/amneziawg-go` ветка `feat/awg3`, SHA `898bc6b83b9ed8148b170bf85c5f953201ff2120` ("chore: use UintRange instead of magicHeader"), `CGO_ENABLED=0 GOOS=linux GOARCH=amd64`, 3.5 MB. go.mod требует go 1.25 (локальный go1.26.4 собрал). Залит на n1 `/usr/local/bin/amneziawg-go` (после cleanup удалён — не часть прода).
+
+**AWG3-поля (UAPI, из `device/uapi.go` handleDeviceLine):** `header_protection_key` (HEX 32 байта через `FromHex` — **НЕ** base64 wg-genkey, вопреки README), `content_padding_addition` (UintRange `lo-hi`), `rekey_after_time` (UintRange `lo-hi`, секунды, both-side). Existing amnezia unchanged: `jc`/`jmin`/`jmax`/`s1-s4`/`h1-h4`/`i1-i5`.
+
+**Грабли спайка (input для Stage 2-4 render):**
+1. **UAPI-протокол требует первую строку `set=1\n`** (или `get=1\n`) — это операционный заголовок dispatch'а в `IpcHandle`. Без него → `invalid UAPI operation`. amneziawg-tools `awg set` обёртка шлёт правильно, но **`awg set` не знает AWG3-ключи** (`Invalid argument: header-protection-key`) — tools не обновлены под feat/awg3. Значит AWG3-конфигурация только через **прямой UAPI к сокету** (`/run/amneziawg/<iface>.sock`, socat/nc-unix), не через `awg set`/`awg-quick`.
+2. **S1-S4 для HPK — строго `> 8`** (код `mergeWithDevice`: `if padding < HeaderCipherNonceSize` где nonce=8 → `padding < 8` fail = "S0 must be more then 8 to use headerProtection"). README говорит "≥ 8" — **неточно**, нужно `> 8` (минимум 9, ставил 16). Валидация в `mergeWithDevice` (не в handleDeviceLine — там поля накапливаются в `ipcDev`, merge в конце IpcSet).
+3. **UAPI `allowed_ip` — один префикс на строку.** `allowed_ip=0.0.0.0/0,::/0` (comma) → `EINVAL: netip.ParsePrefix("0.0.0.0/0,::")`. Нужно две строки: `allowed_ip=0.0.0.0/0\nallowed_ip=::/0`. awg-quick .conf парсер принимает comma, UAPI — нет.
+4. **`h1-h4` — UintRange `lo-hi`** (последний коммит "use UintRange instead of magicHeader"). Синтаксис тот же что kernel (`164264335-457592954`), парсится `rang.FromString`.
+5. amneziawg-tools `awg-quick`/`awg set` не знают AWG3 → **awg-quick client .conf НЕ подходит для AWG3** (kernel amneziawg-module тоже AWG3 не парсит — feat-ветка userspace-only). Клиент AWG3 = userspace (desktop/mobile Amnezia app с поддержкой AWG3, или amneziawg-go + UAPI).
+
+**Результат спайка v2 (полный успех, блокер снят):**
+- Server userspace `amneziawg-go awg0` + UAPI set (AWG3: HPK hex, S1-S4=16, CPM=16-128, RAT=60-300) + peer alice → все поля применились (`errno=0`, UAPI get подтверждает).
+- **Handshake РАБОТАЕТ** (localhost cross-daemon test + netns cross-machine test с sing-box overlay UP): `latest-handshakes` = текущая сессия, transfer растёт обе стороны, `Received handshake response` в логе.
+- **Data plane РАБОТАЕТ с sing-box TUN-overlay `include_interface:["awg0"]` + FORWARD awg0↔sing-box-tun (эквивалент kernel PostUp):** ping 10.8.0.1 через туннель 3/3 0% loss; `curl ifconfig.me` через туннель → `144.31.224.212` (IP сервера = egress через туннель); 2 MB Cloudflare download через туннель OK. sing-box overlay **active** (coexists, не нарушен).
+- **Прошлая неудача data plane (спайк v1) = тест-сетап артефакт**, не продуктовый коexistence-блок: я поставил netns default route через `awgc0` (overlay), что зацепило endpoint `192.168.99.1` в loop. При правильной underlay routing (`ip route add 192.168.99.1 dev veth-ns` для endpoint, default через awgc0 для overlay-трафика) — data plane идёт идентично kernel awg0. **Userspace = drop-in замена kernel в render/deploy (Stage 3 валиден как задумано, без отдельной egress-модели).**
+
+**Cleanup:** все userspace-демоны убиты, netns/veth удалены, iptables-FORWARD/NAT сняты, бинарь удалён, ключи очищены. Kernel `awg-quick@awg0` (jc=3, persisted из §28) + sing-box overlay восстановлены — прод-state не повреждён.
+
+**Pin для Stage 1:** feat-ветка плавает → pin по **commit SHA `898bc6b8`**, не branch. Готовность к тому что API полей может меняться (upstream не merged).
