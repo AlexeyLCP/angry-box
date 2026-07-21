@@ -71,6 +71,62 @@ forgets one place fails.
 + `singBoxChecksums` (singbox.go) are the binary artifacts pinned to that version
 (the checksum is fail-closed at deploy via `checksumForArch`).
 
+## amneziawg-go feat/awg3 — userspace AWG fallback backend (THREE places)
+
+The userspace AmneziaWG-go daemon (`feat/awg3` branch — NOT merged upstream)
+is the fallback AWG backend used when the kernel amneziawg module is
+unavailable (OpenVZ, restricted kernels, containers, macOS). It also carries
+the AWG3 obfuscation fields (HeaderProtectionKey / ContentPaddingMultiple /
+RekeyAfterTime) that the kernel module does NOT parse. The kernel path
+(`installAWGModule`, `awg-quick@awg0`) stays the default — AGENTS #10/#11.
+
+Because `feat/awg3` is not merged upstream and the AWG3-field API can change
+between commits, we pin a **commit SHA** (NOT a branch tag). The pin lives in
+THREE places; a bump MUST update all three + pass the patchcheck test:
+
+1. `scripts/build-amneziawg-go.sh` — `AWGGO_REF` default (build time, full SHA).
+2. `internal/backend/singbox/singbox.go` — `amneziaWGGoVersion` const (deploy
+   time, 7-char short SHA — used in the tarball name + download URL). Plus
+   `amneziaWGGoDownloadURLs` / `amneziaWGGoChecksums` (fail-closed at deploy via
+   `amneziaWGGoChecksumForArch`).
+3. `internal/backend/singbox/patchcheck_test.go` — `patchcheckAWGGORef` const
+   (full 40-char SHA, regression test).
+
+The `TestPatchcheckAWGGORefMatchesConst` test asserts #2 == #3[:7] (short SHA),
+so a bump that forgets one place fails. No patch currently applies against
+amneziawg-go (`feat/awg3 @ 898bc6b8` builds clean); when one is added, add a
+`TestPatches_ApplyCleanly` subtest cloning `awggoRepo@patchcheckAWGGORef` and
+`git apply --check patches/amneziawg-go-*.patch` (mirror the sing-box/wireguard-go
+subtests).
+
+`deps/amneziawg-go-${SHORT_SHA}-linux-${arch}.tar.gz` +
+`deps/amneziawg-go-checksums.txt` + `amneziaWGGoChecksums` (singbox.go) are the
+binary artifacts (the checksum is fail-closed at deploy via
+`amneziaWGGoChecksumForArch`). Override envs: `ANGRY_AWGGO_URL` (single
+override), `ANGRY_AWGGO_MIRRORS` (comma-separated fallback list) — every
+candidate verified against the pinned checksum (same contract as sing-box).
+
+### Rebase procedure (amneziawg-go bump)
+
+1. Update the three pins (#1 `AWGGO_REF`, #2 `amneziaWGGoVersion`+URLs+
+   Checksums, #3 `patchcheckAWGGORef`) to the new commit SHA.
+2. Run the patchcheck version-match test:
+   ```
+   go test -tags=patchcheck -run TestPatchcheckAWGGORefMatchesConst ./internal/backend/singbox/ -v
+   ```
+3. If a patch against amneziawg-go exists, also run
+   `TestPatches_ApplyCleanly` and re-derive on drift.
+4. Rebuild the binary (`scripts/build-amneziawg-go.sh`) → produces a new
+   `deps/amneziawg-go-<short-sha>-linux-<arch>.tar.gz`.
+5. Regenerate `deps/amneziawg-go-checksums.txt` + update
+   `amneziaWGGoChecksums` with the new sha256 per arch (fail-closed).
+6. Publish the tarball to the GitHub release the deploy code pins:
+   `gh release upload v0.1.0 deps/amneziawg-go-*.tar.gz`.
+7. Commit the updated pin sites + new tarball + checksums.
+8. Verify on a test VPS (n1): install the new binary via the deploy path, raise
+   a userspace AWG3 daemon, confirm handshake + egress (mirror §30 PROGRESS.md
+   spike) before shipping.
+
 ## Rebase procedure (on an upstream bump)
 
 When bumping sing-box-extended / wireguard-go to a new tag:

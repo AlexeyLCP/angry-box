@@ -51,6 +51,37 @@ var singBoxChecksums = map[string]string{
 	"arm64": "",
 }
 
+// amneziaWGGoVersion is the SHORT SHA of the amneziawg-go feat/awg3 commit we
+// build the userspace AWG daemon from (the fallback AWG backend — kernel
+// awg-quick stays default per AGENTS #10/#11). feat/awg3 is NOT merged upstream,
+// so we pin a commit SHA (not a branch tag) — the AWG3-field API can change
+// between commits. See docs/PATCHES.md for the full pin list + rebase flow.
+//
+// Built by scripts/build-amneziawg-go.sh; tarball in deps/. Verified at deploy
+// via amneziaWGGoChecksums (fail-closed, same contract as sing-box).
+const amneziaWGGoVersion = "898bc6b"
+
+// amneziaWGGoInstallPath is where the userspace daemon binary lives on a node.
+// Distinct from /usr/local/bin/sing-box so the two backends never collide.
+const amneziaWGGoInstallPath = "/usr/local/bin/amneziawg-go"
+
+// amneziaWGGoDownloadURLs maps Go arch → the amneziawg-go tarball location
+// (GitHub Release assets on v0.1.0, same release as sing-box-patched). Empty
+// entries fall back to raw.githubusercontent under deps/.
+var amneziaWGGoDownloadURLs = map[string]string{
+	"amd64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/amneziawg-go-" + amneziaWGGoVersion + "-linux-amd64.tar.gz",
+	"arm64": "",
+}
+
+// amneziaWGGoChecksums maps Go arch → sha256 of the amneziawg-go tarball.
+// Regenerate via scripts/build-amneziawg-go.sh (writes
+// deps/amneziawg-go-checksums.txt). Verified on deploy so a
+// truncated/modified binary is never installed as root on the fleet.
+var amneziaWGGoChecksums = map[string]string{
+	"amd64": "c9ce6d7cbd426df3b9b0ce2834fe4402246142b84b37f9ba5aecf392f3f463f3",
+	"arm64": "",
+}
+
 var _ ports.Backend = (*Backend)(nil)
 
 // Compile-time assert that *Backend also implements the optional ClientBackend
@@ -376,6 +407,99 @@ rm -rf /tmp/sing-box-install
 	// running the whole script as root is simplest and the script is trusted.
 	if _, stderr, exit, err := client.RunWithOutput(ctx, sudoBash(useSudo, script), 10*time.Minute); err != nil {
 		return fmt.Errorf("download/install: %s (exit %d) %s", err, exit, stderr)
+	}
+	return nil
+}
+
+// amneziaWGGoChecksumForArch is the fail-closed checksum lookup for the
+// userspace AWG daemon tarball (mirror of checksumForArch for sing-box). A
+// missing/empty checksum yields an error rather than skipping verification.
+func amneziaWGGoChecksumForArch(goArch string) (string, error) {
+	sum := amneziaWGGoChecksums[goArch]
+	if sum == "" {
+		return "", fmt.Errorf("amneziawg-go: no pinned sha256 checksum for arch %q — refusing to install an unverified binary (pin it in amneziaWGGoChecksums)", goArch)
+	}
+	return sum, nil
+}
+
+// installAmneziaWGGoBinary downloads the userspace amneziawg-go (feat/awg3)
+// tarball, verifies its sha256, extracts the binary and installs it at
+// amneziaWGGoInstallPath. This is the fallback AWG backend used when the kernel
+// amneziawg module is unavailable (OpenVZ, restricted kernels, containers,
+// macOS). The kernel path (installAWGModule) stays the default — AGENTS #10/#11.
+//
+// Mirrors installPatchedBinary (same download → sha256 → extract → install
+// flow, fail-closed checksum, mirror fallback, URL validation). Override env
+// ANGRY_AWGGO_URL points at a mirror/local HTTP server; ANGRY_AWGGO_MIRRORS is
+// a comma-separated fallback list tried after the primary. Every candidate is
+// verified against the pinned checksum, so a broken/compromised mirror cannot
+// install a bad binary.
+func installAmneziaWGGoBinary(ctx context.Context, client ports.SSHClient, useSudo bool) error {
+	archOut, _, _, err := client.RunWithOutput(ctx, "uname -m", 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("detect arch: %w", err)
+	}
+	goArch := archToGoArch(strings.TrimSpace(archOut))
+
+	// Fail closed BEFORE downloading — unverified binaries run as root.
+	expectedChecksum, err := amneziaWGGoChecksumForArch(goArch)
+	if err != nil {
+		return err
+	}
+
+	url := amneziaWGGoDownloadURLs[goArch]
+	if url == "" {
+		// Default to GitHub raw under deps/.
+		url = fmt.Sprintf("https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/amneziawg-go-%s-linux-%s.tar.gz",
+			amneziaWGGoVersion, goArch)
+	}
+	if envURL := os.Getenv("ANGRY_AWGGO_URL"); envURL != "" {
+		url = envURL
+	}
+	urls := []string{url}
+	if mirrors := os.Getenv("ANGRY_AWGGO_MIRRORS"); mirrors != "" {
+		for _, m := range strings.Split(mirrors, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				urls = append(urls, m)
+			}
+		}
+	}
+	// Validate every URL before it reaches a root shell — the value is
+	// interpolated into a single-quoted bash loop; a single quote in an
+	// operator-supplied URL would break out and run arbitrary commands as root
+	// (same class as validateTarballURL on the sing-box/AWG tarball URLs).
+	for _, u := range urls {
+		if err := validateTarballURL(u); err != nil {
+			return fmt.Errorf("amneziawg-go binary URL: %w", err)
+		}
+	}
+
+	var quoted strings.Builder
+	for i, u := range urls {
+		if i > 0 {
+			quoted.WriteByte(' ')
+		}
+		fmt.Fprintf(&quoted, "'%s'", u)
+	}
+
+	script := fmt.Sprintf(`set -e
+mkdir -p /tmp/amneziawg-go-install
+cd /tmp/amneziawg-go-install
+ok=0
+for u in %s; do
+  if curl -fsSL --connect-timeout 15 "$u" -o amneziawg-go.tar.gz && echo '%s  amneziawg-go.tar.gz' | sha256sum -c -; then ok=1; break; fi
+  echo "mirror failed: $u" >&2
+done
+if [ "$ok" != 1 ]; then echo 'ERROR: all amneziawg-go download mirrors failed' >&2; exit 1; fi
+tar -xzf amneziawg-go.tar.gz
+AWGGO_BIN=$(find /tmp/amneziawg-go-install -maxdepth 2 -name amneziawg-go -type f 2>/dev/null | head -1)
+if [ -z "$AWGGO_BIN" ]; then echo 'ERROR: amneziawg-go binary not found after tar' >&2; exit 1; fi
+install -m 0755 "$AWGGO_BIN" %s
+rm -rf /tmp/amneziawg-go-install
+`, quoted.String(), expectedChecksum, amneziaWGGoInstallPath)
+
+	if _, stderr, exit, err := client.RunWithOutput(ctx, sudoBash(useSudo, script), 10*time.Minute); err != nil {
+		return fmt.Errorf("amneziawg-go download/install: %s (exit %d) %s", err, exit, stderr)
 	}
 	return nil
 }

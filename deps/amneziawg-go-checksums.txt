@@ -1,0 +1,1 @@
+c9ce6d7cbd426df3b9b0ce2834fe4402246142b84b37f9ba5aecf392f3f463f3 *amneziawg-go-898bc6b-linux-amd64.tar.gz

@@ -35,6 +35,16 @@ const (
 
 	sbxRepo = "https://github.com/shtorm-7/sing-box-extended.git"
 	wgRepo  = "https://github.com/shtorm-7/wireguard-go.git"
+
+	// amneziawg-go feat/awg3 — userspace AWG fallback backend. feat/awg3 is NOT
+	// merged upstream, so we pin a commit SHA (not a branch tag). Keep in sync
+	// with scripts/build-amneziawg-go.sh (AWGGO_REF default) and
+	// internal/backend/singbox/singbox.go (amneziaWGGoVersion const, deploy-time
+	// pin for the binary). No patch currently applies against amneziawg-go
+	// (feat/awg3 @ this SHA builds clean); when one is added, add a
+	// TestPatches_ApplyCleanly subtest cloning awggoRepo@patchcheckAWGGORef.
+	patchcheckAWGGORef = "898bc6b83b9ed8148b170bf85c5f953201ff2120"
+	awggoRepo          = "https://github.com/amnezia-vpn/amneziawg-go.git"
 )
 
 // repoRoot returns the angry-box repo root (the test working dir is the package
@@ -130,5 +140,16 @@ func TestPatchcheckVersionsMatchSingBoxConst(t *testing.T) {
 	want := strings.TrimPrefix(patchcheckSBXVersion, "v")
 	if singBoxVersion != want {
 		t.Errorf("patchcheck sing-box version (%s) != singBoxVersion const (%s) — bump both together", want, singBoxVersion)
+	}
+}
+
+// TestPatchcheckAWGGORefMatchesConst is the non-network sanity check for the
+// amneziawg-go feat/awg3 pin. patchcheckAWGGORef is the full 40-char commit SHA;
+// amneziaWGGoVersion in singbox.go is the 7-char short SHA used in the tarball
+// name. A bump that forgets one place fails this test.
+func TestPatchcheckAWGGORefMatchesConst(t *testing.T) {
+	want := patchcheckAWGGORef[:7]
+	if amneziaWGGoVersion != want {
+		t.Errorf("patchcheck amneziawg-go ref short (%s) != amneziaWGGoVersion const (%s) — bump both together", want, amneziaWGGoVersion)
 	}
 }
