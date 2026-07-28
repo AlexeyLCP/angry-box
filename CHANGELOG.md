@@ -4,6 +4,84 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.2] — 2026-07-28
+
+### Base sing-box migration: sing-box-extended → amnezia-box (AWG3)
+
+The base sing-box is now **amnezia-box** (our fork `AlexeyLCP/amnezia-box`, a
+fork of `hoaxisr/amnezia-box` = sing-box 1.14 alpha). amnezia-box carries the
+**AWG3 userspace endpoint** `type:"awg"` (amneziawg-go `feat/awg3 @ fc48874`,
+which has the InputPackets API `transport/awg/port.go` needs). This supersedes
+the old `shtorm-7/sing-box-extended` 1.13.14 stack (the `patches/` directory +
+the wireguard-go overlap fix are gone — AWG3 runs through amneziawg-go, not the
+userspace wireguard-go path that panicked).
+
+**Ports from sing-box-extended into the amnezia-box fork** (commit `acb804b`,
+`AlexeyLCP/amnezia-box`):
+- **mtproxy** (telemt, product focus): `option/mtproxy.go` + `protocol/mtproxy/`
+  + `include/mtproxy{,_stub}.go` (build tag `with_mtproxy`). Rename
+  `ConnectionHandlerFuncEx → ConnectionHandlerFunc` (1.14 API). Dep
+  `dolonet/mtg-multi → shtorm-7/mtg-multi v1.11.0-extended-1.0.0` (extended fork
+  has `essentials.Dialer`/`DomainFrontingHost`/`UpdateUsers`). go.mod bumped
+  `go 1.25 → 1.26` (mtg-multi needs 1.26).
+- **fallback round-robin** (prod strategy #18 "Round-robin (fallback)"):
+  `protocol/group/fallback.go` + the rr patch (`rrCounter` rotation) +
+  `FallbackOutboundOptions` + `TypeFallback` + `RegisterFallback`. Self-contained,
+  no 1.14 adapter API bridging.
+
+**AWG render migration (angry-box):** all sing-box JSON AWG emitters migrated
+from `type:"wireguard"` + nested `amnezia:{}` to `type:"awg"` + FLAT obfuscation
+fields (amnezia-box 1.14 shape): `AwgEndpointOptions` (jc/jmin/jmax/s1-s4/h1-h4/
+i1-i5 flat + AWG3 `header_protection_key`/`content_padding_addition`/
+`rekey_after_time`) + `AwgPeerOptions`. Touches production transit
+(`buildAWGTransportInbound/Outbound`), legacy CLI (`RenderAWGHop`, `generateAWGUser`),
+test-only builders, and the takeover reader (`case "awg"`). **Kernel awg-quick
+`.conf` path (user-facing AWG servers, AGENTS #10/#11) is unchanged** — it is INI
+text, not sing-box JSON; `AmneziaOptions` stays as the holder for that path.
+
+**Build/deploy/detection rebased:**
+- `scripts/build-singbox.sh` (+ windows): clones `AlexeyLCP/amnezia-box @ acb804b`,
+  no wireguard-go clone/patches (amneziawg-go pinned in the fork's go.mod). Build
+  tags `with_awg,with_mtproxy` (dropped the old sing-box-extended canary tags
+  `with_masque/with_trusttunnel/with_sudoku/with_manager/with_profiler/with_snell`).
+  Tarball `deps/sing-box-<sha>-amnezia-linux-<arch>.tar.gz` (published to the
+  release the deploy code pins).
+- `singBoxVersion = acb804b3` (short SHA of the fork commit), `singBoxDownloadURLs`
+  + `singBoxChecksums` (fail-closed) point at the amnezia-box tarball.
+  `isPatchedExtended` detection canary switched to `with_awg`+`with_mtproxy`.
+  Standalone-daemon deploy (`installAmneziaWGGoBinary` etc.) removed — userspace
+  AWG now runs as the sing-box `type:"awg"` endpoint in-process, not a separate
+  binary. `amneziaWGGoVersion` kept as a traceability const.
+- `patchcheck_test.go`: pins `patchcheckABXRef` (amnezia-box @ acb804b) +
+  `patchcheckAWGGORef` (amneziawg-go awg3 @ fc48874); patch-applicability test
+  removed (no `patches/` for amnezia-box). Version-match uses `HasPrefix`.
+
+**AWG3 verified live on n1** (amneziawg-go `awg3 @ fc48874`): the AWG3 fields —
+`header_protection_key` (HEX 32 bytes via UAPI; amnezia-box endpoint JSON takes
+base64, decoded to hex for UAPI), `content_padding_addition` (UintRange lo-hi),
+`rekey_after_time` (UintRange lo-hi, seconds), with **S1-S4 >= 12**
+(`HeaderCipherNonceSize=12`) — produce a working handshake + egress (2 MB
+through the tunnel, `curl ifconfig.me` → server IP). The amnezia-box sing-box
+binary (Revision `acb804b36`, Tags `with_awg,with_mtproxy`) coexists with the
+kernel `awg-quick@awg0` + sing-box TUN-overlay trial deploy (handshake + egress
+verified). See `docs/PROGRESS.md` §31.
+
+**Removed (obsolete):** `patches/` (`fallback-round-robin.patch`,
+`wireguard-go-awg-overlap.patch`), `scripts/build-amneziawg-go.sh` (standalone
+daemon, Stage 1 — superseded by the in-process `type:"awg"` endpoint),
+`deps/amneziawg-go-898*.tar.gz` + checksums, the old
+`deps/sing-box-1.13.14-extended-*.tar.gz`.
+
+**Docs:** AGENTS.md "amnezia-box" section (replaces "sing-box-extended") +
+Known Issues #5 (flat AWG fields on `type:"awg"`); `docs/PATCHES.md` rewritten
+for the amnezia-box fork pin + rebase procedure; `docs/PROGRESS.md` §31.
+
+**Note:** the AWG3 fields (HPK/CPM/RAT) are now carried by the `type:"awg"`
+endpoint struct and verified to work, but angry-box does not yet generate/emit
+them from the UI/backend (the render is shape-ready; UI controls + material
+generation are a follow-up). The migration is the sing-box base swap + the flat
+AWG shape; AWG3 obfuscation enablement per-chain is the next step.
+
 ## [v0.8.1] — 2026-07-20
 
 ### Live QUIC signature capture on the Inbounds page

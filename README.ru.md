@@ -6,13 +6,13 @@
 
 Angry-BOX — оригинальный продукт, написанный с нуля. Не является форком 3x-ui, LucX-UI, x-ui или любой другой панели.
 
-Управление исключительно по SSH. На целевых нодах нет агентов — только ядро **sing-box-extended** + минимальный конфиг.
+Управление исключительно по SSH. На целевых нодах нет агентов — только ядро **amnezia-box** (наш форк sing-box 1.14) + минимальный конфиг.
 
 ## Обзор
 
 **Angry-BOX** — полностью оригинальный, самописный оркестратор (control plane) для построения и управления сложной анти-DPI прокси-инфраструктурой.
 
-Он управляет ядрами **sing-box-extended** по SSH без агентов на нодах. Вся логика — композиция цепей, генерация по ролям, per-user-материал, отслеживание здоровья нод, откат, UI и деплой — написана с нуля.
+Он управляет ядрами **amnezia-box** (нашего форка sing-box 1.14) по SSH без агентов на нодах. Вся логика — композиция цепей, генерация по ролям, per-user-материал, отслеживание здоровья нод, откат, UI и деплой — написана с нуля.
 
 ## Возможности
 
@@ -39,7 +39,7 @@ Angry-BOX — оригинальный продукт, написанный с �
 - **Per-user учёт трафика:** kernel-счётчики per-peer (`awg show transfer`) фолдятся в накопительные байты юзера (peer = AWG-идентичность юзера), устойчиво к рестартам, колонка в таблице юзеров.
 - **Самолечение NAT:** health-цикл восстанавливает FORWARD/MASQUERADE-правила, когда fail2ban или Docker сбрасывают iptables (тихий убийца egress'а) — лечится автоматически, пишется в аудит.
 - **Пакеты для роутеров (Keenetic + OpenWrt):** готовые `.ipk` для Keenetic Entware (mipsel/mips/aarch64, с NDMS-хуками интерфейсов) и OpenWrt (procd) — stripped + UPX (~3 МБ), smoke-тест под qemu в CI. Скачивание при деплое переживает зеркала (`ANGRY_BINARY_MIRRORS`), когда GitHub недоступен из сети ноды.
-- **100% независимость:** Angry-BOX поставляет собственный **патченный sing-box-extended** бинарь (deps/), поэтому слабые VPS не компилируют Go — просто скачивают.
+- **100% независимость:** Angry-BOX поставляет собственный бинарь **amnezia-box** (нашего форка sing-box 1.14) (deps/), поэтому слабые VPS не компилируют Go — просто скачивают.
 - **Zero-Footprint:** на нодах работает только ядро `sing-box`; оркестратор живёт на твоей управляющей машине.
 
 ## Скриншоты
@@ -99,7 +99,7 @@ angry-box serve -listen 0.0.0.0:8090
 angry-box host add entry-node --addr 1.2.3.4:22 --user root --key ~/.ssh/id_ed25519
 angry-box host add exit-node --addr 5.6.7.8:22 --user root --key ~/.ssh/id_ed25519
 
-# 2. Задеплой патченный sing-box-extended на ноды
+# 2. Задеплой бинарь amnezia-box на ноды
 #    (-sudo для non-root SSH-юзеров с passwordless sudo; -install-awg также ставит модуль ядра AmneziaWG)
 angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519 -sudo
 angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519 -sudo
@@ -128,7 +128,7 @@ opkg install angry-box_v0.7.0_aarch64_cortex-a53.ipk
 
 ## Сторонние компоненты
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** и **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (GPLv3)
+- **[sing-box](https://github.com/SagerNet/sing-box)** и **[amnezia-box](https://github.com/AlexeyLCP/amnezia-box)** (our sing-box 1.14 fork, GPLv3)
 - **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (GPLv2)
 - **[awg-multi-script от pumbaX](https://github.com/pumbaX/awg-multi-script)** (MIT) — практики обфускации AmneziaWG (инварианты Jc/Jmin/Jmax/S1-S4/H1-H4, генерация CPS-пакетов)
 - **[awg-manager от hoaxisr](https://github.com/hoaxisr/awg-manager)** (MIT) — алгоритм живого захвата QUIC-сигнатуры (логика «захвата существующего VPN»: подключение к domain:443 по UDP, отправка QUIC Initial, захват ответных пакетов сервера как I1-I5)

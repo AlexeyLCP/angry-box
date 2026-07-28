@@ -6,7 +6,7 @@
 
 Angry-BOX is an original product written from scratch. It is **not** a fork of 3x-ui, LucX-UI, x-ui, or any other panel.
 
-Management is done exclusively over SSH. Target nodes run **only** sing-box-extended with a minimal config — no agents.
+Management is done exclusively over SSH. Target nodes run **only** amnezia-box (our sing-box 1.14 fork) with a minimal config — no agents.
 
 <p>
   <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
@@ -20,7 +20,7 @@ Management is done exclusively over SSH. Target nodes run **only** sing-box-exte
 
 **Angry-BOX** is a fully original, self-written orchestrator (control plane) for building and managing complex anti-DPI proxy infrastructure.
 
-It drives **sing-box-extended** cores over SSH with zero agents on the nodes. The entire logic — chain composition, merged configs, per-user material, node health tracking, rollback, UI, and deployment — was written from scratch.
+It drives **amnezia-box** (our sing-box 1.14 fork) cores over SSH with zero agents on the nodes. The entire logic — chain composition, merged configs, per-user material, node health tracking, rollback, UI, and deployment — was written from scratch.
 
 ## Features
 
@@ -47,7 +47,7 @@ It drives **sing-box-extended** cores over SSH with zero agents on the nodes. Th
 - **Per-user traffic accounting:** kernel per-peer counters (`awg show transfer`) are folded into cumulative per-user bytes (peer = user AWG identity), restart-safe, shown in the users table.
 - **Self-healing NAT:** the health loop re-asserts FORWARD/MASQUERADE rules when fail2ban or Docker flushes iptables (a silent egress killer) — healed automatically, audited.
 - **Router packages (Keenetic + OpenWrt):** ready-made `.ipk` for Keenetic Entware (mipsel/mips/aarch64, with NDMS interface hooks) and OpenWrt (procd) — stripped + UPX-compressed (~3 MB), smoke-tested under qemu in CI. Deploy downloads also tolerate mirrors (`ANGRY_BINARY_MIRRORS`) when GitHub is unreachable from a node's network.
-- **100% Independent:** Angry-BOX ships its own **patched sing-box-extended** binary (deps/), so weak VPSes never compile Go — they just download.
+- **100% Independent:** Angry-BOX ships its own **amnezia-box** sing-box binary (our sing-box 1.14 fork) (deps/), so weak VPSes never compile Go — they just download.
 - **Zero-Footprint:** node servers run only the bare `sing-box` core; the orchestrator lives entirely on your control machine.
 
 ## Screenshots
@@ -107,7 +107,7 @@ angry-box serve -listen 0.0.0.0:8090
 angry-box host add entry-node --addr 1.2.3.4:22 --user root --key ~/.ssh/id_ed25519
 angry-box host add exit-node --addr 5.6.7.8:22 --user root --key ~/.ssh/id_ed25519
 
-# 2. Deploy the patched sing-box-extended to the nodes
+# 2. Deploy the amnezia-box sing-box binary to the nodes
 #    (-sudo for non-root SSH users with passwordless sudo; -install-awg also installs the AmneziaWG kernel module)
 angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519 -sudo
 angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519 -sudo
@@ -145,7 +145,7 @@ opkg install angry-box_v0.7.0_aarch64_cortex-a53.ipk
 
 ## Third-Party Components
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** and **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (GPLv3)
+- **[sing-box](https://github.com/SagerNet/sing-box)** and **[amnezia-box](https://github.com/AlexeyLCP/amnezia-box)** (our sing-box 1.14 fork, GPLv3)
 - **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (GPLv2)
 - **[awg-multi-script by pumbaX](https://github.com/pumbaX/awg-multi-script)** (MIT) — AmneziaWG obfuscation best practices (Jc/Jmin/Jmax/S1-S4/H1-H4 invariants, CPS packet generation)
 - **[awg-manager by hoaxisr](https://github.com/hoaxisr/awg-manager)** (MIT) — live QUIC signature capture algorithm (the "Take over an existing VPN" capture logic: connect to domain:443 over UDP, send a QUIC Initial, capture server response packets as I1-I5)
