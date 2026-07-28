@@ -18,12 +18,17 @@ import (
 )
 
 const (
-	// singBoxVersion is the version of the PATCHED sing-box-extended binary we
-	// ship in deps/. It includes:
-	//   - per-connection round-robin fallback (patches/fallback-round-robin.patch)
-	//   - the chacha20poly1305 overlap-fix that makes userspace AmneziaWG work
-	//     (patches/wireguard-go-awg-overlap.patch) — required for AWG-as-hop.
-	singBoxVersion = "1.13.14-extended-2.5.0"
+	// singBoxVersion is the short SHA of the amnezia-box fork commit we build
+	// the sing-box binary from. amnezia-box (our fork AlexeyLCP/amnezia-box, a
+	// fork of hoaxisr/amnezia-box sing-box 1.14 alpha) carries the AWG3 userspace
+	// endpoint type:"awg" (amneziawg-go feat/awg3) + our ports from
+	// sing-box-extended: mtproxy (with_mtproxy) and fallback round-robin (in the
+	// fork's tree). amneziawg-go is pinned in the fork's go.mod (hoaxisr/
+	// amneziawg-go awg3 @ fc48874 — InputPackets API for transport/awg/port.go).
+	//
+	// Built by scripts/build-singbox.sh; tarball in deps/. Mirrored in
+	// patchcheck_test.go (patchcheckABXRef) — bump all three together.
+	singBoxVersion = "acb804b3"
 	installPath    = "/usr/local/bin/sing-box"
 	configDir      = "/etc/sing-box"
 	configFile     = "/etc/sing-box/config.json"
@@ -32,55 +37,35 @@ const (
 	systemdService = "sing-box"
 )
 
-// singBoxDownloadURLs maps Go arch → the patched tarball location. The tarballs
-// are published as GitHub Release assets (v0.1.0) so the download is stable
+// singBoxDownloadURLs maps Go arch → the amnezia-box tarball location. The
+// tarballs are published as GitHub Release assets so the download is stable
 // regardless of repo visibility (raw.githubusercontent only works on public
-// repos). Nodes download these instead of compiling Go.
+// repos). Nodes download these instead of compiling Go (weak VPSes never build).
 //
 // Empty entries fall back to the GitHub raw path under deps/.
 var singBoxDownloadURLs = map[string]string{
-	"amd64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz",
+	"amd64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/sing-box-" + singBoxVersion + "-amnezia-linux-amd64.tar.gz",
 	"arm64": "",
 }
 
-// singBoxChecksums maps Go arch → sha256 of the patched tarball. Regenerate via
-// scripts/build-singbox.sh (writes deps/checksums.txt). Verified on deploy so a
-// truncated/modified tarball is never installed.
+// singBoxChecksums maps Go arch → sha256 of the amnezia-box tarball. Regenerate
+// via scripts/build-singbox.sh (writes deps/checksums.txt). Verified on deploy
+// (fail-closed via checksumForArch) so a truncated/modified tarball is never
+// installed as root on the fleet.
 var singBoxChecksums = map[string]string{
-	"amd64": "9409deb0727b0657004bede842f97550bd6b6d4ce21a3ffaa5419c6fcc722010",
+	"amd64": "969a7fd55e8fcc787b4572f3c055dcaff8bd4e1367bfc24813f0c44110bc60e3",
 	"arm64": "",
 }
 
-// amneziaWGGoVersion is the SHORT SHA of the amneziawg-go feat/awg3 commit we
-// build the userspace AWG daemon from (the fallback AWG backend — kernel
-// awg-quick stays default per AGENTS #10/#11). feat/awg3 is NOT merged upstream,
-// so we pin a commit SHA (not a branch tag) — the AWG3-field API can change
-// between commits. See docs/PATCHES.md for the full pin list + rebase flow.
-//
-// Built by scripts/build-amneziawg-go.sh; tarball in deps/. Verified at deploy
-// via amneziaWGGoChecksums (fail-closed, same contract as sing-box).
-const amneziaWGGoVersion = "898bc6b"
-
-// amneziaWGGoInstallPath is where the userspace daemon binary lives on a node.
-// Distinct from /usr/local/bin/sing-box so the two backends never collide.
-const amneziaWGGoInstallPath = "/usr/local/bin/amneziawg-go"
-
-// amneziaWGGoDownloadURLs maps Go arch → the amneziawg-go tarball location
-// (GitHub Release assets on v0.1.0, same release as sing-box-patched). Empty
-// entries fall back to raw.githubusercontent under deps/.
-var amneziaWGGoDownloadURLs = map[string]string{
-	"amd64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/amneziawg-go-" + amneziaWGGoVersion + "-linux-amd64.tar.gz",
-	"arm64": "",
-}
-
-// amneziaWGGoChecksums maps Go arch → sha256 of the amneziawg-go tarball.
-// Regenerate via scripts/build-amneziawg-go.sh (writes
-// deps/amneziawg-go-checksums.txt). Verified on deploy so a
-// truncated/modified binary is never installed as root on the fleet.
-var amneziaWGGoChecksums = map[string]string{
-	"amd64": "c9ce6d7cbd426df3b9b0ce2834fe4402246142b84b37f9ba5aecf392f3f463f3",
-	"arm64": "",
-}
+// amneziaWGGoVersion is the SHORT SHA of the amneziawg-go awg3 commit pinned in
+// the amnezia-box fork's go.mod (hoaxisr/amneziawg-go awg3 @ fc48874). It is NOT
+// a separate deploy artifact anymore — amneziawg-go is compiled INTO the
+// sing-box binary (the `type:"awg"` endpoint runs it in-process via
+// transport/awg). The pin is kept here as a traceability constant: the
+// InputPackets API (commit 0464dbf) that transport/awg/port.go depends on lives
+// at this commit, and a bump must update the fork's go.mod replace + this const
+// + patchcheckAWGGORef together. See docs/PATCHES.md.
+const amneziaWGGoVersion = "fc48874"
 
 var _ ports.Backend = (*Backend)(nil)
 
@@ -283,31 +268,24 @@ func installedVersion(ctx context.Context, client ports.SSHClient, useSudo bool)
 // isPatchedExtended returns true if the binary at installPath is already our
 // patched extended build and does not need re-downloading.
 //
-// Detection strategy: our build always carries the extended build tags
-// with_mtproxy, with_trusttunnel and with_sudoku (see scripts/build-singbox.sh),
-// which stock sing-box does NOT compile in. Those tags appear in `sing-box
-// version` output's "Tags:" line regardless of whether version ldflags were
-// set — so a binary built without ldflags (reporting "sing-box version unknown")
-// is still recognized. Matching on "unknown" alone (the old heuristic) was a
-// false positive: stock sing-box built without ldflags also reports "unknown",
-// so installPatchedBinary was skipped and the node ran an un-patched binary
-// while Deploy reported success. Matching on "extended" alone (an intermediate
-// fix) was a false negative: our real build reports "version unknown" with no
-// "extended" substring, so it would be re-downloaded on every ApplyChain —
-// which also fails for non-root SSH users when the prior sudo install left a
-// root-owned binary.
+// Detection strategy: our build is amnezia-box (our fork of sing-box 1.14
+// alpha carrying the AWG3 userspace endpoint + mtproxy + fallback round-robin).
+// It always carries the `with_awg` build tag (see scripts/build-singbox.sh),
+// which stock sing-box and the old sing-box-extended do NOT compile in. The tag
+// appears in `sing-box version` output's "Tags:" line regardless of whether
+// version ldflags were set — so a binary built without ldflags (reporting
+// "sing-box version unknown") is still recognized. with_awg is the most
+// distinctive tag for our amnezia-box fork (the old canary tags
+// with_trusttunnel/with_sudoku were sing-box-extended-only and are gone).
 func isPatchedExtended(ver string) bool {
 	if ver == "" || strings.Contains(ver, "NOT_INSTALLED") {
 		return false
 	}
 	lower := strings.ToLower(ver)
-	// Our extended build tags — absent in stock sing-box. Any one is sufficient
-	// (they ship together, but checking a unique one avoids fragility if the tag
-	// list is ever reordered). with_trusttunnel and with_sudoku are the most
-	// distinctive to our patched fork.
-	return strings.Contains(lower, "with_mtproxy") ||
-		strings.Contains(lower, "with_trusttunnel") ||
-		strings.Contains(lower, "with_sudoku")
+	// with_awg is unique to amnezia-box (our base sing-box fork). with_mtproxy
+	// is our port — also present, but with_awg is the strongest signal.
+	return strings.Contains(lower, "with_awg") ||
+		strings.Contains(lower, "with_mtproxy")
 }
 
 // checksumForArch returns the expected sha256 of the patched sing-box tarball
@@ -411,98 +389,14 @@ rm -rf /tmp/sing-box-install
 	return nil
 }
 
-// amneziaWGGoChecksumForArch is the fail-closed checksum lookup for the
-// userspace AWG daemon tarball (mirror of checksumForArch for sing-box). A
-// missing/empty checksum yields an error rather than skipping verification.
-func amneziaWGGoChecksumForArch(goArch string) (string, error) {
-	sum := amneziaWGGoChecksums[goArch]
-	if sum == "" {
-		return "", fmt.Errorf("amneziawg-go: no pinned sha256 checksum for arch %q — refusing to install an unverified binary (pin it in amneziaWGGoChecksums)", goArch)
-	}
-	return sum, nil
-}
-
-// installAmneziaWGGoBinary downloads the userspace amneziawg-go (feat/awg3)
-// tarball, verifies its sha256, extracts the binary and installs it at
-// amneziaWGGoInstallPath. This is the fallback AWG backend used when the kernel
-// amneziawg module is unavailable (OpenVZ, restricted kernels, containers,
-// macOS). The kernel path (installAWGModule) stays the default — AGENTS #10/#11.
-//
-// Mirrors installPatchedBinary (same download → sha256 → extract → install
-// flow, fail-closed checksum, mirror fallback, URL validation). Override env
-// ANGRY_AWGGO_URL points at a mirror/local HTTP server; ANGRY_AWGGO_MIRRORS is
-// a comma-separated fallback list tried after the primary. Every candidate is
-// verified against the pinned checksum, so a broken/compromised mirror cannot
-// install a bad binary.
-func installAmneziaWGGoBinary(ctx context.Context, client ports.SSHClient, useSudo bool) error {
-	archOut, _, _, err := client.RunWithOutput(ctx, "uname -m", 30*time.Second)
-	if err != nil {
-		return fmt.Errorf("detect arch: %w", err)
-	}
-	goArch := archToGoArch(strings.TrimSpace(archOut))
-
-	// Fail closed BEFORE downloading — unverified binaries run as root.
-	expectedChecksum, err := amneziaWGGoChecksumForArch(goArch)
-	if err != nil {
-		return err
-	}
-
-	url := amneziaWGGoDownloadURLs[goArch]
-	if url == "" {
-		// Default to GitHub raw under deps/.
-		url = fmt.Sprintf("https://raw.githubusercontent.com/alexeylcp/angry-box/main/deps/amneziawg-go-%s-linux-%s.tar.gz",
-			amneziaWGGoVersion, goArch)
-	}
-	if envURL := os.Getenv("ANGRY_AWGGO_URL"); envURL != "" {
-		url = envURL
-	}
-	urls := []string{url}
-	if mirrors := os.Getenv("ANGRY_AWGGO_MIRRORS"); mirrors != "" {
-		for _, m := range strings.Split(mirrors, ",") {
-			if m = strings.TrimSpace(m); m != "" {
-				urls = append(urls, m)
-			}
-		}
-	}
-	// Validate every URL before it reaches a root shell — the value is
-	// interpolated into a single-quoted bash loop; a single quote in an
-	// operator-supplied URL would break out and run arbitrary commands as root
-	// (same class as validateTarballURL on the sing-box/AWG tarball URLs).
-	for _, u := range urls {
-		if err := validateTarballURL(u); err != nil {
-			return fmt.Errorf("amneziawg-go binary URL: %w", err)
-		}
-	}
-
-	var quoted strings.Builder
-	for i, u := range urls {
-		if i > 0 {
-			quoted.WriteByte(' ')
-		}
-		fmt.Fprintf(&quoted, "'%s'", u)
-	}
-
-	script := fmt.Sprintf(`set -e
-mkdir -p /tmp/amneziawg-go-install
-cd /tmp/amneziawg-go-install
-ok=0
-for u in %s; do
-  if curl -fsSL --connect-timeout 15 "$u" -o amneziawg-go.tar.gz && echo '%s  amneziawg-go.tar.gz' | sha256sum -c -; then ok=1; break; fi
-  echo "mirror failed: $u" >&2
-done
-if [ "$ok" != 1 ]; then echo 'ERROR: all amneziawg-go download mirrors failed' >&2; exit 1; fi
-tar -xzf amneziawg-go.tar.gz
-AWGGO_BIN=$(find /tmp/amneziawg-go-install -maxdepth 2 -name amneziawg-go -type f 2>/dev/null | head -1)
-if [ -z "$AWGGO_BIN" ]; then echo 'ERROR: amneziawg-go binary not found after tar' >&2; exit 1; fi
-install -m 0755 "$AWGGO_BIN" %s
-rm -rf /tmp/amneziawg-go-install
-`, quoted.String(), expectedChecksum, amneziaWGGoInstallPath)
-
-	if _, stderr, exit, err := client.RunWithOutput(ctx, sudoBash(useSudo, script), 10*time.Minute); err != nil {
-		return fmt.Errorf("amneziawg-go download/install: %s (exit %d) %s", err, exit, stderr)
-	}
-	return nil
-}
+// (standalone amneziawg-go daemon deploy removed) — under the amnezia-box
+// migration, userspace AWG runs as the sing-box `type:"awg"` endpoint IN-PROCESS
+// (amneziawg-go compiled into the sing-box binary via the fork's go.mod
+// replace). There is no separate amneziawg-go binary to download/install on
+// nodes anymore. The old Stage-1 standalone-daemon path (amneziaWGGoInstallPath,
+// amneziaWGGoDownloadURLs/Checksums, installAmneziaWGGoBinary) was removed when
+// we switched to amnezia-box. amneziaWGGoVersion stays as a traceability const
+// (the fork's amneziawg-go pin); it is NOT a deploy artifact.
 
 // writeSystemdUnit writes the sing-box.service unit with the capabilities
 // needed for TUN + privileged-port binding. No ExecReload (we use restart);

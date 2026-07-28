@@ -1,1 +1,1 @@
-9409deb0727b0657004bede842f97550bd6b6d4ce21a3ffaa5419c6fcc722010 *sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz
+969a7fd55e8fcc787b4572f3c055dcaff8bd4e1367bfc24813f0c44110bc60e3 *sing-box-acb804b3-amnezia-linux-amd64.tar.gz

@@ -1,70 +1,73 @@
 #!/usr/bin/env bash
-# Build a patched sing-box-extended binary for remote nodes.
+# Build the amnezia-box sing-box binary for remote nodes.
+#
+# amnezia-box is our base sing-box (a fork of sing-box 1.14 alpha carrying the
+# AWG3 userspace endpoint type:"awg" + amneziawg-go feat/awg3). Our fork
+# AlexeyLCP/amnezia-box adds the ports we need from sing-box-extended: mtproxy
+# (build-tag with_mtproxy) and fallback round-robin (committed to the fork's
+# tree, not applied as a patch here). amneziawg-go is pinned in the fork's
+# go.mod (hoaxisr/amneziawg-go awg3 @ fc48874 — has the InputPackets API that
+# transport/awg/port.go needs); we do NOT clone wireguard-go separately.
 #
 # Why: nodes must NOT compile Go themselves (weak VPSes hang during the build).
-# We build the patched sing-box-extended once, on a dev machine, and store the
-# tarball in deps/ so `angry-box deploy` just downloads it.
+# We build amnezia-box once on a dev machine and store the tarball in deps/ so
+# `angry-box deploy` just downloads it.
 #
-# Patches applied:
-#   patches/fallback-round-robin.patch    — per-connection round-robin fallback
-#   patches/wireguard-go-awg-overlap.patch — fixes the chacha20poly1305
-#     "invalid buffer overlap" panic that crashes userspace AmneziaWG
-#     (this makes AWG-as-hop inside multi-hop chains work).
-#
-# Output: deps/sing-box-{VER}-patched-linux-{ARCH}.tar.gz
+# Output: deps/sing-box-{SHA}-amnezia-linux-{ARCH}.tar.gz
 #         deps/checksums.txt  (sha256 per tarball)
 #
 # Usage:
-#   ./scripts/build-singbox.sh             # amd64 only (default)
+#   ./scripts/build-singbox.sh                              # amd64 only (default)
 #   ARCHES="amd64 arm64" ./scripts/build-singbox.sh
-#   SBX_VERSION=v1.13.14-extended-2.5.0 ./scripts/build-singbox.sh
+#   ABX_REF=acb804b ./scripts/build-singbox.sh              # pin a fork commit
 #
-# Requires: go (host), git, curl, tar, sha256sum. Run on Linux or in WSL.
+# Requires: go >= 1.26 (mtg-multi needs go 1.26), git, tar, sha256sum. Run on
+# Linux or in WSL.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SBX_VERSION="${SBX_VERSION:-v1.13.14-extended-2.5.0}"
-WG_TAG="${WG_TAG:-v0.0.2-beta.1-extended-1.4.3}"
+# AlexeyLCP/amnezia-box fork ref. Pin a commit SHA (NOT a branch) so the
+# artifact is reproducible; a bump is a deliberate act mirrored into
+# internal/backend/singbox/singbox.go (singBoxVersion) and patchcheck_test.go.
+# Default: the commit that added mtproxy+fallback (acb804b). Override via env.
+ABX_REF="${ABX_REF:-acb804b}"
 ARCHES="${ARCHES:-amd64}"
 
 BUILD_DIR="${BUILD_DIR:-/tmp/sing-box-build-angry}"
 OUT_DIR="$REPO_ROOT/deps"
 mkdir -p "$OUT_DIR"
 
-SBX_REPO="https://github.com/shtorm-7/sing-box-extended.git"
-WG_REPO="https://github.com/shtorm-7/wireguard-go.git"
+# Our fork carries mtproxy + fallback; the upstream hoaxisr/amnezia-box does NOT.
+ABX_REPO="https://github.com/AlexeyLCP/amnezia-box.git"
 
-BUILD_TAGS="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_masque,with_mtproxy,with_openvpn,with_trusttunnel,with_sudoku,with_snell,with_manager,with_profiler"
-# with_admin_panel intentionally omitted — needs pre-built dist/ assets.
+# Build tags. amnezia-box has with_awg (AWG3 endpoint) natively; with_mtproxy is
+# our port. Drop the old sing-box-extended canary tags (with_masque,
+# with_trusttunnel, with_sudoku, with_manager, with_profiler) — amnezia-box has
+# neither the protocols nor the tags; they were unused canaries. snell is
+# unconditional in amnezia-box (no tag needed).
+BUILD_TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_awg,with_mtproxy,with_acme,with_clash_api,with_tailscale,with_openvpn"
 
-echo "==> Preparing sources in $BUILD_DIR"
+echo "==> Preparing amnezia-box source in $BUILD_DIR"
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# 1. sing-box-extended
-if [ ! -d sing-box-extended ]; then
-  git clone --depth 1 --branch "$SBX_VERSION" "$SBX_REPO" sing-box-extended
-fi
+# Clone our fork and check out the pinned commit. GitHub does NOT allow
+# shallow-fetching an arbitrary SHA (only branch/tag tips), so we fetch the
+# full history (no --depth) then checkout the SHA — fast enough for a dev build.
+git clone --quiet --no-checkout "$ABX_REPO" amnezia-box
+( cd amnezia-box && git fetch --quiet origin && git checkout --quiet "$ABX_REF" )
 
-# 2. wireguard-go (patched separately, then wired via go.mod replace)
-if [ ! -d wireguard-go-patched ]; then
-  git clone --depth 1 --branch "$WG_TAG" "$WG_REPO" wireguard-go-patched
-fi
+# No patches to apply: fallback round-robin is committed to the fork's tree, and
+# the wireguard-go awg-overlap fix is no longer relevant (AWG3 runs through
+# amneziawg-go, not the shtorm-7 wireguard-go userspace path that panicked). The
+# amneziawg-go pin (hoaxisr/amnezia-box awg3 @ fc48874) lives in the fork's
+# go.mod replace — `go mod download` / `go build` resolves it.
 
-echo "==> Applying fallback round-robin patch"
-( cd sing-box-extended && git checkout -- . && git apply "$REPO_ROOT/patches/fallback-round-robin.patch" )
-
-echo "==> Applying wireguard-go AWG overlap-fix patch"
-( cd wireguard-go-patched && git checkout -- . && git apply "$REPO_ROOT/patches/wireguard-go-awg-overlap.patch" )
-
-echo "==> Wiring patched wireguard-go into sing-box-extended go.mod"
-( cd sing-box-extended && go mod edit -replace github.com/sagernet/wireguard-go=../wireguard-go-patched && go mod tidy )
-
-# Strip the leading 'v' for the tarball name (sing-box expects a plain version).
-VERSION_PLAIN="${SBX_VERSION#v}"
+# Short SHA for the tarball name (traceable to the pinned fork commit).
+VERSION_PLAIN="$(cd amnezia-box && git rev-parse --short HEAD)"
 
 build_arch() {
   local arch="$1"
@@ -72,18 +75,13 @@ build_arch() {
   local out="$BUILD_DIR/out-$arch"
   mkdir -p "$out"
 
-  echo "==> Building for linux/$arch"
-  ( cd sing-box-extended && \
-    CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
+  echo "==> Building for linux/$arch (amnezia-box @ $VERSION_PLAIN)"
+  ( cd amnezia-box && \
+    CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" GOFLAGS=-mod=mod \
     go build -ldflags "-s -w" -tags "$BUILD_TAGS" \
       -o "$out/sing-box" ./cmd/sing-box )
 
-  # Sanity: the binary must report an extended version and `check` must work.
-  if [ "$arch" = "amd64" ] && command -v qemu-x86_64 >/dev/null 2>&1; then
-    : # cross-arch binary won't run natively; skip runtime sanity
-  fi
-
-  local tarname="sing-box-${VERSION_PLAIN}-patched-linux-${arch}.tar.gz"
+  local tarname="sing-box-${VERSION_PLAIN}-amnezia-linux-${arch}.tar.gz"
   local tarball="$OUT_DIR/$tarname"
   ( cd "$out" && tar -czf "$tarball" sing-box )
   echo "==> Packed $tarball"
@@ -93,10 +91,17 @@ for a in $ARCHES; do build_arch "$a"; done
 
 echo "==> Writing checksums"
 : > "$OUT_DIR/checksums.txt"
-for t in "$OUT_DIR"/sing-box-*-patched-linux-*.tar.gz; do
+for t in "$OUT_DIR"/sing-box-*-amnezia-linux-*.tar.gz; do
   ( cd "$OUT_DIR" && sha256sum "$(basename "$t")" ) >> "$OUT_DIR/checksums.txt"
 done
 
 echo "==> Done. Artifacts in $OUT_DIR:"
-ls -la "$OUT_DIR"/sing-box-*-patched-linux-*.tar.gz "$OUT_DIR/checksums.txt"
+ls -la "$OUT_DIR"/sing-box-*-amnezia-linux-*.tar.gz "$OUT_DIR/checksums.txt"
 cat "$OUT_DIR/checksums.txt"
+echo ""
+echo "==> Next: publish the tarball(s) to the GitHub release the deploy code"
+echo "    pins (gh release upload <release> deps/sing-box-*-amnezia-*.tar.gz)"
+echo "    and mirror the short SHA + sha256 into:"
+echo "      internal/backend/singbox/singbox.go (singBoxVersion/URLs/Checksums)"
+echo "      internal/backend/singbox/patchcheck_test.go (patchcheckABXRef)"
+echo "    See docs/PATCHES.md for the full rebase procedure."

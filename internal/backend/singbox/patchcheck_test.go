@@ -2,154 +2,77 @@
 
 package singbox
 
-// patchcheck_test.go — a build-tag-gated regression test that verifies the
-// patches/ apply cleanly against the pinned upstream sources (sing-box-extended
-// + wireguard-go). On an upstream bump that drifts the patched files' context,
-// `git apply --check` fails loudly — alerting BEFORE a broken tarball is built.
+// patchcheck_test.go — a build-tag-gated regression test that pins the amnezia-box
+// fork commit + amneziawg-go commit our sing-box binary is built from, and asserts
+// they match the deploy-time consts in singbox.go.
 //
-// Run explicitly (needs network + git, NOT in the normal `go test` suite):
+// amnezia-box (our fork AlexeyLCP/amnezia-box, a fork of hoaxisr/amnezia-box
+// sing-box 1.14 alpha) carries AWG3 (type:"awg" endpoint + amneziawg-go feat/awg3)
+// + our ports from sing-box-extended (mtproxy + fallback round-robin, committed
+// to the fork's tree — no patches/ to apply). amneziawg-go is pinned in the fork's
+// go.mod (hoaxisr/amneziawg-go awg3 @ fc48874 — InputPackets API for
+// transport/awg/port.go).
 //
-//	go test -tags=patchcheck -run TestPatches_ApplyCleanly ./internal/backend/singbox/ -v -timeout=300s
+// There are NO apply-cleanly subtests anymore — the old sing-box-extended patches
+// (fallback-round-robin.patch, wireguard-go-awg-overlap.patch) are obsolete:
+// fallback is committed to the fork, and the overlap fix is irrelevant (AWG3
+// runs through amneziawg-go, not the shtorm-7 wireguard-go userspace path that
+// panicked). The remaining test is the version-match sanity check.
 //
-// The pinned versions live as Go consts here (the single source of truth for the
-// patchcheck test) and are mirrored in scripts/build-singbox.sh. When bumping,
-// update BOTH + re-run this test to confirm the patches still apply (resolve
-// context drift by re-generating the patch against the new source).
+// Run explicitly (no network needed for the version-match test):
 //
-// See docs/PATCHES.md for the full rebasing procedure.
+//	go test -tags=patchcheck -run TestPatchcheckVersionsMatchSingBoxConst ./internal/backend/singbox/ -v
+//
+// The pinned versions live as Go consts here and are mirrored in
+// scripts/build-singbox.sh (ABX_REF default) + internal/backend/singbox/singbox.go
+// (singBoxVersion, amneziaWGGoVersion). See docs/PATCHES.md for the rebase flow.
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// Pinned upstream versions — keep in sync with scripts/build-singbox.sh
-// (SBX_VERSION / WG_TAG defaults) and internal/backend/singbox/singbox.go
-// (singBoxVersion const, which is the deploy-time pin for the binary).
+// Pinned versions — keep in sync with scripts/build-singbox.sh (ABX_REF default)
+// and internal/backend/singbox/singbox.go (singBoxVersion / amneziaWGGoVersion
+// consts, the deploy-time pins). Bump all three together.
 const (
-	patchcheckSBXVersion = "v1.13.14-extended-2.5.0"
-	patchcheckWGTag      = "v0.0.2-beta.1-extended-1.4.3"
+	// patchcheckABXRef is the full SHA of the AlexeyLCP/amnezia-box fork commit
+	// we build from. singBoxVersion is its 7-char short SHA.
+	patchcheckABXRef = "acb804b36ed83060d1036c8da1c919ffcfe0b0c9"
+	abxRepo          = "https://github.com/AlexeyLCP/amnezia-box.git"
 
-	sbxRepo = "https://github.com/shtorm-7/sing-box-extended.git"
-	wgRepo  = "https://github.com/shtorm-7/wireguard-go.git"
-
-	// amneziawg-go feat/awg3 — userspace AWG fallback backend. feat/awg3 is NOT
-	// merged upstream, so we pin a commit SHA (not a branch tag). Keep in sync
-	// with scripts/build-amneziawg-go.sh (AWGGO_REF default) and
-	// internal/backend/singbox/singbox.go (amneziaWGGoVersion const, deploy-time
-	// pin for the binary). No patch currently applies against amneziawg-go
-	// (feat/awg3 @ this SHA builds clean); when one is added, add a
-	// TestPatches_ApplyCleanly subtest cloning awggoRepo@patchcheckAWGGORef.
-	patchcheckAWGGORef = "898bc6b83b9ed8148b170bf85c5f953201ff2120"
-	awggoRepo          = "https://github.com/amnezia-vpn/amneziawg-go.git"
+	// patchcheckAWGGORef is the full SHA of the hoaxisr/amneziawg-go awg3 commit
+	// the fork's go.mod pins (InputPackets API). amneziaWGGoVersion is its
+	// 7-char short SHA.
+	patchcheckAWGGORef = "fc488742dbb49e39453fe1e5de2aad5e98d9e44b"
+	awggoRepo          = "https://github.com/hoaxisr/amneziawg-go.git"
 )
 
-// repoRoot returns the angry-box repo root (the test working dir is the package
-// dir; patches/ is two levels up).
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	// internal/backend/singbox → repo root is 3 levels up.
-	root := filepath.Join(wd, "..", "..", "..")
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		t.Fatalf("abs: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(abs, "patches")); err != nil {
-		t.Fatalf("patches/ not found at %s — repoRoot miscomputed", abs)
-	}
-	return abs
-}
-
-// cloneShallow clones a single branch of repo into dest.
-func cloneShallow(t *testing.T, repo, tag, dest string) {
-	t.Helper()
-	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", tag, repo, dest)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git clone %s@%s: %v\n%s", repo, tag, err, out)
-	}
-}
-
-// applyCheck runs `git apply --check <patch>` in dir; returns nil if it applies
-// cleanly. --check does NOT modify the tree.
-func applyCheck(dir, patch string) error {
-	cmd := exec.Command("git", "apply", "--check", patch)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return &applyErr{patch: patch, out: out, err: err}
-	}
-	return nil
-}
-
-type applyErr struct {
-	patch string
-	out   []byte
-	err   error
-}
-
-func (e *applyErr) Error() string {
-	return "git apply --check " + e.patch + " failed: " + e.err.Error() + "\n" + strings.TrimSpace(string(e.out))
-}
-
-// TestPatches_ApplyCleanly verifies each patch in patches/ still applies against
-// its pinned upstream source. On failure, inspect the error output for the
-// reject hunks (context drift) and update the patch per docs/PATCHES.md.
-func TestPatches_ApplyCleanly(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available — patchcheck requires git")
-	}
-	root := repoRoot(t)
-	tmp := t.TempDir()
-
-	// sing-box-extended → fallback-round-robin.patch
-	t.Run("sing-box-extended/fallback-round-robin", func(t *testing.T) {
-		sbxDir := filepath.Join(tmp, "sing-box-extended")
-		cloneShallow(t, sbxRepo, patchcheckSBXVersion, sbxDir)
-		patch := filepath.Join(root, "patches", "fallback-round-robin.patch")
-		if err := applyCheck(sbxDir, patch); err != nil {
-			t.Errorf("patch no longer applies cleanly against %s@%s — context drift on upstream bump:\n%v\nSee docs/PATCHES.md for the rebase procedure.", sbxRepo, patchcheckSBXVersion, err)
-		}
-	})
-
-	// wireguard-go → wireguard-go-awg-overlap.patch
-	t.Run("wireguard-go/awg-overlap", func(t *testing.T) {
-		wgDir := filepath.Join(tmp, "wireguard-go-patched")
-		cloneShallow(t, wgRepo, patchcheckWGTag, wgDir)
-		patch := filepath.Join(root, "patches", "wireguard-go-awg-overlap.patch")
-		if err := applyCheck(wgDir, patch); err != nil {
-			t.Errorf("patch no longer applies cleanly against %s@%s — context drift on upstream bump:\n%v\nSee docs/PATCHES.md for the rebase procedure.", wgRepo, patchcheckWGTag, err)
-		}
-	})
-}
-
-// TestPatchcheckVersionsMatchSingBoxConst is a non-network sanity check (runs
-// without the patchcheck build tag too in a future split) that the version consts
-// here match the singBoxVersion const used at deploy time — so a bump that
-// forgets one place fails the test.
+// TestPatchcheckVersionsMatchSingBoxConst is a non-network sanity check that the
+// version consts here match the deploy-time consts in singbox.go — so a bump
+// that forgets one place fails the test.
 func TestPatchcheckVersionsMatchSingBoxConst(t *testing.T) {
-	// singBoxVersion in singbox.go is the deploy-time pin (e.g.
-	// "1.13.14-extended-2.5.0" — no leading "v"). patchcheckSBXVersion has a
-	// leading "v". Compare the stripped forms.
-	want := strings.TrimPrefix(patchcheckSBXVersion, "v")
-	if singBoxVersion != want {
-		t.Errorf("patchcheck sing-box version (%s) != singBoxVersion const (%s) — bump both together", want, singBoxVersion)
+	// singBoxVersion (singbox.go) is the short SHA (git's abbreviated form,
+	// 7+ chars — git extends to 8 when 7 is ambiguous) of the amnezia-box fork
+	// commit; patchcheckABXRef is the full 40-char SHA. Compare the prefix of
+	// the same length as singBoxVersion (so a 7- or 8-char short form both pass).
+	if !strings.HasPrefix(patchcheckABXRef, singBoxVersion) {
+		t.Errorf("patchcheck amnezia-box ref (%s) must start with singBoxVersion const (%s) — bump both together", patchcheckABXRef, singBoxVersion)
 	}
 }
 
 // TestPatchcheckAWGGORefMatchesConst is the non-network sanity check for the
-// amneziawg-go feat/awg3 pin. patchcheckAWGGORef is the full 40-char commit SHA;
-// amneziaWGGoVersion in singbox.go is the 7-char short SHA used in the tarball
-// name. A bump that forgets one place fails this test.
+// amneziawg-go awg3 pin. patchcheckAWGGORef is the full 40-char commit SHA;
+// amneziaWGGoVersion in singbox.go is the 7-char short SHA. A bump that forgets
+// one place fails this test.
 func TestPatchcheckAWGGORefMatchesConst(t *testing.T) {
 	want := patchcheckAWGGORef[:7]
 	if amneziaWGGoVersion != want {
 		t.Errorf("patchcheck amneziawg-go ref short (%s) != amneziaWGGoVersion const (%s) — bump both together", want, amneziaWGGoVersion)
 	}
 }
+
+// strings is imported for future patch-applicability subtests (if a patch
+// against amnezia-box or amneziawg-go is ever added, the applyErr/cloneShallow
+// helpers + a TestPatches_ApplyCleanly subtest will be reintroduced here).
+var _ = strings.TrimSpace
