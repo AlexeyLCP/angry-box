@@ -1,177 +1,108 @@
-# Patches — sing-box-extended + wireguard-go
+# Patches — amnezia-box fork + amneziawg-go pin
 
-Angry-box runs a **patched** sing-box-extended (`1.13.14-extended-2.5.0-patched`)
-+ a patched wireguard-go, NOT the upstream binaries. The patches live in
-`patches/` and are applied at BUILD time (on a dev machine — weak VPSes never
-compile Go, they download the prebuilt tarball from the project's GitHub deps).
+Angry-box runs **amnezia-box** — our fork `AlexeyLCP/amnezia-box` (a fork of
+`hoaxisr/amnezia-box`, which is sing-box 1.14 alpha). amnezia-box carries the
+AWG3 userspace endpoint (`type:"awg"`, amneziawg-go `feat/awg3`) + our ports from
+sing-box-extended (mtproxy, fallback round-robin). There are NO `patches/`
+applied at build time anymore — the ports are committed to the fork's tree, and
+amneziawg-go is pinned in the fork's go.mod.
 
-This doc is the law for rebasing the patches on an upstream bump. The
-`patchcheck` test (`internal/backend/singbox/patchcheck_test.go`) guards against
-silent breakage.
+## What's in the fork (AlexeyLCP/amnezia-box)
 
-## The two patches
+- **AWG3 endpoint** (`type:"awg"`): amnezia-box's own feature — a sing-box
+  endpoint that runs amneziawg-go in-process with FLAT obfuscation fields
+  (jc/jmin/jmax/s1-s4/h1-h4/i1-i5 + AWG3 HeaderProtectionKey/
+  ContentPaddingAddition/RekeyAfterTime). S1-S4 >= 12 when HPK is set
+  (`HeaderCipherNonceSize=12`). Built by `scripts/build-singbox.sh`.
+- **mtproxy** (our port from sing-box-extended): `option/mtproxy.go` +
+  `protocol/mtproxy/` + `include/mtproxy{,_stub}.go` (build-tag `with_mtproxy`).
+  Rename `ConnectionHandlerFuncEx → ConnectionHandlerFunc` (1.14 API). Dep:
+  `dolonet/mtg-multi v1.8.0 → shtorm-7/mtg-multi v1.11.0-extended-1.0.0`
+  (extended fork has `essentials.Dialer`/`DomainFrontingHost`/`UpdateUsers`).
+  `TypeMTProxy` const + `registerMTProxyInbound` in `InboundRegistry()`.
+- **fallback round-robin** (our port from sing-box-extended):
+  `protocol/group/fallback.go` + the rr patch (`rrCounter` rotation, our prod
+  strategy #18 "Round-robin (fallback)") + `FallbackOutboundOptions` +
+  `TypeFallback` + `RegisterFallback` in `OutboundRegistry()`. Self-contained
+  (only `OutboundGroup` + `outbound.Register`, no 1.14 adapter API bridging).
 
-### `patches/fallback-round-robin.patch`
-- **Target:** `sing-box-extended` at tag `v1.13.14-extended-2.5.0`
-  (`shtorm-7/sing-box-extended`).
-- **What it does:** adds an `rrCounter` to `Fallback` in
-  `protocol/group/fallback.go`, rotating the active outbound list in
-  `DialContext` for per-connection round-robin across equal exit nodes. Without
-  it the balancer's fallback group sticks on the first healthy exit (no
-  rotation).
-- **Apply:** `patch -p1` in the sing-box-extended repo root.
+## amneziawg-go pin (in the fork's go.mod)
 
-### `patches/wireguard-go-awg-overlap.patch`
-- **Target:** `wireguard-go` at tag `v0.0.2-beta.1-extended-1.4.3`
-  (`shtorm-7/wireguard-go`).
-- **What it does:** fixes the `chacha20poly1305 "invalid buffer overlap of
-  output and input"` panic in `device/send.go` `RoutineEncryption` under
-  AmneziaWG obfuscation (userspace gVisor path). This is the panic that made
-  user-facing AWG switch to kernel `awg-quick@awg0` + sing-box TUN-overlay
-  (AGENTS.md #10/#11) — the patch keeps the userspace endpoint viable for
-  inter-node AWG transit.
-- **Apply:** `patch -p1` in the wireguard-go repo root.
-
-## Build flow (`scripts/build-singbox.sh`)
-
-Run on a dev machine (NOT a VPS). The flow:
-
-1. `git clone --depth 1 --branch $SBX_VERSION shtorm-7/sing-box-extended.git`
-2. `git clone --depth 1 --branch $WG_TAG shtorm-7/wireguard-go.git`
-3. `( cd sing-box-extended && git checkout -- . && git apply patches/fallback-round-robin.patch )`
-4. `( cd wireguard-go-patched && git checkout -- . && git apply patches/wireguard-go-awg-overlap.patch )`
-5. `go mod edit -replace github.com/sagernet/wireguard-go=../wireguard-go-patched && go mod tidy`
-6. `CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -ldflags "-s -w" -tags "$BUILD_TAGS"`
-   (tags: `with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,
-   with_clash_api,with_tailscale,with_masque,with_mtproxy,with_openvpn,
-   with_trusttunnel,with_sudoku,with_snell,with_manager,with_profiler` —
-   `with_admin_panel` omitted).
-7. Packs `deps/sing-box-${VERSION_PLAIN}-patched-linux-${arch}.tar.gz` +
-   writes `deps/checksums.txt` (sha256).
-
-Defaults: `SBX_VERSION=v1.13.14-extended-2.5.0`, `WG_TAG=v0.0.2-beta.1-extended-1.4.3`
-(overridable via env).
+The fork's `go.mod` pins `github.com/amnezia-vpn/amneziawg-go => github.com/hoaxisr/amneziawg-go v0.2.20-0.20260724135120-fc488742dbb4` (commit `fc488742`, branch `awg3`). This commit has the
+`InputPackets` API (`device.InputPacketRef` + `device.InputPackets()` in
+`device/send.go`) that `transport/awg/port.go` depends on, plus the AWG3 UAPI
+fields (`header_protection_key`/`content_padding_addition`/`rekey_after_time`).
+`feat/awg3` is NOT merged upstream, so we pin a commit SHA (not a branch tag) —
+the API can change between commits.
 
 ## Version pin (THREE places — keep in sync)
 
-The pinned sing-box-extended version lives in THREE places. A bump MUST update
-all three + pass the `patchcheck` test:
+The amnezia-box fork commit lives in THREE places. A bump MUST update all three:
 
-1. `scripts/build-singbox.sh` — `SBX_VERSION` / `WG_TAG` defaults (build time).
+1. `scripts/build-singbox.sh` — `ABX_REF` default (build time, full SHA).
 2. `internal/backend/singbox/singbox.go` — `singBoxVersion` const (deploy time:
-   the orchestrator checks the installed binary's version against this).
-3. `internal/backend/singbox/patchcheck_test.go` — `patchcheckSBXVersion` /
-   `patchcheckWGTag` consts (regression test).
+   the orchestrator builds the download URL + verifies the installed binary's
+   tags via `isPatchedExtended` which matches `with_awg`). Plus
+   `singBoxDownloadURLs` / `singBoxChecksums` (the tarball URL + sha256).
+3. `internal/backend/singbox/patchcheck_test.go` — `patchcheckABXRef` const
+   (full 40-char SHA, regression test). `amneziaWGGoVersion` /
+   `patchcheckAWGGORef` are the amneziawg-go pin's mirror (the fork's go.mod is
+   the source of truth; these consts exist for traceability + the version-match
+   test catches a bump that forgets one place).
 
 The `TestPatchcheckVersionsMatchSingBoxConst` test (runs under the `patchcheck`
-build tag) asserts #2 == #3 (stripped of the leading `v`), so a bump that
-forgets one place fails.
+build tag) asserts `singBoxVersion` is a prefix of `patchcheckABXRef` (git's
+short SHA is 7+ chars), so a bump that forgets one place fails.
 
-`deps/sing-box-${VERSION_PLAIN}-patched-linux-amd64.tar.gz` + `deps/checksums.txt`
-+ `singBoxChecksums` (singbox.go) are the binary artifacts pinned to that version
+`deps/sing-box-<short-sha>-amnezia-linux-amd64.tar.gz` + `deps/checksums.txt` +
+`singBoxChecksums` (singbox.go) are the binary artifacts pinned to that version
 (the checksum is fail-closed at deploy via `checksumForArch`).
 
-## amneziawg-go feat/awg3 — userspace AWG fallback backend (THREE places)
+## Rebase procedure (on an amnezia-box bump)
 
-The userspace AmneziaWG-go daemon (`feat/awg3` branch — NOT merged upstream)
-is the fallback AWG backend used when the kernel amneziawg module is
-unavailable (OpenVZ, restricted kernels, containers, macOS). It also carries
-the AWG3 obfuscation fields (HeaderProtectionKey / ContentPaddingMultiple /
-RekeyAfterTime) that the kernel module does NOT parse. The kernel path
-(`installAWGModule`, `awg-quick@awg0`) stays the default — AGENTS #10/#11.
+When bumping the amnezia-box fork to a new commit (e.g. after merging an upstream
+amnezia-box update or adding a port):
 
-Because `feat/awg3` is not merged upstream and the AWG3-field API can change
-between commits, we pin a **commit SHA** (NOT a branch tag). The pin lives in
-THREE places; a bump MUST update all three + pass the patchcheck test:
-
-1. `scripts/build-amneziawg-go.sh` — `AWGGO_REF` default (build time, full SHA).
-2. `internal/backend/singbox/singbox.go` — `amneziaWGGoVersion` const (deploy
-   time, 7-char short SHA — used in the tarball name + download URL). Plus
-   `amneziaWGGoDownloadURLs` / `amneziaWGGoChecksums` (fail-closed at deploy via
-   `amneziaWGGoChecksumForArch`).
-3. `internal/backend/singbox/patchcheck_test.go` — `patchcheckAWGGORef` const
-   (full 40-char SHA, regression test).
-
-The `TestPatchcheckAWGGORefMatchesConst` test asserts #2 == #3[:7] (short SHA),
-so a bump that forgets one place fails. No patch currently applies against
-amneziawg-go (`feat/awg3 @ 898bc6b8` builds clean); when one is added, add a
-`TestPatches_ApplyCleanly` subtest cloning `awggoRepo@patchcheckAWGGORef` and
-`git apply --check patches/amneziawg-go-*.patch` (mirror the sing-box/wireguard-go
-subtests).
-
-`deps/amneziawg-go-${SHORT_SHA}-linux-${arch}.tar.gz` +
-`deps/amneziawg-go-checksums.txt` + `amneziaWGGoChecksums` (singbox.go) are the
-binary artifacts (the checksum is fail-closed at deploy via
-`amneziaWGGoChecksumForArch`). Override envs: `ANGRY_AWGGO_URL` (single
-override), `ANGRY_AWGGO_MIRRORS` (comma-separated fallback list) — every
-candidate verified against the pinned checksum (same contract as sing-box).
-
-### Rebase procedure (amneziawg-go bump)
-
-1. Update the three pins (#1 `AWGGO_REF`, #2 `amneziaWGGoVersion`+URLs+
-   Checksums, #3 `patchcheckAWGGORef`) to the new commit SHA.
-2. Run the patchcheck version-match test:
+1. **Update the three pins** (#1 `ABX_REF`, #2 `singBoxVersion`+URLs+Checksums,
+   #3 `patchcheckABXRef`) to the new commit SHA. If the fork's amneziawg-go pin
+   changed, also update `amneziaWGGoVersion` + `patchcheckAWGGORef`.
+2. **Run the patchcheck version-match test** (no network needed):
    ```
+   go test -tags=patchcheck -run TestPatchcheckVersionsMatchSingBoxConst ./internal/backend/singbox/ -v
    go test -tags=patchcheck -run TestPatchcheckAWGGORefMatchesConst ./internal/backend/singbox/ -v
    ```
-3. If a patch against amneziawg-go exists, also run
-   `TestPatches_ApplyCleanly` and re-derive on drift.
-4. Rebuild the binary (`scripts/build-amneziawg-go.sh`) → produces a new
-   `deps/amneziawg-go-<short-sha>-linux-<arch>.tar.gz`.
-5. Regenerate `deps/amneziawg-go-checksums.txt` + update
-   `amneziaWGGoChecksums` with the new sha256 per arch (fail-closed).
-6. Publish the tarball to the GitHub release the deploy code pins:
-   `gh release upload v0.1.0 deps/amneziawg-go-*.tar.gz`.
-7. Commit the updated pin sites + new tarball + checksums.
-8. Verify on a test VPS (n1): install the new binary via the deploy path, raise
-   a userspace AWG3 daemon, confirm handshake + egress (mirror §30 PROGRESS.md
-   spike) before shipping.
-
-## Rebase procedure (on an upstream bump)
-
-When bumping sing-box-extended / wireguard-go to a new tag:
-
-1. **Update the three pins** (#1, #2, #3 above) to the new version.
-2. **Run the patchcheck test** (needs network + git):
-   ```
-   go test -tags=patchcheck -run TestPatches_ApplyCleanly ./internal/backend/singbox/ -v -timeout=300s
-   ```
-3. **If a patch fails to apply** (context drift — the upstream file changed
-   around the patched lines):
-   - Clone the new source: `git clone --branch <new-tag> shtorm-7/sing-box-extended.git`
-   - Re-derive the patch against the new source: make the same logical change,
-     `git diff > patches/<name>.patch`. Keep the patch minimal (only the
-     logical change, no incidental hunks).
-   - Re-run the patchcheck test until both patches apply cleanly.
-4. **Rebuild the binary** (`scripts/build-singbox.sh`) → produces a new
-   `deps/sing-box-<ver>-patched-linux-<arch>.tar.gz`.
-5. **Regenerate `deps/checksums.txt`** + update `singBoxChecksums` in
-   `singbox.go` with the new sha256 per arch (fail-closed at deploy — a wrong
-   checksum aborts the install).
-6. **Commit** the updated patches + the three pin sites + the new tarball +
-   checksums + `deps/` artifacts.
-7. **Reality-check** the Reality SNI (`defaultRealitySNI` in `roles.go` —
-   currently `www.cloudflare.com`): an upstream utls/fingerprint bump can drift
-   the TLS fingerprint; verify a REALITY handshake still passes on a test VPS
-   before shipping.
+3. **Rebuild the binary** (`scripts/build-singbox.sh`) → produces a new
+   `deps/sing-box-<short-sha>-amnezia-linux-<arch>.tar.gz`. Requires Go >= 1.26
+   (mtg-multi needs go 1.26).
+4. **Regenerate `deps/checksums.txt`** + update `singBoxChecksums` in `singbox.go`
+   with the new sha256 per arch (fail-closed — a wrong checksum aborts the install).
+5. **Publish the tarball** to the GitHub release the deploy code pins:
+   `gh release upload v0.1.0 deps/sing-box-*-amnezia-*.tar.gz`.
+6. **Commit** the updated pin sites + the new tarball + checksums.
+7. **Verify on a test VPS (n1)**: install the new binary via the deploy path,
+   confirm `sing-box version` reports the new SHA + `with_awg`+`with_mtproxy`
+   tags, run a `type:"awg"` config through `sing-box check`, and run the kernel
+   AWG + TUN-overlay e2e (handshake + egress) before shipping.
 
 ## Reality SNI / fingerprint drift
 
-`internal/backend/singbox/roles.go:41` — `const defaultRealitySNI =
-"www.cloudflare.com"`. This is per-render overridable via `ProxyNodeParams.
-SNIDomain`, but there is NO global/config-file override — it's a package const.
-On an upstream utls bump that changes the TLS fingerprint shape, the hardcoded
-SNI may start getting cut by DPI. Monitor this on bumps (the patchcheck test
-does NOT cover it — it's a runtime/DPI concern, not a patch-applicability one).
+`internal/backend/singbox/roles.go` — `const defaultRealitySNI = "www.cloudflare.com"`.
+Per-render overridable via `ProxyNodeParams.SNIDomain`, but there is NO
+global/config-file override — it's a package const. On an upstream utls bump that
+changes the TLS fingerprint shape, the hardcoded SNI may start getting cut by DPI.
+Monitor this on bumps (the patchcheck test does NOT cover it — it's a runtime/DPI
+concern, not a patch-applicability one).
 
 ## Where this is referenced
 
-- `AGENTS.md` "sing-box-extended" section — the patched binary + module
-  requirements.
-- `docs/PROGRESS.md` — the kernel-AWG rework + why the wireguard-go patch
-  matters (userspace amnezia panic).
-- `docs/cto-review-map.md` — file map.
-- `internal/backend/singbox/singbox.go` — `singBoxVersion`, `singBoxDownloadURLs`,
-  `singBoxChecksums`, `installPatchedBinary` (fail-closed checksum verify),
-  `installAWGModule` (PPA primary + bundled `deps/amneziawg-src.tar.gz` DKMS
-  fallback).
+- `AGENTS.md` "amnezia-box" section — the base sing-box fork + what it carries.
+- `docs/PROGRESS.md` §30 (AWG3 spike) + §31 (amnezia-box migration).
+- `docs/cto-review-map.md` / `docs/cto-review-instruction.md` — file map
+  (NOTE: these still reference the old sing-box-extended/patches/ stack
+  historically; the amnezia-box migration supersedes them — update on next review).
+- `internal/backend/singbox/singbox.go` — `singBoxVersion`,
+  `singBoxDownloadURLs`, `singBoxChecksums`, `installPatchedBinary` (fail-closed
+  checksum verify), `isPatchedExtended` (`with_awg` canary),
+  `installAWGModule` (kernel module: PPA primary + bundled
+  `deps/amneziawg-src.tar.gz` DKMS fallback — unchanged by the amnezia-box
+  migration; the kernel AWG path is separate from the sing-box endpoint).

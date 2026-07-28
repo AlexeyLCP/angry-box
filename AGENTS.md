@@ -204,18 +204,48 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 - Run E2E: `go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 300s`
 - Auth: `gcloud auth login lucipoher@gmail.com`
 
-## sing-box-extended (NOT plain sing-box)
+## amnezia-box (our base sing-box fork, NOT plain sing-box)
 
-- Project uses **sing-box-extended** (`1.13.14-extended-2.5.0-patched`) — NOT official sing-box.
-  This is a patched build (see `patches/`: wireguard-go chacha20poly1305 overlap fix + fallback round-robin).
-  The full rebasing procedure + the `patchcheck` regression test (gated by the
+- Project uses **amnezia-box** — our fork `AlexeyLCP/amnezia-box` (a fork of
+  `hoaxisr/amnezia-box`, which is itself sing-box 1.14 alpha). It carries:
+  - the AWG3 userspace endpoint `type:"awg"` (amneziawg-go `feat/awg3` pinned in
+    the fork's go.mod — `hoaxisr/amneziawg-go awg3 @ fc48874`, the InputPackets API
+    that `transport/awg/port.go` needs). AWG3 obfuscation fields
+    (HeaderProtectionKey / ContentPaddingAddition / RekeyAfterTime) are FLAT on
+    the `awg` endpoint (no nested `amnezia:{}` block, unlike the old
+    sing-box-extended `wireguard` endpoint). S1-S4 must be >= 12 when
+    HeaderProtectionKey is set (`HeaderCipherNonceSize=12`).
+  - **our ports from sing-box-extended**: mtproxy (`with_mtproxy` build tag,
+    `protocol/mtproxy/` + mtg-multi `shtorm-7/mtg-multi` extended fork) and
+    fallback round-robin (`protocol/group/fallback.go` + the rr patch — our prod
+    strategy #18 "Round-robin (fallback)", committed to the fork's tree, NOT a
+    `patches/` file here).
+- The full rebasing procedure + the `patchcheck` version-match test (gated by the
   `patchcheck` build tag) are documented in **`docs/PATCHES.md`** — that is the
-  law for bumping the upstream sing-box-extended / wireguard-go tags.
-- Binary in `deps/sing-box-1.13.14-extended-2.5.0-patched-linux-amd64.tar.gz`
-- Installed by `angry-box deploy` which downloads from the project's GitHub deps (weak VPSes never compile Go — they just download).
-- Supports: amnezia field on wireguard endpoints, CPS/I1-I5 packets, MTProto, XHTTP max obfuscation.
-- AWG kernel module built from `deps/amneziawg-src.tar.gz` (kernel awg-quick + sing-box `bind_interface`).
-- Module requires: `curve25519_x86_64`, `libcurve25519_generic`, `udp_tunnel`, `ip6_udp_tunnel`
+  law for bumping the amnezia-box fork ref + the amneziawg-go pin.
+- Binary in `deps/sing-box-<short-sha>-amnezia-linux-amd64.tar.gz` (built by
+  `scripts/build-singbox.sh`, published to the GitHub release).
+- Installed by `angry-box deploy` which downloads from the project's GitHub deps
+  (weak VPSes never compile Go — they just download). Detection: `isPatchedExtended`
+  matches the `with_awg` build tag in `sing-box version` (the old
+  sing-box-extended canary tags `with_trusttunnel`/`with_sudoku` are gone).
+- User-facing AWG servers stay kernel (`awg-quick@awg0` + sing-box TUN-overlay
+  `include_interface:["awg0"]` — AGENTS #10/#11 rework preserved). The sing-box
+  `type:"awg"` endpoint is the INTER-NODE TRANSPORT + legacy CLI standalone path
+  (userspace amneziawg-go in-process). Kernel awg-quick `.conf` path
+  (`RenderServerAWGConf` etc.) is INI text, unaffected by the `type:"awg"` migration.
+- Supports: AWG3 fields (HPK/CPM/RAT), CPS/I1-I5 packets, MTProxy (telemt), XHTTP
+  max obfuscation, fallback round-robin groups.
+- AWG kernel module built from `deps/amneziawg-src.tar.gz` (kernel awg-quick +
+  sing-box `bind_interface`/TUN-overlay). Module requires: `curve25519_x86_64`,
+  `libcurve25519_generic`, `udp_tunnel`, `ip6_udp_tunnel`.
+- **Historical:** the project previously used `sing-box-extended`
+  (`1.13.14-extended-2.5.0-patched`, shtorm-7 fork) with `patches/`
+  (wireguard-go-awg-overlap + fallback-round-robin). That stack is superseded by
+  amnezia-box (sing-box 1.14 + amneziawg-go AWG3); the `patches/` directory was
+  removed (fallback is in the fork's tree; the overlap fix is irrelevant — AWG3
+  runs through amneziawg-go, not the shtorm-7 wireguard-go userspace path that
+  panicked). See `docs/PROGRESS.md` §31 for the migration.
 
 ## Known Issues & Workarounds
 
@@ -223,7 +253,7 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 2. **DNS/Route disabled** in merged config (sing-box 1.13 detour bugs) — minimal config works. The previously-retained `buildMergedRouting`/`buildMergedDNS` dead builders were removed (CTO-review M10); re-implement against the live sing-box version when the detour bug is fixed.
 3. **Multi-node chains** need Route/DNS re-enabled when detour is fixed
 4. **No Python on test servers** — use `python3` explicitly when available
-5. **AMG amnezia field** — only works with sing-box-extended, skipped for plain sing-box
+5. **AWG obfuscation fields are FLAT on `type:"awg"` endpoint** (amnezia-box 1.14) — NOT a nested `amnezia:{}` block (the old sing-box-extended `wireguard`+`amnezia` shape is gone). `AwgEndpointOptions` (internal/singbox/config/types.go) carries jc/jmin/jmax/s1-s4/h1-h4/i1-i5 flat + AWG3 HeaderProtectionKey/ContentPaddingAddition/RekeyAfterTime. `AmneziaOptions` stays as a holder for the kernel awg-quick `.conf` INI path (Itime json:"-"). S1-S4 >= 12 for HPK.
 6. **TUIC is FROZEN — do NOT test or fix.** TUIC has too many unresolved issues right now. Do NOT run TUIC E2E tests, do NOT write new TUIC tests, do NOT attempt TUIC bug fixes. Keep the existing code in place but treat the protocol as unresearched. Revisit only after explicit user request. Any TUIC-related test cases in `e2e_heavy_test.go` / `clientconfig_test.go` / etc. should be skipped or excluded from the active test set.
 7. **Per-client routing has TWO mechanisms — AWG is the primary.** AWG (the main product protocol) routes by `source_ip_cidr` (each user = a WireGuard peer with a unique inner IP `User.AWGAddress`; the peer's IP is preserved end-to-end through the inter-node XHTTP tunnel, so transit nodes can route by source IP and a pin to ANY downstream node works). TUIC/VLESS/Hysteria2 route by `auth_user` (inbound identity, only re-asserted on the entry, so a pin beyond one hop is NOT expressible there). The `auth_user` path (commits B1–B6) is now **legacy/secondary** — keep it, but new per-client work should target the AWG peer/source-IP model. AWG per-user creds: `User.AWGPrivateKey/AWGPublicKey/AWGAddress` (generated by `EnsureUserCreds` + `EnsureUserAWGAddress`); multi-peer endpoint via `buildAWGUserInboundMulti`; client `.conf` via `RenderClientAWGConf`. Route+DNS still gated behind `AB_ROUTE_DNS=1`. The AWG per-client E2E is a skip stub (`TestE2E_Heavy_PerClientRouting`) until the AWG kernel module is staged on the test VPSes; the routing logic is covered by unit tests (`TestBuildMergedRoute_PerClientAWG_*`).
 8. **`TransportAWG` is IMPLEMENTED; `TransportHysteria2` is FROZEN.** AWG is a working inter-node chain transport (the link between chain nodes), alongside Reality and XHTTP. `buildChainRoleInOut` (`merged_config.go`) branches on `c.Transport`: AWG builds a `WireGuardEndpoint` transit inbound (`buildAWGTransportInbound`, tag `ch-<chain>-transport-in`) + a `WireGuardEndpoint` client on the previous node (`buildAWGTransportOutbound`, tag `ch-<chain>-out-awg-<nextID>`). Per-link WireGuard keypairs are generated in `ApplyChain` and persisted on `model.ChainNode` (`TransitAWGServerPriv/Pub`, `TransitAWGClientPriv/Pub`, `TransitAWGAddress` — inner subnet `10.9.0.0/24`, separate from the user-entry `10.8.0.0/24`). `InstallAWGModuleWithOptions` is gated on `UserProtocol == AWG || Transport == AWG` so transit nodes get the module. Route rules are transport-agnostic (tag-based), so source-IP per-client routing works through AWG transit too. **`TransportHysteria2` is FROZEN (see #11)** — the constant + UI dropdown exist, but the builder has no Hysteria2 branch; `buildChainRoleInOut` now refuses loudly (a `MergeReport.Warning` + no inbound/outbound emitted) instead of silently falling back to Reality. Do NOT assume Hysteria2-transport works.
