@@ -52,13 +52,33 @@ func findSingBoxBinary() string {
 	return ""
 }
 
+// singBoxSupportsAWG reports whether the binary at bin is amnezia-box (our base
+// sing-box fork) by checking `sing-box version` for the `with_awg` build tag.
+// The old sing-box-extended build lacks it and rejects `type:"awg"`.
+func singBoxSupportsAWG(bin string) bool {
+	out, err := exec.Command(bin, "version").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "with_awg")
+}
+
 // singBoxCheck runs `sing-box check -c <cfg>` and fails the test on a non-zero
-// exit, including the config + stderr in the failure message.
+// exit, including the config + stderr in the failure message. The binary MUST
+// be amnezia-box (our base sing-box 1.14 fork) — it advertises the `with_awg`
+// build tag in `sing-box version`. The old sing-box-extended 1.13 binary (which
+// some dev machines still have in deps/) does NOT know the `type:"awg"`
+// endpoint, so configs migrated to amnezia-box's flat AWG shape fail its
+// `check` with "unknown endpoint type: awg" — skip the real check there (the
+// shape is covered by amnezia-box e2e on n1 instead).
 func singBoxCheck(t *testing.T, cfgJSON []byte) {
 	t.Helper()
 	bin := findSingBoxBinary()
 	if bin == "" {
 		t.Skip("no sing-box binary found (deps/sing-box(.exe) or PATH) — skipping real check")
+	}
+	if !singBoxSupportsAWG(bin) {
+		t.Skipf("sing-box binary %q is not amnezia-box (no with_awg tag) — skipping real check (type:awg not supported by this build)", bin)
 	}
 	tmp, err := os.CreateTemp("", "awg_check_*.json")
 	if err != nil {
@@ -360,10 +380,10 @@ func TestAWGTransport_MergedConfig_SingBoxCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	// The entry config must contain a wireguard OUTBOUND (the AWG transport
-	// link to middle), not a VLESS Reality outbound.
-	if !strings.Contains(string(cfgJSON), `"wireguard"`) {
-		t.Fatalf("AWG-transport entry config has no wireguard outbound:\n%s", cfgJSON)
+	// The entry config must contain an AWG transport endpoint (the AWG
+	// inter-node link to middle, type:"awg"), not a VLESS Reality outbound.
+	if !strings.Contains(string(cfgJSON), `"awg"`) {
+		t.Fatalf("AWG-transport entry config has no awg endpoint:\n%s", cfgJSON)
 	}
 	// Must NOT silently fall back to Reality for the transport outbound.
 	if strings.Contains(string(cfgJSON), `"ch-awg-transport-out-`) && strings.Contains(string(cfgJSON), `"vless"`) {
@@ -425,8 +445,8 @@ func TestAWGTransport_NotRealityFallback(t *testing.T) {
 	foundWG := false
 	for _, ep := range parsed.Endpoints {
 		if ep["tag"] == "ch-awg-transport-transport-in" {
-			if ep["type"] != "wireguard" {
-				t.Errorf("transport-in endpoint type=%v, want wireguard", ep["type"])
+			if ep["type"] != "awg" {
+				t.Errorf("transport-in endpoint type=%v, want awg", ep["type"])
 			}
 			foundWG = true
 		}

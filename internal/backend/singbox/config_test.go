@@ -63,8 +63,8 @@ func TestGenerateConfig_User_AWG(t *testing.T) {
 		t.Fatal("AWG user config must have a wireguard endpoint (not a tun inbound)")
 	}
 	ep := eps[0].(map[string]any)
-	if ep["type"] != "wireguard" {
-		t.Errorf("endpoint type: got %v, want wireguard", ep["type"])
+	if ep["type"] != "awg" {
+		t.Errorf("endpoint type: got %v, want awg", ep["type"])
 	}
 }
 

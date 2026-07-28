@@ -218,7 +218,7 @@ func TestBuildAWGUserInbound(t *testing.T) {
 	if err := json.Unmarshal(ep, &m); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if m["type"] != "wireguard" {
+	if m["type"] != "awg" {
 		t.Errorf("type = %v", m["type"])
 	}
 	if m["tag"] != "awg-in" {

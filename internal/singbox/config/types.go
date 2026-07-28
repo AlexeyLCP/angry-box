@@ -361,11 +361,21 @@ type WireGuardPeer struct {
 // flagged it and it misled readers into thinking the chain path could emit a
 // wireguard outbound. See AGENTS.md #9 for the full rationale.
 
-// AmneziaOptions represents AWG specific extensions for wireguard in
-// sing-box-extended. JSON keys are lowercase (matching awg_presets'
-// to_singbox_amnezia: jc/jmin/jmax/s1-s4/h1-h4/itime). H1-H4 are "lo-hi" range
-// strings. I1-I5 are CPS packet strings in `<b 0xHEX>` / `<r N><b 0xHEX>` form
-// (optional; when present must be even-length hex — the deploy path pads them).
+// AmneziaOptions is the holder for AWG obfuscation material. It is used by
+// BOTH render paths:
+//   - the kernel awg-quick .conf INI path (RenderServerAWGConf/RenderExitAWGConf/
+//     RenderExitServerAWGConf via writeAmneziaConfLines) — reads the fields
+//     directly to emit `Jc =`/`H1 =`/`I1 =` INI lines. ITime is held here ONLY
+//     for this path (awg-quick supports Itime; sing-box endpoint does not).
+//   - the sing-box JSON `type:"awg"` endpoint path — but FLATTENED onto
+//     AwgEndpointOptions (see below), NOT nested as `amnezia:{}`. The JSON
+//     consumers copy AmneziaOptions fields into the flat AwgEndpointOptions.
+//
+// amnezia-box 1.14 (our new base) removed the `amnezia` field from
+// WireGuardEndpointOptions entirely and moved AWG to a separate `type:"awg"`
+// endpoint (AwgEndpointOptions) with flat fields. So AmneziaOptions is now
+// ONLY a holder/source struct; it is never marshaled nested into a sing-box
+// endpoint. ITime stays json:"-" (sing-box/amnezia-box reject "itime").
 type AmneziaOptions struct {
 	JC   int    `json:"jc,omitempty"`
 	JMIN int    `json:"jmin,omitempty"`
@@ -383,14 +393,66 @@ type AmneziaOptions struct {
 	I3   string `json:"i3,omitempty"`
 	I4   string `json:"i4,omitempty"`
 	I5   string `json:"i5,omitempty"`
-	// ITime is NOT emitted to the sing-box endpoint JSON — sing-box-extended's
-	// wireguard-go rejects "itime" at runtime ("IPC error -22: invalid UAPI
-	// device key: itime") even though `sing-box check` accepts it. It is kept
-	// here only as a holder so the client awg-quick .conf can render "Itime = N"
-	// (awg-quick DOES support it). BuildAmneziaSection must NOT copy it into the
-	// section that gets marshaled to the endpoint; renderAWGQuickConf reads it
-	// from the preset directly.
+	// ITime is NOT emitted to the sing-box endpoint JSON — amnezia-box's
+	// amneziawg-go rejects "itime" at runtime ("IPC error -22: invalid UAPI
+	// device key: itime"). It is kept here only as a holder so the client
+	// awg-quick .conf can render "Itime = N" (awg-quick DOES support it).
+	// BuildAmneziaSection must NOT copy it into the section that gets
+	// marshaled to the endpoint; renderAWGQuickConf reads it from the preset.
 	ITime int `json:"-"`
+}
+
+// AwgEndpointOptions is the amnezia-box 1.14 `type:"awg"` endpoint — the
+// userspace AmneziaWG-go endpoint with FLAT obfuscation fields (no nested
+// `amnezia:{}` block, unlike the old WireGuardEndpoint+Amnezia). AWG3 fields
+// (HeaderProtectionKey/ContentPaddingAddition/RekeyAfterTime) are carried
+// here; the kernel amneziawg module does NOT parse them (feat/awg3 is
+// userspace-only). HeaderProtectionKey requires S1-S4 >= 12 (HeaderCipherNonceSize=12).
+// Field names/tags mirror amnezia-box option/awg.go exactly.
+type AwgEndpointOptions struct {
+	Type       string          `json:"type"` // "awg"
+	Tag        string          `json:"tag"`
+	PrivateKey string          `json:"private_key"`
+	Address    []string        `json:"address"`
+	MTU        int             `json:"mtu,omitempty"`
+	ListenPort int             `json:"listen_port,omitempty"`
+	Jc         int             `json:"jc,omitempty"`
+	Jmin       int             `json:"jmin,omitempty"`
+	Jmax       int             `json:"jmax,omitempty"`
+	S1         int             `json:"s1,omitempty"`
+	S2         int             `json:"s2,omitempty"`
+	S3         int             `json:"s3,omitempty"`
+	S4         int             `json:"s4,omitempty"`
+	H1         string          `json:"h1,omitempty"`
+	H2         string          `json:"h2,omitempty"`
+	H3         string          `json:"h3,omitempty"`
+	H4         string          `json:"h4,omitempty"`
+	I1         string          `json:"i1,omitempty"`
+	I2         string          `json:"i2,omitempty"`
+	I3         string          `json:"i3,omitempty"`
+	I4         string          `json:"i4,omitempty"`
+	I5         string          `json:"i5,omitempty"`
+	// AWG3 fields (amneziawg-go feat/awg3). HeaderProtectionKey is hex (32 bytes
+	// = 64 hex chars), generated via awg genkey-class material; S1-S4 must be
+	// >= 12 when set. ContentPaddingAddition/RekeyAfterTime are UintRange
+	// "lo-hi" strings (seconds for RekeyAfterTime).
+	HeaderProtectionKey    string           `json:"header_protection_key,omitempty"`
+	ContentPaddingAddition string           `json:"content_padding_addition,omitempty"`
+	RekeyAfterTime         string           `json:"rekey_after_time,omitempty"`
+	Peers                 []AwgPeerOptions  `json:"peers,omitempty"`
+}
+
+// AwgPeerOptions is the peer entry for an `type:"awg"` endpoint. Note the
+// spelling: PresharedKey (one 's' in "shared") → json `preshared_key`, matching
+// amnezia-box option/awg.go (the old WireGuardPeer used PreSharedKey — not
+// emitted by angry-box anyway).
+type AwgPeerOptions struct {
+	PublicKey                   string   `json:"public_key,omitempty"`
+	PresharedKey                string   `json:"preshared_key,omitempty"`
+	AllowedIPs                  []string `json:"allowed_ips,omitempty"`
+	Address                     string   `json:"address,omitempty"`
+	Port                        int      `json:"port,omitempty"`
+	PersistentKeepaliveInterval int      `json:"persistent_keepalive_interval,omitempty"`
 }
 
 // TUNInbound represents a sing-box TUN inbound.

@@ -133,8 +133,8 @@ func TestRenderAWGHop_UserspaceAmnezia(t *testing.T) {
 		t.Fatalf("expected 1 endpoint, got %d", len(endpoints))
 	}
 	ep := endpoints[0].(map[string]any)
-	if ep["type"] != "wireguard" {
-		t.Errorf("endpoint type: got %v, want wireguard", ep["type"])
+	if ep["type"] != "awg" {
+		t.Errorf("endpoint type: got %v, want awg", ep["type"])
 	}
 	if ep["private_key"] != "priv" {
 		t.Errorf("private_key not reused: got %v", ep["private_key"])

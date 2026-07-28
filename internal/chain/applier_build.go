@@ -726,26 +726,21 @@ func buildAWGTransportInbound(node *model.ChainNode, prev *model.ChainNode, tag 
 			peer.Port = 51821 // deterministic fallback (matches ApplyChain's 51820+i+1 for node index 0)
 		}
 	}
-	ep := config.WireGuardEndpoint{
-		Type:       "wireguard",
+	ep := config.AwgEndpointOptions{
+		Type:       "awg",
 		Tag:        tag,
-		System:     false, // userspace wireguard-go (no kernel module needed to listen)
 		MTU:        1420,
 		Address:    []string{"10.9.0.1/24"}, // transit server inner address
 		PrivateKey: node.TransitAWGServerPriv,
 		ListenPort: port,
-		Peers:      []config.WireGuardPeer{peer},
-		// Amnezia is intentionally DISABLED on the inter-node transport. The
-		// transport is a service tunnel between trusted servers — it does NOT
-		// need DPI obfuscation (that's the user-entry awg0's job, which runs on
-		// the kernel module). Running amnezia on a USERSPACE wireguard-go
-		// endpoint is the known unstable path: the handshake (simpler crypto)
-		// completes, but the data plane fails — Jc junk-packets and the
-		// chacha20poly1305 overlap make userspace amnezia drop data packets
-		// (verified on a real VPS: 72 KiB sent, 92 B received — data out, no
-		// responses back). Plain WireGuard in userspace is rock-solid. See
-		// VPN/docs/sing-box-extended.md + the live-VPS trace in PROGRESS.md §8.
-		Amnezia: nil,
+		Peers:      []config.AwgPeerOptions{{PublicKey: peer.PublicKey, AllowedIPs: peer.AllowedIPs, Address: peer.Address, Port: peer.Port, PersistentKeepaliveInterval: peer.PersistentKeepaliveInterval}},
+		// Amnezia obfuscation is intentionally DISABLED on the inter-node
+		// transport. The transport is a service tunnel between trusted servers —
+		// it does NOT need DPI obfuscation (that's the user-entry awg0's job,
+		// which runs on the kernel module). Plain WireGuard over the amneziawg-go
+		// userspace endpoint is rock-solid; running the AWG3 amnezia fields on a
+		// transit endpoint is unnecessary and would force S1-S4 >= 12 when no
+		// header protection is needed. Jc/Jmin/Jmax/S1-S4/H1-H4 stay zero/empty.
 	}
 	data, _ := json.Marshal(ep)
 	return data
@@ -776,15 +771,14 @@ func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag 
 	if localAddr == "" {
 		localAddr = "10.9.0.2/32"
 	}
-	ep := config.WireGuardEndpoint{
-		Type:       "wireguard",
+	ep := config.AwgEndpointOptions{
+		Type:       "awg",
 		Tag:        tag, // route rules reference this tag as the "outbound"
-		System:     false,
 		MTU:        1420,
 		Address:    []string{localAddr},
 		PrivateKey: thisNode.TransitAWGClientPriv,
 		ListenPort: thisNode.TransitAWGClientPort, // fixed source port — NAT'd VPSes need a stable mapping or handshake responses never return (the peer replies to a port that's gone after a re-handshake retry)
-		Peers: []config.WireGuardPeer{
+		Peers: []config.AwgPeerOptions{
 			{
 				PublicKey:                   next.TransitAWGServerPub,
 				Address:                     serverAddr,
@@ -793,11 +787,10 @@ func buildAWGTransportOutbound(thisNode, next *model.ChainNode, serverAddr, tag 
 				AllowedIPs:                  []string{"0.0.0.0/0", "::/0"},
 			},
 		},
-		// Amnezia DISABLED on inter-node transport — see buildAWGTransportInbound
-		// for the full rationale. Plain WireGuard in userspace is stable; userspace
-		// amnezia drops data packets (chacha20poly1305 overlap). The transport is a
-		// trusted server-to-server tunnel — DPI obfuscation is the user-entry's job.
-		Amnezia: nil,
+		// Amnezia obfuscation DISABLED on inter-node transport — see
+		// buildAWGTransportInbound for the full rationale. Plain WireGuard over
+		// the amneziawg-go userspace endpoint is stable; the AWG3 amnezia fields
+		// stay zero/empty (no header protection needed on a trusted server tunnel).
 	}
 	data, _ := json.Marshal(ep)
 	return data, nil
@@ -1270,21 +1263,26 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	ep := config.WireGuardEndpoint{
-		Type:       "wireguard",
+	amn := BuildAWGAmnezia(awg, preset, nil) // standalone single-peer: no persisted material
+	ep := config.AwgEndpointOptions{
+		Type:       "awg",
 		Tag:        tag, // Use the user-in tag for routing natively
-		System:     false,
 		MTU:        1420,
 		Address:    []string{"10.8.0.1/32"},
 		PrivateKey: privKeyB64,
 		ListenPort: port,
-		Peers: []config.WireGuardPeer{
+		Peers: []config.AwgPeerOptions{
 			{
 				PublicKey:  peerPub,
 				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		Amnezia: BuildAWGAmnezia(awg, preset, nil), // standalone single-peer: no persisted material
+	}
+	if amn != nil {
+		ep.Jc, ep.Jmin, ep.Jmax = amn.JC, amn.JMIN, amn.JMAX
+		ep.S1, ep.S2, ep.S3, ep.S4 = amn.S1, amn.S2, amn.S3, amn.S4
+		ep.H1, ep.H2, ep.H3, ep.H4 = amn.H1, amn.H2, amn.H3, amn.H4
+		ep.I1, ep.I2, ep.I3, ep.I4, ep.I5 = amn.I1, amn.I2, amn.I3, amn.I4, amn.I5
 	}
 
 	epJSON, _ := json.Marshal(ep)
@@ -1332,7 +1330,7 @@ func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, se
 		}
 	}
 
-	peers := make([]config.WireGuardPeer, 0, len(users))
+	peers := make([]config.AwgPeerOptions, 0, len(users))
 	for _, u := range users {
 		if !u.Active {
 			continue
@@ -1340,7 +1338,7 @@ func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, se
 		if u.AWGPublicKey == "" || u.AWGAddress == "" {
 			continue // no per-user AWG creds -> cannot be a peer
 		}
-		peers = append(peers, config.WireGuardPeer{
+		peers = append(peers, config.AwgPeerOptions{
 			PublicKey:  u.AWGPublicKey,
 			AllowedIPs: []string{u.AWGAddress},
 		})
@@ -1348,21 +1346,26 @@ func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, se
 	if len(peers) == 0 {
 		// No qualified users yet: keep the endpoint valid with a placeholder so
 		// sing-box accepts the config. Replaced once users get AWG creds.
-		peers = []config.WireGuardPeer{
+		peers = []config.AwgPeerOptions{
 			{PublicKey: "CLIENT_PUBLIC_KEY_HERE", AllowedIPs: []string{"10.8.0.2/32"}},
 		}
 	}
 
-	ep := config.WireGuardEndpoint{
-		Type:       "wireguard",
+	amn := BuildAWGAmnezia(awg, preset, material)
+	ep := config.AwgEndpointOptions{
+		Type:       "awg",
 		Tag:        tag, // user-in tag — route rules address this endpoint by tag
-		System:     false,
 		MTU:        1420,
 		Address:    []string{"10.8.0.1/32"}, // server tunnel IP
 		PrivateKey: privKeyB64,
 		ListenPort: port,
 		Peers:      peers,
-		Amnezia:    BuildAWGAmnezia(awg, preset, material),
+	}
+	if amn != nil {
+		ep.Jc, ep.Jmin, ep.Jmax = amn.JC, amn.JMIN, amn.JMAX
+		ep.S1, ep.S2, ep.S3, ep.S4 = amn.S1, amn.S2, amn.S3, amn.S4
+		ep.H1, ep.H2, ep.H3, ep.H4 = amn.H1, amn.H2, amn.H3, amn.H4
+		ep.I1, ep.I2, ep.I3, ep.I4, ep.I5 = amn.I1, amn.I2, amn.I3, amn.I4, amn.I5
 	}
 
 	epJSON, _ := json.Marshal(ep)

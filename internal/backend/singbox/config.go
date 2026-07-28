@@ -215,23 +215,41 @@ func (b *Backend) generateAWGUser(params model.ConfigParams, preset *chain.Conne
 		peerPub = "CLIENT_PUBLIC_KEY_HERE"
 	}
 
-	// sing-box-extended: WireGuard SERVER endpoint (listen_port, no detour).
-	// TUN inbound captures decrypted traffic for routing.
-	endpoint := config.WireGuardEndpoint{
-		Type:       "wireguard",
+	// amnezia-box 1.14: `type:"awg"` endpoint (userspace amneziawg-go, flat AWG
+	// obfuscation fields — no nested `amnezia:{}`). TUN inbound captures
+	// decrypted traffic for routing.
+	amn := chain.BuildAWGAmnezia(awg, preset, nil)
+	endpoint := config.AwgEndpointOptions{
+		Type:       "awg",
 		Tag:        "wg-ep",
-		System:     false,
 		MTU:        1420,
 		Address:    []string{"10.8.0.1/32"},
 		PrivateKey: privB64,
 		ListenPort: port,
-		Peers: []config.WireGuardPeer{
+		Peers: []config.AwgPeerOptions{
 			{
 				PublicKey:  peerPub,
 				AllowedIPs: []string{"10.8.0.2/32"},
 			},
 		},
-		Amnezia: chain.BuildAWGAmnezia(awg, preset, nil),
+	}
+	if amn != nil {
+		endpoint.Jc = amn.JC
+		endpoint.Jmin = amn.JMIN
+		endpoint.Jmax = amn.JMAX
+		endpoint.S1 = amn.S1
+		endpoint.S2 = amn.S2
+		endpoint.S3 = amn.S3
+		endpoint.S4 = amn.S4
+		endpoint.H1 = amn.H1
+		endpoint.H2 = amn.H2
+		endpoint.H3 = amn.H3
+		endpoint.H4 = amn.H4
+		endpoint.I1 = amn.I1
+		endpoint.I2 = amn.I2
+		endpoint.I3 = amn.I3
+		endpoint.I4 = amn.I4
+		endpoint.I5 = amn.I5
 	}
 
 	epJSON, _ := json.Marshal(endpoint)

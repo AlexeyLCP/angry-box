@@ -85,7 +85,10 @@ func convertSingBoxConfig(cfgJSON string) ([]model.NodeInbound, []json.RawMessag
 			inbounds = append(inbounds, convertSingBoxTUIC(raw, ib.ListenPort))
 		case "hysteria2":
 			inbounds = append(inbounds, convertSingBoxHysteria2(raw, ib.ListenPort))
-		case "wireguard":
+		case "wireguard", "awg":
+			// amnezia-box 1.14 moved AWG to a separate `type:"awg"` endpoint with
+			// flat obfuscation fields (no nested `amnezia:{}`); the takeover reader
+			// only needs private_key + peers[].public_key, common to both.
 			inbounds = append(inbounds, convertSingBoxWireGuard(raw, ib.ListenPort))
 		case "mtproto", "mtproxy":
 			inbounds = append(inbounds, convertSingBoxMTProto(raw, ib.ListenPort))

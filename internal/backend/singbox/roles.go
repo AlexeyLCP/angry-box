@@ -373,20 +373,73 @@ func RenderAWGHop(p AWGHopParams) ([]byte, error) {
 	}
 
 	endpoint := map[string]any{
-		"type":        "wireguard",
+		"type":        "awg",
 		"tag":         p.Tag,
-		"system":      false,
 		"mtu":         1420, // match all other AWG endpoints (buildAWGUserInbound*, buildAWGTransport*, generateAWGUser); MTU must match on both ends of a WireGuard pair or large packets fragment/drop.
 		"address":     p.Address,
 		"private_key": p.PrivateKey,
 		"peers":       []map[string]any{peer},
 	}
+	// amnezia-box 1.14 `type:"awg"` endpoint carries the AWG obfuscation fields
+	// FLAT (no nested `amnezia:{}` block, unlike the old `type:"wireguard"`).
+	// Flatten the AmneziaOptions holder onto the endpoint map directly.
 	if p.Amnezia != nil {
-		endpoint["amnezia"] = p.Amnezia
+		amn := p.Amnezia
+		if amn.JC != 0 {
+			endpoint["jc"] = amn.JC
+		}
+		if amn.JMIN != 0 {
+			endpoint["jmin"] = amn.JMIN
+		}
+		if amn.JMAX != 0 {
+			endpoint["jmax"] = amn.JMAX
+		}
+		if amn.S1 != 0 {
+			endpoint["s1"] = amn.S1
+		}
+		if amn.S2 != 0 {
+			endpoint["s2"] = amn.S2
+		}
+		if amn.S3 != 0 {
+			endpoint["s3"] = amn.S3
+		}
+		if amn.S4 != 0 {
+			endpoint["s4"] = amn.S4
+		}
+		if amn.H1 != "" {
+			endpoint["h1"] = amn.H1
+		}
+		if amn.H2 != "" {
+			endpoint["h2"] = amn.H2
+		}
+		if amn.H3 != "" {
+			endpoint["h3"] = amn.H3
+		}
+		if amn.H4 != "" {
+			endpoint["h4"] = amn.H4
+		}
+		if amn.I1 != "" {
+			endpoint["i1"] = amn.I1
+		}
+		if amn.I2 != "" {
+			endpoint["i2"] = amn.I2
+		}
+		if amn.I3 != "" {
+			endpoint["i3"] = amn.I3
+		}
+		if amn.I4 != "" {
+			endpoint["i4"] = amn.I4
+		}
+		if amn.I5 != "" {
+			endpoint["i5"] = amn.I5
+		}
+		// ITime is intentionally NOT emitted (amnezia-box's amneziawg-go rejects
+		// "itime" at runtime); it stays only on the AmneziaOptions holder for the
+		// awg-quick .conf path.
 	}
 	epJSON, err := json.Marshal(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("marshal wireguard endpoint: %w", err)
+		return nil, fmt.Errorf("marshal awg endpoint: %w", err)
 	}
 
 	direct, err := marshal(config.DirectOutbound{Type: "direct", Tag: "direct"})
