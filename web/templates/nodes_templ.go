@@ -52,7 +52,7 @@ func Nodes(hosts []*model.Host, infos []*model.NodeInfo, metrics []*model.NodeMe
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><button class=\"btn btn-primary btn-sm shadow-md hover:shadow-lg transition-shadow\" onclick=\"location.href='/ui/nodes/'+('n'+Math.floor(Date.now()/1000))+Math.floor(Math.random()*100)+'/capture'\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"h-4 w-4 mr-1\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 4v16m8-8H4\"></path></svg> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><button class=\"btn btn-primary btn-sm shadow-md hover:shadow-lg transition-shadow\" onclick=\"addNodeOpenCapture()\"><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"h-4 w-4 mr-1\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 4v16m8-8H4\"></path></svg> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -287,3 +287,17 @@ function copySubURL(btn) {
     btn.textContent = btn.getAttribute('data-copied') || 'Copied';
     setTimeout(function(){ btn.textContent = orig; }, 1500);
 }
+
+// addNodeOpenCapture generates a fresh node id and opens the capture wizard in
+// the #modal-container via htmx.ajax — same target/swapping as the row "Capture"
+// button. We MUST NOT do a full-page navigation here: handleNodeCaptureForm
+// returns a raw NodeCaptureForm (no Base layout / no Tailwind / no htmx script),
+// so a full-page GET would render a bare <dialog> with no styles and a form
+// whose hx-post never fires (htmx.js isn't loaded) — the symptom is "the page
+// refreshes and nothing happens, no error" (reported v0.8.3).
+function addNodeOpenCapture() {
+    var id = 'n' + Math.floor(Date.now()/1000) + Math.floor(Math.random()*100);
+    var target = document.getElementById('modal-container');
+    if (!target || typeof htmx === 'undefined') { return; }
+    htmx.ajax('GET', '/ui/nodes/' + id + '/capture', { target: '#modal-container', swap: 'innerHTML' });
+}
