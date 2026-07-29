@@ -120,6 +120,38 @@ func TestDeleteHost(t *testing.T) {
 	}
 }
 
+// TestDeleteHost_CascadesNodeInfoAndMetrics verifies the orphan-node fix
+// (v0.8.8): DeleteHost must also drop the NodeInfo + Metrics records for the
+// host, or ListNodeInfos keeps returning them and the Inbound form / Inbounds
+// page dropdown lists "nodes that were already deleted" (reported by a user).
+func TestDeleteHost_CascadesNodeInfoAndMetrics(t *testing.T) {
+	s := tempStore(t)
+	seedHost(t, s, "node1", "1.2.3.4:22")
+	if err := s.SaveNodeInfo(&model.NodeInfo{Host: model.Host{ID: "node1"}}); err != nil {
+		t.Fatalf("SaveNodeInfo: %v", err)
+	}
+	if err := s.SaveMetrics(&model.NodeMetrics{HostID: "node1", Online: true}); err != nil {
+		t.Fatalf("SaveMetrics: %v", err)
+	}
+
+	if err := s.DeleteHost("node1"); err != nil {
+		t.Fatalf("DeleteHost: %v", err)
+	}
+
+	infos, err := s.ListNodeInfos()
+	if err != nil {
+		t.Fatalf("ListNodeInfos: %v", err)
+	}
+	for _, ni := range infos {
+		if ni.ID == "node1" {
+			t.Fatalf("orphan NodeInfo for node1 survived DeleteHost — ListNodeInfos would list a deleted node")
+		}
+	}
+	if _, err := s.GetMetrics("node1"); err == nil {
+		t.Fatalf("orphan Metrics for node1 survived DeleteHost")
+	}
+}
+
 func TestDeleteHost_ReferencedByChain(t *testing.T) {
 	s := tempStore(t)
 	seedHost(t, s, "node1", "1.2.3.4:22")

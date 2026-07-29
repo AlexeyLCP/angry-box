@@ -312,6 +312,34 @@ func (s *Store) DeleteHost(id string) error {
 	}
 
 	sf.Hosts = filtered
+
+	// Cascade: drop the orphan NodeInfo + Metrics for this host. Without this
+	// the NodeInfo (with its materialized InboundProfile inbounds) and the
+	// Metrics record outlive the Host, and ListNodeInfos — which the Inbound
+	// form / Inbounds page use to populate the node dropdown — returns them as
+	// if the node still existed. The operator sees "nodes that were already
+	// deleted" still listed (reported v0.8.7). DeleteNodeInfo does the same
+	// removal but takes its own lock, so it cannot be called from inside this
+	// locked method (AGENTS #2 — no nested locks); the filters are inlined
+	// here instead. KnownHost entries are left (a rotated host may reuse an
+	// address; the TOFU fingerprint is address-keyed, not id-keyed).
+	infos := sf.NodeInfos[:0]
+	for _, n := range sf.NodeInfos {
+		if n.ID == id {
+			continue
+		}
+		infos = append(infos, n)
+	}
+	sf.NodeInfos = infos
+	metrics := sf.Metrics[:0]
+	for _, m := range sf.Metrics {
+		if m.HostID == id {
+			continue
+		}
+		metrics = append(metrics, m)
+	}
+	sf.Metrics = metrics
+
 	return s.writeStore(sf)
 }
 

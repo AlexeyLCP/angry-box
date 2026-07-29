@@ -3,6 +3,7 @@ package templates
 import (
 	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/i18n"
+	versionpkg "github.com/alexeylcp/angry-box/internal/version"
 )
 
 templ Base(title string, content templ.Component) {
@@ -80,6 +81,7 @@ templ Base(title string, content templ.Component) {
 
 				<div class="p-4 border-t border-base-content/10 text-xs text-base-content/40 text-center font-medium">
 					{ i18n.T(ctx, "Angry-BOX • Orchestrator") }
+					<div class="text-[10px] text-base-content/30 mt-0.5 font-mono">{ versionpkg.Version }</div>
 				</div>
 			</div>
 

@@ -4,6 +4,42 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.8] — 2026-07-29
+
+### Fix — DeleteHost now cascades to NodeInfo + Metrics (orphan "deleted" nodes no longer listed)
+
+`Store.DeleteHost` removed the host record but left its `NodeInfo` (including
+materialized InboundProfile inbounds) and `Metrics` records behind. `ListNodeInfos`
+returns every NodeInfo without filtering by an existing Host, so those orphan
+records kept showing up as if the node still existed — in the Inbound create/edit
+form's node dropdown and on the Inbounds page. An operator deleting a node from
+the Nodes page saw it disappear there but reappear elsewhere ("nodes that were
+already deleted are still hanging", "the old inbound won't delete"). The separate
+`DeleteNodeInfo` helper (used by the P2b spare path) does drop NodeInfo + Metrics,
+but the web delete handler called only `DeleteHost`, not `DeleteNodeInfo`.
+
+- `DeleteHost` now drops the matching `NodeInfo` and `Metrics` inline, in the same
+  locked section (it cannot call `DeleteNodeInfo` — that takes its own lock and
+  would deadlock per AGENTS #2). `KnownHost` entries are left (the TOFU fingerprint
+  is address-keyed, not id-keyed, so a rotated host may reuse an address). The
+  `autorelocate` path (which calls `DeleteNodeInfo` then `DeleteHost`) is
+  unaffected — the second removal is idempotent.
+- New test `TestDeleteHost_CascadesNodeInfoAndMetrics`. Files: `internal/chain/store.go`,
+  `internal/chain/store_test.go`, `docs/PROGRESS.md` §36.
+
+### Feature — angry-box version shown in the UI
+
+The build version previously lived only in the `main` package (`var version`,
+ldflags-injected) and was shown just by `angry-box version` and the startup log —
+the web UI could not import it (main → web import cycle). A new
+`internal/version` package holds `Version` (ldflags-overridable, default
+`v0.8.7`); `main`, the Makefile ldflags (`-X .../internal/version.Version`), and
+the web templates all read the same value. The sidebar footer now displays the
+version under "Angry-BOX • Orchestrator", and `GET /health` returns
+`{"status":"ok","version":"vX.Y.Z"}`. Files: `internal/version/version.go`,
+`cmd/angry-box/main.go`, `Makefile`, `web/templates/base.templ`,
+`docs/PROGRESS.md` §36.
+
 ## [v0.8.7] — 2026-07-29
 
 ### Feature — robust AWG presets (low Jc) for budget VPS where the default won't handshake

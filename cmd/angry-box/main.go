@@ -15,11 +15,16 @@ import (
 	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
+	versionpkg "github.com/alexeylcp/angry-box/internal/version"
 	"github.com/alexeylcp/angry-box/internal/web"
 )
 
 var (
-	version = "v0.8.1"
+	// version is read from the shared internal/version package so the web UI
+	// (sidebar / /health) and the CLI report the SAME value. The release
+	// Makefile injects it at link time via
+	// -X github.com/alexeylcp/angry-box/internal/version.Version=$(git describe).
+	version = versionpkg.Version
 	commit  = "none"
 	date    = "unknown"
 
@@ -839,7 +844,7 @@ func serveCmd() {
 	// Existing API routes
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
 	})
 
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
