@@ -53,6 +53,30 @@ type InboundProfile struct {
 	AWGCPSCapturedDomain string `json:"awg_cps_captured_domain,omitempty"`
 	AWGCPSCaptureFailedDomain string `json:"awg_cps_capture_failed_domain,omitempty"`
 
+	// ── AWG 3.0 obfuscation mode (opt-in per-inbound toggle, AGENTS #5).
+	// When AWG3Mode is set the user-facing AWG entry is rendered as a
+	// userspace sing-box `type:"awg"` endpoint (amneziawg-go feat/awg3) and
+	// carries the AWG3 fields below IN ADDITION to the classic amnezia
+	// Jc/S1-S4/H1-H4/I1-I5 (which still come from the preset + CPS material).
+	// The kernel amneziawg module does NOT parse AWG3 fields, so AWG3Mode
+	// forces the userspace endpoint path (the kernel awg-quick path is used
+	// only when AWG3Mode is false — the default, AGENTS #10/#11).
+	//
+	// AWG3 material is generated ONCE per profile (EnsureProfileAWGMaterial /
+	// EnsureInboundAWGMaterial) and persisted here as the shared source of
+	// truth (same pattern as AWGCPSI1/AWGH1) so a redeploy reuses it and
+	// existing clients are not re-keyed. AWG3HeaderProtectionKey is the raw
+	// hex of 32 random bytes (sing-box endpoint.go decodes base64 from JSON
+	// and converts to hex for the amneziawg-go UAPI; we persist hex to match
+	// the §30 spike). ContentPaddingAddition / RekeyAfterTime are "lo-hi"
+	// UintRange strings (seconds for RekeyAfterTime). S1-S4 must be >= 12
+	// when HeaderProtectionKey is set (HeaderCipherNonceSize=12) — enforced
+	// at emit time (BuildAmneziaSection / userspace builder raises them).
+	AWG3Mode                 bool   `json:"awg3_mode,omitempty"`
+	AWG3HeaderProtectionKey   string `json:"awg3_header_protection_key,omitempty"`
+	AWG3ContentPaddingAddition string `json:"awg3_content_padding_addition,omitempty"`
+	AWG3RekeyAfterTime        string `json:"awg3_rekey_after_time,omitempty"`
+
 	CreatedAt          time.Time `json:"created_at"`
 }
 

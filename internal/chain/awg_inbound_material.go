@@ -32,10 +32,14 @@ func EnsureInboundAWGMaterial(ib *model.NodeInbound, preset ConnectionPreset) {
 		mimicry = preset.AWG.Mimicry
 	}
 	if level <= 0 {
-		return // plain WireGuard — no material to persist
+		// Plain amnezia CPS is off, but AWG 3.0 mode is independent of CPS —
+		// generate its material (HPK/CPM/RAT) here even with level 0.
+		ensureInboundAWG3Material(ib)
+		return // plain WireGuard — no CPS material to persist
 	}
 	if ib.AWGCPSI1 != "" && ib.AWGH1 != "" &&
 		ib.AWGCPSLevel == level && ib.AWGCPSMimicry == mimicry {
+		ensureInboundAWG3Material(ib)
 		return // cache valid
 	}
 	mat := GenerateAWGObfsMaterial(level, mimicry)
@@ -51,30 +55,60 @@ func EnsureInboundAWGMaterial(ib *model.NodeInbound, preset ConnectionPreset) {
 	ib.AWGH2 = mat.H2
 	ib.AWGH3 = mat.H3
 	ib.AWGH4 = mat.H4
+	ensureInboundAWG3Material(ib)
+}
+
+// ensureInboundAWG3Material generates + persists the AWG 3.0 fields (header
+// protection key + content-padding range + rekey-after-time range) on a
+// standalone inbound when AWG3Mode is on and the key is missing. Idempotent: an
+// existing HeaderProtectionKey is kept (Rule 5 — never re-key on redeploy, or
+// every existing client's handshake breaks). Turning AWG3Mode off leaves stale
+// fields in place (harmless — they are only emitted when AWG3Mode is on); a
+// clean re-enable after an off cycle reuses the old key, which is safe.
+func ensureInboundAWG3Material(ib *model.NodeInbound) {
+	if !ib.AWG3Mode {
+		return
+	}
+	if ib.AWG3HeaderProtectionKey != "" {
+		return // cache valid — reuse the persisted key
+	}
+	awg3 := GenerateAWG3Material()
+	ib.AWG3HeaderProtectionKey = awg3.HeaderProtectionKey
+	ib.AWG3ContentPaddingAddition = awg3.ContentPaddingAddition
+	ib.AWG3RekeyAfterTime = awg3.RekeyAfterTime
 }
 
 // InboundAWGObfsMaterial reconstructs the persisted AWGObfsMaterial from a
-// standalone AWG inbound. Returns nil when the inbound has no CPS material
-// (plain WG / not yet populated), so callers can pass it straight to
-// BuildAWGAmnezia and get the no-CPS path.
+// standalone AWG inbound. Returns nil when the inbound has neither CPS nor
+// AWG3 material (plain WG / not yet populated), so callers can pass it
+// straight to BuildAWGAmnezia and get the no-CPS path.
 func InboundAWGObfsMaterial(ib *model.NodeInbound) *AWGObfsMaterial {
-	if ib.AWGCPSI1 == "" {
+	if ib.AWGCPSI1 == "" && !ib.AWG3Mode {
 		return nil
 	}
-	strs := []string{ib.AWGCPSI1, ib.AWGCPSI2, ib.AWGCPSI3, ib.AWGCPSI4, ib.AWGCPSI5}
-	return &AWGObfsMaterial{
-		I1:             cpsStringToBytes(strs[0]),
-		I2:             cpsStringToBytes(strs[1]),
-		I3:             cpsStringToBytes(strs[2]),
-		I4:             cpsStringToBytes(strs[3]),
-		I5:             cpsStringToBytes(strs[4]),
+	m := &AWGObfsMaterial{
+		MimicryProfile: ib.AWGCPSMimicry,
+		CPSLevel:       ib.AWGCPSLevel,
 		H1:             ib.AWGH1,
 		H2:             ib.AWGH2,
 		H3:             ib.AWGH3,
 		H4:             ib.AWGH4,
-		MimicryProfile: ib.AWGCPSMimicry,
-		CPSLevel:       ib.AWGCPSLevel,
 	}
+	if ib.AWGCPSI1 != "" {
+		strs := []string{ib.AWGCPSI1, ib.AWGCPSI2, ib.AWGCPSI3, ib.AWGCPSI4, ib.AWGCPSI5}
+		m.I1 = cpsStringToBytes(strs[0])
+		m.I2 = cpsStringToBytes(strs[1])
+		m.I3 = cpsStringToBytes(strs[2])
+		m.I4 = cpsStringToBytes(strs[3])
+		m.I5 = cpsStringToBytes(strs[4])
+	}
+	if ib.AWG3Mode {
+		m.AWG3Mode = true
+		m.HeaderProtectionKey = ib.AWG3HeaderProtectionKey
+		m.ContentPaddingAddition = ib.AWG3ContentPaddingAddition
+		m.RekeyAfterTime = ib.AWG3RekeyAfterTime
+	}
+	return m
 }
 
 // ResolveStandaloneAWGPreset resolves the obfuscation preset for a standalone
@@ -107,13 +141,25 @@ func ResolveStandaloneAWGPreset(ib *model.NodeInbound) ConnectionPreset {
 // No-op (false) for profiles without a capture domain — the per-node
 // synthesized path (EnsureInboundAWGMaterial) covers those.
 //
+// AWG 3.0 material (HPK/CPM/RAT) is independent of CPS capture: it is generated
+// here when AWG3Mode is on and the key is missing, even with no capture domain.
+// The return value is true if EITHER the CPS capture or the AWG3 key changed.
+//
 // Field semantics (mirrors the chain): AWGCPSMimicry is the REQUEST override
 // ("" = from preset; never rewritten by this function). CapturedDomain marks
 // a successful capture (domain change re-captures); CaptureFailedDomain marks
 // a failed one (suppresses re-dialing the same flaky domain on every deploy).
 func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPreset) bool {
+	changed := false
+	if prof.AWG3Mode && prof.AWG3HeaderProtectionKey == "" {
+		awg3 := GenerateAWG3Material()
+		prof.AWG3HeaderProtectionKey = awg3.HeaderProtectionKey
+		prof.AWG3ContentPaddingAddition = awg3.ContentPaddingAddition
+		prof.AWG3RekeyAfterTime = awg3.RekeyAfterTime
+		changed = true
+	}
 	if prof.AWGCPSCaptureDomain == "" {
-		return false
+		return changed
 	}
 	level := 0
 	mimicry := "none"
@@ -132,7 +178,7 @@ func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPrese
 		}
 	}
 	if level <= 0 {
-		return false
+		return changed
 	}
 
 	cacheValid := prof.AWGCPSI1 != "" && prof.AWGCPSLevel == level
@@ -142,7 +188,7 @@ func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPrese
 		cacheValid = cacheValid && (success || failed)
 	}
 	if cacheValid {
-		return false
+		return changed
 	}
 
 	if mimicry == mimicryQuicLive {
@@ -191,10 +237,17 @@ func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPrese
 // applyProfileAWGMaterial copies the profile's shared material onto a
 // materialized inbound. Returns true when the inbound has profile-backed
 // material (the caller must NOT run the per-node synthesized ensure); false
-// when the profile has none (no capture domain — per-node path applies).
+// when the profile has none (no capture domain + no AWG3 — per-node path
+// applies). AWG3 material is profile-backed (shared across nodes) and is
+// copied whenever the profile has it, independent of CPS capture.
 func applyProfileAWGMaterial(ib *model.NodeInbound, prof *model.InboundProfile) bool {
+	ib.AWG3Mode = prof.AWG3Mode
+	ib.AWG3HeaderProtectionKey = prof.AWG3HeaderProtectionKey
+	ib.AWG3ContentPaddingAddition = prof.AWG3ContentPaddingAddition
+	ib.AWG3RekeyAfterTime = prof.AWG3RekeyAfterTime
 	if prof.AWGCPSI1 == "" {
-		return false
+		// No shared CPS material, but AWG3 may still be profile-backed.
+		return prof.AWG3Mode
 	}
 	ib.AWGCPSLevel = prof.AWGCPSLevel
 	ib.AWGCPSMimicry = prof.AWGCPSMimicry
@@ -214,7 +267,8 @@ func applyProfileAWGMaterial(ib *model.NodeInbound, prof *model.InboundProfile) 
 // materialization path (profile deploy, chain entry, client-conf render):
 // the profile's shared material when present, else the per-node synthesized
 // ensure. The profile itself must already have run EnsureProfileAWGMaterial
-// (capture happens at profile save / deploy time, not here).
+// (capture + AWG3 key generation happen at profile save / deploy time, not
+// here).
 func ApplyProfileMaterialToInbound(ib *model.NodeInbound, prof *model.InboundProfile, preset ConnectionPreset) {
 	if prof != nil && applyProfileAWGMaterial(ib, prof) {
 		return

@@ -37,6 +37,19 @@ type AWGObfsMaterial struct {
 	H4             string
 	MimicryProfile string // "quic" | "sip" | "dns" | "none"
 	CPSLevel       int
+
+	// AWG 3.0 obfuscation material (AGENTS #5). Populated only when the owning
+	// inbound/profile has AWG3Mode set; the classic fields above are still
+	// produced (AWG3 layers on top of amnezia, it does not replace it).
+	// HeaderProtectionKey is the hex of 32 random bytes (sing-box endpoint.go
+	// decodes base64 from JSON → hex for the amneziawg-go UAPI; we persist hex
+	// to match the §30 spike). ContentPaddingAddition / RekeyAfterTime are
+	// "lo-hi" UintRange strings (seconds for RekeyAfterTime). Empty
+	// HeaderProtectionKey = AWG3 mode off for this material.
+	AWG3Mode                  bool
+	HeaderProtectionKey       string
+	ContentPaddingAddition    string
+	RekeyAfterTime            string
 }
 
 // GenerateAWGObfsMaterial is the main entry point used by applier and config command.
@@ -94,7 +107,39 @@ func GenerateAWGObfsMaterial(level int, mimicry string) AWGObfsMaterial {
 	return m
 }
 
-// GenerateQUICInitial returns a 1200-byte QUIC Initial packet that looks exactly
+// GenerateAWG3Material produces the AWG 3.0 obfuscation fields (header
+// protection key + content-padding range + rekey-after-time range) for an
+// inbound/profile with AWG3Mode on. It layers on top of the classic amnezia
+// material (Jc/S1-S4/H1-H4/I1-I5): the caller still runs GenerateAWGObfsMaterial
+// for those, then merges AWG3 via this function. Generated ONCE per inbound and
+// persisted (InboundProfile/NodeInbound.AWG3*) so a redeploy reuses it and
+// existing clients are not re-keyed.
+//
+// HeaderProtectionKey: 32 random bytes → hex (sing-box endpoint.go decodes
+// base64 from JSON and converts to hex for the amneziawg-go UAPI; we persist
+// the hex form to match the §30 spike and the client .conf inline form).
+// ContentPaddingAddition: a "lo-hi" byte range of random padding added to each
+// transport packet (replaces the fixed 16-byte alignment). RekeyAfterTime: a
+// "lo-hi" seconds range replacing WireGuard's fixed RekeyAfterTime=120s so the
+// handshake rhythm is not a fingerprint. S1-S4 >= 12 is NOT a material field —
+// it is enforced at emit time (the preset's S1-S4 are raised to 12 when HPK is
+// set, HeaderCipherNonceSize=12). Reference: architect.vai-rice.space AWG 3.0.
+func GenerateAWG3Material() AWGObfsMaterial {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		// crypto/rand failure is catastrophic for obfuscation — surface it
+		// loudly rather than silently shipping a zero key (which would make
+		// header protection deterministic + trivially fingerprintable).
+		panic(fmt.Sprintf("awg3: read header protection key: %v", err))
+	}
+	return AWGObfsMaterial{
+		AWG3Mode:               true,
+		HeaderProtectionKey:    fmt.Sprintf("%x", key),
+		ContentPaddingAddition: fmt.Sprintf("%d-%d", randInt(1, 16), randInt(17, 64)),
+		RekeyAfterTime:         fmt.Sprintf("%d-%d", randInt(90, 110), randInt(130, 180)),
+	}
+}
+
 // like Chrome's QUIC traffic (fb C0/C3 long header + h3-29 + realistic padding).
 // This is the #1 recommended I1 for Russia/Iran/China 2026 per community research.
 func GenerateQUICInitial() []byte {

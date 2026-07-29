@@ -1302,6 +1302,41 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 // Returns the endpoint JSON and the server's public key (derived from
 // serverPrivKeyB64, or generated when empty — caller persists the latter).
 //
+// applyAWG3ToEndpoint writes the AWG 3.0 obfuscation fields from material onto
+// a userspace `type:"awg"` endpoint and enforces the S1-S4 >= 12 constraint
+// required by header protection (HeaderCipherNonceSize=12, AGENTS #5). HPK is
+// persisted as hex (32 bytes); sing-box endpoint.go decodes base64 from JSON
+// and converts to hex for the amneziawg-go UAPI, so encode hex → base64 here.
+// ContentPaddingAddition / RekeyAfterTime are "lo-hi" strings carried verbatim.
+func applyAWG3ToEndpoint(ep *config.AwgEndpointOptions, material *AWGObfsMaterial) {
+	keyBytes, err := hex.DecodeString(material.HeaderProtectionKey)
+	if err != nil || len(keyBytes) != 32 {
+		// Should never happen — GenerateAWG3Material produces valid hex. Surface
+		// loudly rather than emit a malformed key (a bad HPK breaks every client
+		// handshake with header protection on).
+		log.Printf("awg3: invalid header protection key (len=%d err=%v) — skipping AWG3 fields", len(keyBytes), err)
+		return
+	}
+	ep.HeaderProtectionKey = base64.StdEncoding.EncodeToString(keyBytes)
+	ep.ContentPaddingAddition = material.ContentPaddingAddition
+	ep.RekeyAfterTime = material.RekeyAfterTime
+	// Header protection needs S1-S4 >= 12 (the 12-byte ChaCha20 nonce). The
+	// preset may carry smaller values (e.g. s4=12 is common, but s1 can be 15
+	// and s3/s4 can dip below 12 on some presets); raise them in place.
+	if ep.S1 < 12 {
+		ep.S1 = 12
+	}
+	if ep.S2 < 12 {
+		ep.S2 = 12
+	}
+	if ep.S3 < 12 {
+		ep.S3 = 12
+	}
+	if ep.S4 < 12 {
+		ep.S4 = 12
+	}
+}
+
 // TEST-ONLY / LEGACY: same status as buildAWGUserInbound above. Production
 // chain-entry AWG is kernel awg0 + TUN-overlay (RenderServerAWGConf builds the
 // .conf with all user peers directly). This builder has NO production callers
@@ -1366,6 +1401,16 @@ func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, se
 		ep.S1, ep.S2, ep.S3, ep.S4 = amn.S1, amn.S2, amn.S3, amn.S4
 		ep.H1, ep.H2, ep.H3, ep.H4 = amn.H1, amn.H2, amn.H3, amn.H4
 		ep.I1, ep.I2, ep.I3, ep.I4, ep.I5 = amn.I1, amn.I2, amn.I3, amn.I4, amn.I5
+	}
+	// AWG 3.0 obfuscation (AGENTS #5): when the material carries AWG3 fields
+	// (header protection key + content padding + rekey-after-time), emit them
+	// on the userspace endpoint. HeaderProtectionKey is persisted as hex (32
+	// bytes); sing-box endpoint.go decodes base64 from JSON → hex for the
+	// amneziawg-go UAPI, so convert hex → base64 here. S1-S4 are raised to
+	// >= 12 by buildAWG3EndpointFields (HeaderCipherNonceSize=12) — the preset
+	// values may be smaller and would break header protection if emitted as-is.
+	if material != nil && material.AWG3Mode && material.HeaderProtectionKey != "" {
+		applyAWG3ToEndpoint(&ep, material)
 	}
 
 	epJSON, _ := json.Marshal(ep)

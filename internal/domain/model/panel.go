@@ -487,6 +487,18 @@ type NodeInbound struct {
 	AWGH2         string `json:"awg_h2,omitempty"`
 	AWGH3         string `json:"awg_h3,omitempty"`
 	AWGH4         string `json:"awg_h4,omitempty"`
+
+	// AWG 3.0 obfuscation mode (opt-in per-inbound toggle, AGENTS #5). When
+	// set, this materialized inbound renders as a userspace sing-box
+	// `type:"awg"` endpoint carrying the AWG3 fields (header protection /
+	// content padding / rekey-after-time) — the kernel awg-quick path is
+	// skipped for this inbound. Mirrors InboundProfile.AWG3* (the profile is
+	// the shared source; ApplyProfileMaterialToInbound copies it here for
+	// ad-hoc / takeover materialization). See InboundProfile for field docs.
+	AWG3Mode                  bool   `json:"awg3_mode,omitempty"`
+	AWG3HeaderProtectionKey    string `json:"awg3_header_protection_key,omitempty"`
+	AWG3ContentPaddingAddition string `json:"awg3_content_padding_addition,omitempty"`
+	AWG3RekeyAfterTime         string `json:"awg3_rekey_after_time,omitempty"`
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).
