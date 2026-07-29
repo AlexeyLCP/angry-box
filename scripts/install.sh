@@ -440,20 +440,41 @@ UNIT_EOF
 # ─── Start ─────────────────────────────────────────────────────────────────────
 
 start_service() {
+    # On a re-install (the binary is replaced while the service is still
+    # running) `systemctl start` is a no-op — the already-active unit keeps
+    # the OLD binary in memory, so the upgrade silently does not take effect.
+    # Restart an already-active unit so the freshly installed binary is
+    # picked up; only `start` a unit that isn't running yet (fresh install).
     if [ "$IS_KEENETIC" = true ]; then
-        echo "==> Starting Angry-BOX..."
-        /opt/etc/init.d/S99angry-box start
+        if [ -f /opt/var/run/angry-box.pid ] && kill -0 "$(cat /opt/var/run/angry-box.pid 2>/dev/null)" 2>/dev/null; then
+            echo "==> Restarting Angry-BOX (running instance detected)..."
+            /opt/etc/init.d/S99angry-box restart
+        else
+            echo "==> Starting Angry-BOX..."
+            /opt/etc/init.d/S99angry-box start
+        fi
     else
-        echo "==> Starting Angry-BOX..."
         if [ "$USER_MODE" = true ]; then
-            systemctl --user start angry-box
+            if systemctl --user is-active --quiet angry-box; then
+                echo "==> Restarting Angry-BOX (running instance detected)..."
+                systemctl --user restart angry-box
+            else
+                echo "==> Starting Angry-BOX..."
+                systemctl --user start angry-box
+            fi
             sleep 1
             if ! systemctl --user is-active --quiet angry-box; then
                 echo "WARNING: Service failed to start."
                 systemctl --user status angry-box --no-pager -n 20 || true
             fi
         else
-            systemctl start angry-box
+            if systemctl is-active --quiet angry-box; then
+                echo "==> Restarting Angry-BOX (running instance detected)..."
+                systemctl restart angry-box
+            else
+                echo "==> Starting Angry-BOX..."
+                systemctl start angry-box
+            fi
             sleep 1
             if ! systemctl is-active --quiet angry-box; then
                 echo "WARNING: Service failed to start."

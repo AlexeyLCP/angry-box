@@ -2382,3 +2382,13 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 **Фикс:** кнопка "Add Node" переведена на `htmx.ajax('GET', '/ui/nodes/'+id+'/capture', {target:'#modal-container', swap:'innerHTML'})` (функция `addNodeOpenCapture()` в `web/static/js/app.js`) — тот же target/swap что у row-"Capture", layout сохраняется, CSS+htmx на месте, `hx-post` формы работает. Генерация id (n<timestamp><rand>) перенесена в JS-функцию без изменений логики.
 
 **Файлы:** `web/templates/nodes.templ` (onclick → addNodeOpenCapture), `web/static/js/app.js` (+addNodeOpenCapture). `templ generate` + `go build ./...` + `go test ./internal/web -p 1` зелёные.
+
+## 33. fix(install): restart (не start) на re-install — stale-демон после обновления (v0.8.5) (2026-07-29)
+
+**Симптом (VladufQa):** после обновления через `install.sh` (v0.8.3 → v0.8.4) кнопка "Diagnose" на ноде падала с `-ssh: read key "___": open ...: no such file or directory`. Нода сохранена корректно (`host list` → `key=key-auto-1785314875`, `ResolveKey` находит PEM — покрыто `TestResolveKey_Stored`). В коде диагностики бага нет.
+
+**Корень:** `start_service` в `scripts/install.sh` всегда делал `systemctl start angry-box`. На уже-active unit `start` — **no-op** (systemd не перезапускает работающий сервис). После re-install бинарник на диске обновлён, но в памяти крутится **старый** демон (v0.8.3) → фиксы v0.8.4 не применены → диагностика идёт по старому коду/path. Это объясняло и "Add Node не работает" до ручного `restart`, и `read key` на заведомо корректной ноде.
+
+**Фикс:** `start_service` теперь проверяет, active ли unit, и делает `restart` (поднять свежий бинарь) при re-install, `start` только при fresh-install. Покрыты все 3 пути: systemd system-mode (`systemctl is-active --quiet` → `restart`/`start`), systemd user-mode (`systemctl --user ...`), Keenetic S99 init (проверка PID-файла + `kill -0` → `S99angry-box restart`/`start`; S99 уже поддерживает `restart`). Предупреждение "Service failed to start" + status/journal вывод сохранены для обоих режимов.
+
+**Файлы:** `scripts/install.sh` (start_service). `bash -n` синтаксис OK.

@@ -4,6 +4,31 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.5] — 2026-07-29
+
+### Installer fix — re-install now restarts the daemon (was `start`, a no-op on an active unit)
+
+`scripts/install.sh`'s `start_service` always ran `systemctl start angry-box`.
+On a re-install (the binary on disk is replaced while the service is already
+running) `start` is a **no-op** — systemd does not restart an active unit, so
+the freshly installed binary was never picked up and the **old** daemon kept
+running in memory. The upgrade silently did not take effect: a user who ran
+`install.sh` to go from v0.8.3 → v0.8.4 still had the v0.8.3 daemon until a
+manual `systemctl restart angry-box` (reported by a user: after upgrading, the
+"Diagnose" button on a correctly-saved node still failed with
+`ssh: read key "..."` — the v0.8.3 daemon was serving the request).
+
+- `start_service` now checks whether the unit is already active and runs
+  `restart` (to load the new binary) on a re-install, `start` only on a fresh
+  install. All three launch paths are covered: systemd system-mode
+  (`systemctl is-active --quiet` → `restart`/`start`), systemd user-mode
+  (`systemctl --user ...`), and Keenetic/NDMS `S99angry-box` init (PID-file +
+  `kill -0` liveness → `restart`/`start`; the S99 script already supported
+  `restart`). The "Service failed to start" warning + `status`/`journalctl`
+  output is preserved for both systemd modes.
+- Files: `scripts/install.sh` (`start_service`), `docs/PROGRESS.md` §33.
+  `bash -n scripts/install.sh` syntax OK.
+
 ## [v0.8.4] — 2026-07-29
 
 ### UI fix — «Add Node» wizard opened without styles / form did not submit
