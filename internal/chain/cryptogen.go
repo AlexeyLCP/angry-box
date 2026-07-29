@@ -48,7 +48,10 @@ func GenerateWGPresharedKey() (string, error) {
 }
 
 // GenerateRealityShortID returns a random short id of 0..8 bytes (0..16 hex
-// chars). n==0 → "" (empty is a valid REALITY short id).
+// chars). n==0 → "" (empty is a valid REALITY short id). NOTE: callers that
+// need a guaranteed-non-empty id (e.g. cloning a node's fresh identity — a
+// clone with an empty ShortID looks like the source's was not regenerated) use
+// GenerateRealityShortIDNonEmpty instead.
 func GenerateRealityShortID() string {
 	n := randInt(0, 8)
 	if n == 0 {
@@ -57,6 +60,19 @@ func GenerateRealityShortID() string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b) // always even-length
+}
+
+// GenerateRealityShortIDNonEmpty returns a random REALITY short id of 1..8
+// bytes — never empty. Used by the clone path (clone.go), where a fresh
+// identity must be observably non-empty (a clone with ShortID="" flaked
+// TestCloneNode_FreshIdentityAndUntouchedSource ~1/8 runs because
+// GenerateRealityShortID can return ""). An empty short id is valid for
+// REALITY, but a clone is expected to regenerate a usable one.
+func GenerateRealityShortIDNonEmpty() string {
+	n := randInt(1, 8)
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // GenerateRealityShortIDs returns count short ids, the first always "".

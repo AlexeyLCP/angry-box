@@ -257,7 +257,7 @@ func regenInboundIdentity(ib *model.NodeInbound) error {
 		ib.ServerPrivKey = priv
 		ib.ServerPubKey = pub
 	}
-	ib.ShortID = GenerateRealityShortID()
+	ib.ShortID = GenerateRealityShortIDNonEmpty()
 	// MTProxy / Hysteria2 / Trojan / SS passwords — regenerate the relevant one.
 	// We do not branch on protocol (cheap to mint all; empty ones are ignored
 	// by the render path that does not use them).
@@ -312,7 +312,7 @@ func regenChainNodeIdentity(cn *model.ChainNode, c *model.Chain) error {
 	priv, _, err := GenerateRealityKeypair()
 	if err == nil {
 		cn.TransitPrivKey = priv
-		cn.TransitShortID = GenerateRealityShortID()
+		cn.TransitShortID = GenerateRealityShortIDNonEmpty()
 	}
 	cn.TransitUUID = GenerateTUICUUID()
 	// Transit AWG keypairs (server + client) + inner tunnel IP.
