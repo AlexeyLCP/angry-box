@@ -4,6 +4,60 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.10] — 2026-07-29
+
+### Feature — AWG 3.0 header-protection mode (opt-in per-inbound toggle, live-verified)
+
+AWG 3.0 obfuscation — `HeaderProtectionKey` (32-byte ChaCha20, encrypts
+handshake/cookie + 16-byte transport headers) + `ContentPaddingAddition`
+(random transport-packet padding, lo-hi range) + `RekeyAfterTime` (sec range
+instead of fixed WG constants). Reference generator: architect.vai-rice.space
+(AWG 3.0/2.0/1.5/1.0 buttons). S1-S4 must be >= 12 when HPK is set
+(HeaderCipherNonceSize=12) — raised automatically at render.
+
+This is an **opt-in per-inbound toggle**. The default stays the kernel
+`awg-quick@awg0` + sing-box TUN-overlay architecture (AGENTS #10/#11 — existing
+deployments are untouched). When AWG 3.0 mode is ON, the user-entry renders as
+a userspace sing-box `type:"awg"` endpoint with multi-peer (one peer per User) —
+because AWG3 fields are userspace-only (the kernel amneziawg module rejects
+`HeaderProtectionKey` in `setconf`).
+
+**Live-verified on n1 (hard gate):** real client handshake through the in-process
+endpoint (`awg show awg3c latest-handshakes` = now, bidirectional transfer) +
+egress (`curl --interface awg3c ifconfig.me → 144.31.224.212`, server log
+`endpoint/awg[awg3-in]: inbound from 10.8.0.2 → outbound/direct → ifconfig.me`).
+Two UAPI client-config format bugs found and fixed: a blank line is the IPC
+terminator (not a device↔peer separator), and amnezia/AWG3 fields are
+device-level (parsed before the first `public_key=` line switches to peer-mode).
+
+**Constraints (intentional):**
+- User-facing entry ONLY — NOT inter-node chain transit (UI/hint enforces;
+  multi-hop AWG3 is not supported).
+- The client MUST be AWG3-capable: AmneziaWG Android/iOS/Windows app, or
+  userspace `amneziawg-go`. Linux `awg-quick` does NOT parse HPK.
+- AWG3-mode is orthogonal to the robust presets (v0.8.7): the preset chooses
+  Jc/jmin/jmax/S/H/I/CPS, the toggle adds HPK/CPM/RAT on top.
+
+- New fields on `InboundProfile` and `NodeInbound`: `AWG3Mode`, plus the
+  persisted material `AWG3HeaderProtectionKey` (hex), `AWG3ContentPaddingAddition`,
+  `AWG3RekeyAfterTime`. Material is generated once at deploy and persisted
+  (`EnsureProfileAWGMaterial` / `EnsureInboundAWGMaterial`); toggling off keeps
+  it dormant (preserved for a later re-enable, so clients don't break on
+  off→on→off cycling).
+- Render: `merged_config.go` emits the userspace endpoint for AWG3Mode inbounds;
+  `awg_deploy.go` skips awg0/awg1.conf; `awg_tun_overlay.go` skips the overlay
+  and `include_interface`. `clientconfig.go` writes HPK/CPM/RAT inline in
+  `[Interface]` before `[Peer]` (matching the amneziawg-go UAPI ordering).
+- UI: a checkbox "AWG 3.0 mode (header protection)" in the inbound form's AWG
+  section, with an info note (requires an AWG3-capable client, S1-S4 >= 12
+  automatic, user-facing entry only — not chain transit). i18n keys added
+  (en/ru).
+- Tests: 6 new unit tests (`TestAWG3Mode_RendersHPK`, `_S1S4RaisedTo12`,
+  `_MultiPeer`, `_KernelPathSkipped`, `_NotRaisedWhenOff`, `TestAWG3ClientConf_HasHPK`)
+  pin the render contract (HPK base64 round-trip, S raise, active-only peers,
+  no kernel conf / no overlay, ordering in `[Interface]`). A generator test
+  (`awg3gen` build tag) emits server+client configs for the live gate.
+
 ## [v0.8.9] — 2026-07-29
 
 ### Fix — store migration v2→v3 cleans up legacy orphan NodeInfos (deleted nodes still shown in Deploy Status)

@@ -2442,3 +2442,40 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 **Тесты:** `TestMigrateV3_OrphanNodeInfoCleanup` (2 orphan + 1 alive → 1 остаётся), `TestMigrateV3_NoOrphansIsNoOp` (no-op без orphans). Обновлены тест-фикстуры `TestMigrateV2_*` + `TestScheduleAutoApply_*` — добавлены `SaveHost` для нод (v3-закон: NodeInfo без Host = orphan, фикстуры должны соблюдать; раньше deploys fail-fast на GetNodeInfo-not-found до store-write, теперь доходят до ensure-material → нужен Host).
 
 **Файлы:** `internal/chain/store.go` (migrateOrphanNodeInfos + currentSchemaVersion 2→3 + migrations list), `internal/chain/migrate_v3_test.go` (новый), `internal/chain/migrate_v2_test.go` (фикстуры +Hosts), `internal/chain/misc_more_test.go` (фикстуры +SaveHost). `go build ./...` + `go test ./internal/chain ./internal/web -p 1` зелёные.
+
+## 38. feat(awg3): AWG 3.0 header-protection mode — opt-in per-inbound toggle (live-verified на n1) (v0.8.10) (2026-07-29)
+
+**Контекст:** AWG 3.0 = HeaderProtectionKey (32-байт ChaCha20, шифрует handshake/cookie + 16-байт transport-заголовки) + ContentPaddingAddition (рандомный padding транспортных пакетов, диапазон lo-hi) + RekeyAfterTime (диапазон сек вместо фиксированных констант WG). Референс-генератор https://architect.vai-rice.space/ (кнопки AWG 3.0/2.0/1.5/1.0). S1-S4 **строго ≥ 12** когда HPK set (HeaderCipherNonceSize=12). Архитектурный конфликт: AWG3-поля парсятся ТОЛЬКО userspace amneziawg-go `feat/awg3` через sing-box `type:"awg"` endpoint — kernel amneziawg-модуль их НЕ парсит (`awg setconf` reject'ит `HeaderProtectionKey=`, live на n1). Наш user-facing AWG = kernel awg-quick + sing-box TUN-overlay (AGENTS #10/#11). Решение: **opt-in per-inbound toggle** — дефолт kernel (существующие деплои не трогаются), AWG3 ON = userspace endpoint. Решение пользователя: AWG3 только для user-facing entry (НЕ inter-node transit), нужен AWG3-клиент (AmneziaWG app / userspace amneziawg-go, НЕ Linux awg-quick).
+
+**Gate 2 (HARD, live на n1) — PASS:**
+1. `sing-box check` принимает AWG3-config на amnezia-box (Gate 1, §31).
+2. Userspace amneziawg-go клиент (cross-compile linux/amd64, pin `fc488742dbb4`) залит на n1. UAPI через socat → `/var/run/amneziawg/awg3c.sock`.
+3. **Два найденных UAPI-бага в формате клиент-конфига:**
+   - **Баг 1 (peer не добавлялся):** пустая строка в amneziawg-go IPC = **терминатор операции** (device/uapi.go:238: `if line == ""` → merge + return), НЕ разделитель device↔peer. Переключение в peer-режим делается ТОЛЬКО строкой `public_key=` (uapi.go:256). Убираем пустую строку между `listen_port=0` и `public_key=`.
+   - **Баг 2 (errno=-22):** amnezia/AWG3-поля (jc/jmin/jmax/s1-s4/h1-h4/i1-i5/header_protection_key/content_padding_addition/rekey_after_time) — **device-level** (`handleDeviceLine`, парсятся в `deviceConfig==true`, ДО первой `public_key=`). Peer-секция (`handlePeerLine`) принимает только update_only/remove/preshared_key/endpoint/allowed_ip/persistent_keepalive_interval. Значит порядок UAPI: `set=1` → device fields (private_key, listen_port, jc/s/h/i, HPK/CPM/RAT) → `public_key=` → peer fields (endpoint, allowed_ip, persistent_keepalive_interval) → blank line (терминатор).
+4. После исправления: `errno=0`, `awg show awg3c` — interface (jc/s/h/i) + peer (endpoint 144.31.224.212:51841, allowed_ip 0.0.0.0/0, keepalive 25).
+5. **Live handshake PASS:** `awg show awg3c latest-handshakes = 1785331265` (Unix now), `transfer = 269/3456` bytes (двунаправленный). Сервер-лог: `endpoint/awg[awg3-in]: inbound connection from 10.8.0.2:59838 → to 34.160.111.145:80` (ifconfig.me), `outbound/direct[direct-out]: outbound connection to 34.160.111.145:80`.
+6. **Egress PASS:** `curl --interface awg3c ifconfig.me → 144.31.224.212`. In-process endpoint корректно проксирует peer-трафик через sing-box routing (direct-out dial от имени endpoint, не kernel forward). TUN inbound в server-config НЕ нужен для handshake-gate (конфликтует с prod auto_route default — убран из test-config).
+7. n1 восстановлен в prod-state (sing-box + awg0 active, порт 51841 свободен, awg3c netns/iface удалены, тест-артефакты зачищены).
+
+**A2b — production render branch (userspace AWG3 user-entry):**
+- `merged_config.go` buildChainRoleInOut/buildStandaloneInOut: `AWG3Mode` → userspace `type:"awg"` endpoint (`buildAWGUserInboundMulti`, один peer на User) вместо kernel awg0. chain-entry AWG3 через `chainEntryAWG3Inbound` (v2 InboundRef + legacy Source match).
+- `awg_deploy.go` RenderNodeAWGConfs: пропускает awg0/awg1.conf для AWG3Mode (нет kernel iface).
+- `awg_tun_overlay.go`: awgTUNOverlayNeeded/tunIncludeInterfacesForNode пропускают AWG3Mode inbounds (userspace endpoint, нет overlay/include_interface).
+- `inbound_source.go`: `chainEntryAWG3Inbound` helper.
+- `clientconfig.go` renderAWGQuickConf: HPK/CPM/RAT inline в `[Interface]` (до `[Peer]`) — совпадает с выясненным UAPI-порядком (device-level amnezia/AWG3 BEFORE public_key). AmneziaWG app + userspace amneziawg-go парсят нативно.
+
+**A3 — UI toggle + handler + i18n:**
+- `inbounds.templ`: checkbox «AWG 3.0 mode (header protection)» в awg-capture-section + информ-текст (требует AWG3-клиент, S1-S4≥12 auto, user-facing entry only, НЕ inter-node transit).
+- `inbounds.go`: `inboundFromForm` парсит `awg3_mode`; `handleUpdateInbound` переносит AWG3 material (HPK/CPM/RAT) с existing профиля (reuse на off→on — клиенты не ломаются, dormant на on→off — сохраняется для re-enable). Material генерируется при deploy (`EnsureProfileAWGMaterial`), не вводится руками.
+- `i18n.go`: ключи `AWG 3.0 mode (header protection)` + `AWG3Mode hint` (en/ru).
+
+**A4 — валидация S1-S4 ≥ 12 + unit-тесты:**
+- `applyAWG3ToEndpoint` (applier_build.go): hex→base64 HPK + поднимает S1-S4 до 12 (HeaderCipherNonceSize=12).
+- `awg3_mode_test.go` (6 тестов): `TestAWG3Mode_RendersHPK` (endpoint JSON содержит header_protection_key base64, round-trip → hex material), `TestAWG3Mode_S1S4RaisedTo12` (preset S=5,8,10,11 → все ≥12), `TestAWG3Mode_MultiPeer` (только active users, inactive skipped), `TestAWG3Mode_KernelPathSkipped` (no awg0/awg1.conf + no TUN overlay), `TestAWG3Mode_NotRaisedWhenOff` (AWG3 off → no HPK), `TestAWG3ClientConf_HasHPK` (HPK в [Interface] before [Peer], AWG3 off → no HPK).
+- `awg3_gen_test.go` (build tag `awg3gen`): генератор /tmp server+client конфигов (live-gate harness).
+- **Фикс глобальной мутации пресета в тестах:** `ConnectionPreset.AWG` — shared `*AWGPreset` (`GetPreset` возвращает value, но pointer-field общий). Мутировали `preset.AWG.S1=5` → отравляли глобальный preset → ломало `TestMigrateV2_RenderEquivalence_AWGEntry` byte-equivalence (legacy S=115/45/22/12 vs migrated S=5/8/10/11). Фикс: клонируем AWG (`awgCopy := *preset.AWG; preset.AWG = &awgCopy`) перед мутацией.
+
+**Файлы:** `internal/domain/model/inbound.go`+`panel.go` (AWG3 fields, A1 commit 9b427a1), `internal/chain/awg_cps.go`+`awg_inbound_material.go`+`applier_build.go` (A1+A2a, 9b427a1), `internal/chain/merged_config.go`+`awg_deploy.go`+`awg_tun_overlay.go`+`inbound_source.go`+`clientconfig.go`+`levels_mesh_test.go` (A2b), `internal/chain/awg3_mode_test.go`+`awg3_gen_test.go` (A4), `internal/web/inbounds.go`+`web/templates/inbounds.templ`+`internal/i18n/i18n.go` (A3). `go build ./...` + `go test ./internal/chain -p 1` зелёные. n1 restored to prod-state.
+
+**Ограничения (явные):** AWG3-mode НЕ поддерживается для inter-node chain transit (только user-facing entry) — UI/hint это фиксирует. Multi-hop chains с AWG3 entry не валидируются в live-gate (пользовательское решение «не даем построить маршрут»). Клиент должен быть AWG3-capable (AmneziaWG Android/iOS/Windows app или userspace amneziawg-go) — Linux awg-quick НЕ парсит HPK.
