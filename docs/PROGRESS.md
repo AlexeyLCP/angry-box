@@ -2392,3 +2392,15 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 **Фикс:** `start_service` теперь проверяет, active ли unit, и делает `restart` (поднять свежий бинарь) при re-install, `start` только при fresh-install. Покрыты все 3 пути: systemd system-mode (`systemctl is-active --quiet` → `restart`/`start`), systemd user-mode (`systemctl --user ...`), Keenetic S99 init (проверка PID-файла + `kill -0` → `S99angry-box restart`/`start`; S99 уже поддерживает `restart`). Предупреждение "Service failed to start" + status/journal вывод сохранены для обоих режимов.
 
 **Файлы:** `scripts/install.sh` (start_service). `bash -n` синтаксис OK.
+
+## 34. fix(ui): кнопка «Add Inbound» на вкладке Inbounds не открывала модалку + Download клиентского конфига (v0.8.6) (2026-07-29)
+
+**Баг 1 (VladufQa):** на вкладке «Входящие» кнопка «+ Add Inbound» не работает, но если провалиться в подкладку «Пресеты» — начинает работать.
+
+**Корень:** кнопка `hx-get="/ui/inbounds/new" hx-target="#modal-container"` (inbounds.templ:32). Но `#modal-container` **не определён** в `InboundsPage` — он есть в chains/dashboard/nodes/presets, но не inbounds. HTMX не находит target → форма не открывается. Когда проваливаешься в Presets (`hx-get="/ui/presets" hx-target="#inbounds-tab-content"`), пресеты рендерятся в tab-content и приносят свой `#modal-container` (presets.templ:125) → кнопки начинают работать.
+
+**Фикс:** `#modal-container` добавлен в `InboundsPage` (снаружи `#inbounds-tab-content`, чтобы не удалялся при swap на пресеты). Дубль-контейнер из `PresetsPage` убран (presets.templ:125) — теперь один контейнер на обёртке, и Inbounds- и Presets-кнопки свапают в него. Пресеты рендерятся только через swap в `#inbounds-tab-content` (прямой нав-ссылки нет), так что отдельный контейнер им не нужен.
+
+**Фича 2 (запрос VladufQa): «добавь возможность скачивать конфиг в клиентах».** `UserConfigView` (users.templ) показывал клиентский конфиг в `<textarea>` только с кнопкой Copy. Добавлена кнопка «Download» рядом с Copy: client-side Blob-download (без backend-роута). JS `downloadUserConfig(btn)` (app.js) читает textarea из блока, создаёт Blob, скачивает как `<userName>-<chain>.conf`. Расширение по содержимому: AWG awg-quick `.conf` (многострочный с `[Interface]`) → `.conf`, однострочные share-URI (vless://, tg://, https://) → `.txt`. Имя файла sanitize (path-separators → `-`, не-word → `_`). i18n-ключ «Download» добавлен в en/ru.
+
+**Файлы:** `web/templates/inbounds.templ` (+modal-container), `web/templates/presets.templ` (−дубль modal-container), `web/templates/users.templ` (+Download кнопка), `web/static/js/app.js` (+downloadUserConfig), `internal/i18n/i18n.go` (+Download en/ru). `templ generate` + `go build ./...` + `go test ./internal/web -p 1` зелёные (один Windows-TempDir flake в parallel — не продукт-баг, проходит в изоляции).

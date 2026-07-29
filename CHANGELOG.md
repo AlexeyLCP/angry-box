@@ -4,6 +4,45 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.6] — 2026-07-29
+
+### UI fix — «+ Add Inbound» button on the Inbounds tab did not open the modal
+
+The "+ Add Inbound" button on the Inbounds page targets `#modal-container`
+(`hx-get="/ui/inbounds/new" hx-target="#modal-container"`), but `InboundsPage`
+did **not** define a `#modal-container` element — it exists in
+chains/dashboard/nodes/presets, but not inbounds. HTMX could not find the
+target, so the form never opened. Drilling into the "Presets" sub-tab made the
+button start working, because the Presets page (swapped into
+`#inbounds-tab-content`) brought its own `#modal-container` with it (reported
+by a user: "on the Inbounds tab the add button doesn't work, but if you drill
+into the Presets sub-tab the button starts working").
+
+- Added `<div id="modal-container"></div>` to `InboundsPage`, placed **outside**
+  `#inbounds-tab-content` so it survives the swap to the Presets sub-tab. Removed
+  the now-duplicate `#modal-container` from `PresetsPage` (presets are only
+  rendered via the inbounds tab swap, never standalone, so the wrapper's
+  container is enough). One container, both Inbounds and Presets buttons swap
+  into it.
+
+### Feature — download a client config file from the Clients page
+
+The client config view (`UserConfigView`) showed each chain/inbound config in a
+read-only `<textarea>` with only a Copy button. Added a **Download** button next
+to Copy that saves the config as a file via a client-side Blob (no backend
+round-trip). The new `downloadUserConfig()` helper in `web/static/js/app.js`
+reads the textarea, builds a Blob, and downloads it as
+`<userName>-<chain>.conf`. The extension is chosen by content: a multi-line
+AWG awg-quick config (containing `[Interface]`) keeps `.conf`; a single-line
+share URI (`vless://`, `tg://`, `https://...`) becomes `.txt` so the OS opens
+it with the right app. The filename is sanitized (path separators → `-`,
+non-word chars → `_`). i18n key "Download" added to en/ru.
+
+- Files: `web/templates/inbounds.templ`, `web/templates/presets.templ`,
+  `web/templates/users.templ`, `web/static/js/app.js`, `internal/i18n/i18n.go`,
+  `docs/PROGRESS.md` §34. `templ generate` + `go build ./...` +
+  `go test ./internal/web -p 1` green.
+
 ## [v0.8.5] — 2026-07-29
 
 ### Installer fix — re-install now restarts the daemon (was `start`, a no-op on an active unit)

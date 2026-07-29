@@ -301,3 +301,35 @@ function addNodeOpenCapture() {
     if (!target || typeof htmx === 'undefined') { return; }
     htmx.ajax('GET', '/ui/nodes/' + id + '/capture', { target: '#modal-container', swap: 'innerHTML' });
 }
+
+// downloadUserConfig reads the config <textarea> from the button's config block
+// and saves it as a file via a client-side Blob (no backend round-trip). The
+// filename comes from data-filename ("<userName>-<chain>.conf"); AWG configs
+// (multi-line awg-quick .conf containing [Interface]) keep .conf, single-line
+// URI/share links get .txt so the OS doesn't mis-handle them. Sanitized in JS
+// so user/chain names with spaces or slashes don't break the download.
+function downloadUserConfig(btn) {
+    var block = btn.closest('.border.border-base-300.rounded-lg');
+    if (!block) { return; }
+    var ta = block.querySelector('textarea');
+    if (!ta) { return; }
+    var content = ta.value;
+    var rawName = btn.getAttribute('data-filename') || 'config.conf';
+    // Strip any path separators / control chars from the filename.
+    var name = rawName.replace(/[\\\/]+/g, '-').replace(/[^\w.\-]+/g, '_');
+    // AWG awg-quick .conf is multi-line and starts with [Interface]; a share URI
+    // (vless://, tg://, https://...) is single-line — pick the extension so the
+    // file opens with the right app.
+    if (content.indexOf('[Interface]') === -1 && content.indexOf('\n') === -1) {
+        name = name.replace(/\.conf$/i, '') + '.txt';
+    }
+    var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}

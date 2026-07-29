@@ -407,6 +407,15 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 									{ i18n.T(ctx, "Copy") }
 								</button>
 							</div>
+							<div class="flex justify-end mt-2">
+								<button
+									type="button"
+									class="btn btn-xs btn-outline"
+									onclick="downloadUserConfig(this)"
+									data-filename={ fmt.Sprintf("%s-%s.conf", u.Name, cfg.ChainName) }>
+									{ i18n.T(ctx, "Download") }
+								</button>
+							</div>
 						</div>
 					}
 				</div>
