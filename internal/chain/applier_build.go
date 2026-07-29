@@ -1337,13 +1337,17 @@ func applyAWG3ToEndpoint(ep *config.AwgEndpointOptions, material *AWGObfsMateria
 	}
 }
 
-// TEST-ONLY / LEGACY: same status as buildAWGUserInbound above. Production
-// chain-entry AWG is kernel awg0 + TUN-overlay (RenderServerAWGConf builds the
-// .conf with all user peers directly). This builder has NO production callers
-// (only clientconfig_test.go). The per-user peer-material logic it exercises
-// (AWGPublicKey/AWGAddress → peer) is still correct and reused conceptually by
-// RenderServerAWGConf, which is why the tests are kept. Do NOT wire this into a
-// production render path — see AGENTS.md #11 / PROGRESS §1.A.
+// buildAWGUserInboundMulti builds a multi-peer AWG endpoint (one peer per User)
+// for the userspace `type:"awg"` path. Production callers: the AWG 3.0 mode
+// user-entry — merged_config.go's buildChainRoleInOut (chain entry AWG3) and
+// buildStandaloneInOut (standalone AWG3) call this when an inbound has
+// AWG3Mode on (AGENTS #5 / PROGRESS §38 — AWG3 fields are userspace-only, so
+// the entry renders as a userspace endpoint, NOT kernel awg-quick). The
+// non-AWG3 chain entry + standalone AWG paths stay kernel (awg0.conf via
+// RenderServerAWGConf + TUN-overlay). The per-user peer-material logic
+// (AWGPublicKey/AWGAddress → peer) is also reused conceptually by
+// RenderServerAWGConf. Do NOT wire this into the non-AWG3 production render
+// path — see AGENTS.md #10/#11 / PROGRESS §1.A.
 func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User, material *AWGObfsMaterial) ([]byte, string, error) {
 	awg := preset.AWG
 	if awg == nil {
