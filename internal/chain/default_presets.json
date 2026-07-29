@@ -398,5 +398,71 @@
       "idle_timeout": "12s",
       "ping_timeout": "12s"
     }
+  },
+  {
+    "name": "russia_2026_awg_robust",
+    "protocol": "awg",
+    "description": "Russia (RKN) AWG — robust handshake variant. Low Jc=5 survives budget VPS UDP rate-limiting that kills the Jc=120 default (AGENTS #17). Slightly weaker DPI masking; use on lossy/budget hostings where the default won't handshake. (AWG variant)",
+    "awg": {
+      "jc": 5, "jmin": 3, "jmax": 15,
+      "s1": 15, "s2": 85,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 164, "h2": 18, "h3": 59, "h4": 110,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "iran_2026_awg_robust",
+    "protocol": "awg",
+    "description": "Iran DPI AWG — robust handshake variant. Low Jc=5 survives budget VPS UDP rate-limiting that kills the Jc=120 default (AGENTS #17). Use on lossy/budget hostings where the default won't handshake. (AWG variant)",
+    "awg": {
+      "jc": 5, "jmin": 3, "jmax": 15,
+      "s1": 39, "s2": 72,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 204, "h2": 38, "h3": 79, "h4": 130,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "china_2026_awg_robust",
+    "protocol": "awg",
+    "description": "GFW AWG — robust handshake variant. Low Jc=5 survives budget VPS UDP rate-limiting that kills the Jc=120 default (AGENTS #17). Use on lossy/budget hostings where the default won't handshake. (AWG variant)",
+    "awg": {
+      "jc": 5, "jmin": 3, "jmax": 15,
+      "s1": 28, "s2": 66,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 1024, "h2": 128, "h3": 256, "h4": 512,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "maximum_stealth_2026_awg_robust",
+    "protocol": "awg",
+    "description": "Maximum stealth AWG — robust handshake variant. Low Jc=5 survives budget VPS UDP rate-limiting that kills the Jc=120 default (AGENTS #17). Use on lossy/budget hostings where the default won't handshake. (AWG variant)",
+    "awg": {
+      "jc": 5, "jmin": 3, "jmax": 15,
+      "s1": 115, "s2": 45,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 1984, "h2": 2048, "h3": 4096, "h4": 8192,
+      "cps_level": 3,
+      "mimicry": "quic"
+    }
+  },
+  {
+    "name": "pro_2026_awg_robust",
+    "protocol": "awg",
+    "description": "PRO 2026 AWG — robust handshake variant. Low Jc=5 survives budget VPS UDP rate-limiting that kills the Jc=120 default (AGENTS #17). Use on lossy/budget hostings where the default won't handshake. (AWG variant)",
+    "awg": {
+      "jc": 5, "jmin": 3, "jmax": 15,
+      "s1": 85, "s2": 15,
+      "s3": 22, "s4": 12, "itime": 130,
+      "h1": 164, "h2": 18, "h3": 59, "h4": 110,
+      "cps_level": 3,
+      "mimicry": "quic",
+      "i1_packet": "quic-1200"
+    }
   }
 ]

@@ -4,6 +4,41 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.7] — 2026-07-29
+
+### Feature — robust AWG presets (low Jc) for budget VPS where the default won't handshake
+
+All built-in AWG obfuscation presets (`russia/iran/china/maximum_stealth/pro_2026_awg`)
+ship with `Jc=120` — a DPI-maximizing profile that floods 120 junk UDP packets
+before every WireGuard handshake. On premium channels (GCloud etc.) this passes;
+on **budget VPS** the hosting rate-limits/drops the UDP flood, and the handshake
+init packet (1 of ~120) or the server's response (riding back inside the 120-
+packet flood) gets dropped → the handshake never completes. This is documented
+as AGENTS Known Issue #17 and was reported by a user: a client would not connect
+to an AWG node on a budget VPS. `awg show` on the node was an A/B proof — two
+AWG interfaces on the same node, same channel, same client: `awg2` (Jc=6) had a
+fresh handshake + 46 MiB transferred, `awg0` (Jc=120) had no handshake at all.
+
+Per AGENTS #17 the DPI presets are a product decision and are NOT changed. This
+release adds **five paired robust presets** that keep a reliable handshake on
+lossy/budget hostings at the cost of slightly weaker DPI masking:
+
+- `russia_2026_awg_robust`, `iran_2026_awg_robust`, `china_2026_awg_robust`,
+  `maximum_stealth_2026_awg_robust`, `pro_2026_awg_robust` — each mirrors its
+  DPI counterpart but with `Jc=5, Jmin=3, Jmax=15` (minimal junk flood). The
+  S1-S4 / H1-H4 / CPS / mimicry / i1_packet fields are copied from the original
+  (they affect the DPI fingerprint, not handshake robustness). The user picks a
+  preset matching their channel in the inbound UI dropdown.
+- Files: `internal/chain/default_presets.json` (21 → 26 presets),
+  `internal/chain/robust_presets_test.go` (verifies the robust presets load,
+  are `protocol:"awg"`, have `Jc ≤ 10`, and appear in the AWG dropdown),
+  `AGENTS.md` #17, `docs/PROGRESS.md` §35. `go build ./...` +
+  `go test ./internal/chain` green.
+- Workaround for an existing node (until a redeploy with a robust preset):
+  `awg set <iface> jc 3` on BOTH the server and the client — the handshake
+  completes immediately. A redeploy re-applies the preset's Jc, so switch the
+  inbound/chain to a `*_awg_robust` preset to keep the fix.
+
 ## [v0.8.6] — 2026-07-29
 
 ### UI fix — «+ Add Inbound» button on the Inbounds tab did not open the modal
