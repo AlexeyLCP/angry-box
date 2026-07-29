@@ -25,11 +25,11 @@
 ## 0. Принятые архитектурные решения (НЕ менять без согласия)
 
 1. **AWG — основной протокол.** Упор на него: обфускация, пресеты, все пути.
-2. **AWG-сервер = kernel `awg-quick@awg0.service` + sing-box TUN-overlay.** Никакого userspace `WireGuardEndpoint` на серверах — userspace wireguard-go падает с `panic: chacha20poly1305` с amnezia-обфускацией (gVisor `system:false` И `system:true` — оба падают; amnezia-математика идёт через userspace-код даже в system-режиме). Доказано в `VPN/docs/sing-box-extended.md:103-111`, `nuances-bugs-patches.md:199-201`.
-3. **sing-box НЕ поднимает AWG-интерфейс.** `awg-quick@awg0.service` (kernel systemd) поднимает, sing-box работает поверх через TUN `include_interface:["awg0"]` + direct outbounds с `bind_interface`. Эталон: `VPN/orchestrator/app/templates/awg_balancer.json.j2`.
+2. **AWG-сервер = kernel `awg-quick@awg0.service` + sing-box TUN-overlay (default).** Никакого userspace `WireGuardEndpoint` на user-facing серверах — userspace wireguard-go падает с `panic: chacha20poly1305` с amnezia-обфускацией (gVisor `system:false` И `system:true` — оба падают; amnezia-математика идёт через userspace-код даже в system-режиме). Доказано в эталонном проекте `VPN/docs/sing-box-extended.md` (соседний repo, §4.3). **Исключение — AWG 3.0 mode (v0.8.10, §38):** opt-in per-inbound userspace `type:"awg"` endpoint (HPK — userspace-only, kernel module rejects); live-verified на n1, AGENTS.md #5/#10.
+3. **sing-box НЕ поднимает AWG-интерфейс.** `awg-quick@awg0.service` (kernel systemd) поднимает, sing-box работает поверх через TUN `include_interface:["awg0"]` + direct outbounds с `bind_interface`. Эталон: `VPN/orchestrator/app/templates/awg_balancer.json.j2` (соседний repo, §4.3).
 4. **TUIC — FROZEN (на паузе).** User entry + standalone. QUIC/TLS cert геморрой + нерешённые баги. Не тестировать, не фиксить, не предлагать в UI для новых конфигов (AGENTS.md #6). См. `internal/chain/frozen.go`.
 5. **Hysteria2 — FROZEN (на паузе).** Transport + standalone + user entry. Тот же класс проблем что TUIC (QUIC требует TLS/self-signed cert). Builder не написан, UI блокирует новый выбор. Не реализовывать пока не доведены до ума AWG, Reality+XHTTP, MTProxy (AGENTS.md #11). См. `internal/chain/frozen.go`.
-6. **Product focus (базовый минимум v0.2.x):** AWG (kernel + balancer), VLESS+Reality+XHTTP (transport + standalone), MTProxy/Telemt. Всё остальное — вне скоупа.
+6. **Product focus (scope frozen):** AWG (kernel + balancer; + AWG 3.0 header-protection opt-in per-inbound, v0.8.10), VLESS+Reality+XHTTP (transport + standalone), MTProxy/Telemt. Всё остальное — вне скоупа.
 7. **Live CPS capture: только QUIC, не plain TCP TLS.** Два режима capture — не путать:
    - ✅ **QUIC live capture** (`quic-live`, `CaptureQUICSignature`) — **РАБОТАЕТ**. UDP→domain:443, QUIC Initial (внутри — TLS ClientHello в CRYPTO frame), ловим ответы → I1-I5. Интегрирован в `EnsureChainAWGMaterial` (раздел 2.4).
    - ❌ **TCP TLS live capture** (plain TLS handshake по TCP:443 без QUIC-обёртки) — **НЕ поддерживается** (awg-manager: несовместим с AWG, крашит runtime). В angry-box не портирован и не планируется.
@@ -193,12 +193,14 @@
 - `iptables -t nat -A POSTROUTING -o $ext_if -j MASQUERADE` — прямой NAT наружу, минуя sing-box (`nuances-bugs-patches.md:236-270`). У нас sing-box TUN-overlay, MASQUERADE ломит путь.
 - `awg-quick up/down` напрямую без systemd — мы хотим `systemctl enable awg-quick@awg0` для авторестарта.
 
-### 4.3. Наши VPN/docs (эталонная архитектура)
+### 4.3. Эталонная архитектура — соседний проект VPN/ (вне этого repo)
+
+Эталоны, по которым строился angry-box (kernel AWG + sing-box TUN-overlay + balancer, MTProxy, dns.idoctor.mom migration), живут в **соседнем проекте `VPN/`** — отдельном репозитории, НЕ входящем в angry-box. Пути ниже указывают туда, не в этот repo (для агента внутри angry-box — «файла нет», это нормально):
 
 - `VPN/orchestrator/app/templates/awg_balancer.json.j2` — эталон sing-box config (TUN-overlay + balancer + bind_interface).
 - `VPN/orchestrator/app/templates/mtproxy_server.json.j2` — эталон MTProxy server (type:"mtproxy", users с ee-секретами, fallback awg-failover).
 - `VPN/docs/architecture.md` — Server 2 (dns.idoctor.mom): AWG clients → awg0 (kernel) → sing-box-tun → fallback balancer → exit nodes.
-- `VPN/docs/sing-box-extended.md` — sing-box-extended фичи, balancers comparison, amnezia bug, MTProxy secret format, build tags.
+- `VPN/docs/sing-box-extended.md` — sing-box-extended фичи, balancers comparison, amnezia bug, MTProxy secret format, build tags. (Исторично — angry-box теперь на amnezia-box, §31; sing-box-extended superseded.)
 - `VPN/docs/nuances-bugs-patches.md` — нюансы (TUN stack mixed, include_interface, source_ip_cidr vs inbound, MTProxy secrets, fallback patch).
 - `VPN/docs/server-dns-idoctor-mom.md` — миграция Xray→sing-box, `awg-quick@awg0.service` enabled, `sing-box.service After=awg-quick@awg0.service`.
 
@@ -227,7 +229,7 @@
 - `internal/chain/livecapture.go` (или `internal/signature/capture.go`) — портированный live capture из awg-manager.
 
 ### Эталонные (не трогать, читать)
-- `VPN/orchestrator/app/templates/*.j2`, `VPN/docs/*.md` — эталоны архитектуры.
+- Соседний проект `VPN/` (`VPN/orchestrator/app/templates/*.j2`, `VPN/docs/*.md`) — эталоны архитектуры (kernel AWG + TUN-overlay + balancer, MTProxy, dns.idoctor.mom). Вне этого repo; см. §4.3.
 
 ---
 
@@ -256,7 +258,7 @@
 - [x] ~~Усилить `awgcapture.go` полной RFC 9001 AEAD.~~ → ДЕЛАНО (раздел 2.4).
 - [x] Hysteria2 transport — **ЗАМОРОЖЕН** как TUIC (AGENTS.md #11). Loud-fail guard в `buildChainRoleInOut` (fix #3: hard build error, не silent warning).
 - [ ] GCloud UDP 443 firewall на exit VPS — инфраструктурный затык e2e, не код. Открыть порт или менять exit.
-- [ ] **НОВОЕ (follow-up из kernel-AWG rework):** `RenderAWGHop` (userspace AWG endpoint) всё ещё зовётся legacy-CLI-путём `Backend.GenerateConfig`/`ApplyConfig` (`cmd/angry-box/main.go:673`, `config.go:83`) для standalone-AWG. Это НЕ web-UI путь (тот идёт через `ApplyMergedNode` → kernel AWG). Legacy-путь пушит только один `config.json` (без двухфайлового awg0.conf push), поэтому не может тривиально переключиться на kernel AWG без реструктуризации `ApplyConfig`. Решение: либо перевести CLI-путь на `pushConfigWithAWG`, либо задепрекейтить `Backend.ApplyConfig` в пользу `ApplyMergedNode` для standalone.
+- [ ] **НОВОЕ (follow-up из kernel-AWG rework):** `RenderAWGHop` (userspace AWG endpoint) всё ещё зовётся legacy-CLI-путём `Backend.GenerateConfig`/`ApplyConfig` (CLI-команда `angry-box config --protocol awg` в `cmd/angry-box/main.go`, печатает deprecation-warning) для standalone-AWG. Это НЕ web-UI путь (тот идёт через `ApplyMergedNode` → kernel AWG). Legacy-путь пушит только один `config.json` (без двухфайлового awg0.conf push), поэтому не может тривиально переключиться на kernel AWG без реструктуризации `ApplyConfig`. Решение: либо перевести CLI-путь на `pushConfigWithAWG`, либо задепрекейтить `Backend.ApplyConfig` в пользу `ApplyMergedNode` для standalone.
 - [x] **(review follow-up #dead, resolved 2026-07-04):** `buildAWGUserInbound`/`buildAWGUserInboundMulti` (applier.go) помечены `TEST-ONLY / LEGACY` в doc-комментариях — production user-facing AWG теперь kernel awg0 + TUN-overlay (`RenderServerAWGConf`/`RenderExitAWGConf`). Builders оставлены: тесты (`clientconfig_test.go`, `helpers_test.go`) утверждают peer/amnezia-material логику, релевантную для userspace AWG transit (который ещё alive). Удалять нельзя — сломает тесты; пометки снимают путаницу что userspace-entry путь жив.
 - [ ] **НОВОЕ (review #1 — критично, real-VPS verify):** per-client `source_ip_cidr` под TUN-overlay — `awg_tun_overlay.go` утверждает «TUN NAT changes the source IP», что ЕСЛИ правда значит `source_ip_cidr` per-client routing архитектурно несовместимо с overlay (AGENTS.md #7 primary механизм). **Надо проверить на real VPS** с поднятым kernel-модулем: сохраняется ли peer inner IP (10.8.0.X) через TUN, или NAT меняет его на TUN address (172.16.250.1). Логика покрыта unit-тестами (`TestBuildMergedRoute_PerClientAWG_*`); e2e — skip stub пока модуль не staged.
 - [ ] E2E AWG: нужен реальный kernel-модуль на test VPSes (deps staging). AWG per-client E2E — skip stub (`TestE2E_Heavy_PerClientRouting`) пока модуль не staged; routing logic покрыт unit-тестами.
@@ -416,8 +418,8 @@ UI dropdowns рендерят frozen options как `<option ... selected disabl
 
 ### 10.6. Открыто (не блокеры)
 
-- **Egress на отдельном клиенте** — последний незакрытый verify (test artifact, не product bug). Нужен 3-й VPS / телефон / ноутбук.
-- **Legacy CLI `Backend.ApplyConfig` standalone-AWG** (`cmd/angry-box/main.go:673` via `RenderAWGHop`) — ещё userspace, known follow-up.
+- ~~Egress на отдельном клиенте~~ — **CLOSED §22** (egress VERIFIED на n1→n2 cross-machine топологии, 2026-07-18).
+- **Legacy CLI `Backend.ApplyConfig` standalone-AWG** (CLI-команда `angry-box config --protocol awg`, calls `RenderAWGHop`) — ещё userspace, known follow-up (печатает deprecation-warning).
 - **Per-client `source_ip_cidr` под TUN-overlay** — real-VPS verify (unit-тесты покрывают логику).
 - **GCloud UDP 443 firewall на exit VPS** — инфраструктурный, не код.
 
@@ -563,7 +565,7 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 
 ### 13.4. v0.4.0 live E2E на свежих GCloud VPSes (2026-07-08)
 
-Пользователь дал 3 свежих GCloud Debian 12 VPS (entry `34.14.98.64`, middle `207.175.1.227`, exit `35.189.235.61`, user `lcp`, key `id_ed25519`, passwordless sudo). Сервера были **чистые** (нет sing-box, нет awg-quick, нет amneziawg-модуля) — проверено что `ApplyChain` полностью self-stages: sing-box-extended binary (download из GitHub Release), amneziawg kernel module (PPA fast path `apt install amneziawg`), `awg-quick@.service` template, `awg0.conf`, `ip_forward=1`, sing-box systemd unit с `After=awg-quick@awg0.service`. Адреса в `e2e_helpers_test.go` обновлены на новые IP.
+Пользователь дал 3 свежих GCloud Debian 12 VPS (entry `34.14.98.64`, middle `207.175.1.227`, exit `35.189.235.61`, user `lcp`, key `id_ed25519`, passwordless sudo). Сервера были **чистые** (нет sing-box, нет awg-quick, нет amneziawg-модуля) — проверено что `ApplyChain` полностью self-stages: amnezia-box binary (download из GitHub Release, детект через `isPatchedExtended`/`with_awg` — исторически sing-box-extended, теперь amnezia-box, §31), amneziawg kernel module (PPA fast path `apt install amneziawg`), `awg-quick@.service` template, `awg0.conf`, `ip_forward=1`, sing-box systemd unit с `After=awg-quick@awg0.service`. Адреса в `e2e_helpers_test.go` обновлены на новые IP.
 
 **Результаты E2E (3 теста PASS):**
 
@@ -670,7 +672,7 @@ control (default route) → 207.175.40.161  (server-2 own IP)
 
 ---
 
-## 15. v0.6.0 roadmap — product + egress verify (2026-07-08, в работе)
+## 15. v0.6.0 roadmap — product + egress verify (2026-07-08; выполнено — см. §16-§22)
 
 После v0.5.0 (backups + relocate) технический долг из CTO-review закрыт почти
 целиком (CI, at-rest шифрование, паники из request-path, config.Load silent
@@ -1359,652 +1361,62 @@ scrypt-параметрах блоба, не в блобе).
 
 ---
 
----
-
 ## 21. P0a-followup — root-cause research (upstream WebSearch, исправлено) (2026-07-09)
 
-**Важно — исправление:** первая версия этого раздела утверждала, что
-`include_interface` в sing-box "захватывает только local-socket трафик, не
-forwarded ingress". **Это неверно** — upstream docs + реализация показывают, что
-`include_interface` ДОЛЖЕН захватывать forwarded ingress. Симптом = реальный
-bug/config-ordering, не documented limitation. Этот раздел переписан по
-реальному upstream-evidence (WebSearch через субагента: sing-box docs +
-SagerNet/sing-box issues + sing-tun реализация).
+> **Сжато (v0.8.10 cleanup):** оригинальный раздел был 645-строчным пошаговым
+> research-логом (21.1–21.17: upstream WebSearch, гипотезы, fix-trial, live-VPS
+> диагностика entry-ноды, awg-quick setconf I1-формат). Всё закрыто в **§22**
+> (egress VERIFIED на n1→n2, 2026-07-18). Ниже — итоговый контекст + ключевые
+> артефакты; детали разбора — в git-истории этого файла до 2026-07-29.
 
-### 21.1 Что подтверждено upstream (WebSearch)
+**Контекст:** P0a из roadmap §15 = "verify egress на реальном client-tunnel
+(AWG .conf на VPS)". Handshake ≠ интернет — нужна живая верификация того, что
+трафик юзера реально выходит через туннель. Этот раздел — root-cause research
+почему egress-симптом (curl через туннель не возвращал exit IP) возникал.
 
-- **Официальные docs** (`https://sing-box.sagernet.org/configuration/inbound/tun/`):
-  `include_interface` — "Limit interfaces in route. Not limited by default.
-  Conflict with exclude_interface." + "Interface rules are only supported on
-  Linux and require auto_route." Ничего про "local-only" — это route-фильтр на
-  ingress-интерфейс, применяется на prerouting/routing стадии (где forwarded
-  ingress и решается).
-- **Реализация** (`sagernet/sing-tun`): два пути —
-  - **ip-rule path** (`tun_linux.go`, без auto_redirect): `IncludeInterface` →
-    ip-rule `it.IifName = includeInterface; it.Goto = matchPriority`. `IifName`
-    на ip-rule матчит ingress-интерфейс **любого** пакета, включая forwarded.
-  - **nftables prerouting path** (`redirect_nftables_rules.go`, с auto_redirect):
-    rule внутри Prerouting hook — `MetaKeyIIFNAME` → lookup include-set →
-    `Invert:true` → `Counter` → `VerdictReturn`. Логика: "if iifname NOT in
-    include-set → return (bypass tun); иначе fall-through → redirect в tun".
-    Forwarded ingress с включённого интерфейса = intended behavior.
-- **sing-box-extended** (`shtorm-7/sing-box-extended`, НЕ `1776178536` — тот 404):
-  inherits upstream `include_interface` без изменений — НЕТ fork-специфичной
-  модификации. Не источник бага.
-- **Migration index** (sing-box.sagernet.org/migration): НЕТ 1.13.0 страницы;
-  `include_interface` не deprecated/не изменён в 1.11/1.12/1.13. 1.11 = WireGuard
-  outbound → endpoint (ортогонально). 1.10.0 = введён `route_address`/`route_address_set`.
+**Что подтвердил upstream-evidence (WebSearch, 21.1–21.5):**
+- `include_interface` в sing-box **ДОЛЖЕН** захватывать forwarded ingress
+  (первая гипотеза "только local-socket" — опровергнута, раздел переписан).
+- Leading-кандидаты симптома: (а) не включён `auto_redirect` (recommended flag
+  для forwarded ingress capture), (б) SagerNet/sing-box#3805 multi-interface
+  empty iifname bug если нода multi-interface.
+- Архитектурные fallback'и (#5 sing-box-as-AWG, #6) — last resort.
 
-**Вывод:** `include_interface:["awg0"]` — правильное documented поле для "только
-трафик, приходящий на awg0". `route_address_set` — НЕ замена (он destination-based,
-не ingress-interface-based). Симптом = bug или config-ordering, не design limit.
+**Код: auto_redirect opt-in (21.9, закоммичено):** `AWGTUNOverlayParams.AutoRedirect *bool`
+(awg_tun_overlay.go) — **default OFF**, opt-in через `&true`. Почему не default-ON:
+trial показал что `auto_redirect:true` ломает `sing-box check` FATAL'ом
+(`initialize auto-redirect: invalid argument`, SagerNet#3789 netlink-класс) на
+хостах без nftables/netlink — а deploy запускает check ПЕРЕД restart, т.е.
+default-ON сломал бы весь AWG-deploy. Opt-in = лазейка для trial без риска.
+Тесты: `TestBuildAWGTUNOverlay_AutoRedirectDefaultOff` + `_AutoRedirectOptIn`.
 
-### 21.2 Конкретный кандидат-диагноз: issue #3805 + auto_redirect
+**Live-VPS диагностика (21.10–21.14, entry 34.14.98.64, 2026-07-10):**
+read-only диагностика entry-ноды + loopback awg-клиент. Подтверждено: AWG side
+ok (handshake, router match, outbound dial), симптом = egress-path. Оркестратор-
+деплой с auto_redirect прошёл; рендер client .conf через оркестратор добавлен
+(нужен per-user creds — 21.14).
 
-- **SagerNet/sing-box #3805** "tun.include_interface generates empty iifname
-  rules" — **Open**, milestone `1.13 Next`, баг-лейбл, **0 maintainer response,
-  0 linked PR**. Баг: multi-element include-set рендерится как `{ "", "" }`
-  вместо `{ "awg0", "br-lan" }`. nft rule становится
-  `iifname != { "", "" } counter return` → для ЛЮБОГО реального имени интерфейса
-  `!= { "", "" }` = TRUE → return → **все пакеты bypass, tun ничего не захватывает**.
-  Это ТОЧНО наш симптом — ЕСЛИ наш include-set рендерится пустым.
-- **Critical: single-element `["awg0"]` НЕ affected** — рендерится как
-  `iifname != "awg0"` (правильно). #3805 ломает ТОЛЬКО ≥2 элементов. Значит:
-  - Если наш рендер ВСЕГДА single `["awg0"]` → #3805 не наша причина.
-  - Если какой-то §15.3 trial или multi-AWG (`awg0` + `awg1`/`awg-exit-nX`)
-    толкнул ≥2 элемента → #3805 срабатывает → exact symptom.
-- **`tunIncludeInterfacesForNode`** (`awg_tun_overlay.go:233`) добавляет `awg1`
-  (multi-AWG-interface) + `awg-exit-nX` — это **≥2 элементов** при multi-exit или
-  co-located standalone AWG → #3805-класс баг. Это может быть скрытой причиной
-  того, что multi-interface ноды ломаются сильнее.
+**Блокер (21.15–21.17):** awg-quick на kernel 6.12 reject'ит `<b 0x...>` CPS-формат
+в setconf — нужен либо kernel-6.1 тест-клиент, либо разбор amnezia-tools setconf
+формата для 6.12. Узкий инфраструктурный/форматный вопрос, не код.
 
-### 21.3 auto_redirect vs auto_route — coexist, не conflict
+**Резолюция — §22 (2026-07-18):** egress **VERIFIED** на cross-machine топологии
+n1→n2 (оба kernel 6.12). Симптом §13.4 был **артефактом same-host-client топологии
+теста** (клиент на той же VPS, hairpin через внешний IP), не продуктовым багом.
+A/B показал: egress работает и БЕЗ auto_redirect (ip-rule include_interface path
+на 6.12 корректно захватывает forwarded ingress). Дополнительный fix: I1-I5 в
+server .conf ломают деплой на kernel 6.12 (commit dc72ca3 — `RenderServerAWGConf`/
+`RenderExitServerAWGConf` НЕ пишут I1-I5; `RenderExitAWGConf` применяет через
+PostUp `awg set`). См. AGENTS.md #16.
 
-- **auto_route** = ip-rule/routing-table path. **auto_redirect** = nftables
-  prerouting enhancement, **requires auto_route**, "always recommended on Linux"
-  (docs). Они **coexist** (auto_redirect augments, не заменяет): prerouting
-  nftables решает первым, unmatched → fall-through → auto_route ip-rules.
-- Наш текущий конфиг (`awg_tun_overlay.go:94`): `AutoRoute:true,
-  StrictRoute:false`, но **`AutoRedirect` не выставлен (false)** → мы на
-  ip-rule-only path, БЕЗ nftables prerouting. Это значит:
-  - #3805 (nftables include-set bug) **НЕ применим** к нам сейчас (nftables
-    prerouting не установлен без auto_redirect).
-  - Мы на ip-rule path, который `IifName`-матчит forwarded ingress — должен
-    работать. Раз не работает → проблема НЕ в include-interface-матчинге, а
-    **после него** — сам tun device не принимает forwarded packets
-    (NOARP/POINTOPOINT кандидат), ЛИБО auto_redirect надо включить (он
-    "always recommended" + "better than tproxy") и тогда nftables prerouting
-    может дать другой результат.
-
-### 21.4 Исправленные fix-направления (по upstream-evidence)
-
-| # | направление | feasibility | риск | статус |
-|---|---|---|---|---|
-| 0 | **Включить `auto_redirect:true`** (docs: "always recommended on Linux", "better than tproxy") + перетестировать egress | High, ~10 мин живой VPS | Low (recommended flag) | НЕ ПРОБОВАЛИ (§15.3 триалыл — нужно проверить, был ли auto_redirect) |
-| 1 | **Диагноз `nft list chain inet sing-box prerouting` + `ip rule show`** — увидеть реальный include-set + ip-rules | High diagnostic, ~5 мин | 0 (read-only) | НЕ СДЕЛАНО — single most informative command |
-| 2 | **Single-element enforcement**: если multi-interface (`awg0`+`awg1`/`awg-exit-nX`) → #3805 → временно одно-элементный include (или ждать 1.13 Next fix) | Medium | Low-Medium | НЕ СДЕЛАНО — проверить, multi ли у нас на сломанной ноде |
-| 3 | **Upstream issue** на SagerNet/sing-box с мин. репродьюсером (config + `nft` output + tcpdump) | High value | 0 (research) | НЕ СДЕЛАНО — но сначала #1 диагностика |
-| 4 | **netfilter TPROXY workaround** (вне sing-box, ручной nftables) — для forwarded ingress на awg0 → tun | Medium (новый код) | Medium (source-IP per-client через TPROXY сохраняется) | НЕ ИССЛЕДОВАНО — но теперь МЕНЕЕ приоритетно (#0/#1 могут решить) |
-| 5 | **sing-box как AWG endpoint** (без awg-quick/TUN-overlay indirection) | High effort | Medium (отказ от kernel-AWG rework #11) | Last resort |
-| 6 | **Userspace WG return** | Medium | High (regression AGENTS #10) | Last resort |
-
-### 21.5 Рекомендация (исправленная)
-
-**Сначала #1 (диагноз) — 5 мин, 0 риска, разъясняет ВСЁ.** Команды на живой VPS:
-```
-nft list chain inet sing-box prerouting   # если есть — auto_redirect on; смотрим include-set
-nft list table inet sing-box               # fallback если chain name другой
-ip rule show                                # ip-rules от auto_route
-ip route show table 2022                    # (или table id из ip rule show)
-sing-box trace 2>&1 | head                 # подтвердить "No entries" / router-match
-```
-Decision tree из `nft` output:
-- `iifname != "awg0"` (single, correct) → include-матчинг ОК → проблема в tun
-  device acceptance (NOARP/POINTTOPOINT) → #0 (включить auto_redirect) или #5/#6.
-- `iifname != { "", "" }` (empty set) → **#3805 multi-interface bug** → #2
-  (single-element) → решает сразу.
-- **НЕТ prerouting chain / нет sing-box nft table** → auto_redirect не установлен
-  (мы на ip-rule path) → #0 (включить auto_redirect, "always recommended") →
-  перетестить.
-- `ip rule show` показывает правильные rules, но tun всё равно пуст → tun device
-  не принимает forwarded → #5 (sing-box как endpoint) или #6.
-
-**#0 (auto_redirect:true) — самый дешёвый потенциальный фикс.** Мы его НЕ
-включали (`awg_tun_overlay.go:94` — `AutoRedirect` zero/default false). Docs
-говорят "always recommended on Linux, better than tproxy" — мы упустили
-рекомендованный флаг. Это первая вещь для следующей живой сессии.
-
-### 21.6 Минимальный upstream-репродьюсер (для #3, если #1 укажет на upstream)
-
-```
-config.json (kernel awg0 via awg-quick, AllowedIPs 0.0.0.0/0, Table=off) +
-sing-box tun inbound (auto_route:true, include_interface:["awg0"],
-strict_route:false, stack:"mixed") + direct outbound + route tun-in→direct.
-Доказательство: tcpdump -i awg0 (виден дешифрованный SYN src 10.8.0.x dst remote)
-vs tcpdump -i sing-box-tun (пусто) + sing-box trace (No entries).
-Ожидаемое: include_interface + ip-rule IifName → tun принимает forwarded ingress.
-Фактическое: не принимает. + вывод `nft list chain inet sing-box prerouting` +
-`ip rule show` для классификации (empty-set #3805 vs tun-device vs auto_redirect-off).
-```
-
-### 21.7 Открытые вопросы (нужна живая VPS — НЕ разрешимы локально)
-
-0. Был ли `auto_redirect:true` в каком-то §15.3 trialе? (нужно перечитать
-   §15.3 — если нет, #0 — новый непроверенный path).
-1. Реальный include-set на сломанной ноде (`nft` output) — empty (#3805) или
-   correct single?
-2. Multi-interface ли на сломанной ноде (`awg0`+`awg1`/`awg-exit-nX` → #3805)?
-3. Vanilla sing-box 1.13.14 — тот же симптом? (изоляция extended vs upstream —
-   но sing-box-extended не меняет include_interface per §21.1, так что маловероятно).
-4. `auto_redirect:true` решает? (docs: "always recommended", мы не пробовали).
-
-### 21.8 Статус P0a-followup
-
-Research завершён с реальным upstream-evidence (WebSearch через субагента).
-**Предыдущая гипотеза (local-socket-only) опровергнута** — include_interface
-должен захватывать forwarded ingress. Новый leading-кандидат: **мы не включили
-`auto_redirect` (recommended flag)** + возможный **#3805 multi-interface bug**
-если нода multi-interface. Точный диагноз = `nft` + `ip rule show` (5 мин, 0
-риска). Фикс-кандидаты: #0 auto_redirect, #2 single-element (если #3805).
-Архитектурные #5/#6 — last resort. Это остаётся P0-блокером продукта, но НЕ
-блокер для UX-фич (P0b/P1a/P1b/P2a + follow-up Fix 1/2/3 — все готовы). Следующая
-живая сессия: #1 диагноз (5 мин) → потом #0 или #2 по результату.
-
-### Ключевые URLs
+**Ключевые URLs:**
 - https://sing-box.sagernet.org/configuration/inbound/tun/ (include_interface + auto_redirect + auto_route docs)
 - https://github.com/SagerNet/sing-box/issues/3805 (multi-interface empty iifname set, Open, 1.13 Next)
-- https://github.com/SagerNet/sing-box/issues/3789 (1.13.0 auto_redirect netlink FATAL, closed not-planned — loud failure, не наш silent случай)
+- https://github.com/SagerNet/sing-box/issues/3789 (1.13.0 auto_redirect netlink FATAL, closed not-planned)
 - https://github.com/SagerNet/sing-box/issues/4137 (auto_redirect vs routing_mark conflict)
-- https://github.com/shtorm-7/sing-box-extended (extended upstream, НЕ 1776178536)
+- https://github.com/shtorm-7/sing-box-extended (extended upstream — исторично, angry-box теперь на amnezia-box, §31)
 - Реализация: sagernet/sing-tun tun_linux.go (ip-rule IifName) + redirect_nftables_rules.go (nftables prerouting iifname set)
-### 21.9 Код: auto_redirect opt-in field (2026-07-09)
 
-Реализован P0a кандидат #0 как **opt-in, не default** — `AWGTUNOverlayParams.AutoRedirect *bool`
-(awg_tun_overlay.go). Default = OFF (render не эмитит поле, sing-box трактует отсутствующий как false).
-
-**Почему НЕ default-ON (важно):** trial показал, что `auto_redirect:true` ломает
-`sing-box check` на хостах без Linux nftables/netlink — реальный бинарный
-`sing-box check` FATALит: `initialize inbound[0]: initialize auto-redirect: invalid
-argument` (подтверждено `TestRenderAWGTakeoverConfig_SingBoxCheck`). Т.к. deploy
-(applier_push.go) запускает `sing-box check` ПЕРЕД restart, default-ON сломал бы
-весь AWG-deploy на хостах где auto_redirect не инициализируется (SagerNet#3789
-netlink-FATAL класс). Поэтому:
-
-- **Default OFF** — конфиг проходит `sing-box check` везде (verified: takeover
-  test green, full suite green).
-- **Opt-in через `AWGTUNOverlayParams.AutoRedirect = &true`** — оператор включает
-  на конкретной ноде ПОСЛЕ живого VPS-триала, подтвердившего что auto_redirect
-  инициализируется чисто на этом ядре. Это лазейка для P0a-fix trial без риска
-  сломать всем.
-
-**TODO (live-VPS):** wiring opt-in через UI/настройки ноды (сейчас field есть, но
-никуда не привязан из handlers — `BuildAWGTUNOverlay` callers не выставляют
-`AutoRedirect`). Шаги для следующей живой сессии:
-1. На entry-ноде: выставить `AutoRedirect = &true` в merged_config.go вызове
-   `BuildAWGTUNOverlay` (временно хардкод для триала) → deploy → `sing-box check`
-   пройдёт? → egress работает? Если да → wiring в UI как per-node toggle.
-2. Если `sing-box check` FATALит → нода попадает в #3789-класс → auto_redirect на
-   этом ядре нельзя → #2 single-element (если multi) или #5 sing-box-as-AWG.
-
-Тесты: `TestBuildAWGTUNOverlay_AutoRedirectDefaultOff` (absent) +
-`TestBuildAWGTUNOverlay_AutoRedirectOptIn` (true) — 2 новых, зелёные.
-`roles.go RenderAWGBalancer` — auto_redirect OFF (коммент про opt-in). Takeover
-зовёт `BuildAWGTUNOverlay` → наследует default OFF.
-
-Весь non-e2e набор зелёный (10 пакетов). Auto_redirect остаётся P0a-кандидатом,
-но теперь есть БЕЗОПАСНЫЙ opt-in path без риска сломать deploy всем.
-
-### 21.10 Живая VPS-диагностика (entry 34.14.98.64, 2026-07-10)
-
-SSH к актуальной entry-ноде (e2e_helpers_test.go:41 — IP сменились относительно
-AGENTS.md #E2E; актуальные: entry=34.14.98.64, middle=207.175.1.227,
-exit=35.189.235.61, user=lcp, key=id_ed25519). Диагностика read-only + один
-временный awg-клиент (cleanup выполнен). **NFT КРИТИЧНО — НЕ установлен.**
-
-#### Что подтверждено на entry
-
-1. **sing-box-extended 1.13.14** — Revision `93e34d124b7f6d92a68ce6527afeff0273f2e706`
-   (="Merge tag 'v1.13.14' into extended" per §21.1). Tags: with_gvisor,with_wireguard,
-   with_mtproxy,with_manager. Подтверждено — это наш patched extended билд.
-2. **`nft` command not found** — nftables НЕ установлен на Debian 12 entry-ноде.
-   => `auto_redirect:true` НЕВОЗМОЖНО (FATAL'd бы `initialize auto-redirect` —
-   проверено §21.9 + SagerNet#3789). Мы на **ip-rule-only path** (без nftables
-   prerouting). Это закрывает §21.5 #0: **trial auto_redirect требует
-   `apt install nftables` как предусловие** — без него #0 не пробуется.
-3. **ip-rules ПРАВИЛЬНЫЕ** (`ip rule show`):
-   ```
-   9000: from all iif awg0 goto 9002
-   9000: from all iif awg-exit-n1 goto 9002
-   9001: from all goto 9010
-   9002: from all nop
-   9003: from all to 172.16.250.0/30 lookup 2022
-   9004: from all lookup 2022 suppress_prefixlength 0
-   9005: not from all dport 53 lookup main suppress_prefixlength 0
-   9005: from all iif sing-box-tun goto 9010
-   9006: not from all iif lo lookup 2022 / from 0.0.0.0 iif lo / from 172.16.250.0/30 iif lo
-   ```
-   `table 2022`: `default via 172.16.250.2 dev sing-box-tun`.
-   `ip route get 1.1.1.1 from 10.8.0.5 iif awg0` → `via 172.16.250.2 dev sing-box-tun
-   table 2022 cache iif awg0` — **routing для forwarded ingress корректен**.
-4. **sing-box-tun РАБОТАЕТ** (не сломан глобально): журнал показывает успешный DNS
-   exchange — `inbound/tun[tun-in]: inbound packet connection from 172.16.250.1
-   to 172.16.250.2:53` → `router match[0] => sniff` → `hijack-dns` → `outbound/direct
-   to 8.8.8.8:53`. Tun принимает трафик, который до него доходит.
-5. **FORWARD chain `awg0→sing-box-tun ACCEPT = 0 packets`** (iptables -L FORWARD):
-   правило есть (наш deploy ставит), но **0 пакетов через него прошло**. Пакеты
-   доходят до awg0 (awg0 RX 167 pkts, 0 dropped) но НЕ попадают в FORWARD →
-   дропаются на routing-стадии ДО FORWARD, ИЛИ не идут через ip-rule 9000.
-6. **rp_filter: effective на awg0 = max(all=1, awg0=0) = 1** (Linux max-rule —
-   `all.rp_filter` переопределяет `awg0.rp_filter=0`). Я выставил `all=0` (временный
-   тест) — **forwarded ingress ВСЁ РАВНО не дошёл до tun** (см. тест ниже).
-7. **Интерфейсы UP**: awg0 (10.8.0.1/24), awg-exit-n1 (10.10.0.2/32),
-   sing-box-tun (172.16.250.1/30). sing-box-tun = `<POINTOPOINT,MULTICAST,NOARP,
-   UP,LOWER_UP>` tun type. include_interface=["awg0","awg-exit-n1"] (multi —
-   потенциальный #3805, но nft нет → #3805 не применим сейчас).
-8. **config**: auto_route:true, strict_route:false, include_interface:["awg0",
-   "awg-exit-n1"], stack:"mixed", auto_redirect ОТСУТСТВУЕТ (наш рендер OFF).
-   log level: trace.
-
-#### Живой тест (loopback awg-клиент)
-
-Создал временный awg-клиент `awgtest` (10.8.0.99) НА САМОЙ entry, подключённый к
-awg0 через 127.0.0.1:51820 (loopback), добавил peer на awg0. Пинг 1.1.1.1 с awgtest:
-- awg0 tcpdump: `10.8.0.99 > 1.1.1.1: ICMP echo request` — **forwarded ingress
-  ПРИХОДИТ на awg0** (дешифровка работает).
-- sing-box-tun tcpdump: **ПУСТО**.
-- sing-box trace: **No entries**.
-- ping: 0 received (100% loss).
-
-**ВАЖНО — loopback-тест артефакт:** src 10.8.0.99 — это **локальный** IP (awgtest
-на entry), kernel видит его как свой → local-delivery, НЕ forwarded через
-ip-rule 9000 `iif awg0`. Поэтому `ip route get 1.1.1.1 from 10.8.0.99 iif awg0`
-→ "Invalid argument" (src локальный). Этот тест подтверждает что pcap-цепочка
-работает, но НЕ доказывает forwarded-fail (нужен УДАЛЁННЫЙ src).
-
-Попытка middle-теста (настоящий удалённый src) — на middle запущен СИСТЕМНЫЙ
-sing-box (systemctl, PID постоянно меняется — supervisor перезапускает) → мой
-awg-клиент конфликтует. Остановлено без окончательного middle-теста.
-
-#### Итог диагноза (§21.10)
-
-- **auto_redirect НЕ включён И НЕ может быть (nft не установлен)** — это
-  РЕАЛЬНОЕ предусловие, упущенное в §21.5. На Debian 12 entry нужно
-  `apt install nftables` перед trial auto_redirect. После установки auto_redirect
-  может решить (nftables prerouting path сильнее ip-rule + bypass #3805
-  для multi-element через nft set).
-- **ip-rule path routing работает** (`ip route get` → tun) — но forwarded
-  ingress не попадает в FORWARD (0 pkts) / tun (trace пуст). rp_filter=0 НЕ
-  решил (loopback артефакт не доказателен, но middle-тест не завершён).
-- **root cause сужен до**: пакет приходит на awg0, routing-table говорит "в tun",
-  но kernel не доставляет его в tun/FORWARD. Кандидаты: (a) ip-rule 9000 `iif awg0
-  goto 9002` НЕ матчит реальный forwarded packet (возможно iif не awg0 из-за
-  awgtest-loopback — НО реальный remote-src не проверен); (b) nftables-less
-  ip-rule path имеет известный gap для forwarded ingress (требует auto_redirect
-  per docs "always recommended"); (c) что-то режет на INPUT/пре-routing.
-
-#### Следующий шаг (живая VPS, ~30 мин)
-
-1. `sudo apt install nftables -y` на entry.
-2. Включить auto_redirect (временно хардкод в merged_config.go →
-   BuildAWGTUNOverlay{AutoRedirect:&true}) → deploy entry → `sing-box check`
-   пройдёт? (nft теперь есть) → egress работает (curl --interface middle-awg
-   ifconfig.me → entry/exit IP)? Если да → **P0a РЕШЁН**: nft+auto_redirect
-   предусловие + opt-in field уже готовы (§21.9). Wiring в UI per-node toggle.
-3. Если не решено → `nft list chain inet sing-box prerouting` покажет include-set
-   (SagerNet#3805 для multi ["awg0","awg-exit-n1"] → single-element triал).
-
-#### Cleanup выполнен
-
-awgtest-интерфейс удалён, test-peer (10.8.0.99) удалён с awg0, rp_filter all
-восстановлен =1 (исходный), sing-box активен. Middle sing-box (системный) НЕ
-тронут (не мой — оставил как было). Временные /tmp файлы на entry — мелочь
-(прав нет удалить .conf, безвредно).
-
-**P0a root cause:** nftables НЕ установлен → auto_redirect невозможен →
-ip-rule-only path не доставляет forwarded ingress в tun. Фикс-кандидат: `apt
-install nftables` + auto_redirect opt-in (поле готово §21.9). Требует
-deploy-trial на live VPS для подтверждения.
-### 21.11 P0a fix-trial в процессе (entry auto_redirect ON, live test) (2026-07-10)
-
-**Состояние trial (прервано по времени, продолжить):**
-
-1. **nftables установлен** на entry (34.14.98.64) + middle (207.175.1.227):
-   `apt-get install -y nftables` → nft v1.0.6. Kernel-модуль nf_tables УЖЕ был
-   загружен (lsmod: nf_tables 303304) — пакет ставит только userspace `nft`.
-2. **auto_redirect включён на entry** (sed в /etc/sing-box/config.json, backup
-   в config.json.pre-autoredirect). `sing-box check` ПРОШЁЛ (nft теперь есть).
-   sing-box restart → active. **nft table inet sing-box установлен**, prerouting:
-   `iifname != { "awg0", "awg-exit-n1" } counter ... return` —
-   **#3805 НЕ срабатывает** (set рендерится правильно, НЕ пустой на nft 1.0.6).
-3. **merged_config.go** — временный хардкод `AutoRedirect: &[]bool{true}[0]` в
-   вызове BuildAWGTUNOverlay (Шаг 2). go build + tests зелёные. НЕ закоммичено
-   (trial) — откатить хардкод если egress не подтвердится.
-4. **middle awg-клиент** (sing-box wireguard endpoint, 10.8.0.99, tun sb-tun
-   route→wg-ep): tun стартует (`inbound/tun[tin]: started at sb-tun`), ip route
-   1.1.1.1 → via sb-tun (routing OK). **НО handshake с entry НЕ устанавливается**
-   → TCP egress таймаутит ("Resolving timed out"). Причина: middle-конфиг БЕЗ
-   i1-i5 (я их убрал), а server HAS i1-i5 (entry `awg show awg0` → i1-i5 строки
-   `<b 0x...>`) → **amnezia mismatch → handshake падает**. Это ТЕСТ-АРТЕФАКТ
-   middle-конфига, не вывод про P0a.
-
-**Entry-side диагноз пока (middle traffic не доходит до awg0):**
-- nft prerouting counter: `iifname != {awg0,awg-exit-n1}` = 254 packets (это
-  ens4 traffic, правильно bypass); awg0 = 0 (middle handshake нет → нет
-  forwarded ingress). sing-box-tun tcpdump = 0, trace No entries — потому что
-  middle не шлёт (handshake упал).
-
-**Продолжение (след. сессия):**
-1. middle-конфиг: добавить i1-i5 (точно скопировать из `awg show awg0` на entry —
-   строки `<b 0x...>`) в `amnezia` block (файл docs/awgclient.json — рабочий
-   шаблон, добавить i1-i5). scp на middle, restart sing-box.
-2. Проверить handshake (entry `awg show awg0 latest-handshakes` — 10.8.0.99
-   должен получить timestamp).
-3. curl --interface sb-tun ifconfig.me → если вернёт entry/exit IP (НЕ middle
-   207.175.1.227) → **P0a РЕШЁН auto_redirect'ом**: forwarded ingress дошёл до
-   entry tun через nft prerouting. tcpdump entry sing-box-tun + trace подтвердят.
-4. Если НЕ работает → `nft list chain inet sing-box prerouting` (counter на awg0
-   rule) + `ip rule show` + tcpdump entry awg0 (дошёл ли forwarded ingress до awg0).
-
-**Cleanup-состояние (НЕ сделано — продолжить):**
-- entry: auto_redirect в config.json (trial) — ОТКАТИТЬ если egress не
-  подтвердится (`sudo cp config.json.pre-autoredirect config.json + restart`),
-  иначе — wiring в код (merged_config.go hardcode → per-node field).
-- merged_config.go hardcode — откатить если egress не работает.
-- middle: sing-box awg-клиент (PID 61630, /tmp/awgclient.json, sb-tun iface) —
-  kill + ip link del sb-tun после теста. nftables установлен (можно оставить —
-  полезно).
-- entry peer 10.8.0.99 — ЕЩЁ на awg0 (не удалял в этом trial) — убрать после.
-
-**Предварительный вывод:** nft-предусловие подтверждено (auto_redirect теперь
-валидный), #3805 на nft 1.0.6 не срабатывает (set правильный). Главный вопрос
-остаётся: пропустит ли nft prerouting + auto_redirect forwarded ingress с awg0
-в tun. Ответ требует middle-handshake (amnezia i1-i5 match) — next step выше.
-
-### 21.12 P0a trial результат + cleanup (2026-07-10)
-
-**Trial итог (auto_redirect ON на entry, nft установлен):**
-- auto_redirect валиден (sing-box check passes, nft table inet sing-box
-  установлен, prerouting `iifname != {awg0,awg-exit-n1}` рендерится ПРАВИЛЬНО —
-  SagerNet#3805 НЕ срабатывает на nft 1.0.6).
-- **НО egress НЕ доказан/опровергнут**: не удалось сгенерировать настоящий
-  forwarded-ingress для теста. Две попытки провалились по тест-инфра-причинам:
-  1. awgtest loopback-клиент (на entry, src 10.8.0.99): src локальный → kernel
-     local-delivery, не forwarded через ip-rule 9000 (артефакт).
-  2. middle sing-box awg-клиент (удалённый src): **`sendmmsg: message too long`**
-     — sing-box userspace wireguard endpoint НЕ фрагментирует handshake-initiation
-     при больших CPS-пакетах (i1 = ~1.2KB hex payload + amnezia headers > MTU
-     1420). Real awg-quick kernel-клиенты фрагментируют (kernel handles) — 5
-     entry peers с handshake-timestamps подтверждают, что real clients работают.
-     Но в момент теста real clients были offline (ping .2 → 0 reply).
-- **Вывод**: auto_redirect harness готов (opt-in field §21.9 + nft-предусловие
-  через apt install nftables), но **egress-trial требует настоящий awg-quick
-  kernel-клиент** (не sing-box userspace из-за CPS sendmmsg). Тест-инфра не дала
-  ответа.
-
-**Cleanup выполнен:**
-- entry: auto_redirect откатился (config.json.pre-autoredirect восстановлен,
-  sing-box active на исходном конфиге), test-peer Aeewo (10.8.0.99) удалён с
-  awg0, pcap/conf временные удалены. nftables ОСТАВЛЕН установленным (полезно —
-  предусловие для будущего auto_redirect).
-- middle: sing-box awgclient systemd unit остановлен, sb-tun удалён, log очищен.
-  nftables оставлен (полезно). awgclient.json /tmp — мелочь.
-- merged_config.go: hardcode AutoRedirect:&true ОТКАЧЕН (trial не подтвердил
-  egress — нельзя оставлять ON в проде без доказательства). Opt-in field
-  AWGTUNOverlayParams.AutoRedirect *bool ОСТАЁТСЯ (§21.9) — готов для
-  per-node UI toggle, когда egress будет подтверждён.
-
-**Следующий шаг (требует awg-quick kernel-клиента):**
-1. Поднять настоящий awg-quick клиент (не sing-box) — на laptop/другой VPS — с
-   client .conf от entry (amnezia i1-i5 + MTU 1420, kernel handles fragmentation).
-2. Подключиться к entry, curl ifconfig.me → forwarded ingress на entry awg0.
-3. Включить auto_redirect на entry (opt-in field) → tcpdump sing-box-tun + trace
-   → forwarded ingress дошёл в tun? Если да → P0a РЕШЁН.
-4. Если нет → nft prerouting counter на awg0 + ip rule show (дошёл ли до nft) →
-   иной root cause (return к §21.2 #5 sing-box-as-AWG).
-
-**Код-вывод сессии:** auto_redirect opt-in + nft-предусловие готовы (§21.9).
-Egress-trial не завершён из-за тест-инфра (sing-box awg-клиент sendmmsg+CPS;
-real clients offline). Это НЕ провал — это "harness готов, нужна правильная
-тест-клиент". P0a остаётся P0-блокером, но путь теперь точный: awg-quick
-kernel-клиент + auto_redirect trial.
-
-### 21.13 Оркестратор-деплой с auto_redirect — ПРОШЁЛ (2026-07-10)
-
-**Главный прорыв:** `TestE2E_Heavy_Protocol_AWG_Kernel` (build tag e2e) — оркестратор
-через `ApplyChain` задеплоил AWG kernel-chain на entry с **auto_redirect=true**
-(hardcode в merged_config.go, §21.12). Результат:
-- `sing-box check` ПРОШЁЛ (nft теперь установлен, §21.11) — auto_redirect валиден
-  в реальном production-деплое, НЕ FATAL'ит на этом ядре.
-- awg-quick@awg0 active, kernel-модуль amneziawg загружен, awg0 10.8.0.1/24.
-- pushed config: `"auto_route": true, "auto_redirect": true`.
-- **nft table inet sing-box установлен**: prerouting `iifname != "awg0" counter
-  ... return` (single-element include — chain entry, без awg-exit-nX; корректно,
-  #3805 не применим к single).
-- e2e-тест PASS за 22.5с — оркестратор-деплой с auto_redirect стабильный.
-
-**Egress-trial НЕ завершён (тест-инфра):**
-- exit-нода (35.189.235.61) ИМЕЕТ awg-quick + kernel-модуль amneziawg — настоящий
-  kernel-клиент готов.
-- Поднял awg-quick client .conf на exit (priv aHtCxH44..., pub MUc/V5T6..., peer
-  10.8.0.50/32 добавлен на entry awg0, endpoint 34.14.98.64:51820, AllowedIPs
-  0.0.0.0/0, Table=off).
-- **НО handshake = 0** — client .conf БЕЗ i1-i5 (я добавил только jc/s1-4/h1-4),
-  а server имеет i1-i5 (pro_2026 preset, CPS=3 quic) → **amnezia mismatch →
-  handshake падает** (та же проблема, что с sing-box-клиентом §21.12).
-- tcpdump entry sing-box-tun пуст, nft awg0-counter не растёт, trace No entries
-  — потому что client не шлёт (handshake не прошёл).
-
-**Что нужно для завершения (след. шаг, ~5 мин):**
-1. В client .conf на exit добавить i1-i5 (точно скопировать из `awg show awg0` на
-   entry — строки `<b 0x...>`, см. выше).
-2. `sudo awg-quick down /tmp/awg-client.conf && sudo awg-quick up /tmp/awg-client.conf`
-   на exit → handshake должен пройти (entry `awg show awg0 latest-handshakes` —
-   pub MUc/V5T6 получит timestamp).
-3. `sudo ip route add default dev awg-client` на exit + `curl ifconfig.me` →
-   если вернёт entry public IP (34.14.98.64 или exit-of-chain) НЕ exit-local →
-   **forwarded ingress дошёл до tun через auto_redirect = P0a РЕШЁН**.
-4. tcpdump entry sing-box-tun + trace подтвердят.
-
-**Cleanup-состояние (НЕ сделано — продолжить):**
-- merged_config.go hardcode AutoRedirect:&true — ОТКАТИТЬ (egress не подтверждён,
-  нельзя оставлять ON в проде без доказательства).
-- entry: awg-quick@awg0 + sing-box с auto_redirect (от деплоя) — откатить sing-box
-  на исходный (без auto_redirect) или передеплоить после отката hardcode.
-- entry awg0 peer MUc/V5T6 (10.8.0.50) — убрать.
-- exit: awg-client interface + /tmp/awg-client.conf — убрать.
-- nftables оставлен (полезно).
-
-**Вывод сессии:** оркестратор-деплой с auto_redirect работает (главное). Egress
-не подтверждён из-за client .conf amnezia i1-i5 (нужно точное copy server→client,
-как awg-quick .conf обычно делает). Это последний шаг — ~5 мин в след. сессии.
-
-### 21.14 Оркестратор рендерит client .conf — но нужен per-user creds (2026-07-10)
-
-**Прорыв:** оркестратор через `RenderClientAWGConf` рендерит корректный awg-quick
-client .conf с i1-i5 (без ручных опечаток — берёт из chain preset + persisted
-AWGObfsMaterial). Тест `TestE2E_Heavy_Protocol_AWG_Kernel` (с добавленным
-RenderClientAWGConf вызовом) вывел полный .conf:
-- I1-I5 с правильными hex (matching server's pro_2026 preset),
-- H1-H4/Jc/S1-S4 (matching),
-- server pub + endpoint 34.14.98.64:51820.
-
-**НО:** `PrivateKey = CLIENT_PRIVATE_KEY_HERE` + `Address = 10.8.0.2/24` —
-legacy placeholder. RenderClientAWGConf без per-user model.User (AWGPrivateKey/
-AWGAddress) даёт placeholder — **handshake не пройдёт** (CLIENT_PRIVATE_KEY_HERE
-не валидный ключ + нет peer на сервере с этим pub).
-
-**Что нужно для egress-trial через оркестратор (последний шаг):**
-1. Per-user client .conf: serve (web UI) → создать User с AWG creds
-   (EnsureUserCreds + EnsureUserAWGAddress) → `GET /ui/users/{id}/config`
-   рендерит .conf с реальным PrivateKey + Address + matching peer на сервере.
-   ИЛИ: расширить e2e-тест — создать model.User, SaveUser, RenderClientAWGConf
-   с {Chain, User} → .conf с реальными creds.
-2. scp .conf на exit/middle (где есть awg-quick kernel-mod) → `awg-quick up` →
-   handshake (peer уже на сервере из User.AWGPublicKey) →
-3. `ip route add default dev <iface>` + `curl ifconfig.me` → exit IP?
-   (entry public 34.14.98.64 → forwarded ingress дошёл до tun через auto_redirect
-   = P0a РЕШЁН).
-
-**Cleanup:** hardcode AutoRedirect:&true в merged_config.go откат (egress не
-подтверждён). Тест-вставка (RenderClientAWGConf log) ОСТАВЛЕНА — полезна для
-будущих client-conf триалов. entry: auto_redirect откат (откат sing-box config
-или передеплой). peer 10.8.0.50 удалён.
-
-**Вывод сессии:** оркестратор-деплой auto_redirect работает (§21.13) + оркестратор
-рендерит client .conf с правильными i1-i5 (§21.14). Последний шаг — per-user
-.conf (нужен User с AWG creds, не placeholder). Это ~15 мин работы: расширить
-e2e-тест создать User → RenderClientAWGConf{User} → .conf с реальным key →
-awg-quick up на exit/middle → curl ifconfig.me.
-
-### 21.15 Найден готовый egress-trial тест + блокер exit-ноды (2026-07-10)
-
-**Прорыв:** `TestE2E_Heavy_PerClientRouting` (e2e_heavy_test.go:597) — УЖЕ делает
-ровно P0a egress-trial через оркестратор:
-1. Создаёт alice User + EnsureUserCreds + EnsureUserAWGAddress (per-user AWG
-   creds — решает placeholder-проблему §21.14).
-2. Деплоит chain (entry balancer + exit, kernel-AWG architecture) через ApplyChain.
-3. Рендерит per-user awg-quick .conf через RenderClientAWGConf{Chain, User} —
-   с реальным PrivateKey + Address + matching peer на сервере.
-4. Поднимает awg-quick клиент НА entry-ноде (подключение к себе через внешний IP,
-   Table=off для SSH safety, metric-200 route), tcpdump на awg0/sing-box-tun/
-   awg-exit-n1/ens4, sing-box trace, curl --interface awge2e ifconfig.me.
-5. Проверяет EGRESS IP = exit VPS IP (строка 863) — или WARNING+tcpdump-диагностика
-   если пусто (строка 858-861, НЕ провал — handshake=PASS достаточно для теста).
-
-AGENTS.md #13 «TestE2E_Heavy_PerClientRouting PASS» = handshake прошёл (строка 834
-`latest handshake` обязательна), но egress МОЖЕТ быть пустым (§15.2) — тест
-логирует WARNING + return, не FAIL. Значит **P0a egress-баг воспроизводится в
-этом тесте** — и я пытался его починить auto_redirect'ом.
-
-**Запуск с auto_redirect (hardcode merged_config.go):**
-- Deploit entry прошёл (sing-box с auto_redirect стартовал: лог `inbound/tun
-  [tun-in]: started`, `sing-box started`).
-- **НО тест упал: `ssh connect role=2 (35.189.235.61:22): dial tcp ... failed to
-  respond`** — exit-нода недоступна (TCP timeout ×3, ping не проходит).
-- TestE2E_Heavy_PerClientRouting требует exit-ноду (role=2) для balancer
-  architecture (entry balancer + exit server с MASQUERADE). Без exit тест не может.
-
-**Блокер = инфраструктура, не код:** exit-нода 35.189.235.61 (GCloud) выключена
-или firewall сменился. Нужна живая exit-нода (перезапустить инстанс в GCloud, или
-использовать другую VPS). entry (34.14.98.64) + middle (207.175.1.227) доступны.
-
-**Cleanup:** merged_config.go hardcode откат. entry: sing-box рестартован
-тестом (auto_redirect был в конфиге во время деплоя — нужно передеплоить без
-hardcode или вручную откатить config; нода активна). Тест-вставка
-RenderClientAWGConf log в AWG_Kernel тесте оставлена.
-
-**Что нужно для финала (когда exit-нода поднимется):**
-1. Включить auto_redirect hardcode (или per-node field, когда wiring будет).
-2. `AB_E2E_AWG_PERCLIENT=1 AB_ROUTE_DNS=1 go test -tags e2e ./internal/chain/
-   -run TestE2E_Heavy_PerClientRouting -v -timeout 9m`.
-3. Если EGRESS IP = exit IP → P0a РЕШЁН auto_redirect'ом → wiring + cleanup.
-4. Если WARNING (пусто) → tcpdump/trace покажут, дошёл ли forwarded ingress в
-   tun (auto_redirect vs иной root cause).
-
-**Вывод сессии:** найден готовый оркестратор-egress-trial тест. Блокер — exit-нода
-недоступна (инфраструктура). auto_redirect валиден в деплое (§21.13). Цикл почти
-закрыт: осталась живая exit-нода + запуск теста с auto_redirect → ответ про egress.
-
-### 21.16 awg-quick setconf ломается на I1 (CPS-формат несовместимость) (2026-07-10)
-
-**Обновил amneziawg на n1 (144.31.224.212):**
-- Добавил amnezia PPA (ключ 75C9DD72C799870E310542E24166F2C257290828) →
-  `apt install amneziawg-tools` → `awg --version v1.0.20260618-2` (актуальная, как entry).
-- НО PPA даёт обновлённые tools, но kernel-модуль base 20210914 (без CPS UAPI).
-- DKMS-собрал модуль из bundled `deps/amneziawg-src.tar.gz` (`amneziawg-linux-kernel-
-  module-master/src/`) → `/usr/src/amneziawg-1.0.0` → dkms build/install →
-  `modinfo amneziawg version: 1.0.20260611` (новый source, с CPS).
-- `awg set testawg i1 "<b 0x...>"` — РАБОТАЕТ (kernel принимает CPS через UAPI set).
-- n2 (144.31.157.106) — то же (та же версия/модуль).
-
-**Egress-trial блокирован: awg-quick setconf ломается на I1:**
-- Минимальный conf (только JC, без I/H) → `awg-quick up` ОК (setconf прошёл).
-- H1-H4 (без I1-I5) → `awg-quick up` ОК.
-- **I1 (CPS-пакет `<b 0x...>`) → `awg-quick up` FAIL: `Unable to modify interface:
-  Invalid argument`** (awg setconf batch UAPI rejectит I1-строку).
-- НО `awg set awgalice i1 "<b 0x...>"` (single UAPI) — работает.
-- **Несоответствие**: `awg set` (single) принимает I1, `awg setconf` (batch, что
-  использует awg-quick) — rejectит. Это формат-несовместимость CPS I-пакетов в
-  setconf vs set в amneziawg-tools v1.0.20260618-2.
-
-**Гипотеза**: setconf-формат для I1-I5 отличается — возможно нужен hex без `<b `
-  префикса, или base64, или другой delimiter. awg-quick передаёт I1 как-is из .conf.
-  Нужно изучить amneziawg-tools setconf парсер (исходник) — какой формат I1 он
-  ожидает в batch setconf vs single set.
-
-**Cleanup:** merged_config.go hardcode откат. Тест-вставки RenderClientAWGConf +
-alice User в AWG_Kernel тесте оставлены (полезны). entry: alice peer на awg0
-(добавлен re-deploy) — убрать (`sudo awg set awg0 peer lq9T6rAU... remove`). n1/n2:
-amneziawg-tools v1.0.20260618-2 + module v1.0.20260611 оставлены (полезно для
-будущих awg-клиентов). awgalice/awg-min/awg-i* интерфейсы на n1 убраны.
-
-**Что нужно для финала (след. сессия):**
-1. Разобраться с awg setconf I1-форматом (исходник amneziawg-tools: какой формат
-   setconf ожидает для I1-I5). Возможно `awg-quick` нужно патчить для правильного
-   I1-формата, ИЛИ .conf должен использовать другой I1-формат для setconf.
-2. Как только awg-quick примет .conf с I1-I5 → handshake с entry → curl ifconfig.me
-   → egress IP = entry public → forwarded ingress → tun (auto_redirect) = P0a РЕШЁН.
-3. Параллельно: оркестратор-тест TestE2E_Heavy_PerClientRouting (§21.15) — когда
-   exit-нода (35.189.235.61 GCloud) поднимется, запустить с auto_redirect → ответ.
-
-**Вывод сессии:** обновил awg на n1/n2 (модуль + tools актуальные). Egress-trial
-блокирован awg-quick setconf I1-несовместимостью (новая находка). Оркестратор-
-путь (PerClientRouting test) блокирован недоступной exit-нодой. P0a почти закрыт:
-harness готов (auto_redirect + nft + per-user .conf через оркестратор), не хватает
-лишь awg-quick-совместимого I1-формата (или живой exit-ноды).
-
-### 21.17 awg-quick setconf I1-формат: n1 vs entry (2026-07-11)
-
-**Решение setconf-проблемы найдено, но упёрлось в amnezia-mismatch:**
-- n1 (kernel 6.12) `awg setconf` rejectит `I1 = <b 0xHEX>` (`Invalid argument`),
-  НО принимает `I1 = 0xHEX` (без `<b ` префикса и `>`) — exit=0, полный 2407-байт I1.
-- entry (kernel 6.1) `awg setconf` принимает **оба** формата (`<b 0x...>` и `0xhex`).
-- Module srcversion **одинаковый** (`228EEA4FFBDDD0F66070E02`) — не module-различие,
-  а tools/парсер различие (хотя tools version одна — загадка, возможно kernel-
-  version-dependent UAPI handling).
-
-**Egress-trial с I1=0xhex (без <b>):**
-- awg-quick up ПРОШЁЛ (интерфейс awgalice-fixed создан, peer добавлен, setconf OK).
-- alice peer (pub lq9T6rAU) добавлен на entry awg0 (allowed 10.8.0.2/32).
-- **НО handshake = 0** (client timestamp 0, entry transfer пуст, tun пуст, trace
-  пуст, ping loss 100%, curl пустой).
-
-**Гипотеза**: `I1 = 0xHEX` (без `<b>`) n1 module принял, но интерпретирует **не как
-CPS-пакет** (возможно как raw hex, другая семантика) → client шлёт handshake БЕЗ
-правильной CPS-обфускации → server (с `<b 0x...>` = CPS-packet) rejectит → amnezia
-mismatch. Т.е. формат `0xhex` для setconf ≠ `<b 0xhex>` семантически, даже если
-setconf принимает.
-
-**Тупик для awg-quick на n1**: n1 setconf не принимает `<b 0x...>` (нужный CPS-
-формат), а `0xhex` (принимает) ≠ CPS → handshake mismatch. Нужен n1, чей setconf
-принимает `<b 0x...>` (как entry) — но различие при одинаковых module+tools-version
-неясно (возможно kernel-version UAPI difference, 6.1 vs 6.12).
-
-**Cleanup:** n1 awgalice-fixed убран, entry alice peer удалён. n1/n2 amneziawg-
-  tools v1.0.20260618-2 + module v1.0.20260611 оставлены (полезно).
-
-**Оставшиеся пути для egress-trial:**
-1. **Изучить amnezia-tools setconf парсер** (исходник): почему n1 kernel 6.12
-   rejectит `<b 0x...>` а 6.1 принимает, и какой формат семантически = CPS. Это
-   требует копания в исходники amneziawg-tools/kernel-module — глубокая работа.
-2. **Использовать exit-ноду** (35.189.235.61, kernel 6.1 как entry — там `<b 0x...>`
-   работает) — НО продовая GCloud, трогать нельзя (по условию). Если будет другая
-   kernel-6.1 VPS — egress-trial через PerClientRouting-подобный flow.
-3. **Оркестратор-тест PerClientRouting** (§21.15) — нужен exit-нода (недоступна).
-
-**Итог P0a-цикла (§21.1–§21.17):** root cause = nft не был установлен (§21.10) →
-auto_redirect невозможен. После apt install nftables (§21.11) auto_redirect
-валиден в оркестратор-деплое (§21.13). Egress-trial блокирован тест-инфра:
-- sing-box awg-клиент sendmmsg+CPS (§21.12)
-- awg-quick на kernel 6.12 rejectит `<b 0x...>` CPS-формат setconf (§21.17)
-- продовые GCloud exit-ноды трогать нельзя (по условию)
-- нужна kernel-6.1 VPS (как entry) для awg-quick клиента, ИЛИ разбор amnezia-tools
-  setconf формата для kernel 6.12.
-
-P0a harness полностью готов (auto_redirect opt-in §21.9 + nft-предусловие +
-per-user .conf через оркестратор §21.14). Egress-ответ требует либо kernel-6.1
-тест-клиента, либо разбора amnezia-tools CPS-формата. Это узкий инфраструктурный/
-форматный вопрос, не код.
 
 ## 22. P0a ЗАКРЫТ — egress VERIFIED на n1→n2 + kernel-6.12 fixes (2026-07-18)
 
