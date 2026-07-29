@@ -374,7 +374,12 @@ UNIT_EOF
                 chmod 600 "$CONFIG_DIR/store.json.key"
             fi
             systemctl --user daemon-reload
-            systemctl --user enable angry-box
+            # `enable` is idempotent in intent, but systemctl returns non-zero
+            # (and prints "Failed to enable unit: File ... already exists") when
+            # the unit is already enabled — e.g. a re-install over an existing
+            # setup. Under `set -e` that aborts the install after the binary is
+            # already in place. Treat an already-enabled unit as success.
+            systemctl --user enable angry-box 2>/dev/null || true
         else
             echo "==> Installing systemd service..."
             # Create a dedicated non-root user for the control plane. The
@@ -425,7 +430,9 @@ UNIT_EOF
                 chown angry-box:angry-box "$DATA_DIR/store.json.key"
             fi
             systemctl daemon-reload
-            systemctl enable angry-box
+            # Idempotent enable: re-install over an already-enabled unit must
+            # not abort (see the --user enable comment above).
+            systemctl enable angry-box 2>/dev/null || true
         fi
     fi
 }
