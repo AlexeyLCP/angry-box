@@ -199,6 +199,7 @@ func TestScheduleAutoApply_Deploys(t *testing.T) {
 	dir := t.TempDir()
 	storePath := filepath.Join(dir, "store.json")
 	st := NewStore(storePath)
+	st.SaveHost(&model.Host{ID: "n2", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"})
 	st.SaveNodeInfo(&model.NodeInfo{
 		Host:      model.Host{ID: "n2", Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"},
 		AutoApply: true,
@@ -235,6 +236,11 @@ func TestScheduleAutoApply_ConcurrencyCap(t *testing.T) {
 	storePath := filepath.Join(dir, "store.json")
 	st := NewStore(storePath)
 	for i := 0; i < 10; i++ {
+		// A Host must exist for each node: the v2->v3 orphan cleanup drops
+		// NodeInfos whose Host is absent, so without SaveHost the scheduled
+		// deploys would find no NodeInfo and the concurrency cap would never
+		// saturate.
+		st.SaveHost(&model.Host{ID: fmt.Sprintf("n%d", i), Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"})
 		st.SaveNodeInfo(&model.NodeInfo{
 			Host:      model.Host{ID: fmt.Sprintf("n%d", i), Addr: "1.2.3.4:22", User: "root", KeyPath: "/k"},
 			AutoApply: true,

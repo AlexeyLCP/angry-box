@@ -4,6 +4,32 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.9] — 2026-07-29
+
+### Fix — store migration v2→v3 cleans up legacy orphan NodeInfos (deleted nodes still shown in Deploy Status)
+
+v0.8.8 made `DeleteHost` cascade so new node deletions also drop the `NodeInfo`
+and `Metrics` records. But stores upgraded from a pre-v0.8.8 build still carry
+the legacy orphans — NodeInfo/Metrics rows whose Host was deleted before the
+cascade existed. The Deploy Status page reads `ListNodeInfos()` (every NodeInfo,
+no Host filter), so those orphans kept rendering as "deleted nodes still
+hanging in deploy status" with no clickable row actions (reported by a user:
+deleted two nodes, they vanished from the Nodes page but remained in Deploy
+Status with nothing clickable).
+
+- A new store migration (`migrateOrphanNodeInfos`, schema version 2→3) runs once
+  at startup and drops NodeInfo + Metrics records whose Host no longer exists.
+  Idempotent (no orphans = no-op, no backup, no write). A best-effort one-shot
+  backup `store.json.preorphan.bak` is written before the first run. The count
+  of dropped records is logged. Existing test fixtures were updated to add
+  `SaveHost` for nodes they materialize (v3 law: a NodeInfo without a Host is an
+  orphan; the migration enforces it).
+- New tests `TestMigrateV3_OrphanNodeInfoCleanup` and
+  `TestMigrateV3_NoOrphansIsNoOp`. Files: `internal/chain/store.go`,
+  `internal/chain/migrate_v3_test.go`, `internal/chain/migrate_v2_test.go`,
+  `internal/chain/misc_more_test.go`, `docs/PROGRESS.md` §37. `go build ./...` +
+  `go test ./internal/chain ./internal/web -p 1` green.
+
 ## [v0.8.8] — 2026-07-29
 
 ### Fix — DeleteHost now cascades to NodeInfo + Metrics (orphan "deleted" nodes no longer listed)

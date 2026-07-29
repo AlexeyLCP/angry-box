@@ -74,8 +74,9 @@ func (s *Store) migrateOnce() {
 	// migrations[i] brings the store from version i to i+1. Add new migrations
 	// here in order and bump currentSchemaVersion.
 	migrations := []func(*storeFile) error{
-		s.migrateMtproxyUsers,     // v0 -> v1: legacy MtproxyUser -> User (subproject B)
-		s.migrateInboundProfiles,  // v1 -> v2: standalone inbounds -> profiles; chains -> levels
+		s.migrateMtproxyUsers,      // v0 -> v1: legacy MtproxyUser -> User (subproject B)
+		s.migrateInboundProfiles,   // v1 -> v2: standalone inbounds -> profiles; chains -> levels
+		s.migrateOrphanNodeInfos,   // v2 -> v3: drop NodeInfo/Metrics whose Host was deleted pre-v0.8.8
 	}
 	changed := false
 	for i := sf.SchemaVersion; i < len(migrations) && i < currentSchemaVersion; i++ {
@@ -153,6 +154,62 @@ func (s *Store) migrateMtproxyUsers(sf *storeFile) error {
 	return nil
 }
 
+// migrateOrphanNodeInfos (v2 -> v3) drops NodeInfo + Metrics records whose Host
+// no longer exists. Before v0.8.8, DeleteHost removed only the Host row and
+// left the NodeInfo (with materialized InboundProfile inbounds) + Metrics
+// behind — ListNodeInfos returned those orphans, so the Deploy Status page and
+// the Inbound form dropdown kept listing nodes that had already been deleted
+// (reported by a user: "deleted nodes still hanging in deploy status"). v0.8.8
+// made DeleteHost cascade (orphan no longer created), but stores upgraded from
+// a pre-v0.8.8 build still carry the legacy orphans — this migration clears
+// them once. Idempotent: a store with no orphans is a no-op. One-shot backup
+// before the first run (best-effort).
+func (s *Store) migrateOrphanNodeInfos(sf *storeFile) error {
+	hostIDs := make(map[string]bool, len(sf.Hosts))
+	for _, h := range sf.Hosts {
+		hostIDs[h.ID] = true
+	}
+	keptInfos := sf.NodeInfos[:0]
+	droppedInfos := 0
+	for _, ni := range sf.NodeInfos {
+		if ni == nil {
+			continue
+		}
+		if !hostIDs[ni.ID] {
+			droppedInfos++
+			continue
+		}
+		keptInfos = append(keptInfos, ni)
+	}
+	keptMetrics := sf.Metrics[:0]
+	droppedMetrics := 0
+	for _, m := range sf.Metrics {
+		if m == nil {
+			continue
+		}
+		if !hostIDs[m.HostID] {
+			droppedMetrics++
+			continue
+		}
+		keptMetrics = append(keptMetrics, m)
+	}
+	if droppedInfos == 0 && droppedMetrics == 0 {
+		return nil // no orphans — no-op, no backup, no write
+	}
+	bakPath := s.path + ".preorphan.bak"
+	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
+		if data, err := os.ReadFile(s.path); err == nil {
+			if werr := os.WriteFile(bakPath, data, 0o600); werr != nil {
+				log.Printf("store: pre-orphan-cleanup backup write failed (%s): %v", bakPath, werr)
+			}
+		}
+	}
+	sf.NodeInfos = keptInfos
+	sf.Metrics = keptMetrics
+	log.Printf("store: orphan cleanup dropped %d NodeInfo + %d Metrics records whose Host was deleted (pre-v0.8.8 legacy)", droppedInfos, droppedMetrics)
+	return nil
+}
+
 // ListMTProxyUsers returns all Users that have MTProxySecret set.
 func (s *Store) ListMTProxyUsers() []*model.User {
 	all, _ := s.ListUsers()
@@ -209,7 +266,7 @@ type storeFile struct {
 // stores are created at this version; existing stores at a lower version are
 // migrated up to it by migrateOnce. Bump this constant when adding a new
 // migration to the chain below.
-const currentSchemaVersion = 2
+const currentSchemaVersion = 3
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────
 

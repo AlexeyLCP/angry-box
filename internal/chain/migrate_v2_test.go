@@ -40,6 +40,12 @@ func migrateNow(t *testing.T, st *Store) {
 
 func TestMigrateV2_StandaloneInboundsCollapse(t *testing.T) {
 	st := newV1Store(t, &storeFile{
+		// Hosts for n1/n2 — the v2->v3 orphan cleanup drops NodeInfos whose
+		// Host is absent, so the fixtures must keep both nodes.
+		Hosts: []*model.Host{
+			{ID: "n1", Addr: "1.1.1.1:22", User: "root", KeyPath: "/k"},
+			{ID: "n2", Addr: "2.2.2.2:22", User: "root", KeyPath: "/k"},
+		},
 		NodeInfos: []*model.NodeInfo{
 			{Host: model.Host{ID: "n1", Addr: "1.1.1.1:22"}, Inbounds: []model.NodeInbound{
 				{Protocol: "awg", Port: 51840, Obfuscation: "default", Source: "standalone", Tag: "ib-n1", ServerPrivKey: "key1"},
@@ -250,7 +256,17 @@ func TestMigrateV2_VLESSEntryUUIDPreserved(t *testing.T) {
 			{ID: "exit", Addr: "2.2.2.2:22"},
 		},
 	}
-	st := newV1Store(t, &storeFile{Chains: []*model.Chain{c}})
+	st := newV1Store(t, &storeFile{
+		// Hosts for entry/exit — v2->v3 orphan cleanup drops NodeInfos whose
+		// Host is absent; the v2 migration materializes a NodeInfo for the
+		// chain entry, so keep its Host or the test loses the materialized
+		// inbound it asserts on.
+		Hosts: []*model.Host{
+			{ID: "entry", Addr: "1.1.1.1:22", User: "root", KeyPath: "/k"},
+			{ID: "exit", Addr: "2.2.2.2:22", User: "root", KeyPath: "/k"},
+		},
+		Chains: []*model.Chain{c},
+	})
 	migrateNow(t, st)
 	ib := st.ProfileInboundOn("entry", "chain-entry-vc")
 	if ib == nil {
@@ -266,6 +282,15 @@ func TestMigrateV2_VLESSEntryUUIDPreserved(t *testing.T) {
 func TestMigrateV2_Idempotent(t *testing.T) {
 	c := testAWGChain()
 	st := newV1Store(t, &storeFile{
+		// Hosts for every node the migration materializes a NodeInfo for —
+		// the v2->v3 orphan cleanup drops NodeInfos whose Host is absent, so
+		// the test fixtures must keep entry/exit/n1 or the idempotency
+		// re-run would see the materialized "entry" NodeInfo vanish.
+		Hosts: []*model.Host{
+			{ID: "n1", Addr: "9.9.9.9:22", User: "root", KeyPath: "/k"},
+			{ID: "entry", Addr: "1.1.1.1:22", User: "root", KeyPath: "/k"},
+			{ID: "exit", Addr: "2.2.2.2:22", User: "root", KeyPath: "/k"},
+		},
 		NodeInfos: []*model.NodeInfo{
 			{Host: model.Host{ID: "n1", Addr: "9.9.9.9:22"}, Inbounds: []model.NodeInbound{
 				{Protocol: "awg", Port: 51840, Source: "standalone"},
