@@ -105,13 +105,22 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
 		return
 	}
-	payload := strings.TrimSpace(r.FormValue("backup_json"))
+	payload := r.FormValue("backup_json")
 	if payload == "" {
 		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "backup json is required") + `</span></div>`})
 		return
 	}
 	force := r.FormValue("force") == "on"
+	// A passphrase-encrypted blob (ABBKP1) is BINARY: magic + salt + nonce +
+	// ciphertext+tag, with random non-printable bytes that may legitimately be
+	// 0x20 (space) or other whitespace at the start/end. TrimSpace would strip
+	// those bytes and corrupt the GCM auth tag → spurious "wrong passphrase"
+	// failures. So detect the binary blob on the RAW form value first; only
+	// trim the plaintext JSON path (operator paste with stray whitespace).
 	data := []byte(payload)
+	if !chain.IsBackupBlob(data) {
+		data = []byte(strings.TrimSpace(payload))
+	}
 
 	// P2a restore: a passphrase-encrypted offsite blob (ABBKP1 magic). Decrypt
 	// with the form-supplied passphrase, then import the resulting plaintext

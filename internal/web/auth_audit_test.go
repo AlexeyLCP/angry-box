@@ -31,6 +31,7 @@ func newAuditAuthCfg(t *testing.T, enabled bool) *config.Config {
 }
 
 func TestAuthFailure_BadPasswordIsLogged(t *testing.T) {
+	t.Cleanup(resetDefaultAuthLimiterForTest)
 	var buf bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -62,6 +63,7 @@ func TestAuthFailure_BadPasswordIsLogged(t *testing.T) {
 }
 
 func TestAuthFailure_MissingCredentialsIsLogged(t *testing.T) {
+	t.Cleanup(resetDefaultAuthLimiterForTest)
 	var buf bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -89,6 +91,7 @@ func TestAuthFailure_MissingCredentialsIsLogged(t *testing.T) {
 }
 
 func TestAuthSuccess_NotLoggedAsFailure(t *testing.T) {
+	t.Cleanup(resetDefaultAuthLimiterForTest)
 	var buf bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))

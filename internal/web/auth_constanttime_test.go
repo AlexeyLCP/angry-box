@@ -16,6 +16,11 @@ import (
 )
 
 func TestAuth_UsernameComparisonIsConstantTime(t *testing.T) {
+	// Reset the process-wide auth limiter: this test deliberately sends 5 bad
+	// credentials from the same synthetic IP (httptest default RemoteAddr →
+	// clientIP ""), and without a reset accumulated failures from earlier auth
+	// tests tip the limiter into 429 mid-loop.
+	t.Cleanup(resetDefaultAuthLimiterForTest)
 	// We can't directly assert timing, but we can assert the contract:
 	// an unknown user and a known user with a wrong password both yield 401
 	// with identical outward behavior (same status, same WWW-Authenticate),

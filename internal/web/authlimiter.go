@@ -26,6 +26,21 @@ type authLimiter struct {
 // admin for too long (CTO-review L3).
 var defaultAuthLimiter = newAuthLimiter(5, 15*time.Minute)
 
+// resetDefaultAuthLimiterForTest clears the process-wide auth limiter's state.
+// It is intended ONLY for tests: the auth-failure tests (auth_audit_test.go,
+// auth_constanttime_test.go) deliberately send bad credentials from the same
+// synthetic IP (httptest's default RemoteAddr → clientIP ""), and without a
+// reset the limiter accumulates failures across tests/runs and starts
+// returning 429 instead of 401 — which then breaks unrelated tests that go
+// through BasicAuthMiddleware (e.g. TestHandler_ImportBackup_EncryptedRestore,
+// observed flaking in CI). Call it from a t.Cleanup in any test that exercises
+// the auth failure path. No-op in production (no caller outside _test.go).
+func resetDefaultAuthLimiterForTest() {
+	defaultAuthLimiter.mu.Lock()
+	defaultAuthLimiter.failures = map[string][]time.Time{}
+	defaultAuthLimiter.mu.Unlock()
+}
+
 func newAuthLimiter(maxFailures int, window time.Duration) *authLimiter {
 	if maxFailures < 1 {
 		maxFailures = 1
