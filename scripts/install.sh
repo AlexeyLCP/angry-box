@@ -176,6 +176,14 @@ do_uninstall() {
 resolve_version() {
     if [ "$VERSION" != "latest" ]; then
         RESOLVED_VERSION="$VERSION"
+        # TAG is the release tag with a leading 'v' (the release workflow names
+        # assets angry-box-vX.Y.Z-... and uploads them under /releases/download/vX.Y.Z/).
+        # A bare "0.8.2" from --version is normalized to "v0.8.2" so the download
+        # URL + asset name match what the release workflow published.
+        case "$VERSION" in
+            v*) TAG="$VERSION" ;;
+            *)  TAG="v$VERSION" ;;
+        esac
         return
     fi
 
@@ -199,8 +207,14 @@ resolve_version() {
         exit 1
     fi
 
-    # Strip leading 'v' if present
+    # Strip leading 'v' for the display version; keep TAG (with 'v') for the
+    # download URL + asset name (release assets are angry-box-vX.Y.Z-...).
     RESOLVED_VERSION="${TAG#v}"
+    # Ensure TAG carries a leading 'v' even if the API returned a bare version.
+    case "$TAG" in
+        v*) ;;
+        *)  TAG="v$TAG" ;;
+    esac
     echo "    Latest version is: $RESOLVED_VERSION"
 }
 
@@ -218,10 +232,13 @@ install_binary() {
         return
     fi
 
-    echo "==> Downloading Angry-BOX ${VERSION} for ${TARGET}..."
+    echo "==> Downloading Angry-BOX ${RESOLVED_VERSION} for ${TARGET}..."
 
-    ARCHIVE="angry-box-${VERSION}-${TARGET}.tar.gz"
-    URL="${BASE_URL}/v${VERSION}/${ARCHIVE}"
+    # Release assets are named angry-box-vX.Y.Z-<target>.tar.gz (the release
+    # workflow uses `git describe` → "vX.Y.Z" as the version prefix). TAG carries
+    # the leading 'v'; URL path is /releases/download/vX.Y.Z/.
+    ARCHIVE="angry-box-${TAG}-${TARGET}.tar.gz"
+    URL="${BASE_URL}/${TAG}/${ARCHIVE}"
 
     TMPDIR=$(mktemp -d)
 
@@ -486,8 +503,8 @@ print_done() {
     echo "  API:  http://localhost:9080/health"
     echo ""
     echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation from Releases:"
-    echo "    opkg install angry-box_${VERSION}_mipsel_24kc.ipk         # Keenetic MIPS"
-    echo "    opkg install angry-box_${VERSION}_aarch64_cortex-a53.ipk  # Keenetic/OpenWRT aarch64"
+    echo "    opkg install angry-box_${TAG}_mipsel_24kc.ipk         # Keenetic MIPS"
+    echo "    opkg install angry-box_${TAG}_aarch64_cortex-a53.ipk  # Keenetic/OpenWRT aarch64"
     echo ""
     echo "  License: PolyForm Noncommercial License 1.0.0"
     echo "  Permitted: personal, non-commercial, educational, scientific use only."
