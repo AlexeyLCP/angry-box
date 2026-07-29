@@ -4,6 +4,34 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.3] — 2026-07-29
+
+### Installer fixes (hotfix)
+
+Two `scripts/install.sh` bugs broke fresh installs of v0.8.2 (reported by a
+user: `Failed to download .../angry-box-0.8.2-linux-amd64.tar.gz`, then
+`Failed to enable unit: File ... already exists` and the install aborted
+before printing the "installed successfully" instructions).
+
+- **Asset name `v`-prefix:** the release workflow names assets
+  `angry-box-vX.Y.Z-<target>.tar.gz` (and ipk `angry-box_vX.Y.Z_*.ipk`), but
+  `install.sh` stripped the leading `v` and built `angry-box-0.8.2-...` → 404.
+  Introduced a `TAG` (with leading `v`, normalized from `--version X.Y.Z` or the
+  GitHub API `tag_name`) used for the download URL path + asset name; the bare
+  `RESOLVED_VERSION` is kept only for display. The constructed URL
+  `.../v0.8.2/angry-box-v0.8.2-linux-amd64.tar.gz` now matches the actual asset.
+- **Idempotent `systemctl enable`:** `systemctl --user enable angry-box` (and
+  the system-mode `systemctl enable`) returns non-zero + "Failed to enable unit:
+  File ... already exists" when the unit is already enabled (a re-install over an
+  existing setup). Under `set -e` that aborted the install AFTER the binary was
+  already in place — the user saw only the enable error and never the
+  "installed successfully" block (Quick start + `API: http://localhost:9080/health`).
+  Both `enable` calls are now `2>/dev/null || true` — an already-enabled unit is
+  treated as success.
+
+No code changes; the v0.8.2 binary assets are unchanged. This is an installer-
+only patch. Re-run `curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/angry-box/main/scripts/install.sh | bash` to get the fixed installer (install.sh lives in the repo, not in release assets).
+
 ## [v0.8.2] — 2026-07-28
 
 ### Base sing-box migration: sing-box-extended → amnezia-box (AWG3)
