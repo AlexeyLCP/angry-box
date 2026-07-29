@@ -49,9 +49,17 @@ func RenderNodeAWGConfs(
 	var warnings []string
 
 	// 1. Chain AWG user-entry → kernel awg0.conf with one [Peer] per user.
+	//    AWG 3.0 mode (AGENTS #5) is userspace-only — the entry renders as a
+	//    `type:"awg"` sing-box endpoint in the merged config, NOT a kernel
+	//    awg0.conf, so skip the kernel render for it.
 	chainEntryPresent := false
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
+			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil {
+				// AWG3-mode entry → userspace endpoint, no awg0.conf.
+				chainEntryPresent = false
+				break
+			}
 			users := usersForChain(usersByChain, r.Chain.Name)
 			files = append(files, renderChainEntryAWGConf(nodeInfo, r, users))
 			chainEntryPresent = true
@@ -90,6 +98,12 @@ func RenderNodeAWGConfs(
 	for i := range nodeInfo.Inbounds {
 		ib := &nodeInfo.Inbounds[i]
 		if ib.Protocol != "awg" {
+			continue
+		}
+		if ib.AWG3Mode {
+			// AWG 3.0 mode = userspace `type:"awg"` endpoint rendered in the
+			// merged config (buildStandaloneInOut), NOT a kernel awg0/awg1
+			// .conf. Skip the kernel render here.
 			continue
 		}
 		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {

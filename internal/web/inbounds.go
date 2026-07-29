@@ -135,6 +135,12 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 		}
 		p.AWGCPSMimicry = mimicry
 		p.AWGCPSCaptureDomain = domain
+		// AWG 3.0 header-protection mode (AGENTS #5): opt-in per-inbound
+		// toggle. The material (HPK/CPM/RAT) is generated once at deploy time
+		// (EnsureProfileAWGMaterial) and persisted, never entered by hand.
+		if r.FormValue("awg3_mode") == "1" {
+			p.AWG3Mode = true
+		}
 	}
 	return p, nodeIDs, nil
 }
@@ -241,6 +247,15 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 		prof.AWGCPSCapturedDomain = existing.AWGCPSCapturedDomain
 		prof.AWGCPSCaptureFailedDomain = existing.AWGCPSCaptureFailedDomain
 	}
+	// AWG 3.0 material (AGENTS #5): HPK/CPM/RAT are generated once and
+	// persisted on the profile. Carry them over on edit so toggling AWG3
+	// off→on reuses the same keys (clients don't break) and off keeps them
+	// dormant (not emitted, but preserved for a later re-enable). When AWG3
+	// is newly enabled and no material exists yet, EnsureProfileAWGMaterial
+	// generates it at deploy time.
+	prof.AWG3HeaderProtectionKey = existing.AWG3HeaderProtectionKey
+	prof.AWG3ContentPaddingAddition = existing.AWG3ContentPaddingAddition
+	prof.AWG3RekeyAfterTime = existing.AWG3RekeyAfterTime
 	s.applyProfileAndDeploy(w, r, prof, nodeIDs, "update")
 }
 

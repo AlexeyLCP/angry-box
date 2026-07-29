@@ -160,7 +160,7 @@ func TestBuildChainRoleInOut_MeshGroup(t *testing.T) {
 	c := meshChain()
 	seedMeshTransit(t, c)
 	roles := resolveChainRoles("e1", []*model.Chain{c})
-	_, outs, _, warns := buildChainRoleInOut(&roles[0], nil)
+	_, outs, _, warns := buildChainRoleInOut(&roles[0], nil, nil)
 	if len(warns) != 0 {
 		t.Fatalf("warnings: %v", warns)
 	}

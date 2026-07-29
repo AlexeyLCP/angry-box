@@ -64,3 +64,32 @@ func inboundByProfileID(nodeInfo *model.NodeInfo, profileID string) *model.NodeI
 	}
 	return nil
 }
+
+// chainEntryAWG3Inbound returns the materialized chain-entry AWG inbound on the
+// node when it has AWG 3.0 mode on (AGENTS #5), or nil otherwise. v2 chains
+// resolve it via the entry ChainNode.InboundRef (a profile ID); legacy chains
+// match by Source == "chain:"+chain.Name. Returns nil when nodeInfo is nil or
+// the entry inbound is not in AWG3 mode — the caller falls back to the default
+// kernel-awg0 path.
+func chainEntryAWG3Inbound(nodeInfo *model.NodeInfo, c *model.Chain, entry *model.ChainNode) *model.NodeInbound {
+	if nodeInfo == nil {
+		return nil
+	}
+	for i := range nodeInfo.Inbounds {
+		ib := &nodeInfo.Inbounds[i]
+		if ib.Protocol != "awg" {
+			continue
+		}
+		match := false
+		if entry != nil && entry.InboundRef != "" {
+			match = ib.ProfileID == entry.InboundRef
+		}
+		if !match {
+			match = ib.Source == "chain:"+c.Name
+		}
+		if match && ib.AWG3Mode {
+			return ib
+		}
+	}
+	return nil
+}

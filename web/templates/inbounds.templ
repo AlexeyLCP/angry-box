@@ -221,6 +221,27 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 						<span class="text-xs"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { prof.AWGCPSCaptureFailedDomain } { i18n.T(ctx, "(synthesized packets in use)") }</span>
 					</div>
 				}
+				// AWG 3.0 header-protection mode (AGENTS #5): opt-in per-inbound
+				// toggle. When ON the user-entry renders as a userspace
+				// `type:"awg"` sing-box endpoint (NOT kernel awg-quick), carrying
+				// HeaderProtectionKey + ContentPaddingAddition + RekeyAfterTime
+				// (verified live on n1, §36). HPK requires S1-S4 >= 12 — raised
+				// automatically at render. The toggle forces the userspace path,
+				// so the client MUST be AWG3-capable (AmneziaWG Android/iOS/Windows
+				// app, or userspace amneziawg-go) — NOT Linux awg-quick. Multi-hop
+				// chains do not support AWG3 transit (user-facing entry only).
+				<div class="form-control border-t border-base-300 pt-3">
+					<label class="label cursor-pointer justify-start gap-3">
+						<input type="checkbox" name="awg3_mode" value="1" class="checkbox checkbox-sm"
+							checked?={ prof != nil && prof.AWG3Mode } />
+						<span class="label-text">
+							{ i18n.T(ctx, "AWG 3.0 mode (header protection)") }
+						</span>
+					</label>
+					<p class="text-xs text-base-content/60 mt-1">
+						{ i18n.T(ctx, "AWG3Mode hint") }
+					</p>
+				</div>
 			</div>
 
 				<div class="form-control">

@@ -285,6 +285,11 @@ func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo
 				// entry), not awg1 — they must not trigger the awg1 include.
 				continue
 			}
+			if ib.Protocol == "awg" && ib.AWG3Mode {
+				// AWG 3.0 mode = userspace `type:"awg"` endpoint, no kernel
+				// awg0/awg1 iface to include in the TUN overlay.
+				continue
+			}
 			if ib.Protocol == "awg" && ib.AWGServerAddress != "" {
 				// A standalone AWG inbound with a distinct subnet → deployed on
 				// awg1 (see RenderNodeAWGConfs). The TUN overlay must include it.
@@ -359,7 +364,13 @@ func awgAutoRedirectFromEnv() *bool {
 func awgTUNOverlayNeeded(roles []chainRole, nodeInfo *model.NodeInfo) bool {
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
-			return true
+			// AWG 3.0 mode (AGENTS #5): the entry renders as a userspace
+			// `type:"awg"` endpoint (buildAWGUserInboundMulti), NOT a kernel
+			// awg0 interface — so no TUN overlay / include_interface is needed
+			// for this entry. Check the materialized entry inbound.
+			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) == nil {
+				return true
+			}
 		}
 		if len(r.Node.ExitTargets) > 0 {
 			return true
@@ -367,7 +378,9 @@ func awgTUNOverlayNeeded(roles []chainRole, nodeInfo *model.NodeInfo) bool {
 	}
 	if nodeInfo != nil {
 		for _, ib := range nodeInfo.Inbounds {
-			if ib.Protocol == "awg" {
+			if ib.Protocol == "awg" && !ib.AWG3Mode {
+				// Kernel AWG inbound — needs the overlay. AWG3Mode inbounds are
+				// userspace endpoints (no kernel iface, no overlay).
 				return true
 			}
 		}

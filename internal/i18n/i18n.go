@@ -794,6 +794,8 @@ var locales = map[string]map[string]string{
 		// v0.8.1 — profile live QUIC capture.
 		"AWG CPS obfuscation": "AWG CPS obfuscation",
 		"(synthesized packets in use)": "(synthesized packets in use)",
+		"AWG 3.0 mode (header protection)": "AWG 3.0 mode (header protection)",
+		"AWG3Mode hint": "Enables AWG 3.0 header protection (HPK) + content padding + rekey-after-time on this inbound. Renders as a userspace sing-box endpoint (NOT kernel awg-quick). Requires an AWG3-capable client — AmneziaWG Android/iOS/Windows app or userspace amneziawg-go (NOT Linux awg-quick). S1-S4 are raised to >= 12 automatically. User-facing entry only — not supported for inter-node chain transit.",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1614,6 +1616,8 @@ var locales = map[string]map[string]string{
 		// v0.8.1 — profile live QUIC capture.
 		"AWG CPS obfuscation": "AWG CPS обфускация",
 		"(synthesized packets in use)": "(используются синтезированные пакеты)",
+		"AWG 3.0 mode (header protection)": "Режим AWG 3.0 (защита заголовков)",
+		"AWG3Mode hint": "Включает AWG 3.0 защиту заголовков (HPK) + content padding + rekey-after-time для этого инбаунда. Рендерится как userspace sing-box endpoint (НЕ kernel awg-quick). Требует AWG3-совместимый клиент — приложение AmneziaWG Android/iOS/Windows или userspace amneziawg-go (НЕ Linux awg-quick). S1-S4 автоматически поднимаются до >= 12. Только пользовательский вход — не поддерживается для межузлового транспорта в цепочке.",
 	},
 }
 

@@ -141,7 +141,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	for i := range roles {
 		role := &roles[i]
 		users := usersForChain(usersByChain, role.Chain.Name)
-		ins, outs, eps, roleWarnings := buildChainRoleInOut(role, users)
+		ins, outs, eps, roleWarnings := buildChainRoleInOut(role, users, nodeInfo)
 		inbounds = append(inbounds, ins...)
 		endpoints = append(endpoints, eps...)
 		for _, ob := range outs {
@@ -693,7 +693,7 @@ func userAuthIdentity(u model.User, proto model.UserProtocol) string {
 	}
 }
 
-func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outbounds, endpoints []json.RawMessage, warnings []string) {
+func buildChainRoleInOut(role *chainRole, users []model.User, nodeInfo *model.NodeInfo) (inbounds, outbounds, endpoints []json.RawMessage, warnings []string) {
 	c := role.Chain
 	cn := c.Name
 	p := ensureHopParams(role)
@@ -703,14 +703,32 @@ func buildChainRoleInOut(role *chainRole, users []model.User) (inbounds, outboun
 		inTag := chainUserInboundTag(c, role.Node.ID)
 		switch c.UserProtocol {
 		case model.UserProtocolAWG:
-			// Kernel-AWG architecture: the user-entry awg0 interface is owned by
-			// the kernel (awg-quick@awg0), not a sing-box userspace endpoint —
-			// userspace wireguard-go panics with chacha20poly1305 under AmneziaWG
-			// obfuscation. sing-box captures awg0 traffic via a TUN overlay
-			// (include_interface:["awg0"]) emitted once at the node level by
-			// buildMergedNodeConfig (see awgTUNOverlayNeeded). The per-user peers
-			// live in the separately-pushed awg0.conf (RenderServerAWGConf), not
-			// in the sing-box config. So nothing is emitted here.
+			// Kernel-AWG architecture (default): the user-entry awg0 interface
+			// is owned by the kernel (awg-quick@awg0), not a sing-box userspace
+			// endpoint — userspace wireguard-go panics with chacha20poly1305
+			// under AmneziaWG obfuscation. sing-box captures awg0 traffic via a
+			// TUN overlay (include_interface:["awg0"]) emitted once at the node
+			// level by buildMergedNodeConfig (see awgTUNOverlayNeeded). The
+			// per-user peers live in the separately-pushed awg0.conf
+			// (RenderServerAWGConf), not in the sing-box config. So nothing is
+			// emitted here — UNLESS the materialized entry inbound has AWG 3.0
+			// mode on (AGENTS #5): AWG3 fields (header protection key / content
+			// padding / rekey-after-time) are userspace-only (the kernel
+			// amneziawg module does not parse them), so AWG3Mode forces the
+			// userspace `type:"awg"` endpoint path with the per-user peers
+			// inline (one peer per user, like buildAWGUserInboundMulti). The
+			// TUN overlay + awg0.conf are skipped for this inbound (see
+			// awgTUNOverlayNeeded / RenderNodeAWGConfs AWG3 branches).
+			if awg3Entry := chainEntryAWG3Inbound(nodeInfo, c, role.Node); awg3Entry != nil {
+				epJSON, _, err := buildAWGUserInboundMulti(
+					userPort, inTag, &role.Preset, awg3Entry.ServerPrivKey, users, InboundAWGObfsMaterial(awg3Entry))
+				if err != nil {
+					warnings = append(warnings, fmt.Sprintf(
+						"chain %q: AWG3 user-entry endpoint build failed: %v", cn, err))
+				} else {
+					endpoints = append(endpoints, epJSON)
+				}
+			}
 			_ = userPort
 			_ = inTag
 
@@ -950,14 +968,27 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		inbounds = append(inbounds, data)
 
 	case "awg":
-		// Kernel-AWG architecture: the standalone AWG server interface (awg0) is
-		// owned by the kernel (awg-quick@awg0), not a sing-box userspace endpoint
-		// (userspace wireguard-go panics with chacha20poly1305 under AmneziaWG
-		// obfuscation). sing-box captures awg0 traffic via a TUN overlay
-		// (include_interface:["awg0"]) emitted once at the node level by
-		// buildMergedNodeConfig (see awgTUNOverlayNeeded). The per-user peers live
-		// in the separately-pushed awg0.conf (RenderServerAWGConf), not in the
-		// sing-box config. Nothing is emitted here.
+		// Kernel-AWG architecture (default): the standalone AWG server interface
+		// (awg0) is owned by the kernel (awg-quick@awg0), not a sing-box
+		// userspace endpoint (userspace wireguard-go panics with
+		// chacha20poly1305 under AmneziaWG obfuscation). sing-box captures awg0
+		// traffic via a TUN overlay (include_interface:["awg0"]) emitted once at
+		// the node level by buildMergedNodeConfig (see awgTUNOverlayNeeded).
+		// The per-user peers live in the separately-pushed awg0.conf
+		// (RenderServerAWGConf), not in the sing-box config. Nothing is emitted
+		// here — UNLESS this inbound has AWG 3.0 mode on (AGENTS #5): AWG3
+		// fields are userspace-only (the kernel amneziawg module does not parse
+		// them), so AWG3Mode forces the userspace `type:"awg"` endpoint path
+		// with the per-user peers inline. The TUN overlay + awg0.conf are
+		// skipped for this inbound (awgTUNOverlayNeeded / RenderNodeAWGConfs).
+		if ib.AWG3Mode {
+			users := usersByInbound[tag]
+			epJSON, _, err := buildAWGUserInboundMulti(
+				ib.Port, tag, &preset, ib.ServerPrivKey, users, InboundAWGObfsMaterial(ib))
+			if err == nil {
+				endpoints = append(endpoints, epJSON)
+			}
+		}
 		_ = preset
 		_ = serverName
 

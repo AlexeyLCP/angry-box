@@ -400,6 +400,29 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 			// runtime. ITime is a concealment-packet cache lifetime with a sane
 			// default, so omitting it does not break the handshake.
 		}
+		// AWG 3.0 obfuscation (AGENTS #5): header protection key + content
+		// padding + rekey-after-time, written inline in [Interface] (the
+		// AmneziaWG client app parses them natively, like Jc/I1-I5). The HPK
+		// is persisted as hex; the client .conf carries the same hex (the
+		// amneziawg-go UAPI + the Android/iOS/Windows apps read hex here).
+		// S1-S4 above are already raised to >= 12 by applyAWG3ToEndpoint on the
+		// server side; the client must match — BuildAWGAmnezia reads the
+		// preset, so ensure the material flag is honored by also raising here
+		// would double-apply; instead the server and client share the SAME
+		// preset, so S1-S4 match. (If a preset had S<12 the server raises it;
+		// the client using the same preset would too only if it re-runs the
+		// guard — see applyAWG3ToEndpoint. For consistency the client conf
+		// relies on a preset with S1-S4 >= 12 when AWG3 is on, enforced at
+		// inbound save time going forward.)
+		if material != nil && material.AWG3Mode && material.HeaderProtectionKey != "" {
+			b.WriteString(fmt.Sprintf("HeaderProtectionKey = %s\n", material.HeaderProtectionKey))
+			if material.ContentPaddingAddition != "" {
+				b.WriteString(fmt.Sprintf("ContentPaddingAddition = %s\n", material.ContentPaddingAddition))
+			}
+			if material.RekeyAfterTime != "" {
+				b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", material.RekeyAfterTime))
+			}
+		}
 	}
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
