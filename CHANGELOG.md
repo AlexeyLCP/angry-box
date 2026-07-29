@@ -4,6 +4,33 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.4] — 2026-07-29
+
+### UI fix — «Add Node» wizard opened without styles / form did not submit
+
+The "Add Node" button on the Nodes page did a full-page browser navigation
+(`location.href`) to `/ui/nodes/<gen-id>/capture`, but `handleNodeCaptureForm`
+returns a **raw** `NodeCaptureForm` component with no Base layout — no Tailwind
+CSS, no htmx.js. Every other wizard trigger (Edit / Relocate / Clone / Capture
+of an existing node) uses an HTMX swap into `#modal-container`, where the
+surrounding page already carries the CSS + htmx, so the raw component renders
+correctly. A full-page GET, however, served a bare `<dialog open>` with no
+styles, and the form's `hx-post` never fired (htmx not loaded) → the browser
+fell back to a native POST → another raw success response → "the page refreshes
+and nothing happens, no error" (reported by a user on v0.8.3: "when adding a
+node via the UI the interface looks like CSS didn't load").
+
+- The "Add Node" button now opens the capture wizard via
+  `htmx.ajax('GET', '/ui/nodes/<id>/capture', {target:'#modal-container',
+  swap:'innerHTML'})` (new `addNodeOpenCapture()` helper in
+  `web/static/js/app.js`) — same target/swap as the row "Capture" button, so the
+  layout (CSS + htmx) is preserved and the form's `hx-post` works. The client
+  node-id generation (`n<timestamp><rand>`) is unchanged in logic, just moved
+  into the JS helper.
+- Files: `web/templates/nodes.templ`, `web/static/js/app.js`,
+  `docs/PROGRESS.md` §32. `templ generate` + `go build ./...` +
+  `go test ./internal/web -p 1` green.
+
 ## [v0.8.3] — 2026-07-29
 
 ### Installer fixes (hotfix)
