@@ -97,6 +97,9 @@ func (s *Store) migrateOnce() {
 			log.Printf("store: migration to schema v%d applied but persist failed (will retry next start): %v", sf.SchemaVersion, err)
 		}
 	}
+	// Unconditionally purge orphan NodeInfo + Metrics records on startup
+	// so legacy stores loaded at current schema version don't retain deleted nodes.
+	_ = s.migrateOrphanNodeInfos(sf)
 }
 
 // migrateMtproxyUsers converts legacy storeFile.MtproxyUsers into Users with
@@ -929,7 +932,17 @@ func (s *Store) ListNodeInfos() ([]*model.NodeInfo, error) {
 		}
 		return nil, err
 	}
-	return sf.NodeInfos, nil
+	hostIDs := make(map[string]bool, len(sf.Hosts))
+	for _, h := range sf.Hosts {
+		hostIDs[h.ID] = true
+	}
+	res := make([]*model.NodeInfo, 0, len(sf.NodeInfos))
+	for _, ni := range sf.NodeInfos {
+		if ni != nil && hostIDs[ni.ID] {
+			res = append(res, ni)
+		}
+	}
+	return res, nil
 }
 
 // DeleteNodeInfo removes a node's NodeInfo + Metrics records (P2b spare

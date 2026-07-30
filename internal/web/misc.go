@@ -167,6 +167,9 @@ func (s *Server) computeDeployStatusRows(r *http.Request) []deployStatusRow {
 	infos, _ := st.ListNodeInfos()
 	rows := make([]deployStatusRow, 0, len(infos))
 	for _, info := range infos {
+		if _, err := st.GetHost(info.ID); err != nil {
+			continue // Skip orphan NodeInfo records whose Host was deleted
+		}
 		role := inferNodeRole(info)
 		row := deployStatusRow{
 			NodeID:           info.ID,

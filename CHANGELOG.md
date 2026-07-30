@@ -4,6 +4,12 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.15] — 2026-07-30
+
+### Fix — Automatic purge and filtering of orphan deleted NodeInfo records
+
+- **Orphan NodeInfo purge on startup & query filtering.** `ListNodeInfos` and `computeDeployStatusRows` now strictly filter out orphan `NodeInfo` records whose `Host` has been deleted from the store. Added unconditional orphan purge on `openStore` startup so legacy stores upgraded at schema v3 automatically clean up deleted nodes from memory and disk.
+
 ## [v0.8.14] — 2026-07-30
 
 ### Fix — Apply button on Deploy Status page for pending nodes
