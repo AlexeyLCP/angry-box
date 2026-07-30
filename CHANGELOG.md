@@ -4,6 +4,23 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.19] — 2026-07-30
+
+### Fix — AmneziaWG PPA install: modern GPG keyring + distro codename (was `NO_PUBKEY` / unsigned repo on Ubuntu 24.04+)
+
+On a fresh Ubuntu node, `angry-box deploy` installs the AmneziaWG kernel module via the `ppa:amnezia` PPA. The install script broke on Ubuntu 22.04+ (and 24.04/26.04) with `NO_PUBKEY 4166F2C257290828` / "repository is not signed":
+
+- **Deprecated `apt-key` + short key id.** `apt-key` is deprecated since Ubuntu 22.04 and on 24.04+ it silently fails to import the key. The script also used the 8-hex tail `57290828` instead of the full fingerprint `4166F2C257290828`. Both → the PPA stayed unsigned → `apt-get update` failed.
+- **Hardcoded `focal` codename.** The PPA line was always `.../ubuntu focal main` regardless of the actual distro, so on Ubuntu 24.04/26.04 the codename mismatched.
+- **`set -e` + failed `apt-get update` aborted the whole install** before reaching the bundled-DKMS-from-source fallback that was already in the script — so the node never got the module either way.
+
+Fix (`InstallAWGModuleWithClient` shell script):
+- **Modern keyring:** import the full fingerprint `4166F2C257290828` via `gpg --keyserver` (port 80 first, hkps:443 fallback) → `/usr/share/keyrings/amnezia.gpg`, and reference it with `deb [signed-by=...]` so apt trusts only this PPA (no more global `apt-key`).
+- **Distro codename from `/etc/os-release` `VERSION_CODENAME`** (focal/jammy/noble/...), falling back to `focal` only if unset.
+- **`apt-get update || echo WARNING`** instead of letting it abort under `set -e` — the bundled-DKMS-from-source fallback now actually runs when the PPA is unreachable/unsigned.
+
+This matches the upstream-known issue (amnezia-vpn/amneziawg-linux-kernel-module#133). Verified `go build ./...` + `go test ./internal/backend/singbox`.
+
 ## [v0.8.18] — 2026-07-30
 
 ### Fix — single-instance enforcement + canonical absolute store path (closes the two-daemon split-brain)

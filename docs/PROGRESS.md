@@ -1979,3 +1979,28 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 **Замечание про баг-1 (Jc=120):** одновременно с этим — v0.8.17 (preset dropdown сгруппирован Robust/Stealth + Jc inline). По `awg show` awg2 (Jc=6) обслуживал живых клиентов (10.8.0.5/.6 — гигабайты), awg0 (Jc=120) — мёртвый; на одной ноде единственная разница = Jc → AGENTS #17 подтверждён. НО первичная причина «не коннектит» у тестера — split-brain store (ключи User↔awg0 расходились), а Jc=120 был усугубляющим фактором. v0.8.17 + v0.8.18 закрывают оба.
 
 **Баг-2 («клиента нельзя создать без цепочки») — RESOLVED тем же split-brain фиксом.** После применения v0.8.18 (один демон, один store) тестер подтвердил: «тут всё заработало». Симптом «клиента нельзя создать» был артефактом двух store: клиент создавался в одном store (root, :8090), а нода деплоилась из другого (systemd, :9080) — с точки зрения UI/client-конфига клиент «не появлялся». Отдельного код-фикса не потребовалось. Это подтверждает: первопричина обоих жалоб тестера (баг-1 «не коннектит» + баг-2 «клиента нельзя создать») — одна, операционная (два демона на двух store).
+
+## 40. fix(install): AmneziaWG PPA install — modern GPG keyring + codename (v0.8.19) (2026-07-30)
+
+**Баг от тестера (VladufQa):** на свежей ноде Ubuntu 26.04 `angry-box deploy` ставит AWG-модуль через PPA `ppa:amnezia` — падало:
+```
+NO_PUBKEY 4166F2C257290828
+E: The repository 'https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal InRelease' is not signed.
+```
+
+**Три бага в install-script** (`internal/backend/singbox/singbox.go` `InstallAWGModuleWithClient`):
+
+1. **Deprecated `apt-key` + короткий key-id.** `apt-key` deprecated с Ubuntu 22.04, на 24.04+ молча не импортирует ключ. Плюс использовался 8-hex хвост `57290828` вместо полного fingerprint `4166F2C257290828`. Оба → PPA остался unsigned → `apt-get update` fail с `NO_PUBKEY`.
+
+2. **Хардкод `focal` codename.** PPA-строка всегда `.../ubuntu focal main` независимо от ОС. На Ubuntu 24.04/26.04 codename не совпадает (хотя PPA version-agnostic для модуля, apt ругается на codename в unsigned repo).
+
+3. **`set -e` + failed `apt-get update` убивал весь install** ДО достижения bundled-DKMS-fallback (стр.609-631 в коде) — нода не получала модуль ни через PPA, ни через DKMS. Fallback существовал, но был недостижим.
+
+**Фикс:**
+- Modern keyring: полный fingerprint `4166F2C257290828` через `gpg --keyserver` (порт 80 сначала — firewall-friendly, hkps:443 fallback) → `/usr/share/keyrings/amnezia.gpg`, и `deb [signed-by=...]` (apt доверяет только этому PPA, без глобального apt-key).
+- Codename из `/etc/os-release VERSION_CODENAME` (focal/jammy/noble/...), fallback `focal` если пусто.
+- `apt-get update || echo WARNING` вместо abort под `set -e` — bundled-DKMS-fallback теперь реально достигается, если PPA недоступен/unsigned.
+
+Соответствует upstream-known issue (amnezia-vpn/amneziawg-linux-kernel-module#133). `go build ./...` + `go test ./internal/backend/singbox` зелёные.
+
+**Файлы:** `internal/backend/singbox/singbox.go` (install-script), `internal/version/version.go` (v0.8.19), `CHANGELOG.md`, `docs/PROGRESS.md`.

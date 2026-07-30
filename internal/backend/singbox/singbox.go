@@ -597,9 +597,28 @@ apt-get install -y -qq iptables nftables openresolv || echo "[awg] WARNING: ipta
 
 if ! apt-cache show amneziawg 2>/dev/null | grep -q ^Package; then
   echo "[awg] Adding Amnezia PPA..."
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 57290828 2>/dev/null || true
-  echo "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" > /etc/apt/sources.list.d/amnezia-ppa.list
-  apt-get update -qq
+  # Detect the distro codename (focal/jammy/noble/...) from os-release instead
+  # of hardcoding "focal" — a hardcoded focal on Ubuntu 24.04/26.04 mismatches
+  # the PPA's expected codename and newer apt rejects the unsigned/wrong repo.
+  . /etc/os-release 2>/dev/null || true
+  AB_CODENAME="${VERSION_CODENAME:-focal}"
+  echo "[awg] distro codename: $AB_CODENAME"
+  # Modern keyring (apt-key is deprecated since Ubuntu 22.04 and on 24.04+ it
+  # silently fails to import → 'NO_PUBKEY 4166F2C257290828, repository not
+  # signed'. Use the FULL fingerprint, not the 8-hex tail 57290828, and place
+  # the key in /usr/share/keyrings with signed-by= so apt trusts only this PPA.
+  # keyserver on port 80 first (firewall-friendly), fall back to hkps:443.
+  install -d -m 0755 /usr/share/keyrings
+  gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 4166F2C257290828 2>/dev/null \
+    || gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 4166F2C257290828 2>/dev/null \
+    || true
+  gpg --export 4166F2C257290828 > /usr/share/keyrings/amnezia.gpg 2>/dev/null || true
+  echo "deb [signed-by=/usr/share/keyrings/amnezia.gpg] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu $AB_CODENAME main" > /etc/apt/sources.list.d/amnezia-ppa.list
+  # Do NOT let a failed update abort the whole script under set -e — if the PPA
+  # stays unsigned/unreachable, the DKMS-from-bundled-source fallback below must
+  # still be reached. (Previously update died on the unsigned repo and the
+  # bundled-DKMS fallback was never tried.)
+  apt-get update -qq || echo "[awg] WARNING: apt-get update with PPA failed (will try DKMS fallback)"
 fi
 
 echo "[awg] Installing amneziawg from PPA..."
