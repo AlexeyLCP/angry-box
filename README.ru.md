@@ -1,4 +1,4 @@
-**Languages:** [English](README.md) | [Russian](README.ru.md) | [Chinese](README.zh.md) | [Farsi](README.fa.md)
+<div align="center">
 
 # Angry-BOX
 
@@ -7,6 +7,17 @@
 Angry-BOX — оригинальный продукт, написанный с нуля. Не является форком 3x-ui, LucX-UI, x-ui или любой другой панели.
 
 Управление исключительно по SSH. На целевых нодах нет агентов — только ядро **amnezia-box** (наш форк sing-box 1.14) + минимальный конфиг.
+
+🌐 **Languages / Языки:** [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh.md) | [فارسی](README.fa.md)
+
+<p align="center">
+  <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
+  <a href="https://yoomoney.ru/to/41001989176429"><img src="https://img.shields.io/badge/donate-☕-yellow" alt="Donate"></a>
+</p>
+
+</div>
 
 ## Обзор
 
@@ -112,6 +123,15 @@ angry-box apply-chain my-chain
 
 # 5. Сгенерируй standalone-конфиг локально (например REALITY+XHTTP) без пуша
 angry-box config -port 443
+
+# 6. Бэкап панели + перенос заблокированной ноды на новый VPS
+angry-box backup store -o panel-backup.json          # бэкап всей панели
+angry-box backup node entry-node -o entry-node.json  # портативная идентичность одной ноды
+angry-box restore panel-backup.json                 # авто-определение store vs node, восстановление
+# Если IP ноды entry-node заблокирован, перенеси её на новый VPS — транзитные ключи
+# переиспользуются, поэтому другие ноды и клиенты НЕ переконфигурируются; все цепи
+# с этой нодой передеплоиваются автоматически:
+angry-box relocate entry-node --addr 9.9.9.9:22
 ```
 
 ### 4. На роутере (Keenetic / OpenWrt)
@@ -124,7 +144,7 @@ opkg install angry-box_v0.7.0_aarch64_cortex-a53.ipk
 # Панель поднимется на 127.0.0.1:9080 (loopback) — доступ через SSH-туннель.
 ```
 
-**Takeover** (обнаружить + конвертировать существующий VPN-сервер) доступен из Web UI: открой ноду → кнопка **Takeover**. Он обнаруживает AWG/sing-box/Xray/MTProxy, конвертирует конфиг в sing-box с теми же настройками, отключает старый VPN и автоматически откатывается, если sing-box не поднялся.
+**Takeover** (обнаружить + конвертировать существующий VPN-сервер) доступен из Web UI: открой ноду → кнопка **Takeover**. Он обнаруживает AWG/sing-box/Xray/MTProxy, конвертирует конфиг в sing-box с теми же настройками, отключает старый VPN и автоматически откатывается, если sing-box не поднялся. **Бэкапы и перенос нод** также доступны из Web UI: Настройки → Бэкапы (экспорт/импорт панели), строка ноды → **Экспорт** (скачать идентичность ноды) + **Relocate** (перенести заблокированную ноду на новый VPS).
 
 ## Сторонние компоненты
 

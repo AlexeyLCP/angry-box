@@ -1,4 +1,4 @@
-**Languages:** [English](README.md) | [Russian](README.ru.md) | [Chinese](README.zh.md) | [Farsi](README.fa.md)
+<div align="center">
 
 # Angry-BOX
 
@@ -8,12 +8,16 @@ Angry-BOX is an original product written from scratch. It is **not** a fork of 3
 
 Management is done exclusively over SSH. Target nodes run **only** amnezia-box (our sing-box 1.14 fork) with a minimal config — no agents.
 
-<p>
+🌐 **Languages / Языки:** [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh.md) | [فارسی](README.fa.md)
+
+<p align="center">
   <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
   <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
   <a href="https://yoomoney.ru/to/41001989176429"><img src="https://img.shields.io/badge/donate-☕-yellow" alt="Donate"></a>
 </p>
+
+</div>
 
 
 ## Overview

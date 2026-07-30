@@ -1,4 +1,4 @@
-**Languages:** [English](README.md) | [Russian](README.ru.md) | [Chinese](README.zh.md) | [Farsi](README.fa.md)
+<div align="center">
 
 # Angry-BOX
 
@@ -6,13 +6,24 @@
 
 Angry-BOX یک محصول کاملاً اورجینال است که از صفر نوشته شده. این پروژه fork از 3x-ui، LucX-UI، x-ui یا هیچ پنل دیگری نیست.
 
-مدیریت فقط از طریق SSH انجام می‌شود. روی نودها فقط هستهٔ **sing-box-extended** به همراه کانفیگ حداقلی اجرا می‌شود — بدون هیچ agent.
+مدیریت فقط از طریق SSH انجام می‌شود. روی نودها فقط هستهٔ **amnezia-box** (فورک ما از sing-box 1.14) به همراه کانفیگ حداقلی اجرا می‌شود — بدون هیچ agent.
+
+🌐 **Languages / Языки:** [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh.md) | [فارسی](README.fa.md)
+
+<p align="center">
+  <a href="https://github.com/AlexeyLCP/angry-box/releases"><img src="https://img.shields.io/github/v/release/AlexeyLCP/angry-box" alt="Release"></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/AlexeyLCP/angry-box" alt="Go Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License"></a>
+  <a href="https://yoomoney.ru/to/41001989176429"><img src="https://img.shields.io/badge/donate-☕-yellow" alt="Donate"></a>
+</p>
+
+</div>
 
 ## نمای کلی
 
 **Angry-BOX** یک ارکستراتور (control plane) کاملاً اورجینال و خودنوشته برای ساخت و مدیریت زیرساخت پروکسی پیچیدهٔ ضد-DPI است.
 
-این پروژه هسته‌های **sing-box-extended** را از طریق SSH بدون agent روی نودها هدایت می‌کند. تمام منطق — ترکیب زنجیره، تولید کانفیگ مبتنی‌برنقش، بازگشت، رابط کاربری و استقرار — از صفر نوشته شده است.
+این پروژه هسته‌های **amnezia-box** (فورک ما از sing-box 1.14) را از طریق SSH بدون agent روی نودها هدایت می‌کند. تمام منطق — ترکیب زنجیره، تولید کانفیگ ادغام‌شده، تولید مبتنی بر نقش، ردیابی سلامت نود، بازگشت (rollback)، رابط کاربری و استقرار — از صفر نوشته شده است.
 
 ## امکانات
 
@@ -20,24 +31,45 @@ Angry-BOX یک محصول کاملاً اورجینال است که از صفر 
 - **ضبط امضای زنده QUIC:** اثر انگشت QUIC-silhouette واقعی دامنه (UDP→QUIC Initial با SNI=domain→ضبط پاسخ‌های سرور) و استفاده از آن به‌عنوان AmneziaWG CPS I1-I5، تا DPI ترافیکی غیرقابل‌تشخیص از QUIC واقعی به آن دامنه ببیند.
 - **وارد کردن کانفیگ‌های موجود AmneziaWG:** دریافت رابط AWG + لیست peer سرور در حال اجرا از طریق SSH و بازپر کردن آن به‌عنوان inboundهای نود به‌صورت **غیرتخریبی** (فقط placeholder — هرگز کلیدها/پورت‌ها/presetهای تنظیم‌شده توسط اپراتور را بازنویسی نمی‌کند). امکان پذیرش یک باکس AWG بدون نیاز به تایپ مجدد.
 - **ارکستراسیون خودکار:** نیازی به نوشتن دستی کانفیگ‌های پیچیده JSON برای `sing-box` نیست. Angry-BOX در چند ثانیه کانفیگ‌ها را از طریق SSH تولید، اعتبارسنجی و مستقر می‌کند.
-- **تلطیش پیشرفته:** VLESS REALITY+XHTTP با حداکثر تلطیش (REALITY بدون ECH، padding با tokenish، قرار دادن cookie، xmux، پشتیبانی از منحنی پس-کوانتومی سمت کلاینت)، AmneziaWG (هسته + userspace)، TUIC، Hysteria2، MTProxy FakeTLS — با ۴ سطح تلطیش (max/high/standard/minimal) و ۴۵ preset مسیریابی (Telegram/YouTube/Netflix/…).
-- **زنجیره‌های چندهاپی (multi-hop):** ساخت زنجیره‌های ۲ یا ۳ نودی؛ AmneziaWG هم به‌عنوان نقطه ورود کلاینت (هسته awg-quick + bind_interface) و هم به‌عنوان hop بین‌نودی (userspace wireguard endpoint با amnezia — باینری پچ‌شده panic بالادستی `chacha20poly1305` را که قبلاً AWG حالت هسته را خراب می‌کرد، برطرف می‌کند).
-- **Failover و بارگذاری متعادل:** `urltest`، `failover`، `selector` و `fallback` با round-robin پچ‌شده برای هر اتصال.
-- **استقرار قابل اعتماد با بازگشت (rollback):** هر اعمال backup انجام می‌دهد (cp، حفظ می‌شود) → cert → upload → `sing-box check` (stderr نمایش داده می‌شود) → restart → health-probe واقعی → بازگشت هنگام شکست؛ قفل per-node از رقابت deploy همزمان جلوگیری می‌کند.
-- **رابط کاربری وب مدرن:** ویرایشگر توپولوژی spider-web (لبه‌های گراف، موقعیت‌های پایدار نود، pan/zoom بومی SVG)، وضعیت deploy (نشانگر pending-changes)، گزارش ممیزی، پروفایل‌ها/سرویس‌ها، کلاینت‌های یکپارچه، قوانین مسیریابی — بر پایه HTMX + TailwindCSS + DaisyUI + templ.
-- **auto-apply پس‌زمینه:** تغییرات کاربر/inbound یک deploy SSH پس‌زمینه را راه می‌اندازد (حالت ترکیبی)؛ قفل per-host آنها را سریال می‌کند.
-- **۱۰۰٪ مستقل:** Angry-BOX باینری **sing-box-extended پچ‌شده** خود را (deps/) عرضه می‌کند، بنابراین VPSهای ضعیف هرگز Go را کامپایل نمی‌کنند — فقط دانلود می‌کنند.
-- **Zero-Footprint:** سرورهای نود فقط هسته `sing-box` را اجرا می‌کنند؛ ارکستراتور کاملأ روی ماشین کنترل شما قرار دارد.
+- **تلطیش پیشرفته (تمرکز محصول v0.2.x):** AmneziaWG (هسته + متعادل‌کننده)، VLESS REALITY+XHTTP با حداکثر تلطیش، MTProxy/Telemt FakeTLS — با ۴ سطح تلطیش (max/high/standard/minimal) و ۴۵ preset مسیریابی (Telegram/YouTube/Netflix/…). TUIC و Hysteria2 متوقف شده‌اند (موکول شدن کار رویکرد TLS/QUIC).
+- **زنجیره‌های چندهاپی (multi-hop):** ساخت زنجیره‌های ۲ یا ۳ نودی؛ AmneziaWG هم به‌عنوان نقطه ورود کلاینت (هسته awg-quick + bind_interface) و هم به‌عنوان hop بین‌نودی (userspace wireguard endpoint با amnezia).
+- **Inboundهای درجه یک (v0.8):** پروفایل‌های inbound (AWG / VLESS+REALITY / MTProxy) یک بار ساخته شده و روی هر مجموعه‌ای از نودها مستقر می‌شوند — ویرایش پروفایل فقط نودهای متأثر را مجدداً مستقر می‌کند.
+- **سطوح زنجیره با استراتژی‌های متعادل‌سازی (v0.8):** زنجیره لیستی مرتب از گروه‌های نود است — `ورودی → [Hop-1, Hop-2] → [خروجی-1, خروجی-2]` — با استراتژی در هر سطح: Round-robin (fallback)، urltest، failover، selector.
+- **کلاینت‌های ساده‌شده (v0.8):** افزودن کلاینت = انتخاب نام و زنجیره‌های قابل استفاده؛ کلیدها و UUIDها به‌طور خودکار مشتق می‌شوند. همراه با لینک اشتراک (Subscription URL)، کانفیگ‌ها و کد QR.
+- **Failover و بارگذاری متعادل:** `urltest`، `failover`، `selector` و `fallback` با round-robin پچ‌شده.
+- **استقرار قابل اعتماد با بازگشت (rollback):** هر اعمال backup انجام می‌دهد → cert → upload → `sing-box check` → restart → health-probe واقعی → بازگشت هنگام شکست.
+- **پشتیبان‌گیری + انتقال سریع نود (Relocate):** خروجی گرفتن از کل پنل یا هویت یک نود به صورت JSON؛ هنگام مسدود شدن IP نود، **Relocate** آن را به VPS جدید منتقل می‌کند — کلیدهای ترانزیت حفظ می‌شوند، بنابراین کلاینت‌ها نیاز به پیکربندی مجدد ندارند. **Clone** نود برای ایجاد نسخه همانند با هویت جدید.
+- **پشتیبان‌گیری رمزنگاری‌شده خارج از سایت:** ارسال نسخه رمزنگاری‌شده پنل با رمز عبور به سرور از راه دور از طریق SSH (scrypt KDF + AES-256-GCM).
+- **ماشین وضعیت سلامت نود:** ردیابی وضعیت نود `healthy → suspect → down → unreachable` و وضعیت **blocked**.
+- **جادوگر کاربران و مدل سرویس:** افزودن کاربر از طریق جادوگر، مشاهده **Service** و دریافت **لینک اشتراک**.
+- **رابط کاربری وب مدرن:** ویرایشگر توپولوژی spider-web، وضعیت استقرار، گزارش ممیزی، پروفایل‌ها/سرویس‌ها، قوانین مسیریابی — بر پایه HTMX + TailwindCSS + DaisyUI + templ.
+- **auto-apply پس‌زمینه:** تغییرات کاربر/inbound استقرار SSH پس‌زمینه را راه می‌اندازد.
+- **انتقال خودکار (استخر گرم):** هنگام انتقال نود به down/unreachable، ارکستراتور می‌تواند آن را به VPS رزرو منتقل کند.
+- **مدیریت کاربران بدون قطعی:** اعمال تغییرات لیست peerها به‌صورت زنده از طریق **`awg set`** — بدون ریستارت `awg-quick`.
+- **عیب‌یابی AWG:** ابزار **Diagnose** برای بررسی عمیق data-plane از طریق SSH.
+- **محاسبه ترافیک هر کاربر:** شمارنده‌های هسته به بایت‌های تجمعی کاربر تبدیل می‌شوند.
+- **خودترمیمی NAT:** بازیابی خودکار قوانین FORWARD/MASQUERADE هنگام پاک شدن iptables.
+- **پک‌های روتر (Keenetic + OpenWrt):** پکیج‌های `.ipk` آماده برای Keenetic Entware و OpenWrt.
+- **۱۰۰٪ مستقل:** Angry-BOX باینری اختصاصی **amnezia-box** خود را عرضه می‌کند — بدون نیاز به کامپایل Go روی VPS.
+- **Zero-Footprint:** نودها فقط هسته `sing-box` را اجرا می‌کنند؛ ارکستراتور کاملاً روی ماشین کنترل قرار دارد.
 
 ## اسکرین‌شات‌ها
 
 <div align="center">
   <img src="docs/assets/dashboard.png" alt="Dashboard" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
   <br>
-  <em>داشبورد رابط کاربری وب Angry-BOX (v0.1.0)</em>
+  <em>داشبورد رابط کاربری وب Angry-BOX</em>
+  <br><br>
+  <img src="docs/assets/spider.png" alt="ویرایشگر توپولوژی" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>ویرایشگر توپولوژی spider-web — گراف زنجیره چندهاپی</em>
+  <br><br>
+  <img src="docs/assets/users.png" alt="کاربران" width="800" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px;"/>
+  <br>
+  <em>کاربران — پروتکل‌ها، دسترسی به زنجیره‌ها و وضعیت چرخه حیات</em>
 </div>
 
-> اسکرین‌شات‌ها بازنویسی v0.1.0 را نشان می‌دهند (تولید کانفیگ مبتنی‌برنقش، takeover، ویرایشگر گراف spider-web، وضعیت deploy، ممیزی).
+> اسکرین‌شات‌ها امکانات نسخه جاری را نشان می‌دهند (ماشین وضعیت سلامت نود، جادوگر کاربران، کلون/انتقال/انتقال خودکار، پشتیبان‌گیری رمزنگاری‌شده، عیب‌یابی AWG، ویرایشگر گراف spider-web، وضعیت استقرار، takeover، ممیزی).
 
 ## معماری
 
@@ -69,67 +101,97 @@ curl -fsSL https://raw.githubusercontent.com/AlexeyLCP/angry-box/main/scripts/in
 angry-box serve -listen 0.0.0.0:8090
 ```
 
-*توجه: در اولین اجرا یک رمز عبور امن تصادفی برای رابط کاربری وب تولید می‌شود.*
+*نکته: در اولین اجرا، یک رمز عبور امن و تصادفی برای رابط وب تولید می‌شود.*
 
 ### ۳. شروع سریع CLI
 
 ```bash
-# 1. نودهای VPS خود را اضافه کنید
+# ۱. افزودن نودهای VPS
 angry-box host add entry-node --addr 1.2.3.4:22 --user root --key ~/.ssh/id_ed25519
 angry-box host add exit-node --addr 5.6.7.8:22 --user root --key ~/.ssh/id_ed25519
 
-# 2. باینری sing-box-extended پچ‌شده را روی نودها مستقر کنید
-#    (-sudo برای کاربران SSH غیر root با sudo بدون رمز؛ -install-awg همچنین ماژول هسته AmneziaWG را نصب می‌کند)
+# ۲. استقرار باینری amnezia-box روی نودها
+#    (-sudo برای کاربران غیر root؛ -install-awg ماژول هسته AmneziaWG را نصب می‌کند)
 angry-box deploy -addr 1.2.3.4 -key ~/.ssh/id_ed25519 -sudo
 angry-box deploy -addr 5.6.7.8 -key ~/.ssh/id_ed25519 -sudo
 
-# 3. یک زنجیره بسازید
+# ۳. ایجاد زنجیره
 angry-box chain create my-chain --nodes entry-node,exit-node --user-protocol awg --transport xhttp
 
-# 4. زنجیره را اعمال کنید (تولید + ارسال کانفیگ به همه نودها، با rollback هنگام شکست)
+# ۴. اعمال زنجیره (تولید و ارسال کانفیگ به تمام نودها با قابلیت بازگشت)
 angry-box apply-chain my-chain
 
-# 5. یک کانفیگ مستقل را به‌صورت محلی (مثلاً REALITY+XHTTP) بدون ارسال تولید کنید
+# ۵. تولید کانفیگ مستقل به‌صورت محلی (مانند REALITY+XHTTP) بدون ارسال
 angry-box config -port 443
+
+# ۶. پشتیبان‌گیری از پنل + انتقال نود مسدودشده به VPS جدید
+angry-box backup store -o panel-backup.json          # پشتیبان‌گیری از کل پنل
+angry-box backup node entry-node -o entry-node.json  # هویت قابل حمل یک نود
+angry-box restore panel-backup.json                 # تشخیص خودکار و بازیابی
+# هنگام مسدود شدن IP نود، آن را به VPS جدید منتقل کنید — کلیدها حفظ می‌شوند
+# و سایر نودها و کلاینت‌ها نیازی به پیکربندی مجدد ندارند:
+angry-box relocate entry-node --addr 9.9.9.9:22
 ```
 
-**بازپس‌گیری** (تشخیص + تبدیل سرور VPN موجود) از رابط کاربری وب در دسترس است: نود را باز کنید → دکمه **بازپس‌گیری**. این AWG/sing-box/Xray/MTProxy را تشخیص می‌دهد، کانفیگ را به sing-box با همان تنظیمات تبدیل می‌کند، VPN قدیمی را غیرفعال می‌کند و اگر sing-box شکست بخورد خودکار بازمی‌گردد.
+### ۴. روی روتر (Keenetic / OpenWrt)
 
-## اجزای شخص ثالث
+```bash
+# Keenetic (Entware) — پکیج مناسب مدل خود را از Releases انتخاب کنید:
+opkg install angry-box_v0.7.0_mipsel-3.4-kn.ipk      # MT7621 و مشابه
+# OpenWrt:
+opkg install angry-box_v0.7.0_aarch64_cortex-a53.ipk
+# پنل روی 127.0.0.1:9080 اجرا می‌شود — دسترسی از طریق تونل SSH.
+```
 
-- **[sing-box](https://github.com/SagerNet/sing-box)** و **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)** (GPLv3)
+**بازپس‌گیری (Takeover)** از طریق Web UI در دسترس است: باز کردن نود ← دکمه **Takeover**. **پشتیبان‌گیری و انتقال نود** نیز در Web UI موجود است: Settings ← Backups و سطر نود ← **Export** / **Relocate**.
+
+## قطعات شخص ثالث
+
+- **[sing-box](https://github.com/SagerNet/sing-box)** و **[amnezia-box](https://github.com/AlexeyLCP/amnezia-box)** (فورک ما از sing-box 1.14، GPLv3)
 - **[AmneziaWG Linux Kernel Module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)** (GPLv2)
-- **[awg-multi-script از pumbaX](https://github.com/pumbaX/awg-multi-script)** (MIT) — شیوه‌های برتر تلطیش AmneziaWG (نادرست‌های Jc/Jmin/Jmax/S1-S4/H1-H4، تولید بسته CPS)
-- **[awg-manager از hoaxisr](https://github.com/hoaxisr/awg-manager)** (MIT) — الگوریتم ضبط امضای زنده QUIC (منطق «بازپس‌گیری VPN موجود»: اتصال به domain:443 از طریق UDP، ارسال QUIC Initial، ضبط بسته‌های پاسخ سرور به‌عنوان I1-I5)
-- **[templ](https://github.com/a-h/templ)** (MIT) — قالب‌های HTML برای رابط کاربری وب
+- **[awg-multi-script by pumbaX](https://github.com/pumbaX/awg-multi-script)** (MIT) — بهترین روش‌های تلطیش AmneziaWG
+- **[awg-manager by hoaxisr](https://github.com/hoaxisr/awg-manager)** (MIT) — الگوریتم ضبط امضای زنده QUIC
+- **[templ](https://github.com/a-h/templ)** (MIT) — قالب‌های HTML برای Web UI
 - **[golang.org/x/crypto/ssh](https://go.googlesource.com/crypto)** (BSD-3-Clause) — کلاینت Go SSH
-- **HTMX، TailwindCSS و DaisyUI** (MIT / BSD)
+- **HTMX, TailwindCSS, و DaisyUI** (MIT / BSD)
 
 ## قدردانی
 
-- تشکر ویژه از **Aleksandr SacredX** برای آزمایش گسترده و ایده‌های ارزشمند.
-- ضبط امضای زنده QUIC (که Angry-BOX برای اثر انگشت QUIC-silhouette دامنه واقعی تحت AmneziaWG CPS I1-I5 استفاده می‌کند) از **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)** پورت شده است.
-- تولید پارامترهای تلطیش AmneziaWG (پروفایل‌ها + ناوراری‌ها) و ژنراتورهای سنتزشده بسته CPS (شکل‌های TLS/DNS/SIP/QUIC ClientHello برای I1-I5) از **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)** پورت شده‌اند.
-- انتقال XHTTP + فیلدهای تلطیش پیشرفته از **تیم Xray (RPRX)**؛ تولید هدر HTTP واقع‌گرایانه با الهام از **[NaiveProxy](https://github.com/SagerNet/naive)**؛ تفکر fragment خرد‌گیری از طراحی **Hysteria2 Gecko** برگرفته شده است.
-- **Hysteria2**، **NaiveProxy**، **Telemt**، و بسیاری از پژوهشگران ضد-سانسور روسی، ایرانی و چینی.
+- تشکر ویژه از **Aleksandr SacredX** برای تست‌های گسترده و ایده‌های ارزشمند.
+- ضبط امضای زنده QUIC پورت‌شده از **[hoaxisr/awg-manager](https://github.com/hoaxisr/awg-manager)**.
+- پارامترهای تلطیش AmneziaWG پورت‌شده از **[pumbaX/awg-multi-script](https://github.com/pumbaX/awg-multi-script)**.
+- انتقال XHTTP از **تیم Xray (RPRX)**؛ تولید هدرهای HTTP از **[NaiveProxy](https://github.com/SagerNet/naive)**؛ تکه‌تکه‌سازی از **Hysteria2 Gecko**.
+- **Hysteria2**, **NaiveProxy**, **Telemt**, و تمام پژوهشگران ضد سانسور.
 
-## ساخت از کد منبع
+## ساخت از سورس
 
 ```bash
 git clone https://github.com/AlexeyLCP/angry-box.git
 cd angry-box
 
-# ساخت production (همه چیز جاسازی شده)
+# ساخت نسخه تولید (همه چیز درون‌سازی‌شده)
 go build -o angry-box ./cmd/angry-box
 
-# حالت توسعه (فایل‌های استاتیک از دیسک، ویرایش بدون بازساخت)
+# حالت توسعه
 ANGRY_BOX_DEV=1 go run ./cmd/angry-box serve
 ```
 
-## پروانه
+## ☕ حمایت از پروژه
+
+Angry-BOX برای استفاده شخصی و غیرتجاری رایگان است. اگر این ارکستراتور زمان شما را صرفه‌جویی می‌کند، می‌توانید از توسعه آن حمایت کنید:
+
+| روش | جزئیات |
+|---|---|
+| 🇷🇺 **YooMoney** (روبل، روسیه) | [yoomoney.ru/to/41001989176429](https://yoomoney.ru/to/41001989176429) |
+| 💎 **USDT (TON)** | `UQC48dE4i35bjEU4jljx0h1CGeXMu77eKZwN5W4gbcibmqDs` |
+| 💠 **USDT (ERC-20)** | `0xA49aBc042c5BB3d682788D3DEB2eAC833343a873` |
+
+اهدا فقط تشکر است و به منزله خرید مجوز تجاری نیست.
+
+## مجوز
 
 **PolyForm Noncommercial License 1.0.0**
 
-برای مصارف شخصی، آموزشی و پژوهشی رایگان است. استفاده تجاری نیازمند اجازه کتبی است.
+رایگان برای اهداف شخصی، آموزشی و پژوهشی. استفاده تجاری نیازمند مجوز کتبی است.
 
-متن کامل را در [LICENSE](LICENSE) ببینید.
+متن کامل در [LICENSE](LICENSE).
