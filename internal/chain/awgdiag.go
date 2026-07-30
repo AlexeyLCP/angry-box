@@ -42,9 +42,6 @@ type DiagCheck struct {
 // The chain always runs to completion so the operator sees the full picture;
 // individual probe errors become DiagFail entries, not aborts.
 func DiagnoseAWGNode(ctx context.Context, client ports.SSHClient, iface string, useSudo bool) []DiagCheck {
-	if iface == "" {
-		iface = "awg0"
-	}
 	var checks []DiagCheck
 	run := func(cmd string) (string, error) {
 		out, stderr, _, err := client.RunWithOutput(ctx, sudoWrap(useSudo, cmd), 15*time.Second)
@@ -55,6 +52,35 @@ func DiagnoseAWGNode(ctx context.Context, client ports.SSHClient, iface string, 
 	}
 	add := func(name string, status DiagStatus, detail string) {
 		checks = append(checks, DiagCheck{Name: name, Status: status, Detail: detail})
+	}
+
+	if iface == "" {
+		// Auto-detect active AWG interface from the remote host:
+		// 1. Try `awg show interfaces` (e.g. returns "awg2" or "awg0 awg2")
+		// 2. Try `/etc/amnezia/amneziawg/*.conf`
+		// 3. Default to "awg0"
+		if showOut, err := run("awg show interfaces"); err == nil && strings.TrimSpace(showOut) != "" {
+			ifaces := strings.Fields(strings.TrimSpace(showOut))
+			if len(ifaces) > 0 {
+				iface = ifaces[0]
+			}
+		}
+		if iface == "" {
+			if lsOut, err := run("ls /etc/amnezia/amneziawg/*.conf"); err == nil && strings.TrimSpace(lsOut) != "" {
+				lines := strings.Split(strings.TrimSpace(lsOut), "\n")
+				if len(lines) > 0 {
+					fn := strings.TrimSpace(lines[0])
+					fn = strings.TrimPrefix(fn, "/etc/amnezia/amneziawg/")
+					fn = strings.TrimSuffix(fn, ".conf")
+					if fn != "" {
+						iface = fn
+					}
+				}
+			}
+		}
+		if iface == "" {
+			iface = "awg0"
+		}
 	}
 
 	// 1. systemd unit active.
@@ -157,7 +183,7 @@ func DiagnoseAWGNode(ctx context.Context, client ports.SSHClient, iface string, 
 	out, err = run("ip -br link show sing-box-tun")
 	switch {
 	case err != nil || out == "":
-		add("sing-box-tun", DiagFail, "TUN overlay interface missing (sing-box config has no tun inbound?)")
+		add("sing-box-tun", DiagWarn, "TUN overlay interface missing (not configured or AWG 3.0 userspace mode)")
 	case strings.Contains(out, "UP"):
 		add("sing-box-tun", DiagOK, out)
 	default:
