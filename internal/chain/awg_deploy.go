@@ -146,6 +146,85 @@ func RenderNodeAWGConfs(
 	return files, warnings
 }
 
+// AWGTeardownInterfaces returns the kernel AWG interfaces this node must NOT
+// keep running — the ones that WOULD have been rendered as awg-quick .confs if
+// the owning inbound were not in AWG 3.0 mode. AWG3 inbounds render as an
+// in-process userspace `type:"awg"` sing-box endpoint that binds the SAME UDP
+// port; a leftover awg-quick@awgN from a previous non-AWG3 deploy keeps that
+// port and sing-box dies at startup:
+//
+//	endpoint/awg[ch-X-user-in]: unable to update bind: create ipv4 connection:
+//	listen udp4 0.0.0.0:8443: bind: address already in use
+//	FATAL start service: ...
+//
+// (live crash-loop on the VladufQa node, PROGRESS §39 — RenderNodeAWGConfs
+// correctly stopped EMITTING awg0.conf for AWG3, but nothing ever stopped the
+// already-running unit.)
+//
+// Interfaces that ARE in the rendered file set are never returned — a node can
+// legitimately run other kernel AWG interfaces alongside an AWG3 endpoint (e.g.
+// a second standalone inbound on awg2 carrying live traffic) and those must not
+// be touched. Result is deduplicated and stable-ordered.
+func AWGTeardownInterfaces(
+	nodeInfo *model.NodeInfo,
+	nodeChains []*model.Chain,
+	renderedFiles []AWGConfFile,
+) []string {
+	if nodeInfo == nil {
+		return nil
+	}
+	keep := map[string]bool{}
+	for _, f := range renderedFiles {
+		keep[awgIfaceFromService(f.ServiceName)] = true
+	}
+
+	var out []string
+	seen := map[string]bool{}
+	add := func(iface string) {
+		if iface == "" || keep[iface] || seen[iface] {
+			return
+		}
+		seen[iface] = true
+		out = append(out, iface)
+	}
+
+	// 1. AWG3 chain entry — would have owned awg0 (renderChainEntryAWGConf).
+	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
+	for _, r := range roles {
+		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
+			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil {
+				add("awg0")
+			}
+			break // one chain entry per node
+		}
+	}
+
+	// 2. AWG3 standalone inbound — would have owned awg0, or awg1 when a chain
+	//    entry claimed awg0 (mirrors the RenderNodeAWGConfs branch logic).
+	chainEntryClaimsAWG0 := false
+	for _, f := range renderedFiles {
+		if awgIfaceFromService(f.ServiceName) == "awg0" {
+			chainEntryClaimsAWG0 = true
+			break
+		}
+	}
+	for i := range nodeInfo.Inbounds {
+		ib := &nodeInfo.Inbounds[i]
+		if ib.Protocol != "awg" || !ib.AWG3Mode {
+			continue
+		}
+		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {
+			continue // handled by the chain-entry branch above
+		}
+		if chainEntryClaimsAWG0 && ib.AWGServerAddress != "" {
+			add("awg1")
+			continue
+		}
+		add("awg0")
+	}
+	return out
+}
+
 // renderChainEntryAWGConf renders the user-entry awg0.conf for a chain AWG
 // entry node. v2 (InboundRef set): reads the MATERIALIZED entry inbound from
 // the node's NodeInfo (profile credentials, port, subnet, CPS/H material) —
@@ -155,7 +234,10 @@ func RenderNodeAWGConfs(
 func renderChainEntryAWGConf(nodeInfo *model.NodeInfo, r chainRole, users []model.User) AWGConfFile {
 	if r.Node.InboundRef != "" {
 		if ib := inboundByProfileID(nodeInfo, r.Node.InboundRef); ib != nil {
-			return renderAWGServerConfFromInbound(ib, r.Preset, users, "awg0")
+			// Same shared preset resolver as the client .conf render — a
+			// divergence here emits an amnezia block the client can't match
+			// (live: server S1=15 vs client S1=115, PROGRESS §39).
+			return renderAWGServerConfFromInbound(ib, ResolveChainEntryPreset(r.Preset, ib), users, "awg0")
 		}
 	}
 	return renderChainEntryAWG0Conf(r, users)

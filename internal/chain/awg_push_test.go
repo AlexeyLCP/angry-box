@@ -162,6 +162,85 @@ func TestPushConfigWithAWG_SingBoxCheckFails_RollsBackBoth(t *testing.T) {
 	}
 }
 
+// TestPushConfigWithAWGTeardown_DisablesStaleUnitBeforeSingBox pins the SSH side
+// of PROGRESS §39 bug B: an AWG3 inbound binds its UDP port from inside
+// sing-box, so the stale kernel awg-quick@awg0 must be stopped+disabled BEFORE
+// the sing-box restart — otherwise sing-box crash-loops with
+// "bind: address already in use".
+func TestPushConfigWithAWGTeardown_DisablesStaleUnitBeforeSingBox(t *testing.T) {
+	rules := append(awgDeployRules(), fakeRule{substring: "systemctl disable --now", out: ""})
+	client := newFakeSSH(rules...)
+	// No rendered AWG files (AWG3-only node) but awg0 must be torn down.
+	_, err := pushConfigWithAWGTeardown(context.Background(), client, "node-awg3", validCfg, nil, []string{"awg0"}, false)
+	if err != nil {
+		t.Fatalf("pushConfigWithAWGTeardown: %v", err)
+	}
+	if !client.SawCommand("systemctl disable --now awg-quick@awg0") {
+		t.Fatalf("stale awg-quick@awg0 was not disabled; commands: %v", client.Commands())
+	}
+	// Ordering: the disable MUST precede the sing-box restart.
+	cmds := client.Commands()
+	disableIdx, sbRestartIdx := -1, -1
+	for i, c := range cmds {
+		if disableIdx < 0 && strings.Contains(c, "disable --now awg-quick@awg0") {
+			disableIdx = i
+		}
+		if sbRestartIdx < 0 && strings.Contains(c, "restart sing-box") {
+			sbRestartIdx = i
+		}
+	}
+	if disableIdx < 0 || sbRestartIdx < 0 {
+		t.Fatalf("missing disable (%d) or sing-box restart (%d)", disableIdx, sbRestartIdx)
+	}
+	if disableIdx > sbRestartIdx {
+		t.Errorf("awg-quick disable (cmd %d) must come BEFORE sing-box restart (cmd %d)", disableIdx, sbRestartIdx)
+	}
+}
+
+// TestPushConfigWithAWGTeardown_RestoresUnitOnSingBoxFailure verifies the
+// rollback symmetry: when the sing-box push fails after a unit was torn down,
+// the unit is re-enabled so the node returns to its pre-deploy state.
+func TestPushConfigWithAWGTeardown_RestoresUnitOnSingBoxFailure(t *testing.T) {
+	rules := append(awgDeployRules(), fakeRule{substring: "systemctl disable --now", out: ""})
+	// is-active reports "active" so the teardown records awg0 for restore.
+	for i := range rules {
+		if rules[i].substring == "is-active" {
+			rules[i] = fakeRule{substring: "is-active", out: "active"}
+		}
+		if rules[i].substring == "sing-box check" {
+			rules[i] = fakeRule{substring: "sing-box check", out: "", errOut: "unknown field foo", exit: 1, err: errExitOne}
+		}
+	}
+	client := newFakeSSH(rules...)
+	_, err := pushConfigWithAWGTeardown(context.Background(), client, "node-awg3", validCfg, nil, []string{"awg0"}, false)
+	if err == nil {
+		t.Fatal("expected the sing-box check to fail")
+	}
+	if !client.SawCommand("systemctl enable --now awg-quick@awg0") {
+		t.Errorf("torn-down unit must be restored on sing-box failure; commands: %v", client.Commands())
+	}
+}
+
+// TestPushConfigWithAWGTeardown_InactiveUnitNotRestored verifies idempotency:
+// a unit that was ALREADY inactive is not "restored" on failure (that would
+// start an interface the node deliberately does not run).
+func TestPushConfigWithAWGTeardown_InactiveUnitNotRestored(t *testing.T) {
+	rules := append(awgDeployRules(), fakeRule{substring: "systemctl disable --now", out: ""})
+	for i := range rules {
+		if rules[i].substring == "is-active" {
+			rules[i] = fakeRule{substring: "is-active", out: "inactive"}
+		}
+		if rules[i].substring == "sing-box check" {
+			rules[i] = fakeRule{substring: "sing-box check", out: "", errOut: "boom", exit: 1, err: errExitOne}
+		}
+	}
+	client := newFakeSSH(rules...)
+	_, _ = pushConfigWithAWGTeardown(context.Background(), client, "node-awg3", validCfg, nil, []string{"awg0"}, false)
+	if client.SawCommand("systemctl enable --now awg-quick@awg0") {
+		t.Error("an already-inactive unit must NOT be started by the rollback")
+	}
+}
+
 // TestPushConfigWithAWG_AWGEnableFails verifies that when the awg-quick@awg0
 // enable/restart fails, the AWG .conf is rolled back and the sing-box push is
 // never attempted.

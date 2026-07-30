@@ -4,6 +4,56 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.11] — 2026-07-30
+
+### Fix — AWG 3.0 chain entry never came up (four independent bugs)
+
+A tester's AWG 3.0 chain entry had no handshake and no traffic. v0.8.10 verified
+AWG3 live on n1 in the *standalone* shape, but the **chain-entry** path was
+broken by four independent bugs — each fatal on its own. Diagnosed from node
+output (`journalctl`, `awg show`, `ss -lunp`), not from reading code.
+
+- **Port mismatch (fatal).** The userspace endpoint listened on the *chain's*
+  user-entry port (`chainEntryPort`, 8443) while the client `.conf` and the
+  kernel renderer both use the *materialized inbound's* port (25086) — nothing
+  was listening where every client dialed. The AWG3 endpoint was the only
+  renderer ignoring `ib.Port`. Now the inbound's port wins, with the chain port
+  as fallback for un-migrated chains. The inbound tag is unchanged (route rules
+  address it by tag).
+- **Stale kernel unit kept the port (fatal).** `RenderNodeAWGConfs` correctly
+  stopped *emitting* `awg0.conf` for AWG3 inbounds, but nothing ever stopped the
+  `awg-quick@awg0` unit left running by the previous non-AWG3 deploy. It held
+  the UDP port, so sing-box crash-looped: `endpoint/awg[ch-X-user-in]: unable to
+  update bind: listen udp4 0.0.0.0:8443: bind: address already in use` →
+  `FATAL start service`. New `AWGTeardownInterfaces` computes the units the node
+  must no longer run, and the deploy disables them *before* pushing the sing-box
+  config, inside the same host lock. An interface that is still rendered is
+  never torn down (the node ran a legitimate second AWG interface with 3.16 GiB
+  of live traffic); already-inactive units are a no-op; units that were active
+  are restored if the sing-box push fails.
+- **Server/client obfuscation divergence.** The server resolved its preset from
+  the CHAIN while the client resolved it from the PROFILE — live divergence
+  S1 15 vs 115, S2 85 vs 45, different H1. amnezia parameters must match exactly
+  or the handshake cannot complete. A single `ResolveChainEntryPreset` is now
+  used by all three render paths (AWG3 endpoint, kernel chain-entry conf, client
+  `.conf`). The inbound's preset wins only when it actually names one — an empty
+  `Obfuscation` keeps the chain's preset, so custom-preset chains don't silently
+  degrade to the panel default and break already-connected clients.
+- **Hardcoded server address.** The endpoint hardcoded `10.8.0.1/32`, ignoring
+  the inbound's real subnet (`10.8.1.1/24`), so the server and its peers landed
+  on different `/24`s. The address now derives from `AWGServerAddress`.
+
+- Tests: 5 new render/teardown tests (`TestAWG3Mode_EndpointUsesInboundPort`,
+  `_TeardownsKernelUnit`, `_ServerAddressFromInbound`,
+  `TestChainEntryPreset_ServerClientMatch`,
+  `_EmptyObfuscationKeepsChainPreset`) plus 3 deploy-push tests covering
+  teardown ordering, rollback restore, and idempotency. Each was verified to
+  fail with the *live* symptoms when its fix is reverted (port `8443 vs 25086`,
+  `S1 115 vs 15`, `Jc 120 vs 5`, empty teardown set).
+- The kernel path for non-AWG3 inbounds is untouched (AGENTS #10/#11), and no
+  NAT/nftables rules were changed — a userspace AWG3 endpoint egresses through
+  sing-box's own socket, so the user subnet needs no MASQUERADE.
+
 ## [v0.8.10] — 2026-07-29
 
 ### Feature — AWG 3.0 header-protection mode (opt-in per-inbound toggle, live-verified)

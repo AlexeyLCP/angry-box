@@ -720,8 +720,21 @@ func buildChainRoleInOut(role *chainRole, users []model.User, nodeInfo *model.No
 			// TUN overlay + awg0.conf are skipped for this inbound (see
 			// awgTUNOverlayNeeded / RenderNodeAWGConfs AWG3 branches).
 			if awg3Entry := chainEntryAWG3Inbound(nodeInfo, c, role.Node); awg3Entry != nil {
-				epJSON, _, err := buildAWGUserInboundMulti(
-					userPort, inTag, &role.Preset, awg3Entry.ServerPrivKey, users, InboundAWGObfsMaterial(awg3Entry))
+				// Port/subnet/preset come from the MATERIALIZED inbound, not the
+				// chain's own fields: the client .conf renders ib.Port and the
+				// kernel renderer uses ib.Port too, so an endpoint on
+				// chainEntryPort() would listen where no client dials (live bug:
+				// server 8443 vs client 25086, PROGRESS §39). The preset is
+				// resolved through the SHARED resolver so the server's amnezia
+				// block matches the client's byte-for-byte.
+				entryPort := userPort
+				if awg3Entry.Port > 0 {
+					entryPort = awg3Entry.Port
+				}
+				entryPreset := ResolveChainEntryPreset(role.Preset, awg3Entry)
+				epJSON, _, err := buildAWGUserInboundMultiAddr(
+					entryPort, inTag, &entryPreset, awg3Entry.ServerPrivKey, users,
+					InboundAWGObfsMaterial(awg3Entry), awg3Entry.AWGServerAddress)
 				if err != nil {
 					warnings = append(warnings, fmt.Sprintf(
 						"chain %q: AWG3 user-entry endpoint build failed: %v", cn, err))
@@ -983,8 +996,12 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		// skipped for this inbound (awgTUNOverlayNeeded / RenderNodeAWGConfs).
 		if ib.AWG3Mode {
 			users := usersByInbound[tag]
-			epJSON, _, err := buildAWGUserInboundMulti(
-				ib.Port, tag, &preset, ib.ServerPrivKey, users, InboundAWGObfsMaterial(ib))
+			// The endpoint's own tunnel address must sit in the inbound's subnet
+			// (AWGServerAddress), not the hardcoded 10.8.0.1/32 — otherwise the
+			// server and its peers land on different /24s (PROGRESS §39).
+			epJSON, _, err := buildAWGUserInboundMultiAddr(
+				ib.Port, tag, &preset, ib.ServerPrivKey, users,
+				InboundAWGObfsMaterial(ib), ib.AWGServerAddress)
 			if err == nil {
 				endpoints = append(endpoints, epJSON)
 			}

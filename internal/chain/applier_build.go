@@ -469,12 +469,12 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// kernel-AWG architecture (user-entry awg0, multi-exit awg-exit-nX, exit
 		// server awg0, or standalone awg0). Empty for non-AWG nodes —
 		// pushConfigWithAWG then falls through to the plain pushConfig path.
-		awgFiles, awgWarns := renderAWGConfsForDeploy(store, nodeInfo, nodeChains)
+		awgFiles, awgTeardown, awgWarns := renderAWGDeployPlan(store, nodeInfo, nodeChains)
 		for _, w := range awgWarns {
 			log.Printf("deploy: %s", w)
 		}
 
-		_, pushErr := pushConfigWithAWG(ctx, client, node.ID, string(cfgJSON), awgFiles, nodeInfo.UseSudo)
+		_, pushErr := pushConfigWithAWGTeardown(ctx, client, node.ID, string(cfgJSON), awgFiles, awgTeardown, nodeInfo.UseSudo)
 		client.Close()
 		if pushErr != nil {
 			if strings.Contains(pushErr.Error(), "rollback successful") {
@@ -1349,6 +1349,39 @@ func applyAWG3ToEndpoint(ep *config.AwgEndpointOptions, material *AWGObfsMateria
 // RenderServerAWGConf. Do NOT wire this into the non-AWG3 production render
 // path — see AGENTS.md #10/#11 / PROGRESS §1.A.
 func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User, material *AWGObfsMaterial) ([]byte, string, error) {
+	return buildAWGUserInboundMultiAddr(port, tag, preset, serverPrivKeyB64, users, material, "")
+}
+
+// awgEndpointServerAddress converts a kernel-style AWG server subnet
+// (NodeInbound.AWGServerAddress, e.g. "10.8.1.1/24") into the userspace
+// endpoint's own tunnel address ("10.8.1.1/32"). The userspace endpoint owns a
+// single host address, not the whole subnet, so only the host part is kept.
+// Empty input falls back to the historical default "10.8.0.1/32".
+//
+// Without this the endpoint hardcoded 10.8.0.1/32 while the peers (and the
+// client .conf) lived in the inbound's real subnet (e.g. 10.8.1.2/32) — the
+// server and its peers ended up on different /24s and traffic never routed
+// (live-found on the VladufQa node, PROGRESS §39).
+func awgEndpointServerAddress(awgServerAddress string) string {
+	const defaultAddr = "10.8.0.1/32"
+	if awgServerAddress == "" {
+		return defaultAddr
+	}
+	host := awgServerAddress
+	if i := strings.IndexByte(host, '/'); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return defaultAddr
+	}
+	return host + "/32"
+}
+
+// buildAWGUserInboundMultiAddr is buildAWGUserInboundMulti with an explicit
+// server tunnel address (the inbound's AWGServerAddress). serverAddress ""
+// keeps the legacy 10.8.0.1/32 default.
+func buildAWGUserInboundMultiAddr(port int, tag string, preset *ConnectionPreset, serverPrivKeyB64 string, users []model.User, material *AWGObfsMaterial, serverAddress string) ([]byte, string, error) {
 	awg := preset.AWG
 	if awg == nil {
 		awg = &AWGPreset{JC: 4, JMIN: 40, JMAX: 70, H1: 1, H2: 2, H3: 3, H4: 4}
@@ -1395,7 +1428,7 @@ func buildAWGUserInboundMulti(port int, tag string, preset *ConnectionPreset, se
 		Type:       "awg",
 		Tag:        tag, // user-in tag — route rules address this endpoint by tag
 		MTU:        1420,
-		Address:    []string{"10.8.0.1/32"}, // server tunnel IP
+		Address:    []string{awgEndpointServerAddress(serverAddress)}, // server tunnel IP
 		PrivateKey: privKeyB64,
 		ListenPort: port,
 		Peers:      peers,
@@ -1811,10 +1844,10 @@ func (a *Applier) applyMergedNodeLocked(
 	// Render the kernel awg-quick .conf files this node needs (standalone awg0,
 	// chain entry/transit/exit). Empty for non-AWG nodes — pushConfigWithAWG
 	// then falls through to the plain pushConfig path.
-	awgFiles, awgWarns := renderAWGConfsForDeploy(store, info, chains)
+	awgFiles, awgTeardown, awgWarns := renderAWGDeployPlan(store, info, chains)
 	mergeReport.Warnings = append(mergeReport.Warnings, awgWarns...)
 
-	_, pushErr := pushConfigWithAWG(ctx, client, info.ID, string(cfgJSON), awgFiles, info.UseSudo)
+	_, pushErr := pushConfigWithAWGTeardown(ctx, client, info.ID, string(cfgJSON), awgFiles, awgTeardown, info.UseSudo)
 	if pushErr != nil {
 		if strings.Contains(pushErr.Error(), "rollback successful") {
 			return nil, mergeReport, fmt.Errorf("ROLLBACK APPLIED: %w", pushErr)

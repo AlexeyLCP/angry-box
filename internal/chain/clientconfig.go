@@ -331,7 +331,11 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 			if ib.Port > 0 {
 				port = ib.Port
 			}
-			preset = ResolveStandaloneAWGPreset(ib)
+			// SHARED resolver (not ResolveStandaloneAWGPreset): an inbound with
+			// an empty Obfuscation must keep the CHAIN's preset, otherwise a
+			// custom chain preset silently degrades to the panel default and the
+			// client stops matching the server (PROGRESS §39).
+			preset = ResolveChainEntryPreset(preset, ib)
 			material = InboundAWGObfsMaterial(ib)
 		}
 	}

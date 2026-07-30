@@ -125,6 +125,31 @@ func ResolveStandaloneAWGPreset(ib *model.NodeInbound) ConnectionPreset {
 	return GetDefaultPreset()
 }
 
+// ResolveChainEntryPreset resolves the obfuscation preset for a chain ENTRY
+// whose listener is a materialized profile inbound. It is the SINGLE resolver
+// that all three render paths must use — the server-side kernel conf
+// (renderChainEntryAWGConf), the server-side AWG3 userspace endpoint
+// (buildChainRoleInOut), and the client .conf (RenderClientAWGConf) — or the
+// two sides emit different amnezia parameters and no client can handshake.
+//
+// Resolution: the inbound's own preset wins ONLY when it names one
+// (ib.Obfuscation != ""); otherwise the CHAIN's preset is kept. The non-empty
+// guard is essential: falling back to ResolveStandaloneAWGPreset for an inbound
+// with an empty Obfuscation would silently drop a custom chain preset to the
+// panel default and break every already-connected kernel client.
+//
+// Live regression this fixes (PROGRESS §39): the server rendered S1=15 from the
+// chain preset while the client .conf rendered S1=115 from the profile preset.
+func ResolveChainEntryPreset(chainPreset ConnectionPreset, ib *model.NodeInbound) ConnectionPreset {
+	if ib == nil || ib.Obfuscation == "" {
+		return chainPreset
+	}
+	if p, ok := GetPreset(ib.Obfuscation); ok {
+		return p
+	}
+	return chainPreset
+}
+
 // ─── Profile-level live QUIC capture ─────────────────────────────────────────
 //
 // A profile deployed on N nodes mimics ONE domain — the live-captured CPS

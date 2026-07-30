@@ -176,6 +176,49 @@ type awgPushRecord struct {
 	backupPath string
 }
 
+// teardownAWGInterfaces stops+disables the awg-quick units for interfaces this
+// node must no longer run (AWG 3.0 inbounds bind the port from inside sing-box
+// — see AWGTeardownInterfaces). Returns the units that were ACTIVE before the
+// teardown so a failed sing-box push can bring them back (rollback symmetry
+// with rollbackAWGConfs).
+//
+// Idempotent and non-fatal: an already-inactive or nonexistent unit is not an
+// error (`|| true`), so a redeploy on a clean node never fails here. A teardown
+// failure is logged but does not abort the deploy — if the port really is still
+// held, sing-box's own check/restart surfaces it with a precise error and the
+// normal rollback applies.
+func teardownAWGInterfaces(ctx context.Context, client ports.SSHClient, ifaces []string, useSudo bool) []string {
+	var restored []string
+	for _, iface := range ifaces {
+		service := awgServiceName(iface)
+		wasActive := serviceActive(ctx, client, service, useSudo)
+		cmd := fmt.Sprintf("systemctl disable --now %s || true", service)
+		if _, _, _, err := client.RunWithOutput(ctx, sudoWrap(useSudo, cmd), 60*time.Second); err != nil {
+			log.Printf("teardownAWGInterfaces: %s: %v (continuing — sing-box will report a real port clash)", service, err)
+			continue
+		}
+		if wasActive {
+			restored = append(restored, iface)
+			log.Printf("teardownAWGInterfaces: %s stopped+disabled (AWG3 userspace endpoint owns its port)", service)
+		}
+	}
+	return restored
+}
+
+// restoreAWGInterfaces re-enables units that teardownAWGInterfaces stopped —
+// used when the sing-box push fails, so the node returns to its pre-deploy
+// state for BOTH layers. Errors are logged, not fatal (a partial restore beats
+// aborting the rollback mid-way).
+func restoreAWGInterfaces(ctx context.Context, client ports.SSHClient, ifaces []string, useSudo bool) {
+	for _, iface := range ifaces {
+		service := awgServiceName(iface)
+		cmd := fmt.Sprintf("systemctl enable --now %s", service)
+		if _, _, _, err := client.RunWithOutput(ctx, sudoWrap(useSudo, cmd), 60*time.Second); err != nil {
+			log.Printf("restoreAWGInterfaces: rollback FAILED for %s: %v", service, err)
+		}
+	}
+}
+
 // rollbackAWGConfs restores each .conf from its backup (cp, preserved) and
 // restarts the awg-quick service. A missing backup (first deploy) makes the
 // restore a no-op but the restart still runs so the service reflects whatever
@@ -197,6 +240,14 @@ func PushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgC
 	return pushConfigWithAWG(ctx, client, nodeID, cfgContent, awgFiles, useSudo)
 }
 
+// PushConfigWithAWGTeardown is PushConfigWithAWG plus the AWG3 kernel-unit
+// teardown (see AWGTeardownInterfaces): the listed interfaces are stopped and
+// disabled before the sing-box config is pushed, and restored if that push
+// fails. Exported for the takeover package, which shares the deploy pipeline.
+func PushConfigWithAWGTeardown(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, awgFiles []AWGConfFile, teardownIfaces []string, useSudo bool) (string, error) {
+	return pushConfigWithAWGTeardown(ctx, client, nodeID, cfgContent, awgFiles, teardownIfaces, useSudo)
+}
+
 // pushConfigWithAWG is the AWG-aware deploy push. For nodes with kernel AWG
 // .conf files it: (1) pushes the awg-quick .confs and enables their services,
 // (2) pushes the sing-box config (check → restart → probe), (3) on any sing-box
@@ -207,7 +258,14 @@ func PushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgC
 // single withHostLock so concurrent applies can't interleave (mirrors
 // pushConfig's single-chokepoint invariant — CTO-review C2).
 func pushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, awgFiles []AWGConfFile, useSudo bool) (string, error) {
-	if len(awgFiles) == 0 {
+	return pushConfigWithAWGTeardown(ctx, client, nodeID, cfgContent, awgFiles, nil, useSudo)
+}
+
+// pushConfigWithAWGTeardown is the full AWG-aware deploy push: kernel .conf
+// push + AWG3 kernel-unit teardown + sing-box push, all under ONE host lock and
+// with a symmetric rollback of every layer it touched.
+func pushConfigWithAWGTeardown(ctx context.Context, client ports.SSHClient, nodeID, cfgContent string, awgFiles []AWGConfFile, teardownIfaces []string, useSudo bool) (string, error) {
+	if len(awgFiles) == 0 && len(teardownIfaces) == 0 {
 		return pushConfig(ctx, client, nodeID, cfgContent, useSudo)
 	}
 	type result struct {
@@ -221,12 +279,20 @@ func pushConfigWithAWG(ctx context.Context, client ports.SSHClient, nodeID, cfgC
 		if awgErr != nil {
 			return result{err: fmt.Errorf("awg push: %w", awgErr)}
 		}
-		// 2. Push sing-box config directly via pushConfigLocked (we already hold
+		// 2. Stop+disable kernel AWG units whose port an AWG3 userspace endpoint
+		//    is about to bind — MUST happen before the sing-box restart, or
+		//    sing-box fails with "bind: address already in use" and crash-loops
+		//    (PROGRESS §39). Inside the same lock so no concurrent apply can
+		//    bring the unit back between teardown and restart.
+		restoreIfaces := teardownAWGInterfaces(ctx, client, teardownIfaces, useSudo)
+		// 3. Push sing-box config directly via pushConfigLocked (we already hold
 		//    the lock — calling pushConfig would re-acquire it and deadlock).
 		out, cfgErr := pushConfigLocked(ctx, client, cfgContent, useSudo)
 		if cfgErr != nil {
-			// 3. sing-box failed — roll back the kernel AWG .confs too so the
-			//    node returns to its pre-deploy state for both layers.
+			// 4. sing-box failed — roll back BOTH the kernel AWG .confs and the
+			//    units we disabled, so the node returns to its pre-deploy state
+			//    for every layer.
+			restoreAWGInterfaces(ctx, client, restoreIfaces, useSudo)
 			rollbackAWGConfs(client, awgRecords, useSudo)
 			return result{out: out, err: cfgErr}
 		}
@@ -251,4 +317,17 @@ func renderAWGConfsForDeploy(
 		usersByChainMap(store, nodeChains),
 		usersByInboundMap(store, nodeInfo.Inbounds),
 	)
+}
+
+// renderAWGDeployPlan is renderAWGConfsForDeploy plus the AWG3 teardown set —
+// the two must be computed together because the teardown list is defined
+// relative to the rendered files (never tear down an interface we still render).
+func renderAWGDeployPlan(
+	store *Store,
+	nodeInfo *model.NodeInfo,
+	nodeChains []*model.Chain,
+) (files []AWGConfFile, teardown []string, warnings []string) {
+	files, warnings = renderAWGConfsForDeploy(store, nodeInfo, nodeChains)
+	teardown = AWGTeardownInterfaces(nodeInfo, nodeChains, files)
+	return files, teardown, warnings
 }
