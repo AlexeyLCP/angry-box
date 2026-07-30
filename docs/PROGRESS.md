@@ -1927,7 +1927,7 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 
 **Не покрыто (требует живой проверки на ноде):** реальный handshake + egress AWG3 chain-entry после re-deploy (unit-тесты фиксируют render-контракт, но §38-класс live-gate для chain-entry shape не прогонялся). MASQUERADE/nft не трогали: для userspace AWG3-endpoint egress идёт через собственный сокет sing-box (direct-out), NAT для 10.8.1.0/24 не нужен — легаси-правило `10.8.0.0/24 masquerade` на ноде безвредно.
 
-## 40. fix(awg): teardown kernel interfaces (ip link delete) + AWG diag auto-detect (v0.8.13) (2026-07-30)
+## 40. fix(awg): teardown kernel interfaces + AWG diag auto-detect + Deploy Status Apply (v0.8.14) (2026-07-30)
 
 **Баги (VladufQa):** 
 1. `push config: service not active after restart ... endpoint/awg[ch-VladVPN-user-in]: unable to update bind: listen udp4 0.0.0.0:8443: bind: address already in use` при деплое.

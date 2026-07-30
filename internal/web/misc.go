@@ -139,7 +139,7 @@ type deployStatusRow struct {
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 	rows := s.computeDeployStatusRows(r)
 	var b strings.Builder
-	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><h2 class="card-title">` + i18n.T(r.Context(), "Deploy Status") + `</h2><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Node") + `</th><th>` + i18n.T(r.Context(), "Role") + `</th><th>` + i18n.T(r.Context(), "Status") + `</th><th>` + i18n.T(r.Context(), "Last deployed") + `</th><th>` + i18n.T(r.Context(), "Hash") + `</th></tr></thead><tbody>`)
+	b.WriteString(`<div class="card bg-base-100 shadow"><div class="card-body"><div class="flex items-center justify-between"><h2 class="card-title">` + i18n.T(r.Context(), "Deploy Status") + `</h2></div><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>` + i18n.T(r.Context(), "Node") + `</th><th>` + i18n.T(r.Context(), "Role") + `</th><th>` + i18n.T(r.Context(), "Status") + `</th><th>` + i18n.T(r.Context(), "Last deployed") + `</th><th>` + i18n.T(r.Context(), "Hash") + `</th><th></th></tr></thead><tbody>`)
 	for _, row := range rows {
 		status := `<span class="badge badge-success badge-sm">` + i18n.T(r.Context(), "applied") + `</span>`
 		if row.HasPending {
@@ -149,10 +149,12 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 		if !row.LastDeployedAt.IsZero() {
 			last = row.LastDeployedAt.Format("2006-01-02 15:04:05")
 		}
-		b.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/50\">%s</td></tr>",
-			escHTML(row.Name), escHTML(row.Role), status, last, escHTML(truncForDisplay(row.LastDeployedHash, 12))))
+		actions := fmt.Sprintf(`<button class="btn btn-xs btn-primary" hx-post="/ui/nodes/%s/apply" hx-target="#modal-container" hx-swap="innerHTML">%s</button>`,
+			escHTML(row.NodeID), i18n.T(r.Context(), "Apply"))
+		b.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class=\"font-mono text-xs text-base-content/50\">%s</td><td class=\"text-right\">%s</td></tr>",
+			escHTML(row.Name), escHTML(row.Role), status, last, escHTML(truncForDisplay(row.LastDeployedHash, 12)), actions))
 	}
-	b.WriteString(`</tbody></table></div></div></div>`)
+	b.WriteString(`</tbody></table></div></div></div><div id="modal-container"></div>`)
 	s.renderContent(w, r, i18n.T(r.Context(), "Deploy Status"), &simpleHTML{html: b.String()})
 }
 

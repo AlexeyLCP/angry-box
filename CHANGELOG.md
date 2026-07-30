@@ -4,6 +4,12 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.14] — 2026-07-30
+
+### Fix — Apply button on Deploy Status page for pending nodes
+
+- **Deploy Status Actions column.** Added an `Apply` ("Применить") button directly onto each row of the Deploy Status page (`/ui/deploy-status`). Nodes showing `pending` ("ожидает") can now be deployed in one click, updating `LastDeployedAt` and changing the status to green `applied` ("применен").
+
 ## [v0.8.13] — 2026-07-30
 
 ### Fix — AWG diagnostics auto-detection for active interfaces (e.g. awg2)
