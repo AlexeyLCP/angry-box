@@ -204,6 +204,13 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 - Run E2E: `go test -tags e2e ./internal/chain/ -run TestE2E -v -timeout 300s`
 - Auth: `gcloud auth login lucipoher@gmail.com`
 
+## Single-instance + canonical store path (v0.8.18)
+
+- **NEVER run two `angry-box serve` against the same store.** Two daemons with one store diverge the fleet's state (a tester's "node won't connect" root cause: systemd daemon + a hand-launched one split the user keys). The binary now **refuses** a second instance via an flock on `<store>.lock` (Unix) / LockFileEx (Windows) — error: "angry-box already running (PID ..., store locked: ...). Stop the other instance, or run with a different --file." Two instances with explicitly different `--file` paths still coexist.
+- **Store default is now a canonical ABSOLUTE path** (`config.DefaultStorePath()`, root-aware): root → `/var/lib/angry-box/store.json`; non-root → `$XDG_DATA_HOME/angry-box/` or `$HOME/.local/share/angry-box/`; Windows → `%APPDATA%/angry-box/`. It is NO LONGER the relative `store.json` (which was CWD-dependent and let two daemons with different cwd use two stores). `install.sh`/systemd already pass `--file /var/lib/angry-box/store.json`, so this matters for bare-binary/manual runs.
+- **Encrypted at rest.** The store is AES-256 encrypted; the master key is the sibling `<store>.key`. To dump a readable copy for diagnosis: `angry-box backup store -file <path>` (reads + decrypts). Never `cat` an encrypted store raw.
+- **Upgrade WARN, no auto-migrate.** If the canonical store is absent but a legacy CWD `store.json` exists, serve logs a one-time WARNING to copy it (+ its `.key`) to the canonical path, or use `--file`. No blind copy — the key must travel with the store.
+
 ## amnezia-box (our base sing-box fork, NOT plain sing-box)
 
 - Project uses **amnezia-box** — our fork `AlexeyLCP/amnezia-box` (a fork of

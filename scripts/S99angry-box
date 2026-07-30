@@ -19,6 +19,18 @@ LOGFILE="/opt/var/log/angry-box.log"
 
 start() {
     echo "Starting Angry-BOX..."
+    # Single-instance guard: if a PIDFILE points at a LIVE process, refuse —
+    # two daemons on one store diverge the fleet (split-brain). The binary also
+    # enforces this via flock, but checking here gives an immediate, clear
+    # message without spawning a second process.
+    if [ -f "$PIDFILE" ]; then
+        OLDPID=$(cat "$PIDFILE" 2>/dev/null)
+        if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
+            echo "Angry-BOX already running (PID $OLDPID). Stop it first: $0 stop"
+            return 1
+        fi
+        rm -f "$PIDFILE"
+    fi
     mkdir -p /opt/etc/angry-box /opt/var/run /opt/var/log
     # At-rest encryption master key (CTO-review §6 CRITICAL): auto-generate
     # on first start so the store.json (SSH privkeys + AWG/Reality/TLS

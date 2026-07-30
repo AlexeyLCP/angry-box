@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,7 +29,12 @@ var (
 	commit  = "none"
 	date    = "unknown"
 
-	defaultStorePath = "store.json"
+	// defaultStorePath is the canonical absolute store location (root-aware —
+	// see config.DefaultStorePath). Seeded in main() after config.Load so a
+	// store_file in the config still wins; NOT a hardcoded literal so serve and
+	// the other subcommands can never diverge (the old "store.json" literal was
+	// CWD-dependent and caused a two-daemon split-brain).
+	defaultStorePath string
 )
 
 const usage = `angry-box — lightweight proxy orchestrator for sing-box-extended.
@@ -126,6 +132,12 @@ func main() {
 			break
 		}
 	}
+
+	// Seed the canonical absolute default BEFORE config.Load so defaultStorePath
+	// is never empty (the old literal "store.json" seed is gone). config.Load /
+	// DefaultConfig now return the same root-aware path, and the override below
+	// still lets an operator's store_file win.
+	defaultStorePath = config.DefaultStorePath()
 
 	orchCfg, err := config.Load(configPath)
 	if err != nil {
@@ -802,6 +814,39 @@ func serveCmd() {
 		devEnv := strings.ToLower(os.Getenv("ANGRY_BOX_DEV"))
 		*devMode = devEnv == "1" || devEnv == "true" || devEnv == "on"
 	}
+
+	// Canonical absolute store path: ensure its directory exists so a fresh
+	// system (no /var/lib/angry-box yet) can still boot. install.sh creates it
+	// for packaged installs; this covers a bare binary.
+	if dir := filepath.Dir(storePath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			// Non-fatal for a relative store (cwd is implicit); fatal when the
+			// canonical absolute default is unwritable (e.g. non-root trying
+			// /var/lib) — the operator needs to know now, not on first write.
+			if filepath.IsAbs(dir) {
+				fmt.Fprintf(os.Stderr, "error: cannot create store directory %s: %v\n(the default store path is %s — run as root, or pass --file to a writable location)\n", dir, err, storePath)
+				os.Exit(1)
+			}
+		}
+	}
+
+	// Upgrade WARN: if the operator is on the canonical default (did NOT pass
+	// --file / set store_file), the canonical store is absent, but a legacy
+	// CWD-relative store.json exists — they likely upgraded from a version that
+	// stored next to the binary. We do NOT auto-migrate (the store is
+	// passphrase/at-rest encrypted and moving it without its .key is unsafe),
+	// just point them at the right copy.
+	warnLegacyStore(storePath)
+
+	// Single-instance: refuse a second `serve` against the same store. Two
+	// daemons on one store diverge the fleet (the tester's split-brain root
+	// cause). The lock auto-releases on exit/crash.
+	releaseLock, lerr := AcquireInstanceLock(storePath)
+	if lerr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", lerr)
+		os.Exit(1)
+	}
+	defer releaseLock()
 
 	store := chain.NewStore(storePath)
 	sshclient.SetHostKeyManager(store)

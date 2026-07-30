@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -19,6 +20,42 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.DefaultObfuscationProfile == "" {
 		t.Error("default obfuscation profile should be set")
+	}
+	// The store default must be a canonical absolute path (root-aware), NOT the
+	// legacy CWD-relative "store.json" — two daemons with different cwd must
+	// converge on the same file (split-brain root cause, AGENTS store-path note).
+	if cfg.StoreFile == "" || cfg.StoreFile == "store.json" {
+		t.Errorf("default store file should be a canonical absolute path, got %q", cfg.StoreFile)
+	}
+	if !filepath.IsAbs(cfg.StoreFile) {
+		// Only acceptable in a HOME-less fallback environment; flag it so a
+		// regression to a bare relative literal is caught.
+		t.Errorf("default store file should be absolute, got %q", cfg.StoreFile)
+	}
+	if !strings.Contains(cfg.StoreFile, "angry-box") {
+		t.Errorf("default store file should live under an angry-box dir, got %q", cfg.StoreFile)
+	}
+}
+
+// TestDefaultStorePath_Absolute pins the root-aware resolution: on a normal
+// dev/CI environment (HOME set, not a Windows fallback) the path is absolute
+// and names the store.json under an angry-box data dir. The exact prefix varies
+// by euid/HOME (root → /var/lib, user → ~/.local/share or XDG), so we assert
+// shape, not a specific prefix.
+func TestDefaultStorePath_Absolute(t *testing.T) {
+	p := DefaultStorePath()
+	if p == "" {
+		t.Fatal("DefaultStorePath returned empty")
+	}
+	// Fallback "store.json" is only acceptable when HOME is unset — rare in
+	// tests. If HOME is set, we expect an absolute path.
+	if home := os.Getenv("HOME"); home != "" && runtime.GOOS != "windows" {
+		if !filepath.IsAbs(p) {
+			t.Errorf("DefaultStorePath = %q, want absolute when HOME is set", p)
+		}
+		if !strings.HasSuffix(p, "store.json") {
+			t.Errorf("DefaultStorePath = %q, want it to end in store.json", p)
+		}
 	}
 }
 

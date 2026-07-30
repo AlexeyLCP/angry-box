@@ -37,11 +37,6 @@ type Config struct {
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
-	// Portable by default: store next to the binary (CWD) on every OS, so the
-	// orchestrator can be "just run from the desktop" without root/sudo or a
-	// fixed system path. System packagers can override via config file.
-	storeFile := "store.json"
-
 	return &Config{
 		// Security default: bind to loopback only. The control plane carries SSH
 		// private keys and can push configs that become RCE on the fleet, so it
@@ -49,12 +44,50 @@ func DefaultConfig() *Config {
 		// Operators who need remote access must explicitly opt in via
 		// --listen / listen_addr (ideally fronted by TLS).
 		ListenAddr:                "127.0.0.1:9080",
-		StoreFile:                 storeFile,
+		StoreFile:                 DefaultStorePath(),
 		DefaultObfuscationProfile: "maximum_stealth_2026", // безопасный дефолт
 		PresetsFile:               "",                     // no extra presets by default
 		AuthEnabled:               true,                   // by default, authentication is enabled
 		AuthUsername:              "admin",
 	}
+}
+
+// DefaultStorePath returns the canonical absolute default location for the
+// store file. It is root-aware so that two `angry-box serve` invocations — one
+// from systemd (cwd /var/lib/angry-box) and one launched by hand from a
+// different directory — converge on the SAME file instead of silently using
+// CWD-relative store.json and splitting the fleet's state (the root cause of a
+// tester's "node won't connect" split-brain: two daemons, two stores, divergent
+// user keys). An operator can still override with --file or the config store_file.
+//
+// Resolution:
+//   - Linux/macOS, running as root (euid 0)    -> /var/lib/angry-box/store.json
+//   - Linux/macOS, non-root                    -> $XDG_DATA_HOME/angry-box/store.json,
+//                                                 else $HOME/.local/share/angry-box/store.json
+//   - Windows                                  -> %APPDATA%/angry-box/store.json
+//   - fallback (no HOME / resolution failure)  -> store.json (relative, CWD) — legacy
+//
+// The directory is created lazily by the caller (NewStore / instance lock).
+func DefaultStorePath() string {
+	switch runtime.GOOS {
+	case "windows":
+		if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+			return filepath.Join(dir, "angry-box", "store.json")
+		}
+	default: // linux, darwin, *bsd, etc.
+		if os.Geteuid() == 0 {
+			return "/var/lib/angry-box/store.json"
+		}
+		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+			return filepath.Join(xdg, "angry-box", "store.json")
+		}
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, ".local", "share", "angry-box", "store.json")
+		}
+	}
+	// Last-resort fallback: keep the legacy relative behavior so a totally
+	// environment-less invocation still runs (store next to the binary).
+	return "store.json"
 }
 
 // Load loads configuration from the given path (TOML).

@@ -4,6 +4,23 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.18] — 2026-07-30
+
+### Fix — single-instance enforcement + canonical absolute store path (closes the two-daemon split-brain)
+
+A tester's fleet had two `angry-box serve` processes running against **different** store files (systemd with cwd `/var/lib/angry-box`, plus a hand-launched one from `/root`). Because the store default was the **relative** `store.json` (CWD-dependent), each daemon used a different store → user keys drifted between them → the deployed node's AWG peer no longer matched the client config → "node won't connect". Two independent root causes are now closed:
+
+- **Canonical absolute store default.** `config.DefaultStorePath()` (root-aware): running as root → `/var/lib/angry-box/store.json`; non-root → `$XDG_DATA_HOME/angry-box/` or `$HOME/.local/share/angry-box/`; Windows → `%APPDATA%/angry-box/`. Two `angry-box serve` from different directories now converge on the SAME file regardless of cwd. The directory is auto-created. The duplicate hardcoded `"store.json"` literal in `main.go` is gone (single source of truth via `config.DefaultStorePath()`). Operators can still override with `--file` / config `store_file`.
+- **Single-instance lock.** `angry-box serve` takes an exclusive non-blocking lock (`flock` on Unix, `LockFileEx` on Windows) on a sibling `<store>.lock` file. A second instance against the same store is **refused** with an actionable error naming the holding PID: "angry-box already running (PID xxxxx), store locked: <path>. Stop the other instance, or run with a different --file." The lock auto-releases on exit/crash (no stale lock blocking restarts). Two instances with explicitly different `--file` paths still coexist.
+- **Upgrade WARN (no auto-migrate).** If the canonical default store is empty/absent but a legacy CWD-relative `store.json` exists, serve logs a one-time WARNING telling the operator to copy the store + its `.key` to the canonical location (or run with `--file`). No auto-migration — the store is at-rest encrypted and moving it without its key is unsafe.
+- `scripts/S99angry-box` `start()` now checks the PIDFILE and refuses to spawn a second daemon (the binary's flock is the real guard; this gives an immediate clear message at the init-script level).
+
+**Migration for the tester (and anyone with the same split-brain):** stop both processes, copy the GOOD store to the canonical path, then run only one — `sudo systemctl restart angry-box` (not a hand-launched `serve`).
+
+- New: `internal/config/config.go` `DefaultStorePath()`; `cmd/angry-box/instancelock.go` + `instancelock_unix.go` + `instancelock_windows.go` + `storepath.go`.
+- Tests: `TestDefaultStorePath_Absolute`, `TestDefaultConfig` (StoreFile absolute), `TestAcquireInstanceLock_SecondIsRefused` / `_ReleaseAllowsReacquire` / `_DifferentStoresIndependent`.
+- `go build ./...` green on Windows + `GOOS=linux`; `go test ./internal/config ./cmd/angry-box` green.
+
 ## [v0.8.17] — 2026-07-30
 
 ### Fix — preset dropdown grouped (Robust/Stealth) + Jc inline, so budget-VPS users don't pick the handshake-killing Jc=120 default blind

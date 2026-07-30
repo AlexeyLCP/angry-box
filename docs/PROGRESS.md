@@ -1941,3 +1941,39 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 - **Зачистка и фильтрация удаленных (сиротских) нод:** У нод, чей `Host` был удален до релиза v0.8.8, в базе мог остаться сиротский `NodeInfo`. `ListNodeInfos` и `computeDeployStatusRows` теперь принудительно фильтруют `NodeInfo`, у которых нет записи `Host`. При старте (`openStore`) добавлен безусловный прогон `migrateOrphanNodeInfos`, который на лету очищает legacy-сироты из `store.json`.
 
 **Файлы:** `internal/chain/store.go`, `internal/chain/awgdiag.go`, `internal/chain/awg_deploy.go`, `internal/chain/awg_push.go`, `internal/chain/merged_config.go`, `internal/web/misc.go`, `web/templates/nodes.templ`, `web/templates/nodes_templ.go`, `internal/version/version.go`, `CHANGELOG.md`, `docs/PROGRESS.md`. `templ generate` + `go build ./...` + `go test ./internal/chain ./internal/web -p 1` зелёные.
+
+## 39. feat(orchestrator): single-instance lock + канонический абсолютный store-путь (закрыть split-brain) (v0.8.18) (2026-07-30)
+
+**Баг от тестера (VladufQa, нода 5.188.19.239):** клиент не коннектит. `awg show` показал awg0 peer (10.8.0.2, pub `+olH...`) без handshake. Дамп store (через `angry-box backup store` — store зашифрован at-rest, читается только бинарником) вскрыл корень: **User 1 pub = `LzqK...`, а awg0 peer = `+olH...`** — расхождение store↔деплой. Причина операционная — **два процесса `angry-box serve`**:
+
+- systemd: `--listen 127.0.0.1:9080 --file /var/lib/angry-box/store.json` (cwd `/var/lib/angry-box`)
+- root вручную: `serve -listen 0.0.0.0:8090` **без `--file`** (cwd `/root`) → store в `/root/store.json`
+
+Дефолт store был **относительный** `store.json` (`config.go:43` + дубль `main.go:31`) — CWD-зависимый. Два демона с разным CWD = два разных store = расхождение ключей User↔нода + «нода висит». Плюс **никакой single-instance защиты** в Go-коде не было (`store.go:20-28` явно дизклеймит cross-process safety; ранний mkdir-lock был удалён).
+
+**Фикс — две независимые части:**
+
+**1. Канонический абсолютный store-дефолт** (`internal/config/config.go`):
+- Новый `DefaultStorePath()` (root-aware): root (euid 0) → `/var/lib/angry-box/store.json`; не-root → `$XDG_DATA_HOME/angry-box/` или `$HOME/.local/share/angry-box/`; Windows → `%APPDATA%/angry-box/`; fallback `store.json` (если HOME пуст).
+- `DefaultConfig().StoreFile` = `DefaultStorePath()` (вместо литерала). Дубль-литерал `defaultStorePath = "store.json"` в `main.go:31` убран → single source of truth. `serve` и остальные subcommands теперь всегда сходятся на один файл (раньше serve шёл через `config.DefaultConfig().StoreFile`, остальные — через global `defaultStorePath`; теперь оба через `DefaultStorePath()`).
+- Совпадает с тем, что `install.sh` уже пишет в systemd-юниты (`/var/lib/angry-box/store.json` для system, `~/.local/share/...` для user).
+
+**2. Single-instance lock** (`cmd/angry-box/instancelock*.go`):
+- `AcquireInstanceLock(storePath)` берёт exclusive non-blocking lock на sibling `<storePath>.lock` (НЕ на сам store — не мешает atomic write-rename). Unix: `unix.Flock(LOCK_EX|LOCK_NB)`. Windows: `LockFileEx(LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY)`.
+- Второй инстанс на тот же store → **refuse** с `ErrInstanceLocked`: «angry-box already running (PID xxxxx), store locked: <path>. Stop the other instance, or run with a different --file». PID держателя пишется в .lock-файл.
+- `release()` = unlock + close fd. flock/LockFileEx **авто-релизится при краше процесса** → нет stale-lock, блокирующего рестарт (в отличие от pidfile). `defer release()` в `serveCmd`.
+- Два инстанса с явно разными `--file` — сосуществуют (независимые .lock).
+
+**3. Upgrade WARN** (`cmd/angry-box/storepath.go warnLegacyStore`): если канонический store пуст, но в CWD есть legacy `store.json` → WARNING с инструкцией скопировать store + `.key` в каноническое место (или `--file`). Без авто-миграции — store зашифрован, слепое копирование без ключа unsafe.
+
+**4. Auto-mkdir** канонической директории в `serveCmd` (fresh system без `/var/lib/angry-box`); fatal с понятной ошибкой если absolute default не writable (non-root пытается `/var/lib`).
+
+**5. S99angry-box** `start()` — pidfile-check перед стартом (раньше gap: писал PIDFILE но не проверял). Бинарный flock — реальный guard, скрипт даёт immediate message.
+
+**Миграция для тестера:** остановить ОБА процесса → скопировать GOOD store в канонический путь → запускать только один (`sudo systemctl restart angry-box`, не hand-launched `serve`).
+
+**Тесты:** `TestDefaultStorePath_Absolute`, `TestDefaultConfig` (StoreFile absolute + angry-box dir), `TestAcquireInstanceLock_SecondIsRefused` (refuse + ErrInstanceLocked + "already running"), `_ReleaseAllowsReacquire` (no stale lock после release), `_DifferentStoresIndependent` (два --file сосуществуют). `go build ./...` зелёный на Windows + `GOOS=linux`.
+
+**Файлы:** `internal/config/config.go` (DefaultStorePath + DefaultConfig), `cmd/angry-box/main.go` (defaultStorePath init + serveCmd lock+mkdir+warn), `cmd/angry-box/instancelock.go` + `instancelock_unix.go` + `instancelock_windows.go` + `storepath.go` (новые), `cmd/angry-box/instancelock_test.go` + `internal/config/config_test.go` (тесты), `scripts/S99angry-box` (pidfile guard), `internal/version/version.go` (v0.8.18), `CHANGELOG.md`, `docs/PROGRESS.md`.
+
+**Замечание про баг-1 (Jc=120):** одновременно с этим — v0.8.17 (preset dropdown сгруппирован Robust/Stealth + Jc inline). По `awg show` awg2 (Jc=6) обслуживал живых клиентов (10.8.0.5/.6 — гигабайты), awg0 (Jc=120) — мёртвый; на одной ноде единственная разница = Jc → AGENTS #17 подтверждён. НО первичная причина «не коннектит» у тестера — split-brain store (ключи User↔awg0 расходились), а Jc=120 был усугубляющим фактором. v0.8.17 + v0.8.18 закрывают оба.
