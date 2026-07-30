@@ -606,6 +606,8 @@ func TestGetNodeInfo_NotFound(t *testing.T) {
 
 func TestListNodeInfos(t *testing.T) {
 	s := tempStore(t)
+	s.SaveHost(&model.Host{ID: "a", Addr: "1.1.1.1"})
+	s.SaveHost(&model.Host{ID: "b", Addr: "2.2.2.2"})
 	s.SaveNodeInfo(&model.NodeInfo{Host: model.Host{ID: "a"}})
 	s.SaveNodeInfo(&model.NodeInfo{Host: model.Host{ID: "b"}})
 
