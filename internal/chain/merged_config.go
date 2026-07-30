@@ -582,6 +582,11 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, ro
 
 	for _, r := range roles {
 		port := r.Node.Port
+		if r.IsEntry && r.Node.InboundRef != "" {
+			if ib := inboundByProfileID(nodeInfo, r.Node.InboundRef); ib != nil && ib.Port > 0 {
+				port = ib.Port
+			}
+		}
 		if port == 0 {
 			if r.IsEntry {
 				port = chainEntryPort(r.Chain, r.Node.ID)

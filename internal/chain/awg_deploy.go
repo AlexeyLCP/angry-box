@@ -190,8 +190,10 @@ func AWGTeardownInterfaces(
 
 	// 1. AWG3 chain entry — would have owned awg0 (renderChainEntryAWGConf).
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
+	hasAWGChainEntry := false
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
+			hasAWGChainEntry = true
 			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil {
 				add("awg0")
 			}
@@ -216,12 +218,19 @@ func AWGTeardownInterfaces(
 		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {
 			continue // handled by the chain-entry branch above
 		}
-		if chainEntryClaimsAWG0 && ib.AWGServerAddress != "" {
+		if (chainEntryClaimsAWG0 || hasAWGChainEntry) && ib.AWGServerAddress != "" {
 			add("awg1")
 			continue
 		}
 		add("awg0")
 	}
+
+	// 3. Stale awg0 teardown: if an AWG chain entry or AWG inbound exists on the node
+	//    but awg0 is not in keep (e.g. AWG3 mode or unmapped), ensure awg0 is torn down.
+	if !keep["awg0"] && hasAWGChainEntry {
+		add("awg0")
+	}
+
 	return out
 }
 

@@ -4,6 +4,14 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.12] — 2026-07-30
+
+### Fix — AWG port 8443 clash on deploy + node status check UI polish
+
+- **Kernel interface teardown & port release.** Added `ip link delete <iface>` to `teardownAWGInterfaces` and fallback `awg0` teardown in `AWGTeardownInterfaces` for nodes where kernel AWG is no longer active (e.g. converted to AWG 3.0 mode). Prevents stale kernel interfaces from holding UDP port 8443 and causing sing-box startup failures (`bind: address already in use`).
+- **Node status check HTMX swap.** `handleHostStatus` now returns `NodeStatusCell` instead of replacing the table cell with a bare status badge, preserving the "Check" and "Mark Blocked" controls after manual status probes.
+- **Node apply button visual layout.** Simplified the Apply button label on node rows to prevent text wrapping and visual breakage in DaisyUI table cells in Russian UI.
+
 ## [v0.8.11] — 2026-07-30
 
 ### Fix — AWG 3.0 chain entry never came up (four independent bugs)

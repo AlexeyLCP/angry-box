@@ -1926,3 +1926,17 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 **Верификация:** `go build ./...` чисто. `go test ./internal/chain/ -run 'AWG|Awg|awg'` — ok. `go test ./...` — всё зелёное кроме pre-existing flaky `internal/web` (`TempDir RemoveAll cleanup: The directory is not empty` на Windows — падает каждый прогон на РАЗНОМ тесте, присутствовал в baseline до правок, не связан с логикой).
 
 **Не покрыто (требует живой проверки на ноде):** реальный handshake + egress AWG3 chain-entry после re-deploy (unit-тесты фиксируют render-контракт, но §38-класс live-gate для chain-entry shape не прогонялся). MASQUERADE/nft не трогали: для userspace AWG3-endpoint egress идёт через собственный сокет sing-box (direct-out), NAT для 10.8.1.0/24 не нужен — легаси-правило `10.8.0.0/24 masquerade` на ноде безвредно.
+
+## 40. fix(awg): teardown kernel interfaces (ip link delete) + node status check UI polish (v0.8.12) (2026-07-30)
+
+**Баги (VladufQa):** 
+1. `push config: service not active after restart ... endpoint/awg[ch-VladVPN-user-in]: unable to update bind: listen udp4 0.0.0.0:8443: bind: address already in use` при деплое.
+2. «висит проверка когда захожу в ноду» / «жму проверить применить всё равно висит проверка».
+3. Визуальный баг с кнопкой «Применить (Цепочка)» в таблице нод.
+
+**Корень и фиксы:**
+- **Освобождение порта 8443 (kernel AWG):** `systemctl disable --now awg-quick@awg0` выключал юнит, но не удалял интерфейс `awg0` из ядра, если остановка скрипта `awg-quick` застревала или сокет оставался открытым. `teardownAWGInterfaces` (`awg_push.go`) теперь исполняет `systemctl disable --now %s || true ; ip link delete %s || true`, что принудительно удаляет интерфейс из ядра и мгновенно освобождает UDP-порт. В `AWGTeardownInterfaces` (`awg_deploy.go`) добавлена проверка для выгрузки неиспользуемого `awg0`, если нода содержит AWG chain entry, но `awg0` не рендерится в файлы (режим AWG 3.0). В `detectPortConflicts` (`merged_config.go`) учтен порт материализованного профиля инбаунда.
+- **Обновление статуса в UI:** `handleHostStatus` (`misc.go`) возвращал минимальный `HostStatus` badge вместо `NodeStatusCell`, заменяя содержимое ячейки таблицы и стирая кнопки «Check» и «Mark Blocked». Изменено на рендер `templates.NodeStatusCell(id, m)`.
+- **Компактная кнопка «Применить»:** В `nodes.templ` надпись на кнопке сокращена до `Apply` («Применить»), убирая визуальный слом верстки строки от текста «Применить (Цепочка)».
+
+**Файлы:** `internal/chain/awg_deploy.go`, `internal/chain/awg_push.go`, `internal/chain/merged_config.go`, `internal/web/misc.go`, `web/templates/nodes.templ`, `web/templates/nodes_templ.go`, `internal/version/version.go`, `CHANGELOG.md`, `docs/PROGRESS.md`. `templ generate` + `go build ./...` + `go test ./internal/chain ./internal/web -p 1` зелёные.

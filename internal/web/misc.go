@@ -75,11 +75,9 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request) {
 	m.Online = m.State == model.NodeStateHealthy
 	st.SaveMetrics(m)
 
-	if err != nil {
-		s.render(w, r, &simpleHTML{html: `<span class="badge badge-error badge-sm">` + i18n.T(r.Context(), "Error") + `</span>`})
-		return
-	}
-	s.render(w, r, templates.HostStatus(status))
+	// Render NodeStatusCell so the HTMX target ("closest td") receives the full
+	// updated cell (health badge + mark/clear block button + check button).
+	s.render(w, r, templates.NodeStatusCell(id, m))
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

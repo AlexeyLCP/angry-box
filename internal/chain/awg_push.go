@@ -192,14 +192,14 @@ func teardownAWGInterfaces(ctx context.Context, client ports.SSHClient, ifaces [
 	for _, iface := range ifaces {
 		service := awgServiceName(iface)
 		wasActive := serviceActive(ctx, client, service, useSudo)
-		cmd := fmt.Sprintf("systemctl disable --now %s || true", service)
+		cmd := fmt.Sprintf("systemctl disable --now %s || true ; ip link delete %s || true", service, iface)
 		if _, _, _, err := client.RunWithOutput(ctx, sudoWrap(useSudo, cmd), 60*time.Second); err != nil {
 			log.Printf("teardownAWGInterfaces: %s: %v (continuing — sing-box will report a real port clash)", service, err)
 			continue
 		}
 		if wasActive {
 			restored = append(restored, iface)
-			log.Printf("teardownAWGInterfaces: %s stopped+disabled (AWG3 userspace endpoint owns its port)", service)
+			log.Printf("teardownAWGInterfaces: %s stopped+disabled, link %s deleted (port freed)", service, iface)
 		}
 	}
 	return restored
