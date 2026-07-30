@@ -58,7 +58,7 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNewInboundForm(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	infos, _ := st.ListNodeInfos()
-	s.render(w, r, templates.InboundForm(nil, nil, infos, chain.ListPresets()))
+	s.render(w, r, templates.InboundForm(nil, nil, infos, chain.ListPresets(), chain.GroupPresets(chain.ListPresetsDetailed())))
 }
 
 func (s *Server) handleEditInboundForm(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +73,7 @@ func (s *Server) handleEditInboundForm(w http.ResponseWriter, r *http.Request) {
 		deployed[id] = true
 	}
 	infos, _ := st.ListNodeInfos()
-	s.render(w, r, templates.InboundForm(p, deployed, infos, chain.ListPresets()))
+	s.render(w, r, templates.InboundForm(p, deployed, infos, chain.ListPresets(), chain.GroupPresets(chain.ListPresetsDetailed())))
 }
 
 // inboundFromForm parses + validates the profile form. Returns the profile

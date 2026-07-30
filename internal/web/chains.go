@@ -47,6 +47,7 @@ func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
 		Hosts:        hosts,
 		NodeProfiles: buildNodeProfiles(st, hosts),
 		Presets:      chain.ListPresets(),
+		PresetGroups: chain.GroupPresets(chain.ListPresetsDetailed()),
 	}))
 }
 
@@ -253,6 +254,7 @@ func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
 		Hosts:        hosts,
 		NodeProfiles: buildNodeProfiles(st, hosts),
 		Presets:      chain.ListPresets(),
+		PresetGroups: chain.GroupPresets(chain.ListPresetsDetailed()),
 	}))
 }
 

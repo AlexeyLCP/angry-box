@@ -4,6 +4,40 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.17] — 2026-07-30
+
+### Fix — preset dropdown grouped (Robust/Stealth) + Jc inline, so budget-VPS users don't pick the handshake-killing Jc=120 default blind
+
+A tester on a budget VPS could not connect: the generated client config used the
+global default preset `maximum_stealth_2026` (Jc=120), and Jc=120 kills the AWG
+handshake on budget hostings (AGENTS #17 — proven live on the same node:
+`awg0` Jc=120 → handshake=0, `awg2` Jc=6 → handshake ok + traffic). The chain
+and inbound preset dropdowns listed preset names flat, with no indication of
+which are handshake-safe (Robust, Jc≤10) vs max-DPI (Stealth, Jc=120), so the
+operator picked blind.
+
+- The preset dropdown on the **chain form** and the **inbound form** is now
+  grouped with `<optgroup>`: "AWG · Robust (бюджетные VPS)" renders FIRST
+  (recommended default for budget VPS), then "AWG · Stealth (Jc=120, premium)",
+  "Reality", "XHTTP", "Все протоколы (Stealth)". Each AWG option shows its Jc
+  inline (e.g. `russia_2026_awg_robust (Jc=5)`).
+- A short hint under the dropdown explains the tradeoff (Robust = reliable
+  handshake on budget VPS; Stealth = max anti-DPI on premium; AWG 3.0 mode adds
+  header protection on top of any preset).
+- The "global default" option is relabeled to make its Jc explicit
+  ("Use global default (Jc=120, premium)").
+- New: `chain.PresetOption` / `chain.PresetGroup` / `ListPresetsDetailed()` /
+  `GroupPresets()` (internal/chain/presets.go) — UI-facing preset descriptors
+  with protocol + Jc + robust flag + stable group order (Robust first).
+- The global default preset is unchanged (`maximum_stealth_2026`, Jc=120) —
+  switching it is a product decision (AGENTS #17); the fix surfaces the choice
+  to the operator instead.
+- Test: `TestGroupPresets_RobustBucketFirst` pins the grouping contract (robust
+  bucket first, all robust presets present with Jc≤10, no Jc=120 leak).
+
+Note: AWG 3.0 mode (v0.8.10) adds HPK/CPM/RAT on top of any preset; on a budget
+VPS a robust preset + AWG3 is the safest combination.
+
 ## [v0.8.16] — 2026-07-30
 
 ### Fix — Automatic purge and filtering of orphan deleted NodeInfo records

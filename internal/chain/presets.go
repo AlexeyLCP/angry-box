@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
@@ -167,6 +168,97 @@ func ListPresetsForProtocol(protocol string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// PresetOption is a UI-facing preset descriptor: the preset name plus the
+// fields the chain/inbound preset dropdown needs to group presets (by protocol
+// + stealth/robust) and show the AWG junk-packet count (Jc) inline. Jc is the
+// single most important handshake-relevant knob (AGENTS #17: Jc=120 kills
+// handshake on budget VPS; Jc<=10 = robust). Group is a short label used for
+// <optgroup> rendering ("Stealth (Jc=120)", "Robust (Jc≤10)", ...).
+type PresetOption struct {
+	Name     string
+	Protocol string // "" = global/all
+	Jc       int    // AWG junk-packet count; 0 when the preset has no AWG section
+	Robust   bool   // true for *_awg_robust presets (Jc<=10, budget-VPS friendly)
+}
+
+// Group returns a short optgroup label for the dropdown.
+func (o PresetOption) Group() string {
+	switch {
+	case o.Protocol == "xhttp":
+		return "XHTTP"
+	case o.Protocol == "vless-reality":
+		return "Reality"
+	case o.Robust:
+		return "AWG · Robust (бюджетные VPS)"
+	case o.Protocol == "awg":
+		return "AWG · Stealth (Jc=120, premium)"
+	default:
+		return "Все протоколы (Stealth)"
+	}
+}
+
+// ListPresetsDetailed returns every preset as a PresetOption, sorted by name.
+// Used by the chain + inbound preset dropdowns so the operator can see Jc +
+// robust/stealth grouping at a glance instead of guessing from preset names.
+func ListPresetsDetailed() []PresetOption {
+	presetsMu.RLock()
+	defer presetsMu.RUnlock()
+	out := make([]PresetOption, 0, len(presets))
+	for name, p := range presets {
+		opt := PresetOption{Name: name, Protocol: p.Protocol}
+		if p.AWG != nil {
+			opt.Jc = p.AWG.JC
+		}
+		opt.Robust = strings.HasSuffix(name, "_awg_robust")
+		out = append(out, opt)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// PresetGroup is a named bucket of preset options for <optgroup> rendering.
+type PresetGroup struct {
+	Label   string
+	Options []PresetOption
+}
+
+// GroupPresets buckets PresetOptions by Group() label, preserving a stable,
+// UI-friendly order: AWG Robust first (the recommended default for budget
+// VPS, AGENTS #17), then AWG Stealth, then Reality, then XHTTP, then global.
+func GroupPresets(opts []PresetOption) []PresetGroup {
+	// Stable order of group labels.
+	order := []string{
+		"AWG · Robust (бюджетные VPS)",
+		"AWG · Stealth (Jc=120, premium)",
+		"Reality",
+		"XHTTP",
+		"Все протоколы (Stealth)",
+	}
+	idx := map[string]int{}
+	for i, l := range order {
+		idx[l] = i
+	}
+	buckets := map[string][]PresetOption{}
+	for _, o := range opts {
+		g := o.Group()
+		buckets[g] = append(buckets[g], o)
+	}
+	var out []PresetGroup
+	for _, label := range order {
+		if opts, ok := buckets[label]; ok {
+			out = append(out, PresetGroup{Label: label, Options: opts})
+		}
+	}
+	// Any group label not in the predefined order (future presets) — append at end.
+	for label, opts := range buckets {
+		if _, ok := idx[label]; ok {
+			continue
+		}
+		out = append(out, PresetGroup{Label: label, Options: opts})
+	}
+	return out
 }
 
 // presetSupportsProtocol checks whether a preset has a relevant section for the protocol.

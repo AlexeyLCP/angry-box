@@ -13,6 +13,7 @@ package templates
 import (
 	"fmt"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
 )
@@ -118,7 +119,7 @@ templ InboundRow(v InboundProfileView) {
 	</tr>
 }
 
-templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []*model.NodeInfo, presets []string) {
+templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []*model.NodeInfo, presets []string, presetGroups []chain.PresetGroup) {
 	<dialog id="inbound-modal" class="modal" open>
 		<div class="modal-box max-w-2xl">
 			<h3 class="font-bold text-lg mb-4">
@@ -170,11 +171,20 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 				<div class="form-control">
 					<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation preset") }</span></label>
 					<select name="obfuscation" class="select select-bordered">
-						<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Default preset") }</option>
-						for _, p := range presets {
-							<option value={ p } selected?={ prof != nil && prof.Obfuscation == p }>{ p }</option>
+						<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Use global default (Jc=120, premium)") }</option>
+						for _, g := range presetGroups {
+							<optgroup label={ g.Label }>
+								for _, o := range g.Options {
+									if o.Jc > 0 {
+										<option value={ o.Name } selected?={ prof != nil && prof.Obfuscation == o.Name }>{ o.Name } (Jc={ fmt.Sprintf("%d", o.Jc) })</option>
+									} else {
+										<option value={ o.Name } selected?={ prof != nil && prof.Obfuscation == o.Name }>{ o.Name }</option>
+									}
+								}
+							</optgroup>
 						}
 					</select>
+					<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Preset hint") }</span></label>
 				</div>
 			</div>
 

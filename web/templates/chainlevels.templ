@@ -15,6 +15,7 @@ package templates
 import (
 	"fmt"
 
+	"github.com/alexeylcp/angry-box/internal/chain"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
 )
@@ -28,10 +29,11 @@ type ChainProfileOption struct {
 
 // ChainLevelsFormData carries everything the chain form needs.
 type ChainLevelsFormData struct {
-	Chain        *model.Chain // nil = create
-	Hosts        []*model.Host
-	NodeProfiles map[string][]ChainProfileOption // nodeID → profiles deployed there
-	Presets      []string                        // obfuscation presets (transit)
+	Chain         *model.Chain // nil = create
+	Hosts         []*model.Host
+	NodeProfiles  map[string][]ChainProfileOption // nodeID → profiles deployed there
+	Presets       []string                        // obfuscation presets (transit) — names only (legacy)
+	PresetGroups  []chain.PresetGroup             // grouped presets (robust/stealth/xhttp/reality) with Jc for the dropdown
 }
 
 // levelNodeChecked reports whether nodeID sits on level li of the chain.
@@ -126,11 +128,20 @@ templ ChainLevelsForm(d ChainLevelsFormData) {
 				<div class="form-control">
 					<label class="label"><span class="label-text">{ i18n.T(ctx, "Transport preset (inter-node obfuscation)") }</span></label>
 					<select name="profile" class="select select-bordered">
-						<option value="" selected?={ d.Chain == nil || d.Chain.ObfuscationProfile == "" }>{ i18n.T(ctx, "Use global default") }</option>
-						for _, p := range d.Presets {
-							<option value={ p } selected?={ d.Chain != nil && d.Chain.ObfuscationProfile == p }>{ p }</option>
+						<option value="" selected?={ d.Chain == nil || d.Chain.ObfuscationProfile == "" }>{ i18n.T(ctx, "Use global default (Jc=120, premium)") }</option>
+						for _, g := range d.PresetGroups {
+							<optgroup label={ g.Label }>
+								for _, o := range g.Options {
+									if o.Jc > 0 {
+										<option value={ o.Name } selected?={ d.Chain != nil && d.Chain.ObfuscationProfile == o.Name }>{ o.Name } (Jc={ fmt.Sprintf("%d", o.Jc) })</option>
+									} else {
+										<option value={ o.Name } selected?={ d.Chain != nil && d.Chain.ObfuscationProfile == o.Name }>{ o.Name }</option>
+									}
+								}
+							</optgroup>
 						}
 					</select>
+					<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Preset hint") }</span></label>
 				</div>
 
 				<div class="space-y-3">
