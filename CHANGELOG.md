@@ -4,6 +4,18 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.20] — 2026-07-31
+
+### Fix — stuck chain-entry AWG listen port (`listening port: 1`) + revision of AGENTS #17 (Jc=120 demoted to un-isolated hypothesis)
+
+**Stuck-port bug.** A tester's AWG node stopped accepting clients after an AWG3 on→off toggle. `awg show awg0` reported `listening port: 1` (a bogus value — the real port is 8443/25086/51840). Re-applying the chain did not fix it ("история висит даже после нажатия применить"). Root cause: `ensureMaterializedEntryInbound` (`chain_entry_material.go`) updated keys/subnet/CPS material of an existing chain-entry inbound on re-apply but **never re-synced `ib.Port`** — unlike the standalone path (`profile_deploy.go:135`, which sets `ib.Port = prof.Port`). So any drifted port (1, a 0-leak, or a desync after `UserEntryPort` changed) stuck forever. The client dialed a port nothing listened on.
+
+Fix: the update-branch now re-syncs `ib.Port = chainEntryPort(c, entry.ID)` (no-op for a healthy node — port already equals chainEntryPort; repairs a stuck one). Source is `chainEntryPort`, **not** `prof.Port` — chain-entry port is base + entry-node index, the profile is not the source of truth for the port here. Legacy non-levelized chains never reach this branch (`IsLevelized()` guard). Covered by `TestEnsureChainEntryMaterialization_PortResync`.
+
+**Revision of AGENTS #17 (Jc=120).** The "preset-switch fixed it" observation was post hoc, not evidence: switching a preset triggers a full config regeneration + redeploy, which re-syncs the port/keys/material **regardless of Jc**. The three former "proofs" of #17 are all artifacts: (1) the n1→n2 Jc=120 handshake failure only reproduced in same-host-client topology (hairpin via the external IP; cross-machine §22.4 passes with Jc=120); (2) the "awg2 Jc=6 alive vs awg0 Jc=120 dead" A/B was a **stale phantom peer**, not a live client; (3) preset-switch = regeneration. Jc=120 is physically plausible but never isolated from split-brain (v0.8.18) / stuck-port (this release) / stale materialization on our stack. #17 is demoted from "confirmed" to "un-isolated hypothesis"; the rule is now: verify store-vs-`awg show` first (server port + pubkey vs client `Endpoint` + peer-key), and only if those match try `awg set <iface> jc 3`. Robust presets (v0.8.7) stay as a feature (operator's choice), not as a proven fix.
+
+**Files:** `internal/chain/chain_entry_material.go` (port resync), `internal/chain/chain_entry_material_test.go` (+TestEnsureChainEntryMaterialization_PortResync), `AGENTS.md` #17 (rewritten), `docs/PROGRESS.md` (§22.3 / §35 / §39.1 revision notes + §41), `internal/version/version.go` (v0.8.20). `go build ./...` + `go test ./internal/chain` green.
+
 ## [v0.8.19] — 2026-07-30
 
 ### Fix — AmneziaWG PPA install: modern GPG keyring + distro codename (was `NO_PUBKEY` / unsigned repo on Ubuntu 24.04+)

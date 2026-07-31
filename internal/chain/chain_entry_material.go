@@ -59,6 +59,19 @@ func ensureMaterializedEntryInbound(ni *model.NodeInfo, c *model.Chain, entry *m
 			continue
 		}
 		changed := false
+		// Re-sync the listen port against chainEntryPort. Unlike transit keys
+		// (Rule 5 — clients never reconfigure), the entry port is derived from
+		// the chain topology (chainUserPort + entry index), NOT a stable client
+		// secret: a stuck/stale port (e.g. 1 from a bad materialization, or a
+		// port left over after UserEntryPort changed) means the server listens
+		// nowhere the client dials — every client stays disconnected. Mirror
+		// the standalone path (profile_deploy.go:135) which already syncs
+		// ib.Port = prof.Port on re-apply. No-op for a healthy node (port already
+		// equals chainEntryPort). Legacy non-levelized chains never reach here.
+		if wantPort := chainEntryPort(c, entry.ID); wantPort > 0 && ib.Port != wantPort {
+			ib.Port = wantPort
+			changed = true
+		}
 		// Top up missing per-node credentials (e.g. a relocated node whose
 		// NodeInfo was rebuilt from the host alone).
 		if ib.Protocol == string(model.UserProtocolAWG) {

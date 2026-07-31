@@ -1459,6 +1459,8 @@ I1-I5 (responder'у они не нужны); `RenderExitAWGConf` (инициат
 
 ### 22.3 FINDING: Jc=120 убивает handshake на lossy-сетях
 
+> **⚠ РЕВИЗИЯ v0.8.20 (см. §41):** этот finding воспроизводился ТОЛЬКО в same-host-client топологии n1→n2 (клиент на той же VPS, hairpin-через-внешний-IP). В cross-machine тестах (§22.4, n1↔n2 как разные машины) Jc=120 handshake проходит. Поэтому Jc=120 как *доказанная* причина handshake-failure понижен до *неизолированной гипотезы* (AGENTS #17). Содержимое ниже сохранено как история.
+
 Handshake n1→n2 не проходил (transfer 0/0) при полностью совпадающих
 Jc/S/H и ключах. Диагностика: пакеты долетают (tcpdump ens3), модуль дропает
 "Unknown message" (dyndbg). Причина оказалась НЕ в crypto/amnezia: Jc=120 из
@@ -1819,7 +1821,9 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 
 ## 35. fix(presets): robust AWG-пресеты (Jc=5) — handshake на бюджетных VPS (v0.8.7) (2026-07-29)
 
-**Диагноз (VladufQa, нода 5.188.19.239):** клиент не подключался к AWG-ноде. `awg show` выявил A/B на одной ноде: awg2 (Jc=6) → peer handshake `34 seconds ago`, 46.94 MiB sent ✅; awg0 (Jc=120) → peer handshake=0 ❌. Тот же канал, та же нода, тот же клиент — разница только Jc. Это ровно AGENTS #17: Jc=120 флудит 120 junk-пакетов на handshake, бюджетный хостинг дропает UDP-флуд (включая init-пакет и response сервера в return-path флуде) → handshake никогда не завершается. На premium-каналах (GCloud, n1) Jc=120 проходит; на бюджетных — нет.
+> **⚠ РЕВИЗИЯ v0.8.20 (см. §41):** A/B-доказательство ниже («awg2 Jc=6 жив vs awg0 Jc=120 мёртв») **недействительно** — пира на awg2 был **stale-фантомом** (10.8.0.2, запись без живого клиента), а не работающим подключением. Раздел сохранён как история (robust-пресеты остались как фича — оператор волен выбрать меньший Jc как перестраховку), НО интерпретация «Jc=120 — доказанная причина» снята. Первичные доказанные причины «не коннектит на budget VPS»: split-brain store (§39.1, v0.8.18) и застрявший entry-порт (§41, v0.8.20). AGENTS #17 понижен с «подтверждено» до «неизолированная гипотеза».
+
+**Диагноз (VladufQa, нода 5.188.19.239):** клиент не подключался к AWG-ноде. `awg show` выявил A/B на одной ноде: awg2 (Jc=6) → peer handshake `34 seconds ago`, 46.94 MiB sent ✅; awg0 (Jc=120) → peer handshake=0 ❌. Тот же канал, та же нода, тот же клиент — разница только Jc. Это ровно AGENTS #17: Jc=120 флудит 120 junk-пакетов на handshake, бюджетный хостинг дропает UDP-флуд (включая init-пакет и response сервера в return-path флуде) → handshake никогда не завершается. На premium-каналах (GCloud, n1) Jc=120 проходит; на бюджетных — нет. *(Примечание ревизии: peer на awg2 оказался фантомом — см. блок выше; диагноз сохранён как исторический.)*
 
 **Корень:** все дефолтные AWG-пресеты в `internal/chain/default_presets.json` (`russia/iran/china/maximum_stealth/pro_2026_awg`) захардкожены с `jc: 120` — DPI-профиль, заточенный под максимальный anti-DPI. На бюджетных VPS это = нерабочий handshake. AGENTS #17: «пресет по умолчанию НЕ менять без явного запроса (DPI-профиль)» — теперь явный запрос есть (пользователь через репорт).
 
@@ -1976,7 +1980,7 @@ Base sing-box сменён с `shtorm-7/sing-box-extended` (1.13.14) на **`hoa
 
 **Файлы:** `internal/config/config.go` (DefaultStorePath + DefaultConfig), `cmd/angry-box/main.go` (defaultStorePath init + serveCmd lock+mkdir+warn), `cmd/angry-box/instancelock.go` + `instancelock_unix.go` + `instancelock_windows.go` + `storepath.go` (новые), `cmd/angry-box/instancelock_test.go` + `internal/config/config_test.go` (тесты), `scripts/S99angry-box` (pidfile guard), `internal/version/version.go` (v0.8.18), `CHANGELOG.md`, `docs/PROGRESS.md`.
 
-**Замечание про баг-1 (Jc=120):** одновременно с этим — v0.8.17 (preset dropdown сгруппирован Robust/Stealth + Jc inline). По `awg show` awg2 (Jc=6) обслуживал живых клиентов (10.8.0.5/.6 — гигабайты), awg0 (Jc=120) — мёртвый; на одной ноде единственная разница = Jc → AGENTS #17 подтверждён. НО первичная причина «не коннектит» у тестера — split-brain store (ключи User↔awg0 расходились), а Jc=120 был усугубляющим фактором. v0.8.17 + v0.8.18 закрывают оба.
+**Замечание про баг-1 (Jc=120) — ревизия v0.8.20:** одновременно с этим вышел v0.8.17 (preset dropdown сгруппирован Robust/Stealth + Jc inline). Ранее здесь утверждалось «по `awg show` awg2 (Jc=6) обслуживал живых клиентов, awg0 (Jc=120) мёртвый → AGENTS #17 подтверждён» — **это утверждение снято**: пира на awg2 (10.8.0.5/.6) был **stale-фантомом** (запись без живого клиента), а не подтверждением A/B. Первичная причина «не коннектит» — split-brain store (ключи User↔awg0 расходились); отдельный реальный баг — застрявший entry-порт `listening port: 1` (фикс в §41, v0.8.20). Jc=120 как причина не изолирован (AGENTS #17 понижен до гипотезы). v0.8.18 (split-brain) + v0.8.20 (port-stuck) закрывают доказанные причины.
 
 **Баг-2 («клиента нельзя создать без цепочки») — RESOLVED тем же split-brain фиксом.** После применения v0.8.18 (один демон, один store) тестер подтвердил: «тут всё заработало». Симптом «клиента нельзя создать» был артефактом двух store: клиент создавался в одном store (root, :8090), а нода деплоилась из другого (systemd, :9080) — с точки зрения UI/client-конфига клиент «не появлялся». Отдельного код-фикса не потребовалось. Это подтверждает: первопричина обоих жалоб тестера (баг-1 «не коннектит» + баг-2 «клиента нельзя создать») — одна, операционная (два демона на двух store).
 
@@ -2004,3 +2008,30 @@ E: The repository 'https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal InR
 Соответствует upstream-known issue (amnezia-vpn/amneziawg-linux-kernel-module#133). `go build ./...` + `go test ./internal/backend/singbox` зелёные.
 
 **Файлы:** `internal/backend/singbox/singbox.go` (install-script), `internal/version/version.go` (v0.8.19), `CHANGELOG.md`, `docs/PROGRESS.md`.
+
+## 41. fix(awg): застрявший chain-entry порт (`listening port: 1`) + ревизия AGENTS #17 (Jc=120 понижен до гипотезы) (v0.8.20) (2026-07-31)
+
+**Симптом (VladufQa, 2026-07-30):** после переключения AWG3 on→off AWG-нода перестала принимать клиентов. `awg show awg0` показал `listening port: 1` (аномалия — нормальный порт 51840/25086/8443), `jc: 120` и на interface, и на peer (обфускация между клиентом и сервером **совпадала**). Тестер: «эта история висит даже после нажатия применить». Смена пресета в UI на robust (Jc=5) «починила» коннект.
+
+**Два независимых вывода из этого кейса:**
+
+### 41.A Реальный баг — застрявший entry-порт (`chain_entry_material.go`)
+
+`ensureMaterializedEntryInbound` (update-ветка, `chain_entry_material.go:55-97`) при повторном apply цепочки обновлял ключи/subnet/CPS-материал существующего chain-entry инбаунда, но **НИКОГДА не пересинхронизировал `ib.Port`**. В отличие от standalone-пути `ApplyProfileToNodes` (`profile_deploy.go:135`, который делает `ib.Port = prof.Port`), chain-entry порт выставлялся один раз при создании (`chain_entry_material.go:105`, `Port: chainEntryPort(c, entry.ID)`) и больше не трогался. Итог: любой кривой порт (1, 0-утёкший, или рассинхрон после смены `UserEntryPort`) застревал навсегда, даже при re-apply. Симптом «висит даже после нажатия применить» — ровно это: re-apply цепочки не чинил порт.
+
+Почему смена пресета «починила»: пресет меняется через инбаунд-профиль → `ApplyProfileToNodes` (а не chain-apply), а тот порт **как раз** пересинхронизирует. То есть чинила **перегенерация+redeploy**, не Jc. Post hoc, не доказательство Jc-теории.
+
+**Фикс:** в update-ветку добавлена пересинхронизация `ib.Port = chainEntryPort(c, entry.ID)` (no-op для здоровой ноды, чинит застрявший). Источник — `chainEntryPort`, НЕ `prof.Port` (chain-entry порт = базовый + индекс entry-ноды; профиль тут не источник истины для порта). Legacy non-levelized chains не достигают этой ветки (`IsLevelized()` guard). Тест `TestEnsureChainEntryMaterialization_PortResync` (застрявший port=1 → пересинхрон) зелёный.
+
+### 41.B Ревизия AGENTS #17 — Jc=120 понижен с «подтверждено» до «неизолированная гипотеза»
+
+Три прежних «доказательства» #17 разобраны и признаны артефактами:
+1. **«n1→n2 Jc=120 → handshake=0, jc=3 → ок»** — воспроизводилось ТОЛЬКО в same-host-client топологии (клиент на той же VPS, hairpin через внешний IP); cross-machine тесты (§22.4) Jc=120 проходит.
+2. **«A/B awg2 Jc=6 жив vs awg0 Jc=120 мёртв»** — пира на awg2 (10.8.0.2) был **stale-фантомом** (запись без живого клиента), а не работающим подключением. Корреляция держалась на мёртвой записи.
+3. **«сменил пресет → заработало»** = полная перегенерация+redeploy (порт/ключ/material пересоздаются) — чинит рассинхрон **независимо** от Jc. Post hoc.
+
+Jc=120 физически правдоподобен как гипотеза (UDP-флуд перед init теоретически может дропаться на бюджетном хостинге), НО на нашем стеке не изолирован от (a) split-brain store (§39, v0.8.18), (b) застрявшего порта (§41.A), (c) stale materialization после toggle AWG3.
+
+**Правило (внесено в #17):** при «AWG не коннектит» сначала сверять дамп store ↔ `awg show` (сервер-порт, server pubkey vs клиентский peer-key), и только если всё совпадает — пробовать `awg set <iface> jc 3` как workaround. robust-пресеты (v0.8.7) остаются как фича (оператор волен выбрать меньший Jc), но не как подтверждённый фикс.
+
+**Файлы:** `internal/chain/chain_entry_material.go` (порт-resync в update-ветке), `internal/chain/chain_entry_material_test.go` (+TestEnsureChainEntryMaterialization_PortResync), `AGENTS.md` #17 (переписан — понижение статуса), `docs/PROGRESS.md` (§22.3 + §35 + §39.1 ревизионные пометки, +§41), `internal/version/version.go` (v0.8.20), `CHANGELOG.md`. `go build ./...` + `go test ./internal/chain` зелёные.
