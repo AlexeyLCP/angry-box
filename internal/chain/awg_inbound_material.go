@@ -66,7 +66,7 @@ func EnsureInboundAWGMaterial(ib *model.NodeInbound, preset ConnectionPreset) {
 // fields in place (harmless — they are only emitted when AWG3Mode is on); a
 // clean re-enable after an off cycle reuses the old key, which is safe.
 func ensureInboundAWG3Material(ib *model.NodeInbound) {
-	if !ib.AWG3Mode {
+	if ib.EffectiveAWGVersion() != model.AWGVersion3 {
 		return
 	}
 	if ib.AWG3HeaderProtectionKey != "" {
@@ -83,7 +83,8 @@ func ensureInboundAWG3Material(ib *model.NodeInbound) {
 // AWG3 material (plain WG / not yet populated), so callers can pass it
 // straight to BuildAWGAmnezia and get the no-CPS path.
 func InboundAWGObfsMaterial(ib *model.NodeInbound) *AWGObfsMaterial {
-	if ib.AWGCPSI1 == "" && !ib.AWG3Mode {
+	isV3 := ib.EffectiveAWGVersion() == model.AWGVersion3
+	if ib.AWGCPSI1 == "" && !isV3 {
 		return nil
 	}
 	m := &AWGObfsMaterial{
@@ -102,7 +103,7 @@ func InboundAWGObfsMaterial(ib *model.NodeInbound) *AWGObfsMaterial {
 		m.I4 = cpsStringToBytes(strs[3])
 		m.I5 = cpsStringToBytes(strs[4])
 	}
-	if ib.AWG3Mode {
+	if isV3 {
 		m.AWG3Mode = true
 		m.HeaderProtectionKey = ib.AWG3HeaderProtectionKey
 		m.ContentPaddingAddition = ib.AWG3ContentPaddingAddition
@@ -119,6 +120,13 @@ func InboundAWGObfsMaterial(ib *model.NodeInbound) *AWGObfsMaterial {
 func ResolveStandaloneAWGPreset(ib *model.NodeInbound) ConnectionPreset {
 	if ib.Obfuscation != "" {
 		if p, ok := GetPreset(ib.Obfuscation); ok {
+			return resolveAWGPresetForVersion(p, ib.EffectiveAWGVersion())
+		}
+	}
+	// No explicit preset → the per-version default (v3 inbound must not fall
+	// back to a v2 preset, which would lack the HPK S1-S4>=12 contract).
+	if name := defaultPresetForAWGVersion(ib.EffectiveAWGVersion()); name != "" {
+		if p, ok := GetPreset(name); ok {
 			return p
 		}
 	}
@@ -141,13 +149,38 @@ func ResolveStandaloneAWGPreset(ib *model.NodeInbound) ConnectionPreset {
 // Live regression this fixes (PROGRESS §39): the server rendered S1=15 from the
 // chain preset while the client .conf rendered S1=115 from the profile preset.
 func ResolveChainEntryPreset(chainPreset ConnectionPreset, ib *model.NodeInbound) ConnectionPreset {
+	version := ""
+	if ib != nil {
+		version = ib.EffectiveAWGVersion()
+	}
 	if ib == nil || ib.Obfuscation == "" {
-		return chainPreset
+		return resolveAWGPresetForVersion(chainPreset, version)
 	}
 	if p, ok := GetPreset(ib.Obfuscation); ok {
-		return p
+		return resolveAWGPresetForVersion(p, version)
 	}
-	return chainPreset
+	return resolveAWGPresetForVersion(chainPreset, version)
+}
+
+// resolveAWGPresetForVersion enforces the preset↔AWG-version contract: if the
+// selected preset's AWG section is incompatible with the inbound's effective
+// AWG version (PresetSupportsAWGVersion), it is replaced by the per-version
+// default. This keeps a v3 inbound from silently rendering a v2 preset (whose
+// S1-S4 may be < 12 → HPK rejected) and vice versa. The compatibility check is
+// a no-op for non-AWG presets (Reality/XHTTP ignore version entirely).
+func resolveAWGPresetForVersion(preset ConnectionPreset, version string) ConnectionPreset {
+	if preset.AWG == nil {
+		return preset
+	}
+	if PresetSupportsAWGVersion(preset, version) {
+		return preset
+	}
+	if name := defaultPresetForAWGVersion(version); name != "" {
+		if dp, ok := GetPreset(name); ok {
+			return dp
+		}
+	}
+	return preset
 }
 
 // ─── Profile-level live QUIC capture ─────────────────────────────────────────
@@ -176,7 +209,7 @@ func ResolveChainEntryPreset(chainPreset ConnectionPreset, ib *model.NodeInbound
 // a failed one (suppresses re-dialing the same flaky domain on every deploy).
 func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPreset) bool {
 	changed := false
-	if prof.AWG3Mode && prof.AWG3HeaderProtectionKey == "" {
+	if prof.EffectiveAWGVersion() == model.AWGVersion3 && prof.AWG3HeaderProtectionKey == "" {
 		awg3 := GenerateAWG3Material()
 		prof.AWG3HeaderProtectionKey = awg3.HeaderProtectionKey
 		prof.AWG3ContentPaddingAddition = awg3.ContentPaddingAddition
@@ -266,13 +299,14 @@ func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPrese
 // applies). AWG3 material is profile-backed (shared across nodes) and is
 // copied whenever the profile has it, independent of CPS capture.
 func applyProfileAWGMaterial(ib *model.NodeInbound, prof *model.InboundProfile) bool {
+	ib.AWGVersion = prof.AWGVersion
 	ib.AWG3Mode = prof.AWG3Mode
 	ib.AWG3HeaderProtectionKey = prof.AWG3HeaderProtectionKey
 	ib.AWG3ContentPaddingAddition = prof.AWG3ContentPaddingAddition
 	ib.AWG3RekeyAfterTime = prof.AWG3RekeyAfterTime
 	if prof.AWGCPSI1 == "" {
 		// No shared CPS material, but AWG3 may still be profile-backed.
-		return prof.AWG3Mode
+		return prof.AWG3Mode || prof.AWGVersion == model.AWGVersion3
 	}
 	ib.AWGCPSLevel = prof.AWGCPSLevel
 	ib.AWGCPSMimicry = prof.AWGCPSMimicry

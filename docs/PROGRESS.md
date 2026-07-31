@@ -2125,3 +2125,79 @@ type MieruInboundOptions struct {
 AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru — **явное одобренное расширение по запросу оператора** (2026-07-31), зафиксировано как AGENTS #19. Это не нарушение freeze (который про TUIC/Hysteria2). После имплементации — обновить AGENTS #19 (статус pending → shipped) + §42 (реализованные file:line) + CHANGELOG.
 
 **Файлы этой задачи (только дока, БЕЗ кода):** `AGENTS.md` (+#19), `docs/PROGRESS.md` (+§42).
+
+---
+
+## §43. Версионность AWG (1.5 / 2.0 / 3.0) + kernel-AWG3 horizon (2026-07-31)
+
+### Контекст: «вышло ядро для AWG3»
+
+**2026-07-30:** PR [#192 «feat: AmneziaWG 3.0»](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/pull/192) слит в `master` репо `amnezia-vpn/amneziawg-linux-kernel-module`. Kernel `wg_device` struct нативно несёт `header_protection` (`struct header_protection`), `content_padding_addition` (`u16_range_t`), `rekey_after_time`/`rekey_timeout`/`reject_after_time`/`keepalive_timeout` (`u16_range_t`). **2026-07-31** (день задачи): fix'ы валидации — `7304fbf` «fix: prevent HeaderProtectionKey from setting if any Sx less then 12», `ff0aa32` «fix: return -EINVAL on invalid S1-S4 for HeaderProtectionKey», плюс `f5c9cd6` «fix: use proper ispecs for I1-I5», `9b05517` «fix: use U32 for persistent keepalive», `51f3bb1` «fix: inverted REKEY_TIMEOUT logic».
+
+**Это ломает фундаментальный constraint AGENTS #5/#10:** «AWG3 fields are userspace-only, kernel amneziawg module rejects `HeaderProtectionKey=` in setconf». Теперь kernel module принимает HPK/CPM/RAT нативно → **kernel-render path для AWG3 становится возможен** (awg-quick + TUN-overlay, как AWG2), вместо userspace sing-box `type:"awg"` endpoint. Но это инфраструктурная работа (deps bump + пересборка на Linux + E2E на VPS), поэтому разделена на 2 среза.
+
+### Таксономия версий (из GitHub + amnezia.org + кода)
+
+| Версия | Параметры | kernel support | Статус в проекте ДО задачи |
+|---|---|---|---|
+| **AWG 1.x** («1.5») | Jc, Jmin, Jmax, S1-S2, H1-H4 (фикс.значения) | ✅ | legacy kernel path, без CPS, degenerate H1-H4 "N-N" |
+| **AWG 2.0** | + S3-S4, I1-I5 (CPS), H1-H4 **ranges**, Itime | ✅ | текущий kernel path с CPS (chain material) |
+| **AWG 3.0** | + HeaderProtectionKey, ContentPaddingAddition, RekeyAfterTime | ✅ **новое 2026-07-30** | только userspace (sing-box endpoint) |
+
+**Понятия версий в коде НЕ было** — `AWG3Mode` был булев toggle (`v0.8.10`), не версия протокола. Пресеты не были привязаны к версии. Сайт `architect.vai-rice.space` (Vue SPA, не рендерится без JS) использован как UI-reference.
+
+### Избыточность параметров в AWG3 (ответ на вопрос оператора)
+
+- **HPK (header protection)** применяет fast-encryption к low-entropy header fields → частично перекрывает назначение **H1-H4** (packet type markers). Механизмы разные (markers vs encryption) → полностью не убираются, но fingerprint-критичность H-markers падает. В awg3-пресетах H1-H4 **минимизированы** (12/12/12/12), HPK берёт основную защиту.
+- **S1-S4 ≥ 12** обязательно при HPK (HeaderCipherNonceSize=12) — в коде (`applier_build.go:1326`) и теперь нативно в kernel (`7304fbf`).
+- **CPS (I1-I5)** ортогонален HPK — остаётся полезным (маскировка под QUIC/SIP/DNS).
+- **Jc** остаётся полезным (DPI-resistant handshake flood), не убирается.
+
+### Срез 1 (этот коммит) — код + версионность + пресеты
+
+**Модель** (`internal/domain/model/awg_version.go` новый + `inbound.go`/`panel.go`):
+- Константы `AWGVersion1x="1.5"` / `AWGVersion2="2"` / `AWGVersion3="3"`.
+- Поле `InboundProfile.AWGVersion` / `NodeInbound.AWGVersion` (`json:"awg_version,omitempty"`).
+- `EffectiveAWGVersion()` (shared reconciliation): `"3"` если `AWG3Mode==true || AWGVersion=="3"`, иначе `AWGVersion` (пусто → `"2"`). **Миграция store НЕ нужна** — legacy `AWG3Mode=true` → "3" на лету.
+- `IsKnownAWGVersion()` для UI-валидации.
+- `applyProfileAWGMaterial` (`awg_inbound_material.go:269`) копирует `AWGVersion` на materialized inbound.
+
+**Пресеты** (`presets.go` + `default_presets.json`):
+- Поле `AWGPreset.Version` (`json:"version,omitempty"`) — мин. версия протокола для пресета (пусто = "2").
+- Новые awg3-пресеты: `maximum_stealth_2026_awg3`, `russia_2026_awg3`, `iran_2026_awg3`, `china_2026_awg3` — HPK-on (`version:"3"`), S1-S4=24 (≥12), H1-H4=12/12/12/12 (минимизированы), CPS level=3 quic, Jc=120.
+- `PresetOption.Version` (`presets.go`); `Group()` → новая ветка `AWG · 3.0 (header protection)`; `GroupPresets` → optgroup AWG 3.0 ПЕРВЫМ.
+- `defaultPresetForAWGVersion(version)` — v3 → `maximum_stealth_2026_awg3`, иначе `maximum_stealth_2026_awg`.
+- `PresetSupportsAWGVersion(p, version)` — контракт: v3 требует preset с `AWG.Version=="3"`; v1.5/v2 принимают любой non-v3 preset.
+- `resolveAWGPresetForVersion` встроен в `ResolveStandaloneAWGPreset` + `ResolveChainEntryPreset` — несовместимый пресет → fallback на per-version default (v3 inbound не может silently отрендерить v2-пресет с S1-S4<12).
+
+**Рендер** — все runtime-проверки переключены с `ib.AWG3Mode` на `ib.EffectiveAWGVersion()==model.AWGVersion3`, так что `AWGVersion="3"` (новый путь) и legacy `AWG3Mode=true` оба триггерят userspace endpoint:
+- `awg_deploy.go:103,215` (skip kernel conf для v3), `awg_tun_overlay.go:288,381` (skip/нужен overlay), `merged_config.go:727,1002` (userspace endpoint), `inbound_source.go:90` (`chainEntryAWG3Inbound`), `awg_inbound_material.go:69,86,105,211` (material gen/reconstruct).
+- `applyAWG3ToEndpoint`, `buildAWGUserInboundMultiAddr`, `renderAWGQuickConf` — без изменений (userspace path сохранён).
+
+**UI** (`web/inbounds.go:138-155`, `web/templates/inbounds.templ:243-265`, `internal/i18n/i18n.go`):
+- Dropdown `awg_version` (1.5 legacy / 2.0 kernel+CPS default / 3.0 header protection) заменил checkbox `awg3_mode`. Legacy checkbox сохранён как backward-compat fallback (форма без `awg_version` → honour `awg3_mode=="1"`). `p.AWG3Mode` зеркалится как synonym.
+- i18n-ключи (`AWG version`, `AWG version hint`, `AWG 2.0 (kernel + CPS, default)`, `AWG 3.0 (header protection)`, `AWG 1.5 (legacy, no CPS)`, `Invalid AWG version`) в en/ru.
+
+**Тесты:** `internal/chain/awg_version_test.go` (новый, 9 кейсов): `TestEffectiveAWGVersion` (reconciliation legacy/explicit/bogus), `TestIsKnownAWGVersion`, `TestPresetSupportsAWGVersion`, `TestResolveStandaloneAWGPreset_VersionFallback` + `_CompatiblePresetKept`, `TestAWG3Material_GeneratedForVersion3WithoutLegacyBool` + `_NotGeneratedForVersion2`, `TestAWGVersion_PropagatedThroughProfileMaterial`, `TestAWG3PresetS1S4_AtLeast12`, `TestListPresetsDetailed_AWGVersionField`. Обновлён `robust_presets_test.go` (`TestGroupPresets_RobustBucketFirst` → `TestGroupPresets_Order` — AWG 3.0 первой). Все 9 существующих `TestAWG3*` GREEN (rename сохранил legacy-семантику).
+
+**Верификация:** `templ generate` ✓, `go build ./...` ✓, `go vet ./internal/chain/ ./internal/domain/model/ ./internal/web/` ✓, `go test ./internal/chain/... ./internal/domain/... ./internal/web/` ✓.
+
+### Срез 2 (TODO, отдельный PR — требует Linux/WSL + VPS)
+
+1. **deps bump:** `deps/amneziawg-src.tar.gz` (от 30 июня, устарел) → перезалить из `amneziawg-linux-kernel-module@master` с PR #192 + fix'ами от 31 июля. Сборка на Linux/WSL.
+2. **Kernel-AWG3 render path:** при `AWGVersion3` + kernel module detected → рендер `awg0.conf` с HPK/CPM/RAT в `[Interface]` (через `writeAmneziaConfLines` + новый флаг `includeAWG3`) **вместо** userspace endpoint. Userspace остаётся fallback.
+3. `awgTUNOverlayNeeded` → true для kernel-AWG3; `AWGTeardownInterfaces` реверс (kernel-AWG3 требует awg0 UP).
+4. **Capability detection:** `awg version` на VPS / проверка kernel module version.
+5. **E2E:** `TestE2E_Heavy_Protocol_AWG3_Kernel` на n1 (единственный тестовый сервер) — handshake + egress через kernel awg0 + HPK.
+6. AGENTS.md #5/#10 — убрать «userspace-only» как абсолютный constraint.
+
+### Источники
+
+- [PR #192 feat: AmneziaWG 3.0 (kernel module, merged 2026-07-30)](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/pull/192)
+- [Commits: fix Sx≥12 for HeaderProtectionKey (2026-07-31)](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/commits/master)
+- [amneziawg-go header protection README](https://github.com/amnezia-vpn/amneziawg-go) — HPK в `[Device]`, S1-S4≥12, `awg genkey` для HPK
+- [Issue #169 — H params fixed→ranges evolution](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/issues/169)
+- [AmneziaWG 2.0 announcement](https://amnezia.org/blog/amneziawg-2-0-available-for-self-hosted) — versions mutually incompatible, fresh configs required
+- [architect.vai-rice.space](https://architect.vai-rice.space/) — Vue SPA UI reference
+
+**Файлы:** `internal/domain/model/awg_version.go` (новый), `internal/domain/model/inbound.go`, `internal/domain/model/panel.go`, `internal/chain/presets.go`, `internal/chain/default_presets.json`, `internal/chain/awg_inbound_material.go`, `internal/chain/awg_deploy.go`, `internal/chain/awg_tun_overlay.go`, `internal/chain/merged_config.go`, `internal/chain/inbound_source.go`, `internal/chain/awg_version_test.go` (новый), `internal/chain/robust_presets_test.go`, `internal/web/inbounds.go`, `web/templates/inbounds.templ`, `web/templates/inbounds_templ.go`, `internal/i18n/i18n.go`, `AGENTS.md` (#5 ревизия), `docs/PROGRESS.md` (+§43).

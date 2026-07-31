@@ -53,21 +53,33 @@ type InboundProfile struct {
 	AWGCPSCapturedDomain string `json:"awg_cps_captured_domain,omitempty"`
 	AWGCPSCaptureFailedDomain string `json:"awg_cps_capture_failed_domain,omitempty"`
 
-	// ── AWG 3.0 obfuscation mode (opt-in per-inbound toggle, AGENTS #5).
-	// When AWG3Mode is set the user-facing AWG entry is rendered as a
-	// userspace sing-box `type:"awg"` endpoint (amneziawg-go feat/awg3) and
-	// carries the AWG3 fields below IN ADDITION to the classic amnezia
-	// Jc/S1-S4/H1-H4/I1-I5 (which still come from the preset + CPS material).
-	// The kernel amneziawg module does NOT parse AWG3 fields, so AWG3Mode
-	// forces the userspace endpoint path (the kernel awg-quick path is used
-	// only when AWG3Mode is false — the default, AGENTS #10/#11).
+	// ── AWG protocol version selector (AGENTS.md #5/#10 revision). The
+	// canonical picker for AWG 1.5 / 2.0 / 3.0 — see awg_version.go for the
+	// full version taxonomy + EffectiveAWGVersion reconciliation. Empty
+	// defaults to "2" (the current default kernel+CPS path); "3" opts into
+	// header protection (AWG3Mode below). Legacy stores without this field
+	// keep their AWG3Mode bool and resolve through EffectiveAWGVersion, so
+	// the migration is non-destructive.
+	AWGVersion string `json:"awg_version,omitempty"`
+
+	// ── AWG 3.0 obfuscation mode (legacy toggle, AGENTS #5). Kept as a
+	// backward-compat alias for AWGVersion=="3": pre-version-field stores
+	// (v0.8.10) set AWG3Mode=true and resolve to "3" via EffectiveAWGVersion.
+	// New code should write AWGVersion instead. When effective version is 3
+	// the user-facing AWG entry is rendered as a userspace sing-box
+	// `type:"awg"` endpoint (amneziaawg-go feat/awg3) carrying the AWG3 fields
+	// below IN ADDITION to the classic amnezia Jc/S1-S4/H1-H4/I1-I5 (which
+	// still come from the preset + CPS material). The kernel amnezia module
+	// did NOT parse AWG3 fields historically (AGENTS #10/#11) — native HPK
+	// landed in the kernel module on 2026-07-30 (PR #192); the kernel-render
+	// path is slice 2.
 	//
 	// AWG3 material is generated ONCE per profile (EnsureProfileAWGMaterial /
 	// EnsureInboundAWGMaterial) and persisted here as the shared source of
 	// truth (same pattern as AWGCPSI1/AWGH1) so a redeploy reuses it and
 	// existing clients are not re-keyed. AWG3HeaderProtectionKey is the raw
 	// hex of 32 random bytes (sing-box endpoint.go decodes base64 from JSON
-	// and converts to hex for the amneziawg-go UAPI; we persist hex to match
+	// and converts to hex for the amneziaawg-go UAPI; we persist hex to match
 	// the §30 spike). ContentPaddingAddition / RekeyAfterTime are "lo-hi"
 	// UintRange strings (seconds for RekeyAfterTime). S1-S4 must be >= 12
 	// when HeaderProtectionKey is set (HeaderCipherNonceSize=12) — enforced

@@ -464,5 +464,61 @@
       "mimicry": "quic",
       "i1_packet": "quic-1200"
     }
+  },
+  {
+    "name": "maximum_stealth_2026_awg3",
+    "protocol": "awg",
+    "description": "Maximum stealth AWG 3.0 — header protection (HPK) variant. HPK encrypts the low-entropy header fields, so H1-H4 type-markers are minimized (redundant under HPK) and S1-S4 are held at 24 (>= 12 = HeaderCipherNonceSize, mandatory when HPK is set). CPS level 3 quic still applies on top (CPS is orthogonal to HPK). Requires an AWG3-capable client (AmneziaWG app / userspace amneziaawg-go). Slice 1: renders userspace (sing-box type:\"awg\" endpoint). (AWG 3.0 variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 24, "s2": 24, "s3": 24, "s4": 24,
+      "itime": 130,
+      "h1": 12, "h2": 12, "h3": 12, "h4": 12,
+      "cps_level": 3,
+      "mimicry": "quic",
+      "version": "3"
+    }
+  },
+  {
+    "name": "russia_2026_awg3",
+    "protocol": "awg",
+    "description": "Russia (RKN) AWG 3.0 — header protection variant. Same HPK contract as maximum_stealth_2026_awg3 (S1-S4=24, H1-H4 minimized) but tuned S1/S2 split for RU DPI. Requires an AWG3-capable client. Slice 1: renders userspace. (AWG 3.0 variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 24, "s2": 60, "s3": 24, "s4": 24,
+      "itime": 130,
+      "h1": 12, "h2": 12, "h3": 12, "h4": 12,
+      "cps_level": 3,
+      "mimicry": "quic",
+      "version": "3"
+    }
+  },
+  {
+    "name": "iran_2026_awg3",
+    "protocol": "awg",
+    "description": "Iran DPI AWG 3.0 — header protection variant. Same HPK contract (S1-S4=24, H1-H4 minimized), tuned S1/S2 split for IR DPI. Requires an AWG3-capable client. Slice 1: renders userspace. (AWG 3.0 variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 28, "s2": 56, "s3": 24, "s4": 24,
+      "itime": 130,
+      "h1": 12, "h2": 12, "h3": 12, "h4": 12,
+      "cps_level": 3,
+      "mimicry": "quic",
+      "version": "3"
+    }
+  },
+  {
+    "name": "china_2026_awg3",
+    "protocol": "awg",
+    "description": "GFW AWG 3.0 — header protection variant. Same HPK contract (S1-S4=24, H1-H4 minimized), tuned S1/S2 split for CN DPI. Requires an AWG3-capable client. Slice 1: renders userspace. (AWG 3.0 variant)",
+    "awg": {
+      "jc": 120, "jmin": 50, "jmax": 1000,
+      "s1": 32, "s2": 48, "s3": 24, "s4": 24,
+      "itime": 130,
+      "h1": 12, "h2": 12, "h3": 12, "h4": 12,
+      "cps_level": 3,
+      "mimicry": "quic",
+      "version": "3"
+    }
   }
 ]

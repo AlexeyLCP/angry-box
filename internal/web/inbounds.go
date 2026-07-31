@@ -135,12 +135,24 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 		}
 		p.AWGCPSMimicry = mimicry
 		p.AWGCPSCaptureDomain = domain
-		// AWG 3.0 header-protection mode (AGENTS #5): opt-in per-inbound
-		// toggle. The material (HPK/CPM/RAT) is generated once at deploy time
-		// (EnsureProfileAWGMaterial) and persisted, never entered by hand.
-		if r.FormValue("awg3_mode") == "1" {
-			p.AWG3Mode = true
+		// AWG protocol version selector (AGENTS #5, revision). The new canonical
+		// picker is awg_version ("1.5" | "2" | "3"); the legacy awg3_mode=="1"
+		// checkbox is kept as a backward-compat fallback so an older rendered
+		// form still works. AWGVersion drives everything via EffectiveAWGVersion;
+		// AWG3Mode is mirrored as a synonym so old read-sites keep working.
+		version := strings.TrimSpace(r.FormValue("awg_version"))
+		switch version {
+		case model.AWGVersion1x, model.AWGVersion2, model.AWGVersion3:
+			p.AWGVersion = version
+		case "":
+			// Legacy form (pre-version dropdown) — honor the AWG3 checkbox.
+			if r.FormValue("awg3_mode") == "1" {
+				p.AWGVersion = model.AWGVersion3
+			}
+		default:
+			return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "Invalid AWG version"))
 		}
+		p.AWG3Mode = p.EffectiveAWGVersion() == model.AWGVersion3
 	}
 	return p, nodeIDs, nil
 }

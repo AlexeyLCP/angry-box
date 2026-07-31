@@ -4,6 +4,20 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.21] — 2026-07-31
+
+### Feature — AWG protocol version selector (1.5 / 2.0 / 3.0) + AWG 3.0 obfuscation presets + kernel-AWG3 horizon
+
+**Context.** The AmneziaWG **kernel module gained native AWG 3.0 (header protection) support on 2026-07-30** — PR [#192 «feat: AmneziaWG 3.0»](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/pull/192) merged to `master` of `amneziawg-linux-kernel-module` (kernel `wg_device` struct now carries `header_protection` / `content_padding_addition` / `rekey_after_time/timeout` as `u16_range_t`; Sx≥12 validation landed 2026-07-31 in `7304fbf`/`ff0aa32`). This breaks the old absolute constraint "kernel rejects HPK → AWG3 is userspace-only" (AGENTS #5/#10): a kernel-render path for AWG3 is now possible. That kernel-render + deps bump is **slice 2** (needs Linux/WSL build + live E2E on n1); this release is **slice 1** — the code, presets, and version taxonomy.
+
+**Version taxonomy (now first-class in the model).** Before this, AWG3 was a boolean toggle (`AWG3Mode`, v0.8.10) with no notion of protocol versions. Added a canonical `AWGVersion` selector (`"1.5"` / `"2"` / `"3"`, `internal/domain/model/awg_version.go`): **1.5** = legacy AmneziaWG 1.x (Jc/S1-S2/fixed H1-H4, no CPS); **2.0** = the current kernel+CPS default (+S3-S4/I1-I5/H1-H4 ranges/Itime); **3.0** = +HeaderProtectionKey/ContentPaddingAddition/RekeyAfterTime. `EffectiveAWGVersion()` reconciles the new field with the legacy `AWG3Mode` bool (true → "3"), so **no store migration is needed** — old stores keep their userspace-AWG3 behavior. The UI dropdown on the inbound form (1.5 / 2.0 / 3.0) replaces the old `awg3_mode` checkbox (kept as a backward-compat fallback).
+
+**AWG 3.0 obfuscation presets.** New `AWGPreset.Version` field + four `*_awg3` presets (`maximum_stealth_2026_awg3`, `russia/iran/china_2026_awg3`): HPK-on, S1-S4=24 (≥12 nonce-size, mandatory when HPK is set), **H1-H4 minimized to 12/12/12/12 as redundant under HPK** (header protection fast-encrypts the low-entropy header fields the H type-markers otherwise fingerprint — different mechanism, not fully removed, but the H-marker fingerprint criticality drops). CPS (I1-I5) and Jc stay (orthogonal to HPK). The dropdown groups them in a new `AWG · 3.0 (header protection)` optgroup FIRST (max stealth), ahead of Robust/Stealth/Reality/XHTTP.
+
+**Preset↔version contract.** `PresetSupportsAWGVersion` + `resolveAWGPresetForVersion` (wired into `ResolveStandaloneAWGPreset`/`ResolveChainEntryPreset`): a v3 inbound can never silently render a v2-only preset whose S1-S4 may be < 12 → it falls back to the per-version default. All render-path checks switched from `ib.AWG3Mode` to `ib.EffectiveAWGVersion()=="3"` so both `AWGVersion="3"` (new path) and legacy `AWG3Mode=true` render the same userspace endpoint (slice 1 keeps AWG3 userspace; kernel-render is slice 2).
+
+**Files:** `internal/domain/model/awg_version.go` (new), `internal/domain/model/inbound.go`, `internal/domain/model/panel.go`, `internal/chain/presets.go`, `internal/chain/default_presets.json`, `internal/chain/awg_inbound_material.go`, `internal/chain/awg_deploy.go`, `internal/chain/awg_tun_overlay.go`, `internal/chain/merged_config.go`, `internal/chain/inbound_source.go`, `internal/chain/awg_version_test.go` (new), `internal/chain/robust_presets_test.go`, `internal/web/inbounds.go`, `web/templates/inbounds.templ`, `web/templates/inbounds_templ.go`, `internal/i18n/i18n.go`, `internal/version/version.go` (v0.8.21), `AGENTS.md` (#5 revision), `docs/PROGRESS.md` (§43). `templ generate` + `go build ./...` + `go vet` + `go test ./internal/chain/... ./internal/domain/... ./internal/web/` green.
+
 ## [v0.8.20] — 2026-07-31
 
 ### Fix — stuck chain-entry AWG listen port (`listening port: 1`) + revision of AGENTS #17 (Jc=120 demoted to un-isolated hypothesis)

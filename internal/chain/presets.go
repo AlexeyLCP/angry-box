@@ -78,6 +78,18 @@ type AWGPreset struct {
 
 	// Optional I1 packet override (base64 or special keywords "quic-1200", "dns-1232")
 	I1Packet string `json:"i1_packet,omitempty"`
+
+	// Version is the AmneziaWG protocol version this preset targets — "1.5",
+	// "2", or "3" (model.AWGVersion*). Empty defaults to "2" (the current
+	// default kernel+CPS path) so legacy presets resolve without a value. The
+	// value drives both UI grouping (PresetOption.Group) and the preset↔version
+	// compatibility resolver (ResolvePresetsByAWGVersion): an AWG 3.0 inbound
+	// can only pair with a v3 preset, etc. The v3 presets set S1-S4 >= 12
+	// (HeaderCipherNonceSize constraint for header protection) and minimize
+	// H1-H4 as redundant (HPK encrypts the low-entropy header fields the H
+	// markers otherwise fingerprint). See AGENTS.md #5 (revision) +
+	// awg_version.go for the taxonomy.
+	Version string `json:"version,omitempty"`
 }
 
 // ConnectionPreset — основной составной пресет (2026 extended)
@@ -181,6 +193,10 @@ type PresetOption struct {
 	Protocol string // "" = global/all
 	Jc       int    // AWG junk-packet count; 0 when the preset has no AWG section
 	Robust   bool   // true for *_awg_robust presets (Jc<=10, budget-VPS friendly)
+	// Version is the AmneziaWG protocol version this preset targets
+	// (model.AWGVersion*; "" = "2"). Drives the AWG · 3.0 optgroup so the
+	// operator can pick a header-protection preset vs a classic 2.0 one.
+	Version string
 }
 
 // Group returns a short optgroup label for the dropdown.
@@ -190,6 +206,8 @@ func (o PresetOption) Group() string {
 		return "XHTTP"
 	case o.Protocol == "vless-reality":
 		return "Reality"
+	case o.Version == "3" && o.Protocol == "awg":
+		return "AWG · 3.0 (header protection)"
 	case o.Robust:
 		return "AWG · Robust (бюджетные VPS)"
 	case o.Protocol == "awg":
@@ -210,6 +228,14 @@ func ListPresetsDetailed() []PresetOption {
 		opt := PresetOption{Name: name, Protocol: p.Protocol}
 		if p.AWG != nil {
 			opt.Jc = p.AWG.JC
+			// AWG presets default to v2 when Version is unset (the current
+			// kernel+CPS baseline); only v3 presets carry "3" explicitly so
+			// they land in the AWG · 3.0 optgroup.
+			if v := p.AWG.Version; v != "" {
+				opt.Version = v
+			} else {
+				opt.Version = model.AWGVersion2
+			}
 		}
 		opt.Robust = strings.HasSuffix(name, "_awg_robust")
 		out = append(out, opt)
@@ -225,11 +251,13 @@ type PresetGroup struct {
 }
 
 // GroupPresets buckets PresetOptions by Group() label, preserving a stable,
-// UI-friendly order: AWG Robust first (the recommended default for budget
-// VPS, AGENTS #17), then AWG Stealth, then Reality, then XHTTP, then global.
+// UI-friendly order: AWG 3.0 (header protection, max stealth) first, then AWG
+// Robust (the recommended default for budget VPS, AGENTS #17), then AWG Stealth
+// (2.0, Jc=120), then Reality, then XHTTP, then global.
 func GroupPresets(opts []PresetOption) []PresetGroup {
 	// Stable order of group labels.
 	order := []string{
+		"AWG · 3.0 (header protection)",
 		"AWG · Robust (бюджетные VPS)",
 		"AWG · Stealth (Jc=120, premium)",
 		"Reality",
@@ -342,6 +370,48 @@ func defaultPresetForProtocol(protocol string) string {
 	default:
 		return "" // fall back to global default
 	}
+}
+
+// defaultPresetForAWGVersion returns the built-in default AWG preset name for a
+// protocol version (model.AWGVersion*). v3 → the header-protection preset,
+// v1.5/v2 (and unknown) → the classic 2.0 stealth preset. Used by the preset
+// resolver when an inbound's selected preset is incompatible with its version
+// (e.g. a v3 inbound paired with a v2-only preset by an old store).
+func defaultPresetForAWGVersion(version string) string {
+	switch version {
+	case model.AWGVersion3:
+		return "maximum_stealth_2026_awg3"
+	default: // AWGVersion1x, AWGVersion2, ""
+		return "maximum_stealth_2026_awg"
+	}
+}
+
+// PresetSupportsAWGVersion reports whether the given preset's AWG section is
+// compatible with the requested AWG protocol version. Compatibility rules:
+//   - v3 requires a preset whose AWG.Version is "3" (S1-S4 >= 12, minimized
+//     H1-H4 — the header-protection contract). A v2 preset is NOT promoted to
+//     v3 silently because S1-S4 may be < 12 and the H-marker choice assumes no
+//     HPK layer.
+//   - v1.5 / v2 accept any preset whose AWG.Version is NOT "3" (a v3 preset's
+//     minimized H1-H4 / raised S1-S4 would still render on a 2.0 kernel, but
+//     the result is suboptimal — the resolver prefers a native v2 preset).
+//
+// An AWG preset with Version "" is treated as "2" (the legacy default).
+func PresetSupportsAWGVersion(p ConnectionPreset, version string) bool {
+	if p.AWG == nil {
+		return false
+	}
+	presetVer := p.AWG.Version
+	if presetVer == "" {
+		presetVer = model.AWGVersion2
+	}
+	if version == "" {
+		version = model.AWGVersion2
+	}
+	if version == model.AWGVersion3 {
+		return presetVer == model.AWGVersion3
+	}
+	return presetVer != model.AWGVersion3
 }
 
 // GetEffectivePreset возвращает пресет, который следует использовать для данной цепочки.

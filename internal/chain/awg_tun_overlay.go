@@ -285,7 +285,7 @@ func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo
 				// entry), not awg1 — they must not trigger the awg1 include.
 				continue
 			}
-			if ib.Protocol == "awg" && ib.AWG3Mode {
+			if ib.Protocol == "awg" && ib.EffectiveAWGVersion() == model.AWGVersion3 {
 				// AWG 3.0 mode = userspace `type:"awg"` endpoint, no kernel
 				// awg0/awg1 iface to include in the TUN overlay.
 				continue
@@ -378,8 +378,8 @@ func awgTUNOverlayNeeded(roles []chainRole, nodeInfo *model.NodeInfo) bool {
 	}
 	if nodeInfo != nil {
 		for _, ib := range nodeInfo.Inbounds {
-			if ib.Protocol == "awg" && !ib.AWG3Mode {
-				// Kernel AWG inbound — needs the overlay. AWG3Mode inbounds are
+			if ib.Protocol == "awg" && ib.EffectiveAWGVersion() != model.AWGVersion3 {
+				// Kernel AWG inbound — needs the overlay. AWG 3.0 inbounds are
 				// userspace endpoints (no kernel iface, no overlay).
 				return true
 			}

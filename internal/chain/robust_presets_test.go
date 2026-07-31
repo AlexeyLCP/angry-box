@@ -39,12 +39,13 @@ func TestRobustPresets_LoadAndLowJc(t *testing.T) {
 	}
 }
 
-// TestGroupPresets_RobustBucketFirst pins the dropdown grouping contract: the
-// robust AWG presets (Jc<=10, budget-VPS handshake-friendly) land in a distinct
-// "AWG · Robust" bucket that renders FIRST (so the operator sees the
-// recommended default before the handshake-killing Jc=120 stealth presets,
-// AGENTS #17). Jc is carried through so the dropdown can show it inline.
-func TestGroupPresets_RobustBucketFirst(t *testing.T) {
+// TestGroupPresets_Order pins the dropdown grouping contract: the AWG 3.0
+// (header protection, max stealth) bucket renders FIRST, then the Robust AWG
+// bucket (Jc<=10, budget-VPS handshake-friendly), then AWG 2.0 Stealth
+// (Jc=120). The operator sees the strongest presets first. Jc + Version are
+// carried through so the dropdown can show them inline. AGENTS #17 (robust) +
+// #5 revision (AWG 3.0).
+func TestGroupPresets_Order(t *testing.T) {
 	opts := ListPresetsDetailed()
 	if len(opts) == 0 {
 		t.Fatal("ListPresetsDetailed returned no presets")
@@ -53,12 +54,42 @@ func TestGroupPresets_RobustBucketFirst(t *testing.T) {
 	if len(groups) == 0 {
 		t.Fatal("GroupPresets returned no groups")
 	}
-	// First group must be the Robust bucket.
-	if groups[0].Label != "AWG · Robust (бюджетные VPS)" {
-		t.Fatalf("first group = %q, want AWG · Robust bucket first", groups[0].Label)
+	// First group must be the AWG 3.0 (header protection) bucket.
+	if groups[0].Label != "AWG · 3.0 (header protection)" {
+		t.Fatalf("first group = %q, want AWG · 3.0 (header protection) bucket first", groups[0].Label)
+	}
+	// Every option in the AWG 3.0 bucket is version 3 + S1-S4>=12-ready.
+	for _, o := range groups[0].Options {
+		if o.Version != "3" {
+			t.Errorf("%q in AWG 3.0 bucket but Version=%q", o.Name, o.Version)
+		}
+	}
+	// The known AWG 3.0 presets are present.
+	v3Names := map[string]bool{}
+	for _, o := range groups[0].Options {
+		v3Names[o.Name] = true
+	}
+	for _, want := range []string{
+		"maximum_stealth_2026_awg3", "russia_2026_awg3", "iran_2026_awg3", "china_2026_awg3",
+	} {
+		if !v3Names[want] {
+			t.Errorf("AWG 3.0 preset %q missing from 3.0 bucket", want)
+		}
+	}
+
+	// Find the Robust bucket (2nd).
+	var robust *PresetGroup
+	for i := range groups {
+		if groups[i].Label == "AWG · Robust (бюджетные VPS)" {
+			robust = &groups[i]
+			break
+		}
+	}
+	if robust == nil {
+		t.Fatal("AWG · Robust bucket missing")
 	}
 	// Every option in the robust bucket has Jc<=10 and Robust=true.
-	for _, o := range groups[0].Options {
+	for _, o := range robust.Options {
 		if !o.Robust {
 			t.Errorf("%q in robust bucket but Robust=false", o.Name)
 		}
@@ -68,7 +99,7 @@ func TestGroupPresets_RobustBucketFirst(t *testing.T) {
 	}
 	// The 5 known robust presets are all present.
 	robustNames := map[string]bool{}
-	for _, o := range groups[0].Options {
+	for _, o := range robust.Options {
 		robustNames[o.Name] = true
 	}
 	for _, want := range []string{
@@ -80,7 +111,7 @@ func TestGroupPresets_RobustBucketFirst(t *testing.T) {
 		}
 	}
 	// Stealth AWG presets (Jc=120) must NOT be in the robust bucket.
-	for _, o := range groups[0].Options {
+	for _, o := range robust.Options {
 		if o.Jc == 120 {
 			t.Errorf("stealth preset %q (Jc=120) leaked into robust bucket", o.Name)
 		}

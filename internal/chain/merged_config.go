@@ -717,13 +717,14 @@ func buildChainRoleInOut(role *chainRole, users []model.User, nodeInfo *model.No
 			// per-user peers live in the separately-pushed awg0.conf
 			// (RenderServerAWGConf), not in the sing-box config. So nothing is
 			// emitted here — UNLESS the materialized entry inbound has AWG 3.0
-			// mode on (AGENTS #5): AWG3 fields (header protection key / content
-			// padding / rekey-after-time) are userspace-only (the kernel
-			// amneziawg module does not parse them), so AWG3Mode forces the
-			// userspace `type:"awg"` endpoint path with the per-user peers
-			// inline (one peer per user, like buildAWGUserInboundMulti). The
-			// TUN overlay + awg0.conf are skipped for this inbound (see
-			// awgTUNOverlayNeeded / RenderNodeAWGConfs AWG3 branches).
+			// selected (AGENTS #5, revision): AWG3 fields (header protection key /
+			// content padding / rekey-after-time) are rendered via the userspace
+			// `type:"awg"` endpoint path with the per-user peers inline (one peer
+			// per user, like buildAWGUserInboundMulti) in slice 1. The TUN overlay
+			// + awg0.conf are skipped for this inbound (see awgTUNOverlayNeeded /
+			// RenderNodeAWGConfs AWG3 branches). Slice 2 will add a kernel-render
+			// path now that the amnezia-box kernel module gained native HPK
+			// (PR #192, 2026-07-30).
 			if awg3Entry := chainEntryAWG3Inbound(nodeInfo, c, role.Node); awg3Entry != nil {
 				// Port/subnet/preset come from the MATERIALIZED inbound, not the
 				// chain's own fields: the client .conf renders ib.Port and the
@@ -994,12 +995,13 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		// the node level by buildMergedNodeConfig (see awgTUNOverlayNeeded).
 		// The per-user peers live in the separately-pushed awg0.conf
 		// (RenderServerAWGConf), not in the sing-box config. Nothing is emitted
-		// here — UNLESS this inbound has AWG 3.0 mode on (AGENTS #5): AWG3
-		// fields are userspace-only (the kernel amneziawg module does not parse
-		// them), so AWG3Mode forces the userspace `type:"awg"` endpoint path
-		// with the per-user peers inline. The TUN overlay + awg0.conf are
-		// skipped for this inbound (awgTUNOverlayNeeded / RenderNodeAWGConfs).
-		if ib.AWG3Mode {
+		// here — UNLESS this inbound has AWG 3.0 selected (AGENTS #5, revision):
+		// AWG3 fields are rendered via the userspace `type:"awg"` endpoint path
+		// with the per-user peers inline (slice 1). The TUN overlay + awg0.conf
+		// are skipped for this inbound (awgTUNOverlayNeeded /
+		// RenderNodeAWGConfs). Slice 2 adds a kernel-render path now that the
+		// amnezia-box kernel module has native HPK (PR #192, 2026-07-30).
+		if ib.EffectiveAWGVersion() == model.AWGVersion3 {
 			users := usersByInbound[tag]
 			// The endpoint's own tunnel address must sit in the inbound's subnet
 			// (AWGServerAddress), not the hardcoded 10.8.0.1/32 — otherwise the

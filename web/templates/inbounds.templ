@@ -231,25 +231,31 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 						<span class="text-xs"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { prof.AWGCPSCaptureFailedDomain } { i18n.T(ctx, "(synthesized packets in use)") }</span>
 					</div>
 				}
-				// AWG 3.0 header-protection mode (AGENTS #5): opt-in per-inbound
-				// toggle. When ON the user-entry renders as a userspace
-				// `type:"awg"` sing-box endpoint (NOT kernel awg-quick), carrying
-				// HeaderProtectionKey + ContentPaddingAddition + RekeyAfterTime
-				// (verified live on n1, §36). HPK requires S1-S4 >= 12 — raised
-				// automatically at render. The toggle forces the userspace path,
-				// so the client MUST be AWG3-capable (AmneziaWG Android/iOS/Windows
-				// app, or userspace amneziawg-go) — NOT Linux awg-quick. Multi-hop
-				// chains do not support AWG3 transit (user-facing entry only).
+				// AWG protocol version (AGENTS #5, revision). The canonical picker
+				// for AWG 1.5 / 2.0 / 3.0 — see model.AWGVersion* + EffectiveAWGVersion.
+				// 3.0 = header protection (HPK/CPM/RAT): the user-entry renders as a
+				// userspace `type:"awg"` sing-box endpoint (slice 1; kernel-render is
+				// slice 2 now that the amnezia-box kernel module has native HPK,
+				// PR #192 2026-07-30). HPK requires S1-S4 >= 12 (raised automatically
+				// at render); the client MUST be AWG3-capable (AmneziaWG app or
+				// userspace amneziawg-go), NOT Linux awg-quick. 2.0 = the current
+				// kernel+CPS default (awg-quick + TUN-overlay + CPS via PostUp).
+				// 1.5 = legacy AmneziaWG 1.x (Jc/S1-S2/fixed H1-H4, no CPS).
 				<div class="form-control border-t border-base-300 pt-3">
-					<label class="label cursor-pointer justify-start gap-3">
-						<input type="checkbox" name="awg3_mode" value="1" class="checkbox checkbox-sm"
-							checked?={ prof != nil && prof.AWG3Mode } />
-						<span class="label-text">
-							{ i18n.T(ctx, "AWG 3.0 mode (header protection)") }
-						</span>
-					</label>
+					<label class="label"><span class="label-text">{ i18n.T(ctx, "AWG version") }</span></label>
+					<select name="awg_version" class="select select-bordered select-sm">
+						<option value="2" selected?={ prof == nil || (prof.AWGVersion == "2" || (!prof.AWG3Mode && prof.AWGVersion == "")) }>
+							{ i18n.T(ctx, "AWG 2.0 (kernel + CPS, default)") }
+						</option>
+						<option value="3" selected?={ prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") }>
+							{ i18n.T(ctx, "AWG 3.0 (header protection)") }
+						</option>
+						<option value="1.5" selected?={ prof != nil && prof.AWGVersion == "1.5" }>
+							{ i18n.T(ctx, "AWG 1.5 (legacy, no CPS)") }
+						</option>
+					</select>
 					<p class="text-xs text-base-content/60 mt-1">
-						{ i18n.T(ctx, "AWG3Mode hint") }
+						{ i18n.T(ctx, "AWG version hint") }
 					</p>
 				</div>
 			</div>

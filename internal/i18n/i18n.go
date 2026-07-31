@@ -798,6 +798,12 @@ var locales = map[string]map[string]string{
 		"(synthesized packets in use)": "(synthesized packets in use)",
 		"AWG 3.0 mode (header protection)": "AWG 3.0 mode (header protection)",
 		"AWG3Mode hint": "Enables AWG 3.0 header protection (HPK) + content padding + rekey-after-time on this inbound. Renders as a userspace sing-box endpoint (NOT kernel awg-quick). Requires an AWG3-capable client — AmneziaWG Android/iOS/Windows app or userspace amneziawg-go (NOT Linux awg-quick). S1-S4 are raised to >= 12 automatically. User-facing entry only — not supported for inter-node chain transit.",
+		"AWG version": "AWG version",
+		"AWG version hint": "Pick the AmneziaWG protocol version. 2.0 (default) = kernel awg-quick + sing-box TUN-overlay + CPS signature packets (I1-I5) — the current stable path. 3.0 = adds header protection (HPK): fast encryption of low-entropy header fields on top of the 2.0 baseline; renders userspace (sing-box endpoint) in this build, kernel-render coming once the new kernel module with native HPK is staged (PR #192, 2026-07-30). 1.5 = legacy AmneziaWG 1.x (Jc/S1-S2/fixed H1-H4, no CPS) — maximally compatible, weakest anti-DPI.",
+		"AWG 2.0 (kernel + CPS, default)": "AWG 2.0 (kernel + CPS, default)",
+		"AWG 3.0 (header protection)": "AWG 3.0 (header protection)",
+		"AWG 1.5 (legacy, no CPS)": "AWG 1.5 (legacy, no CPS)",
+		"Invalid AWG version": "Invalid AWG version",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1622,6 +1628,12 @@ var locales = map[string]map[string]string{
 		"(synthesized packets in use)": "(используются синтезированные пакеты)",
 		"AWG 3.0 mode (header protection)": "Режим AWG 3.0 (защита заголовков)",
 		"AWG3Mode hint": "Включает AWG 3.0 защиту заголовков (HPK) + content padding + rekey-after-time для этого инбаунда. Рендерится как userspace sing-box endpoint (НЕ kernel awg-quick). Требует AWG3-совместимый клиент — приложение AmneziaWG Android/iOS/Windows или userspace amneziawg-go (НЕ Linux awg-quick). S1-S4 автоматически поднимаются до >= 12. Только пользовательский вход — не поддерживается для межузлового транспорта в цепочке.",
+		"AWG version": "Версия AWG",
+		"AWG version hint": "Выбор версии протокола AmneziaWG. 2.0 (по умолчанию) = kernel awg-quick + sing-box TUN-overlay + CPS сигнатурные пакеты (I1-I5) — текущий стабильный путь. 3.0 = добавляет защиту заголовков (HPK): быстрое шифрование low-entropy полей заголовка поверх базиса 2.0; в этой сборке рендерится userspace (sing-box endpoint), kernel-рендер добавится когда новый kernel module с нативным HPK будет staged (PR #192, 2026-07-30). 1.5 = legacy AmneziaWG 1.x (Jc/S1-S2/фикс. H1-H4, без CPS) — максимальная совместимость, слабейший anti-DPI.",
+		"AWG 2.0 (kernel + CPS, default)": "AWG 2.0 (kernel + CPS, по умолчанию)",
+		"AWG 3.0 (header protection)": "AWG 3.0 (защита заголовков)",
+		"AWG 1.5 (legacy, no CPS)": "AWG 1.5 (legacy, без CPS)",
+		"Invalid AWG version": "Неверная версия AWG",
 	},
 }
 

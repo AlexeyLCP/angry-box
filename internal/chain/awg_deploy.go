@@ -100,10 +100,12 @@ func RenderNodeAWGConfs(
 		if ib.Protocol != "awg" {
 			continue
 		}
-		if ib.AWG3Mode {
+		if ib.EffectiveAWGVersion() == model.AWGVersion3 {
 			// AWG 3.0 mode = userspace `type:"awg"` endpoint rendered in the
 			// merged config (buildStandaloneInOut), NOT a kernel awg0/awg1
-			// .conf. Skip the kernel render here.
+			// .conf. Skip the kernel render here. (Slice 1: AWG3 stays
+			// userspace; the kernel-render path is slice 2 once the new kernel
+			// module with native HPK is on the VPS.)
 			continue
 		}
 		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {
@@ -212,7 +214,7 @@ func AWGTeardownInterfaces(
 	}
 	for i := range nodeInfo.Inbounds {
 		ib := &nodeInfo.Inbounds[i]
-		if ib.Protocol != "awg" || !ib.AWG3Mode {
+		if ib.Protocol != "awg" || ib.EffectiveAWGVersion() != model.AWGVersion3 {
 			continue
 		}
 		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {

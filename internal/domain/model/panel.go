@@ -488,8 +488,16 @@ type NodeInbound struct {
 	AWGH3         string `json:"awg_h3,omitempty"`
 	AWGH4         string `json:"awg_h4,omitempty"`
 
-	// AWG 3.0 obfuscation mode (opt-in per-inbound toggle, AGENTS #5). When
-	// set, this materialized inbound renders as a userspace sing-box
+	// AWG protocol version selector (AGENTS.md #5/#10 revision). Mirrors
+	// InboundProfile.AWGVersion — see awg_version.go for the taxonomy +
+	// EffectiveAWGVersion reconciliation. Empty = "2" (default kernel+CPS).
+	AWGVersion string `json:"awg_version,omitempty"`
+
+	// AWG 3.0 obfuscation mode (legacy toggle, AGENTS #5). Kept as a
+	// backward-compat alias for AWGVersion=="3": pre-version-field stores
+	// (v0.8.10) set AWG3Mode=true and resolve to "3" via EffectiveAWGVersion.
+	// New code should write AWGVersion instead. When effective version is 3
+	// this materialized inbound renders as a userspace sing-box
 	// `type:"awg"` endpoint carrying the AWG3 fields (header protection /
 	// content padding / rekey-after-time) — the kernel awg-quick path is
 	// skipped for this inbound. Mirrors InboundProfile.AWG3* (the profile is
