@@ -183,6 +183,10 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 	}
 
 	// Pre-flight SSH check: verify connectivity to all nodes before touching any config.
+	// Also probe each node's AWG 3.0 kernel capability (detectKernelAWG3) so the
+	// render path can pick kernel-awg-quick vs userspace-endpoint per node — the
+	// probe rides the same SSH connection the connectivity check already opens.
+	kernelAWG3ByNode := make(map[string]bool, len(chain.Nodes))
 	for _, node := range chain.Nodes {
 		resolved := resolveHostKey(store, &model.Host{ID: node.ID, Addr: node.Addr, User: node.User, KeyPath: node.KeyPath})
 		if resolved.KeyPath == "" {
@@ -192,6 +196,10 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		if err != nil {
 			return nil, fmt.Errorf("pre-flight check failed: cannot connect to node %q (%s): %w", node.ID, node.Addr, err)
 		}
+		// Detect AWG 3.0 kernel support (best-effort, never fails the deploy —
+		// false = userspace fallback). Done here so the render loop below can
+		// stamp nodeInfo.KernelAWG3Supported before buildMergedNodeConfig.
+		kernelAWG3ByNode[node.ID] = detectKernelAWG3(ctx, client)
 		client.Close()
 	}
 
@@ -381,6 +389,12 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		if !replaced {
 			nodeChains = append(nodeChains, chain)
 		}
+
+		// Stamp the pre-flight AWG 3.0 kernel-capability probe onto this
+		// per-deploy nodeInfo copy (runtime-only field, json:"-") so the render
+		// branches below pick kernel-awg-quick vs userspace-endpoint. False (or
+		// a node not in the map — e.g. a brand-new node) → userspace fallback.
+		nodeInfo.KernelAWG3Supported = kernelAWG3ByNode[node.ID]
 
 		// buildMergedNodeConfig derives the per-chain/standalone user maps and
 		// the node's MTProxy users from the store via NewMergedNodeConfigParams.
@@ -1309,15 +1323,15 @@ func buildAWGUserInbound(port int, uuid string, tag string, preset *ConnectionPr
 // and converts to hex for the amneziawg-go UAPI, so encode hex → base64 here.
 // ContentPaddingAddition / RekeyAfterTime are "lo-hi" strings carried verbatim.
 func applyAWG3ToEndpoint(ep *config.AwgEndpointOptions, material *AWGObfsMaterial) {
-	keyBytes, err := hex.DecodeString(material.HeaderProtectionKey)
-	if err != nil || len(keyBytes) != 32 {
+	hpkB64, ok := awg3HPKHexToBase64(material.HeaderProtectionKey)
+	if !ok {
 		// Should never happen — GenerateAWG3Material produces valid hex. Surface
 		// loudly rather than emit a malformed key (a bad HPK breaks every client
 		// handshake with header protection on).
-		log.Printf("awg3: invalid header protection key (len=%d err=%v) — skipping AWG3 fields", len(keyBytes), err)
+		log.Printf("awg3: invalid header protection key — skipping AWG3 fields")
 		return
 	}
-	ep.HeaderProtectionKey = base64.StdEncoding.EncodeToString(keyBytes)
+	ep.HeaderProtectionKey = hpkB64
 	ep.ContentPaddingAddition = material.ContentPaddingAddition
 	ep.RekeyAfterTime = material.RekeyAfterTime
 	// Header protection needs S1-S4 >= 12 (the 12-byte ChaCha20 nonce). The
@@ -1759,8 +1773,29 @@ func (a *Applier) applyMergedNodeLocked(
 		log.Printf("apply: persist ensured inbound material for %s: %v", info.ID, err)
 	}
 
+	// Open the single deploy SSH connection FIRST, then probe the AWG 3.0 kernel
+	// capability on it BEFORE the merged-config render. Keeping detection on the
+	// shared connection preserves the connection-collapse invariant (one Connect
+	// per merged deploy, CTO-review §8 — the previous separate probe doubled it).
+	// info is the per-deploy NodeInfo copy, so the runtime-only flag never
+	// reaches the JSON store.
+	resolved := resolveHostKey(store, &info.Host)
+	if resolved.KeyPath == "" {
+		log.Printf("ssh: no key configured for node %s and no default key set", info.ID)
+	}
+	client, err := a.connector.Connect(resolved.Addr, resolved.User, resolved.KeyPath)
+	if err != nil {
+		// No connection yet → no capability probe; render with the userspace
+		// fallback (KernelAWG3Supported stays false). Still surface the connect
+		// error so the operator sees the node is unreachable.
+		return nil, nil, fmt.Errorf("ssh connect: %w", err)
+	}
+	defer client.Close()
+	info.KernelAWG3Supported = detectKernelAWG3(ctx, client)
+
 	// buildMergedNodeConfig derives the per-chain/standalone user maps and the
-	// node's MTProxy users from the store via NewMergedNodeConfigParams.
+	// node's MTProxy users from the store via NewMergedNodeConfigParams. Rendered
+	// AFTER the capability probe so the kernel-AWG3 gate (nodeInfo flag) is set.
 	cfg, mergeReport, err := buildMergedNodeConfig(NewMergedNodeConfigParams(store, info, chains))
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("build merged config: %w", err)
@@ -1770,16 +1805,6 @@ func (a *Applier) applyMergedNodeLocked(
 	if err != nil {
 		return nil, mergeReport, fmt.Errorf("marshal merged config: %w", err)
 	}
-
-	resolved := resolveHostKey(store, &info.Host)
-	if resolved.KeyPath == "" {
-		log.Printf("ssh: no key configured for node %s and no default key set", info.ID)
-	}
-	client, err := a.connector.Connect(resolved.Addr, resolved.User, resolved.KeyPath)
-	if err != nil {
-		return nil, mergeReport, fmt.Errorf("ssh connect: %w", err)
-	}
-	defer client.Close()
 
 	backend := a.factory.Create()
 	// Reuse the already-open client for Deploy + InstallAWG when the backend

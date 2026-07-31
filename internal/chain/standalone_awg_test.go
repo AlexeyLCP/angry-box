@@ -29,7 +29,7 @@ func TestBuildStandaloneInOut_AWG_EmitsNoUserspaceEndpoint(t *testing.T) {
 		{ID: "u2", Name: "bob", Active: true, AWGPublicKey: "pub-bob", AWGAddress: "10.8.0.3/32"},
 	}
 	byInbound := map[string][]model.User{"sa-awg-test": users}
-	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-test", byInbound)
+	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-test", byInbound, nil)
 	if len(endpoints) != 0 {
 		t.Fatalf("kernel-AWG must emit NO userspace endpoint, got %d: %s", len(endpoints), endpoints)
 	}
@@ -43,7 +43,7 @@ func TestBuildStandaloneInOut_AWG_EmitsNoUserspaceEndpoint(t *testing.T) {
 // sing-box config).
 func TestBuildStandaloneInOut_AWG_NoUsers_EmitsNothing(t *testing.T) {
 	ib := &model.NodeInbound{Protocol: "awg", Port: 51820, Tag: "sa-awg-empty", ServerPrivKey: awgServerPriv}
-	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-empty", nil)
+	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-empty", nil, nil)
 	if len(endpoints) != 0 || len(inbounds) != 0 {
 		t.Fatalf("kernel-AWG with no users must emit nothing, got inbounds=%d endpoints=%d", len(inbounds), len(endpoints))
 	}
@@ -58,7 +58,7 @@ func TestBuildStandaloneInOut_AWG_UsersWithoutCreds_EmitsNothing(t *testing.T) {
 		{ID: "u2", Name: "bob", Active: true, AWGPublicKey: "pub-bob"}, // no AWGAddress
 	}
 	byInbound := map[string][]model.User{"sa-awg-nocreds": users}
-	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-nocreds", byInbound)
+	inbounds, endpoints := buildStandaloneInOut(ib, "sa-awg-nocreds", byInbound, nil)
 	if len(endpoints) != 0 || len(inbounds) != 0 {
 		t.Fatalf("kernel-AWG must emit nothing regardless of user creds, got inbounds=%d endpoints=%d", len(inbounds), len(endpoints))
 	}
@@ -82,7 +82,7 @@ func TestBuildStandaloneInOut_AWG_NoUserspaceWGRegression(t *testing.T) {
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
 			byInbound := map[string][]model.User{sc.ib.Tag: sc.users}
-			inbounds, endpoints := buildStandaloneInOut(sc.ib, sc.ib.Tag, byInbound)
+			inbounds, endpoints := buildStandaloneInOut(sc.ib, sc.ib.Tag, byInbound, nil)
 			for _, raw := range append(append([]json.RawMessage{}, inbounds...), endpoints...) {
 				var m map[string]any
 				if json.Unmarshal(raw, &m) == nil && m["type"] == "wireguard" {

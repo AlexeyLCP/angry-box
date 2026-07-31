@@ -49,17 +49,21 @@ func RenderNodeAWGConfs(
 	var warnings []string
 
 	// 1. Chain AWG user-entry → kernel awg0.conf with one [Peer] per user.
-	//    AWG 3.0 mode (AGENTS #5) is userspace-only — the entry renders as a
-	//    `type:"awg"` sing-box endpoint in the merged config, NOT a kernel
-	//    awg0.conf, so skip the kernel render for it.
+	//    AWG 3.0 entry: renders as a userspace `type:"awg"` sing-box endpoint
+	//    (no awg0.conf) UNLESS the node's kernel supports AWG 3.0
+	//    (KernelAWG3Supported, AGENTS #5 revision) — then it renders as a kernel
+	//    awg0.conf carrying HPK/CPM/RAT (the same path as AWG 1.5/2.0, stable).
 	chainEntryPresent := false
+	kernelAWG3 := kernelAWG3EnabledFor(nodeInfo)
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
-			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil {
-				// AWG3-mode entry → userspace endpoint, no awg0.conf.
+			entry3 := chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil
+			if entry3 && !kernelAWG3 {
+				// AWG3 entry on a node without kernel-AWG3 → userspace endpoint.
 				chainEntryPresent = false
 				break
 			}
+			// Non-AWG3 entry, OR AWG3 entry on a kernel-AWG3 node → kernel awg0.conf.
 			users := usersForChain(usersByChain, r.Chain.Name)
 			files = append(files, renderChainEntryAWGConf(nodeInfo, r, users))
 			chainEntryPresent = true
@@ -100,12 +104,11 @@ func RenderNodeAWGConfs(
 		if ib.Protocol != "awg" {
 			continue
 		}
-		if ib.EffectiveAWGVersion() == model.AWGVersion3 {
-			// AWG 3.0 mode = userspace `type:"awg"` endpoint rendered in the
-			// merged config (buildStandaloneInOut), NOT a kernel awg0/awg1
-			// .conf. Skip the kernel render here. (Slice 1: AWG3 stays
-			// userspace; the kernel-render path is slice 2 once the new kernel
-			// module with native HPK is on the VPS.)
+		if ib.EffectiveAWGVersion() == model.AWGVersion3 && !kernelAWG3 {
+			// AWG 3.0 userspace fallback = `type:"awg"` endpoint rendered in the
+			// merged config (buildStandaloneInOut), NOT a kernel awg0/awg1 .conf.
+			// On a kernel-AWG3 node (KernelAWG3Supported) the v3 inbound falls
+			// through to the kernel-render branches below (awg0/awg1 with HPK).
 			continue
 		}
 		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {
@@ -191,12 +194,16 @@ func AWGTeardownInterfaces(
 	}
 
 	// 1. AWG3 chain entry — would have owned awg0 (renderChainEntryAWGConf).
+	//    On a kernel-AWG3 node (KernelAWG3Supported) the v3 entry RENDERS a
+	//    kernel awg0 (with HPK), so awg0 is in keep and must NOT be torn down —
+	//    the teardown logic below only applies to the userspace fallback.
 	roles := resolveChainRoles(nodeInfo.ID, nodeChains)
 	hasAWGChainEntry := false
+	kernelAWG3 := kernelAWG3EnabledFor(nodeInfo)
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
 			hasAWGChainEntry = true
-			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil {
+			if !kernelAWG3 && chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil {
 				add("awg0")
 			}
 			break // one chain entry per node
@@ -204,7 +211,9 @@ func AWGTeardownInterfaces(
 	}
 
 	// 2. AWG3 standalone inbound — would have owned awg0, or awg1 when a chain
-	//    entry claimed awg0 (mirrors the RenderNodeAWGConfs branch logic).
+	//    entry claimed awg0 (mirrors the RenderNodeAWGConfs branch logic). Same
+	//    kernel-AWG3 gate: on a kernel-AWG3 node the v3 standalone renders a
+	//    kernel awg0/awg1 (in keep), so it is not torn down.
 	chainEntryClaimsAWG0 := false
 	for _, f := range renderedFiles {
 		if awgIfaceFromService(f.ServiceName) == "awg0" {
@@ -215,6 +224,10 @@ func AWGTeardownInterfaces(
 	for i := range nodeInfo.Inbounds {
 		ib := &nodeInfo.Inbounds[i]
 		if ib.Protocol != "awg" || ib.EffectiveAWGVersion() != model.AWGVersion3 {
+			continue
+		}
+		if kernelAWG3 {
+			// v3 inbound renders a kernel awg0/awg1 on this node — it's in keep.
 			continue
 		}
 		if IsChainSourcedInbound(ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, ib) {
@@ -422,11 +435,30 @@ func renderAWGServerConfFromInbound(ib *model.NodeInbound, preset ConnectionPres
 			TunnelAddress:    tunnelAddr,
 			MTU:              1420,
 			Amnezia:          amnezia,
-			Peers:            peers,
-			TUNInterface:     tunInterfaceName, // sing-box-tun: PostUp/PostDown FORWARD rules
-			InterfaceName:    ifaceName,        // awg0 / awg1 — PostUp references this
+			// AWG 3.0 header protection (kernel-AWG3 path, AGENTS #5 revision):
+			// pass the persisted HPK/CPM/RAT material so RenderServerAWGConf
+			// emits HeaderProtectionKey/ContentPaddingAddition/RekeyAfterTime into
+			// [Interface]. Only set for a v3 inbound (the render gate in
+			// RenderNodeAWGConfs already ensured this conf is only emitted on a
+			// kernel-AWG3 node). The HPK is hex-persisted; writeAWG3ConfLines
+			// hex→base64 converts it for the awg-quick .conf form.
+			AWG3:          inboundAWG3MaterialForKernel(ib),
+			Peers:         peers,
+			TUNInterface:  tunInterfaceName, // sing-box-tun: PostUp/PostDown FORWARD rules
+			InterfaceName: ifaceName,        // awg0 / awg1 — PostUp references this
 		}),
 	}
+}
+
+// inboundAWG3MaterialForKernel returns the AWG 3.0 material to feed into the
+// kernel-render AWGServerConfParams.AWG3 for a v3 inbound, or nil when the
+// inbound is not AWG 3.0 (so non-v3 inbounds render a plain kernel conf). The
+// returned *AWGObfsMaterial carries the hex-persisted HPK + CPM/RAT ranges.
+func inboundAWG3MaterialForKernel(ib *model.NodeInbound) *AWGObfsMaterial {
+	if ib == nil || ib.EffectiveAWGVersion() != model.AWGVersion3 {
+		return nil
+	}
+	return InboundAWGObfsMaterial(ib)
 }
 
 // renderStandaloneAWG0Conf is kept for backward-compat with any caller that

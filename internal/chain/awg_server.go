@@ -56,6 +56,23 @@ type AWGServerConfParams struct {
 	// therefore never written to a server conf; clients get them via
 	// RenderClientAWGConf (apps) or PostUp `awg set` (awg-quick on Linux).
 	Amnezia *config.AmneziaOptions
+	// AWG3 is the AWG 3.0 header-protection material (AGENTS #5 revision). When
+	// non-nil AND HeaderProtectionKey is set, the kernel-render path emits
+	// HeaderProtectionKey / ContentPaddingAddition / RekeyAfterTime into the
+	// [Interface] section — the new amnezia-box kernel module (PR #192,
+	// 2026-07-30) + amneziawg-tools v3.0 parse them natively (live-verified on
+	// n1: awg-quick up applies HPK/CPM/RAT end-to-end). This makes a v3 inbound
+	// render via the kernel awg0.conf path (kernel-AWG3) instead of the userspace
+	// sing-box `type:"awg"` endpoint. HeaderProtectionKey is persisted as hex
+	// (matches the userspace/§38 path); the kernel awg-quick .conf expects the
+	// SAME base64 form as a WireGuard key, so writeAWG3ConfLines hex→base64
+	// converts it. S1-S4 MUST be >= 12 when HPK is set (HeaderCipherNonceSize=12)
+	// — enforced by applyAWG3ToEndpoint for the userspace path and by the kernel
+	// module itself (-EINVAL); the awg3 presets ship S1-S4=24. H1-H4 must be
+	// UNIQUE among each other (kernel validation: -EINVAL on duplicates) — the
+	// awg3 presets use 12/13/14/15. CPS (I1-I5) is orthogonal to HPK and still
+	// applies on top.
+	AWG3 *AWGObfsMaterial
 	// Peers are the per-user [Peer] entries (one per connected user).
 	Peers []AWGServerPeer
 	// TUNInterface is the sing-box TUN overlay interface name to forward
@@ -109,6 +126,21 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	// (see Amnezia field doc).
 	if p.Amnezia != nil {
 		writeAmneziaConfLines(&b, p.Amnezia, false)
+	}
+
+	// AWG 3.0 header protection (AGENTS #5 revision). On the kernel-AWG3 path
+	// the new amnezia-box kernel module (PR #192, 2026-07-30) parses
+	// HeaderProtectionKey / ContentPaddingAddition / RekeyAfterTime in
+	// [Interface] natively, so a v3 inbound renders via awg-quick instead of a
+	// userspace sing-box endpoint. Emitted after the classic amnezia block
+	// (Jc/S/H), still inside [Interface] and before [Peer] — awg setconf parses
+	// device-level fields only there. HPK is hex-persisted (matches the
+	// userspace path); awg-quick expects the base64 WireGuard-key form, so
+	// writeAWG3ConfLines hex→base64 converts it. Live-verified on n1: awg-quick
+	// up applies HPK/CPM/RAT end-to-end (awg show confirms header protection
+	// key + content padding addition + rekey after time).
+	if p.AWG3 != nil && p.AWG3.HeaderProtectionKey != "" {
+		writeAWG3ConfLines(&b, p.AWG3)
 	}
 
 	// PostUp/PostDown: when a TUN overlay interface is specified, add iptables
@@ -186,6 +218,41 @@ func writeAmneziaConfLines(b *strings.Builder, a *config.AmneziaOptions, include
 		b.WriteString(fmt.Sprintf("I3 = %s\n", a.I3))
 		b.WriteString(fmt.Sprintf("I4 = %s\n", a.I4))
 		b.WriteString(fmt.Sprintf("I5 = %s\n", a.I5))
+	}
+}
+
+// writeAWG3ConfLines writes the AWG 3.0 header-protection fields into the
+// [Interface] section of a kernel awg-quick .conf (AGENTS #5 revision). The new
+// amnezia-box kernel module (PR #192, 2026-07-30) + amneziawg-tools v3.0 parse
+// these natively (config.c keyword `HeaderProtectionKey` reads a WG-key base64
+// value, live-verified on n1 with awg-quick up → awg show confirms all three).
+//
+// Contract (verified against kernel-module netlink.c + tools config.c):
+//   - HeaderProtectionKey = <base64>  (the hex-persisted HPK, hex→base64 via
+//     awg3HPKHexToBase64; same base64 form as a WireGuard private key)
+//   - ContentPaddingAddition = <lo-hi>  (uint32 range, bytes added per packet)
+//   - RekeyAfterTime = <lo-hi>          (uint32 range, seconds)
+//
+// Emitted only when material.HeaderProtectionKey is set — CPM/RAT are optional
+// ("client-side" per the upstream README, but harmless + useful on the server
+// responder too, and the awg3 presets always carry them). S1-S4 >= 12 and
+// H1-H4 uniqueness are the caller's responsibility (the awg3 presets ship
+// S1-S4=24 and H=12/13/14/15; the kernel module rejects -EINVAL otherwise).
+func writeAWG3ConfLines(b *strings.Builder, m *AWGObfsMaterial) {
+	hpkB64, ok := awg3HPKHexToBase64(m.HeaderProtectionKey)
+	if !ok {
+		// Invalid HPK — emit nothing rather than a malformed key. The caller
+		// gates on HeaderProtectionKey != "" but not on its validity; a bad key
+		// would make awg-quick reject the whole conf (-EINVAL) and roll the
+		// interface back. Should never happen (GenerateAWG3Material is valid).
+		return
+	}
+	b.WriteString(fmt.Sprintf("HeaderProtectionKey = %s\n", hpkB64))
+	if m.ContentPaddingAddition != "" {
+		b.WriteString(fmt.Sprintf("ContentPaddingAddition = %s\n", m.ContentPaddingAddition))
+	}
+	if m.RekeyAfterTime != "" {
+		b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", m.RekeyAfterTime))
 	}
 }
 

@@ -4,6 +4,22 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.22] — 2026-07-31
+
+### Feature — kernel-AWG3 render path (AWG 3.0 via kernel awg-quick + TUN-overlay, live-verified on n1)
+
+The amnezia-box **kernel module gained native AWG 3.0 (header protection) support on 2026-07-30** — PR [#192](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/pull/192) merged to `master` of `amneziawg-linux-kernel-module` (kernel `wg_device` struct now carries `header_protection` / `content_padding_addition` / `rekey_after_time/timeout` as `u16_range_t`; Sx≥12 validation landed 2026-07-31 in `7304fbf`/`ff0aa32`). This breaks the v0.8.10 absolute constraint "kernel rejects HPK → AWG3 is userspace-only": a v3 inbound can now render via the **kernel awg-quick + sing-box-TUN-overlay path** (the stable architecture AWG 1.5/2.0 use), with the userspace sing-box `type:"awg"` endpoint kept as a fallback for older nodes.
+
+**Capability detection** (`internal/chain/awg3_capability.go`): `detectKernelAWG3` probes the node over SSH at deploy time for BOTH the kernel module version (modinfo ≥ 3.0) AND the amnezia-box-tools version (≥ v3.0.20260730 — the `HeaderProtectionKey` keyword support). Both are required: the kernel accepts the netlink attr, but awg-quick needs the userspace tool to parse the `.conf` keyword. The result is stamped on a runtime-only `NodeInfo.KernelAWG3Supported` field (`json:"-"`) — never persisted. ApplyChain probes in the pre-flight loop; ApplyMergedNode probes on the (single) deploy connection (preserving the 1-connection-per-deploy invariant).
+
+**Kernel-AWG3 render path** (when `KernelAWG3Supported`): the v3 inbound renders via kernel awg-quick — `RenderServerAWGConf` emits `HeaderProtectionKey` / `ContentPaddingAddition` / `RekeyAfterTime` into `[Interface]` (`writeAWG3ConfLines`, hex-persisted HPK → base64 via the shared `awg3HPKHexToBase64`), the TUN overlay is enabled (`awgTUNOverlayNeeded`), and the leftover-unit teardown is skipped. When the flag is false, the v3 inbound falls back to the userspace sing-box endpoint (the v0.8.10 path) — stable, just without the kernel-overlay. The render branches gate on `kernelAWG3EnabledFor(nodeInfo)`.
+
+**Kernel-AWG3 awg0.conf contract (live-verified on n1, `TestE2EAWG3_KernelConf` PASS):** HPK/CPM/RAT in `[Interface]` are accepted by `awg-quick up` end-to-end; `awg show` confirms `header protection key` / `content padding addition` / `rekey after time` applied. **Live-found kernel validations (preset-affecting):** (a) S1-S4 ALL must be ≥ 12 when HPK is set (`-EINVAL` otherwise — HeaderCipherNonceSize); (b) **H1-H4 must be UNIQUE among each other** (`-EINVAL` on duplicates — so the awg3 presets use `12/13/14/15`, not `12/12/12/12`); (c) the `.conf` HPK value is base64 (WireGuard-key form), not hex.
+
+**deps:** `deps/amneziawg-src.tar.gz` repacked from `amneziawg-linux-kernel-module@master` (c78a89e, post-PR#192 + Sx≥12 fixes + netlink <6.7 compat). On n1 staged as DKMS `amneziawg/3.0.20260730` (module version `3.0.20260731-04`) + amnezia-box-tools v3.0.20260730.
+
+**Files:** `internal/chain/awg3_capability.go` (new), `internal/chain/awg3_kernel_render_test.go` (new), `internal/chain/awg3_kernel_e2e_test.go` (new, tag `e2eawg3`), `internal/chain/awg_server.go`, `internal/chain/awg_cps.go`, `internal/chain/applier_build.go`, `internal/chain/awg_deploy.go`, `internal/chain/awg_tun_overlay.go`, `internal/chain/merged_config.go`, `internal/chain/default_presets.json` (H1-H4 unique), `internal/domain/model/panel.go` (`NodeInfo.KernelAWG3Supported`), `internal/version/version.go` (v0.8.22), `AGENTS.md` (#5/#10 revision), `docs/PROGRESS.md` (§43 slice 2 shipped), `deps/amneziawg-src.tar.gz.new`. `go build ./...` + `go vet ./...` + `go test ./internal/chain/... ./internal/domain/... ./internal/web/` green; `TestE2EAWG3_KernelConf` PASS on n1.
+
 ## [v0.8.21] — 2026-07-31
 
 ### Feature — AWG protocol version selector (1.5 / 2.0 / 3.0) + AWG 3.0 obfuscation presets + kernel-AWG3 horizon

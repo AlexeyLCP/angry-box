@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strings"
@@ -138,6 +139,27 @@ func GenerateAWG3Material() AWGObfsMaterial {
 		ContentPaddingAddition: fmt.Sprintf("%d-%d", randInt(1, 16), randInt(17, 64)),
 		RekeyAfterTime:         fmt.Sprintf("%d-%d", randInt(90, 110), randInt(130, 180)),
 	}
+}
+
+// awg3HPKHexToBase64 converts the hex-persisted AWG 3.0 header protection key
+// (32 random bytes written as 64 hex chars by GenerateAWG3Material) to the
+// base64 WireGuard-key form both consumers expect:
+//   - the userspace sing-box `type:"awg"` endpoint JSON (sing-box endpoint.go
+//     decodes base64 → hex for the amneziawg-go UAPI), and
+//   - the kernel awg-quick .conf `HeaderProtectionKey = <base64>` line (the
+//     amneziawg-tools v3.0 config.c parser reads it as a WG key, live-verified
+//     on n1 with the PR #192 kernel module).
+//
+// Returns ("", false) on an invalid key (wrong length / non-hex). The caller
+// MUST skip the AWG3 fields in that case — a malformed HPK breaks every
+// client's header-protection handshake. GenerateAWG3Material always produces a
+// valid 32-byte hex key, so this only fails on hand-edited / corrupted stores.
+func awg3HPKHexToBase64(hexKey string) (string, bool) {
+	keyBytes, err := hex.DecodeString(hexKey)
+	if err != nil || len(keyBytes) != 32 {
+		return "", false
+	}
+	return base64.StdEncoding.EncodeToString(keyBytes), true
 }
 
 // like Chrome's QUIC traffic (fb C0/C3 long header + h3-29 + realistic padding).

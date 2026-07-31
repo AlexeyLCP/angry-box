@@ -173,7 +173,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 		if tag == "" {
 			tag = fmt.Sprintf("sa-%d-%s", i, ib.Protocol) // legacy index-based tag (backward compat)
 		}
-		ins, eps := buildStandaloneInOut(&ib, tag, usersByInbound)
+		ins, eps := buildStandaloneInOut(&ib, tag, usersByInbound, nodeInfo)
 		inbounds = append(inbounds, ins...)
 		endpoints = append(endpoints, eps...)
 	}
@@ -725,7 +725,12 @@ func buildChainRoleInOut(role *chainRole, users []model.User, nodeInfo *model.No
 			// RenderNodeAWGConfs AWG3 branches). Slice 2 will add a kernel-render
 			// path now that the amnezia-box kernel module gained native HPK
 			// (PR #192, 2026-07-30).
-			if awg3Entry := chainEntryAWG3Inbound(nodeInfo, c, role.Node); awg3Entry != nil {
+			if awg3Entry := chainEntryAWG3Inbound(nodeInfo, c, role.Node); awg3Entry != nil && !kernelAWG3EnabledFor(nodeInfo) {
+				// Kernel-AWG3 not available on this node → render the userspace
+				// `type:"awg"` endpoint fallback. When KernelAWG3Supported is
+				// true, the kernel-render path (RenderNodeAWGConfs → awg0.conf
+				// with HPK) takes over and this endpoint is NOT emitted.
+				//
 				// Port/subnet/preset come from the MATERIALIZED inbound, not the
 				// chain's own fields: the client .conf renders ib.Port and the
 				// kernel renderer uses ib.Port too, so an endpoint on
@@ -950,7 +955,7 @@ func ResolveServerName(preset *ConnectionPreset) string {
 	return EffectiveDefaultSNI()
 }
 
-func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User) (inbounds, endpoints []json.RawMessage) {
+func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User, nodeInfo *model.NodeInfo) (inbounds, endpoints []json.RawMessage) {
 	preset := GetDefaultPreset()
 	if ib.Obfuscation != "" {
 		if p, ok := GetPreset(ib.Obfuscation); ok {
@@ -1001,7 +1006,14 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		// are skipped for this inbound (awgTUNOverlayNeeded /
 		// RenderNodeAWGConfs). Slice 2 adds a kernel-render path now that the
 		// amnezia-box kernel module has native HPK (PR #192, 2026-07-30).
-		if ib.EffectiveAWGVersion() == model.AWGVersion3 {
+		// AWG 3.0 (AGENTS #5 revision). When the node's kernel module + tools
+		// support header protection (KernelAWG3Supported, runtime-only field
+		// probed at deploy), the v3 inbound renders via the kernel awg-quick +
+		// sing-box-TUN-overlay path — RenderNodeAWGConfs emits awg0.conf with
+		// HPK/CPM/RAT, and awgTUNOverlayNeeded enables the overlay — so NO
+		// userspace endpoint is emitted here. Only fall back to the userspace
+		// `type:"awg"` endpoint (the v0.8.10 path) when the kernel can't.
+		if ib.EffectiveAWGVersion() == model.AWGVersion3 && !kernelAWG3EnabledFor(nodeInfo) {
 			users := usersByInbound[tag]
 			// The endpoint's own tunnel address must sit in the inbound's subnet
 			// (AWGServerAddress), not the hardcoded 10.8.0.1/32 — otherwise the

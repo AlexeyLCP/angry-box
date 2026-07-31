@@ -285,9 +285,11 @@ func tunIncludeInterfacesForNode(node *model.ChainNode, nodeInfo *model.NodeInfo
 				// entry), not awg1 — they must not trigger the awg1 include.
 				continue
 			}
-			if ib.Protocol == "awg" && ib.EffectiveAWGVersion() == model.AWGVersion3 {
-				// AWG 3.0 mode = userspace `type:"awg"` endpoint, no kernel
-				// awg0/awg1 iface to include in the TUN overlay.
+			if ib.Protocol == "awg" && ib.EffectiveAWGVersion() == model.AWGVersion3 && !kernelAWG3EnabledFor(nodeInfo) {
+				// AWG 3.0 userspace fallback (`type:"awg"` endpoint) owns its
+				// iface — no kernel awg0/awg1 to include. On the kernel-AWG3 path
+				// (KernelAWG3Supported) the v3 inbound DOES render a kernel awg0,
+				// so it falls through to the include logic below.
 				continue
 			}
 			if ib.Protocol == "awg" && ib.AWGServerAddress != "" {
@@ -362,13 +364,16 @@ func awgAutoRedirectFromEnv() *bool {
 // link is a point-to-point kernel tunnel between two nodes, not user-facing
 // traffic to capture, and the existing transit wiring handles it.
 func awgTUNOverlayNeeded(roles []chainRole, nodeInfo *model.NodeInfo) bool {
+	kernelAWG3 := kernelAWG3EnabledFor(nodeInfo)
 	for _, r := range roles {
 		if r.IsEntry && r.Chain.UserProtocol == model.UserProtocolAWG {
-			// AWG 3.0 mode (AGENTS #5): the entry renders as a userspace
-			// `type:"awg"` endpoint (buildAWGUserInboundMulti), NOT a kernel
-			// awg0 interface — so no TUN overlay / include_interface is needed
-			// for this entry. Check the materialized entry inbound.
-			if chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) == nil {
+			// AWG 3.0 entry: renders as a userspace `type:"awg"` endpoint when
+			// the node's kernel can't do AWG3 (no overlay — userspace endpoint
+			// owns its iface); but renders as a kernel awg0 interface (overlay
+			// NEEDED) when KernelAWG3Supported (AGENTS #5 revision, the PR #192
+			// kernel module + tools v3.0 path). A non-AWG3 entry is always kernel.
+			entry3 := chainEntryAWG3Inbound(nodeInfo, r.Chain, r.Node) != nil
+			if !entry3 || kernelAWG3 {
 				return true
 			}
 		}
@@ -378,9 +383,16 @@ func awgTUNOverlayNeeded(roles []chainRole, nodeInfo *model.NodeInfo) bool {
 	}
 	if nodeInfo != nil {
 		for _, ib := range nodeInfo.Inbounds {
-			if ib.Protocol == "awg" && ib.EffectiveAWGVersion() != model.AWGVersion3 {
-				// Kernel AWG inbound — needs the overlay. AWG 3.0 inbounds are
-				// userspace endpoints (no kernel iface, no overlay).
+			if ib.Protocol != "awg" {
+				continue
+			}
+			if ib.EffectiveAWGVersion() != model.AWGVersion3 {
+				// Kernel AWG 1.5/2.0 inbound — needs the overlay.
+				return true
+			}
+			// AWG 3.0 inbound: needs the overlay ONLY on the kernel-AWG3 path;
+			// on the userspace fallback it owns its iface (no overlay).
+			if kernelAWG3 {
 				return true
 			}
 		}

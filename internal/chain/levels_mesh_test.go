@@ -383,7 +383,7 @@ func TestStandaloneInOut_MultiUserVLESS(t *testing.T) {
 			{ID: "u3", Name: "carol", Active: true, VLESSUUID: ""},        // no creds — skipped
 		},
 	}
-	ins, _ := buildStandaloneInOut(&ib, "ib1", users)
+	ins, _ := buildStandaloneInOut(&ib, "ib1", users, nil)
 	if len(ins) != 1 {
 		t.Fatalf("want 1 inbound, got %d", len(ins))
 	}

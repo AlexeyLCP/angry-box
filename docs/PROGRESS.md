@@ -2182,14 +2182,25 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Верификация:** `templ generate` ✓, `go build ./...` ✓, `go vet ./internal/chain/ ./internal/domain/model/ ./internal/web/` ✓, `go test ./internal/chain/... ./internal/domain/... ./internal/web/` ✓.
 
-### Срез 2 (TODO, отдельный PR — требует Linux/WSL + VPS)
+### Срез 2 (SHIPPED v0.8.22, live-verified n1) — kernel-AWG3 render path
 
-1. **deps bump:** `deps/amneziawg-src.tar.gz` (от 30 июня, устарел) → перезалить из `amneziawg-linux-kernel-module@master` с PR #192 + fix'ами от 31 июля. Сборка на Linux/WSL.
-2. **Kernel-AWG3 render path:** при `AWGVersion3` + kernel module detected → рендер `awg0.conf` с HPK/CPM/RAT в `[Interface]` (через `writeAmneziaConfLines` + новый флаг `includeAWG3`) **вместо** userspace endpoint. Userspace остаётся fallback.
-3. `awgTUNOverlayNeeded` → true для kernel-AWG3; `AWGTeardownInterfaces` реверс (kernel-AWG3 требует awg0 UP).
-4. **Capability detection:** `awg version` на VPS / проверка kernel module version.
-5. **E2E:** `TestE2E_Heavy_Protocol_AWG3_Kernel` на n1 (единственный тестовый сервер) — handshake + egress через kernel awg0 + HPK.
-6. AGENTS.md #5/#10 — убрать «userspace-only» как абсолютный constraint.
+**deps:** `deps/amneziawg-src.tar.gz` repacked из `amneziawg-linux-kernel-module@master` (c78a89e, post-PR#192 + Sx≥12 fix'ы + netlink<6.7 compat). Layout: `src/` содержимое на верхнем уровне `amneziawg-src/` (dkms.conf + Kbuild + *.c рядом), чтобы DKMS install (`--strip-components=1`) положил их в `/usr/src/amneziawg-<ver>/`. На n1 собран через DKMS как `amneziawg/3.0.20260730` (module version `3.0.20260731-04`), amnezia-box-tools v3.0.20260730 (build from `src/`).
+
+**Capability detection** (`internal/chain/awg3_capability.go`): `detectKernelAWG3(ctx, client)` — pre-flight SSH probe, проверяет ОБА: (1) kernel module version (modinfo) ≥3.0 (PR #192), (2) userspace `awg` tool ≥v3.0.20260730 (HeaderProtectionKey keyword). Оба нужны — tools парсят keyword, kernel применяет netlink attr. Best-effort: probe-failure → false → userspace fallback (деплой не падает). `NodeInfo.KernelAWG3Supported` (runtime-only, `json:"-"`) — stampится в pre-flight (ApplyChain) / на deploy-connect (ApplyMergedNode, preserves 1-connection invariant). `kernelAWG3EnabledFor(nodeInfo)` — nil-safe gate.
+
+**Kernel-AWG3 render path** — когда flag=true, v3 inbound рендерится через kernel awg-quick + TUN-overlay (как AWG2, стабильно):
+- `awg_server.go`: `AWGServerConfParams.AWG3` field + `writeAWG3ConfLines` — emit `HeaderProtectionKey=<base64>`/`ContentPaddingAddition=<lo-hi>`/`RekeyAfterTime=<lo-hi>` в `[Interface]` ДО `[Peer]`. HPK hex→base64 через `awg3HPKHexToBase64` (`awg_cps.go`, общий helper для kernel + userspace path). `renderAWGServerConfFromInbound` выставляет `AWG3: inboundAWG3MaterialForKernel(ib)` для v3 inbound.
+- `merged_config.go`: `buildStandaloneInOut` + `buildChainRoleInOut` gate userspace-endpoint на `!kernelAWG3EnabledFor(nodeInfo)` — при kernel-AWG3 endpoint НЕ emit (kernel awg0.conf берёт на себя).
+- `awg_tun_overlay.go`: `awgTUNOverlayNeeded` + `tunIncludeInterfacesForNode` — kernel-AWG3 нуждается в overlay (true), userspace fallback — нет.
+- `awg_deploy.go`: `RenderNodeAWGConfs` — kernel-AWG3 рендерит awg0.conf (не skip); `AWGTeardownInterfaces` — kernel-AWG3 НЕ teardown (awg0 в keep).
+
+**Kernel-AWG3 awg0.conf contract (live-verified n1, E2E PASS):** HPK/CPM/RAT в `[Interface]` работают через awg-quick end-to-end — `awg show` подтверждает `header protection key`, `content padding addition: 1-16`, `rekey after time: 90-110`. **Валидации kernel module (найдены live, критично для пресетов):** (a) S1-S4 ВСЕ ≥12 при HPK (`init_padding`/`resp_padding`/`cookie_padding`/`transport_padding` < HEADER_PROTECTION_NONCE_SIZE=12 → `-EINVAL`); (b) **H1-H4 должны быть УНИКАЛЬНЫМИ** (`-EINVAL` на дубликатах — поэтому awg3-пресеты используют 12/13/14/15, НЕ 12/12/12/12); (c) HPK в .conf body = base64 (как WG-ключ), НЕ hex.
+
+**E2E (`internal/chain/awg3_kernel_e2e_test.go`, build tag `e2eawg3`):** `TestE2EAWG3_KernelConf` PASS на n1 — рендерит server awg0.conf через `RenderServerAWGConf` с AWG3 material, пушит, `awg-quick up` принимает (без `Invalid argument`), `awg show` подтверждает HPK/CPM/RAT applied. Это верифицирует EXACT byte-output orchestrator'а end-to-end. (Full chain-AWG3 deploy E2E `TestE2E_Heavy_Protocol_AWG3_Kernel` — follow-up; требует full sing-box deploy harness и НЕ должен запускаться на продовых e2eServers, только на n1.)
+
+**Тесты:** `awg3_kernel_render_test.go` (writeAWG3ConfLines HPK base64 + invalid-HPK-fail-closed + optional-omit, RenderServerAWGConf AWG3-in-Interface-before-Peer + no-AWG3-when-nil, awgVersionMajor/awgKernelVersionSupportsHPK/awgToolsVersionSupportsHPK parsing, kernelAWG3EnabledFor nil-safe, inboundAWG3MaterialForKernel). `awg3_capability.go` — detection. Полный `go test ./internal/chain/... ./internal/domain/... ./internal/web/` + `go vet ./...` зелёные.
+
+**Userspace fallback сохранён:** при `KernelAWG3Supported=false` (старый kernel module <3.0 или tools <v3.0) AWG3 рендерится через userspace sing-box endpoint (v0.8.10 path, PROGRESS §38) — стабилен, но без kernel-overlay. Это backward-compat: существующие ноды без нового module продолжают работать.
 
 ### Источники
 

@@ -381,6 +381,21 @@ type NodeInfo struct {
 	// cooldown guard (PanelSettings.AutoRelocate.CooldownHours) keys off it so
 	// a flapping VPS is not relocated repeatedly.
 	LastAutoRelocateAt time.Time `json:"last_auto_relocate_at,omitempty"`
+
+	// KernelAWG3Supported is a RUNTIME-ONLY capability flag (never persisted —
+	// json:"-") set by the deploy pre-flight (detectKernelAWG3 over SSH) and read
+	// by the AWG render path. When true, an AWG 3.0 (AWGVersion=="3") inbound on
+	// this node renders via the kernel awg-quick + sing-box-TUN-overlay path
+	// (RenderServerAWGConf emits HPK/CPM/RAT into [Interface]) — the stable
+	// architecture the kernel-AWG rework (AGENTS #10) uses for AWG 1.5/2.0. When
+	// false (older amnezia-box kernel module < PR #192, or amnezia-box tools <
+	// v3.0), AWG 3.0 falls back to the userspace sing-box `type:"awg"` endpoint
+	// (the v0.8.10 path, AGENTS #5). Detection checks both the kernel module
+	// version (modinfo) AND the userspace `awg` tool version (HeaderProtectionKey
+	// keyword support), since awg-quick needs both to apply an HPK-bearing conf.
+	// Set on a per-deploy COPY of the node (not the stored NodeInfo), so it does
+	// not leak into the JSON store.
+	KernelAWG3Supported bool `json:"-"`
 }
 
 // TakeoverState records what angry-box found on the node and what it did to
