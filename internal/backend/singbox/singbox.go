@@ -15,6 +15,7 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
+	"github.com/alexeylcp/angry-box/internal/version"
 )
 
 const (
@@ -564,7 +565,13 @@ func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, 
 
 	awgTarballURL := os.Getenv("ANGRY_AWG_TARBALL_URL")
 	if awgTarballURL == "" {
-		awgTarballURL = "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/amneziawg-src.tar.gz"
+		// The AWG3-capable kernel-module source tarball (deps/amneziawg-src.tar.gz,
+		// repacked from amnezia-vpn/amneziawg-linux-kernel-module master, PR #192).
+		// Pinned to the binary's OWN release tag (version.Version) so each release
+		// is self-contained — the v0.1.0 hardcode pointed at a stale tarball and
+		// broke the DKMS-from-source fallback on nodes without the amnezia PPA.
+		// The same tarball is mirrored to v0.1.0 for older binaries in the field.
+		awgTarballURL = "https://github.com/AlexeyLCP/angry-box/releases/download/" + version.Version + "/amneziawg-src.tar.gz"
 	}
 	// Validate the URL before it reaches a root shell. The previous code
 	// interpolated awgTarballURL into `sudo bash -c '... curl ... %s ...'`, so a
