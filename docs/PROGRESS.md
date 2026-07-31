@@ -2034,4 +2034,94 @@ Jc=120 физически правдоподобен как гипотеза (UD
 
 **Правило (внесено в #17):** при «AWG не коннектит» сначала сверять дамп store ↔ `awg show` (сервер-порт, server pubkey vs клиентский peer-key), и только если всё совпадает — пробовать `awg set <iface> jc 3` как workaround. robust-пресеты (v0.8.7) остаются как фича (оператор волен выбрать меньший Jc), но не как подтверждённый фикс.
 
-**Файлы:** `internal/chain/chain_entry_material.go` (порт-resync в update-ветке), `internal/chain/chain_entry_material_test.go` (+TestEnsureChainEntryMaterialization_PortResync), `AGENTS.md` #17 (переписан — понижение статуса), `docs/PROGRESS.md` (§22.3 + §35 + §39.1 ревизионные пометки, +§41), `internal/version/version.go` (v0.8.20), `CHANGELOG.md`. `go build ./...` + `go test ./internal/chain` зелёные.
+**Файлы:** `internal/chain/chain_entry_material.go` (порт-resync в update-ветки), `internal/chain/chain_entry_material_test.go` (+TestEnsureChainEntryMaterialization_PortResync), `AGENTS.md` #17 (переписан — понижение статуса), `docs/PROGRESS.md` (§22.3 + §35 + §39.1 ревизионные пометки, +§41), `internal/version/version.go` (v0.8.20), `CHANGELOG.md`. `go build ./...` + `go test ./internal/chain` зелёные.
+
+## 42. Design doc: поддержка NaiveProxy + Mieru inbound (planned, без кода) (2026-07-31)
+
+**Статус:** дизайн зафиксирован (AGENTS #19). **Кода не написано** — имплементация отдельной задачей. Этот раздел = карта для будущего имплементатора: что уже есть в форке, JSON-контракты, role, полный checklist точек правки со file_path:line.
+
+### 42.A Главная находка — пересборка бинарника НЕ нужна
+
+Форк `AlexeyLCP/amnezia-box@acb804b3` (наш текущий pinned ref, `deps/sing-box-acb804b3-...tar.gz`) **уже содержит** оба протокола:
+- `protocol/naive/inbound.go` (+ `outbound.go` + `quic/`) — **без build-tag** (`package naive` сразу, проверено WebFetch исходника).
+- `protocol/mieru/inbound.go` (+ `outbound.go`) — **без build-tag** (`package mieru`).
+- Оба **уже зарегистрированы** в `include/registry.go` `InboundRegistry()`: `naive.RegisterInbound(registry)`, `mieru.RegisterInbound(registry)` (рядом с `mtproxy.RegisterInbound`, `vless.RegisterInbound`).
+
+→ Текущий бинарник уже принимает `type:"naive"` и `type:"mieru"`. **Никакого bump fork-ref / пересборки / пере-публикации release.** (Мой первый субагент-аудит ошибочно считал naive gated за `with_naive` — это upstream sing-box; в amnezia-box форке hoaxisr/AlexeyLCP оба unconditional. `with_naive` upstream — про **outbound** Cronet, см. ниже.)
+
+**trusttunnel — В форке НЕТ** (404 на `protocol/trusttunnel` @ acb804b3). Был canary-tag `with_trusttunnel` в старом sing-box-extended (AGENTS: «old canary tags `with_trusttunnel`/`with_sudoku` are gone»). Добавление = отдельный эпик (порт из sing-box-extended + bump + пересборка), НЕ входит в эту задачу.
+
+### 42.B JSON-контракты опций (из форка @acb804b3, опции в `option/naive.go` / `option/mieru.go`)
+
+**naive** — `NaiveInboundOptions`:
+```go
+type NaiveInboundOptions struct {
+    ListenOptions
+    Users                  []auth.User          // {Username, Password}
+    Network                NetworkList          // tcp / quic
+    QUICCongestionControl  string               // (sing-box 1.13+, bbr/cubic/...)
+    InboundTLSOptionsContainer                  // TLS ОБЯЗАТЕЛЕН (ALPN h2)
+}
+```
+- **Природа:** HTTP/2-over-TLS forward-proxy, Chromium-стек. Трафик похож на обычный Chrome HTTPS.
+- **Креды:** per-user `username:password` (symmetric shared secret, как Trojan).
+- **TLS обязателен:** ALPN `h2` (TCP) или QUIC. → нужен self-signed cert (`GenerateSelfSignedCert` уже есть, precedent `buildTUICInlineTLS` `applier_build.go:1214`).
+- **Серверных асимметричных ключей НЕТ** — только TLS-сертификат (поля `NodeInbound.TLSCertificate`/`TLSPrivateKey` `panel.go:453-454` уже есть, переиспользуются TUIC/Hysteria2).
+
+**mieru** — `MieruInboundOptions`:
+```go
+type MieruInboundOptions struct {
+    ListenOptions
+    Users                 []MieruUser          // {Name, Password}
+    Transport             string               // "TCP" или "UDP" (валидация в форке, НЕ kcp)
+    TrafficPattern        string               // обфускация (своя)
+    UserHintIsMandatory   bool
+}
+```
+- **Природа:** socks5/HTTP/HTTPS proxy от enfein. Шифрует всё включая длины пакетов, устойчив к active probing, heartbeat-jitter.
+- **Креды:** per-user `name:password` (symmetric).
+- **TLS НЕ нужен** (своя обфускация через `TrafficPattern`). → **самый простой** из трёх для интеграции (меньше инфраструктуры, как MTProxy).
+- **Серверных секретов НЕТ** (ни ключей, ни церта).
+
+### 42.C Архитектурная роль: standalone inbound only (первый срез)
+
+- **Standalone inbound: ДА** — `case "naive":` / `case "mieru":` в `buildStandaloneInOut` (`merged_config.go:961`) + `generateStandaloneNode` (`config.go:292`). Аналог TUIC/Hysteria2/MTProxy.
+- **Inter-node chain transport: НЕТ.** naive outbound gated `//go:build with_naive_outbound` + импортирует `cronet-go` (Chromium network stack) — **НЕ собирается в наш бинарник**. mieru outbound безусловный (`mieru.RegisterOutbound`), но первый срез = standalone-only (как MTProxy/Hysteria2 — они тоже НЕ `UserProtocol`-chain-transport).
+- **Chain user-entry (clients через точку входа цепи):** опционально позже. Потянуло бы +`UserProtocolNaive`/`UserProtocolMieru` const (`chain.go:186`), ветки в `clientconfig.go:92` switch (сейчас только TUIC), `materializeChainEntryInbound` (`migrate_v2.go:246`), `ensureMaterializedEntryInbound` (`chain_entry_material.go:103`). НЕ в первом срезе.
+
+### 42.D Checklist точек имплементации (все file_path:line подтверждены аудитом)
+
+| Слой | Файл:line | Что добавить | Precedent |
+|---|---|---|---|
+| **User-креды** | `panel.go:42-44` | `User.NaiveUsername/Password` + `User.MieruUsername/Password` (per-protocol discrete, `omitempty`) | `Hysteria2Password` |
+| **Креды-генерация** | `cryptogen.go:243` (`EnsureUserCreds`) | ветка `if has("naive")` / `if has("mieru")` | `has("hysteria2")` `:270` |
+| **Креды-функции** | `cryptogen.go:205` | `GenerateNaivePassword/Username`, `GenerateMieruPassword/Username` | `GenerateProxyPassword` (16-char ASCII, returns error) |
+| **Standalone render (chain)** | `merged_config.go:961` (`buildStandaloneInOut`) | `case "naive":` (TLS inline ALPN h2) + `case "mieru":` (no TLS, Transport TCP/UDP) | TUIC `:1017` / `buildTUICInlineTLS` `applier_build.go:1214` |
+| **Standalone render (CLI)** | `config.go:292` (`generateStandaloneNode`) | те же 2 case | Hysteria2 `:391` |
+| **sing-box JSON тип** | `internal/singbox/config/types.go` (рядом `Hysteria2Inbound` `:480`) | `NaiveInbound{Users,TLS,...}` + `MieruInbound{Users,Transport,...}` | `Hysteria2Inbound` |
+| **UI allowlist** | `web/inbounds.go:87` (switch) | добавить `"naive","mieru"` | `case "awg","vless-reality","mtproxy"` |
+| **UI option + форма** | `inbounds.templ:155` | `<option value="naive">` + `<option value="mieru">` + условные `.naive-section`/`.mieru-section` (через `onchange` `:152`) | AWG3-форма `:234` |
+| **Client share-URI** | `users.go:776` (`buildClientURI`) | `case "naive":` (`naive+https://u:p@h:port?sni=`) + `case "mieru":` (`mieru://u:p@h:port?transport=tcp`) | trojan `:836` / ss `:843` |
+| **TLS-inbound gate** | `applier_push.go:259` | при path-based cert: `"type":"naive"` в `needsCert`; при inline (рекоменд.) — НЕ трогать | tuic/hysteria2 в условии |
+| **Frozen** | `frozen.go` | **НЕ добавлять** (deny-list, оба автоматически разрешены) | — |
+| **Presets** | `presets.go:265` (`presetSupportsProtocol`) | `case "naive","mieru": return false` (первый срез без пресетов) | MTProxy (тоже без) |
+| **profile materialize** | `profile_deploy.go:232` (`materializeProfileToInbound`) | `case "naive":` / `case "mieru":` (иначе default-error "unsupported") | `case "mtproxy"` |
+
+**Не трогать:** `roles.go` (chain-roles, не per-inbound протокол), `awgdiag.go` (AWG-specific), `clientconfig.go:92` (chain user-entry — НЕ в первом срезе), `migrate_v2.go` (новый протокол = нет legacy).
+
+### 42.E Сравнение naive vs mieru (для выбора очерёдности/сложности)
+
+| | naive | mieru |
+|---|---|---|
+| TLS | **обязателен** (ALPN h2/QUIC) | **не нужен** |
+| Серверный ключ | нет (только TLS-cert) | нет |
+| User-креды | username+password | name+password |
+| Инфраструктура | cert-gen (inline, есть) | минимальная (как MTProxy) |
+| Сложность интеграции | средняя (TLS-слой) | **низкая** (самая простая) |
+| inter-node transit | нет (cronet-go) | технически да (безусловный outbound), но standalone-only в срезе |
+
+### 42.F Frozen-scope нюанс
+
+AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru — **явное одобренное расширение по запросу оператора** (2026-07-31), зафиксировано как AGENTS #19. Это не нарушение freeze (который про TUIC/Hysteria2). После имплементации — обновить AGENTS #19 (статус pending → shipped) + §42 (реализованные file:line) + CHANGELOG.
+
+**Файлы этой задачи (только дока, БЕЗ кода):** `AGENTS.md` (+#19), `docs/PROGRESS.md` (+§42).
