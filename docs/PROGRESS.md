@@ -2212,3 +2212,83 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 - [architect.vai-rice.space](https://architect.vai-rice.space/) — Vue SPA UI reference
 
 **Файлы:** `internal/domain/model/awg_version.go` (новый), `internal/domain/model/inbound.go`, `internal/domain/model/panel.go`, `internal/chain/presets.go`, `internal/chain/default_presets.json`, `internal/chain/awg_inbound_material.go`, `internal/chain/awg_deploy.go`, `internal/chain/awg_tun_overlay.go`, `internal/chain/merged_config.go`, `internal/chain/inbound_source.go`, `internal/chain/awg_version_test.go` (новый), `internal/chain/robust_presets_test.go`, `internal/web/inbounds.go`, `web/templates/inbounds.templ`, `web/templates/inbounds_templ.go`, `internal/i18n/i18n.go`, `AGENTS.md` (#5 ревизия), `docs/PROGRESS.md` (+§43).
+
+## §44. Редизайн UI: полный переезд на дизайн-систему Lovable (палитра Sand + компонентные классы) — Срез 1 SHIPPED (2026-08-02), Срез 2 (постраничная разметка) TODO
+
+**Статус:** Срез 1 (фундамент дизайн-системы) **реализован и верифицирован** 2026-08-02 — мгновенная перекраска ВСЕГО приложения без правок handler-кода. Срез 2 (постраничный перенос разметки на паттерны Lovable — `.st/.pill/.lvl/.seg/...`) — TODO, постранично, коммит за страницей.
+
+### Срез 1 (SHIPPED) — фундамент: токены + классы + layout shell
+
+**Подтверждённый оператором подход:** ПОЛНЫЙ переезд (Tokyo Night убран), дефолт-тема при первом входе = **Sand** (светлая бежевая), Slate/Graphite/Night — в переключателе, темп — инкрементальный.
+
+**Новый файл `web/static/css/themes.css`** (замена удалённого `tokyo-night.css`): 4 темы через `[data-theme="..."]` — `sand` (дефолт, светлый тёплый) / `slate` (светлый холодный) / `graphite` (тёмный тёплый, canonical dark) / `night` (тёмный холодный). Каждая определяет:
+- **DaisyUI v4 семантические слоты в OKLCH** (`--p/--pc/--s/--sc/--a/--ac/--n/--nc/--b1/--b2/--b3/--bc/--in/--su/--wa/--er` + `<*-content>`) — hex→OKLCH конвертированы программно (sRGB→OKLab→OKLCH); content-слоты выбраны по WCAG-контрасту. **КРИТИЧНО:** слоты обязаны быть OKLCH-тройками (не hex) — `oklch(var(--p))` в `spider.templ` (14 сайтов SVG fill/stroke) и `#htmx-loading-bar` иначе инвалид и рендерит black/transparent.
+- **`--tn-*` aлиасы** на DaisyUI-слоты (`--tn-accent→var(--p)`, `--tn-bg-secondary→var(--b2)`, `--tn-border→var(--bd)`, ... + `--tn-*-tint/-border` через `color-mix()`) — тела `.tn-*` классов в `app.css` НЕ правились; 30+ существующих компонент перекрасились через aлиасы без единой правки их тел.
+- **Lovable-токены** `--bd/--bdh/--mut/--mut2/--pu/--pfg` (hex, для swatch'ей и новых классов).
+- Fallback `:root` (без `[data-theme]` / до FOUC-скрипта) = Sand.
+
+**`web/static/css/app.css`** — комментарий переписан; тела `.tn-*` НЕ тронуты; **добавлены новые классы из мокапов** (нет в прежнем app.css): `.st` + `.st-ok/-warn/-err/-info/-pu/-mut` (status pills с leading dot), `.pill`, `.lat-ok/-mid/-bad`, `.lvl` + `.lvl-entry/-relay/-exit`, `.seg` (segmented control для AWG-версии/темы), `.inp/.sel/.ta/.lbl/.hint/.sect-title/.divider-x`, `.btn-primary/-outline/-ghost/-warning/-error/-icon/-sm`, `.cb` (checkbox), `.toggle-tn`, `.nav-a/.nav-a.active` (sidebar), `.code` (config preview), `.modal-tn`. Существующие `.tn-card/.tn-table/.tn-badge-*/.tn-mono/.tn-z-*/.tn-settings-*` — сохранены.
+
+**`web/templates/base.templ`** — переписан layout shell: темы `tokyonight/...→sand/slate/graphite/night` (`data-theme="sand"` дефолт, FOUC-скрипт с миграцией legacy: `tokyonight→graphite, tokyonight-day→sand, dark→graphite, light→sand`), `<link href="/static/css/themes.css">` (вместо tokyo-night.css), sidebar+topbar на классах `.nav-a`/`.pill`/`.st.st-ok` + dropdown 4 тем со `theme-swatch'ами`. **Все `hx-get/hx-target/hx-push-url` и `i18n.T(ctx,...)` сохранены** (Правило 1).
+
+**`web/static/js/app.js`** — `TN_THEMES→AB_THEMES=['sand','slate','graphite','night']`, `AB_DARK='graphite'`, `AB_LIGHT='sand'`, `AB_LEGACY`-мапа миграции; `meta-theme-color` map обновлен на 4 темы. Заодно исправлен давний баг `if (moon) sun && (moon.classList...)` → корректный `if (moon) moon.classList`.
+
+**`internal/web/handlers_clients_test.go:49`** — assertion `data-theme="tokyonight"→"sand"`.
+
+**Живой верификат (программный, subsystem агностик, сильнее скриншота):** запущен `serve --dev`, на `/ui` замерены вычисленные слоты — graphite активна, `--p: 74.49% 0.060 77.02`, `--b1: 20.88% 0.004 264.48` (мои OKLCH из themes.css). `--tn-accent = --p` (aлиас сработал), `--tn-border = #3a3d42 = --bd`. **`oklch(var(--p))` резолвится в `oklch(0.7449 0.06 77.02)` (валид!)** — главная техническая гипотеза подтвердилась: spider SVG + loading-bar корректно перекрасились. `themes.css` loaded, `tokyo-night.css` NOT loaded (чистая замена, без двойной темы). Build + `go test ./internal/web/` (включая `TestHandler_ClientsPage_UsesBaseLayout` с assertion'ом `sand`) зелёные. (Скриншоты preview в корне `slice1-*` — удалены как артефакты.)
+
+**Главное свойство Среза 1:** всё приложение (все 13 templ, `.tn-*` классы, spider SVG, `#htmx-loading-bar`, inline-alert'ы в handlers, DaisyUI-компоненты) **уже бежевое и работает в новом shell'е** без правки handler-кода (`internal/web/*.go` не тронут) и без правки тел `.tn-*` классов. Срез 2 — необязательное обогащение разметки паттернами Lovable.
+
+### Срез 2 (TODO) — постраничный перенос разметки на паттерны Lovable
+Коммит за страницей, `refactor(ui): migrate <page>.templ`. Порядок по ценности/сложности: dashboard → inbounds (сег-контроль AWG 1.5/2.0/3.0 + `.awg3` подсекция HPK/CPM/RAT — прямая визуализация §43-фичи) → nodes (788стр) → chains → users (592) → presets → settings (548) → spider (только панели вокруг SVG; геометрию SVG и `oklch(var(--p))` НЕ трогать, уже перекрашено) → chainlevels/index/hosts.
+
+### Границы (НЕ делать)
+- ❌ React/JSX/vite (`src/` из архива) — выкинут, нарушает Правило 1.
+- ❌ Handler-логику (`internal/web/*.go`) — не трогать; inline-HTML уже перекрасился через DaisyUI-слоты.
+- ❌ Геометрию spider / `spider.js` — не трогать.
+- ❌ Frozen-протоколы (TUIC/Hysteria2) — не активировать.
+- ❌ Схему store / роутинг / бизнес-логику — только presentation layer.
+
+### TODO перед стартом Среза 2
+- `.lovable-design/` (мокапы+src) и `lovable-*.png` (скриншоты) — untracked, не коммитить в основную ветку. Перед стартом Среза 2 либо вынести в `.gitignore`, либо в отдельный artifact. Это справочный материал, НЕ часть Go-приложения.
+
+**Файлы Среза 1:** `web/static/css/themes.css` (новый), `web/static/css/app.css`, `web/templates/base.templ` + `base_templ.go`, `web/static/js/app.js`, `internal/web/handlers_clients_test.go`, `web/static/css/tokyo-night.css` (удалён), `docs/PROGRESS.md` (§44).
+
+### Подтверждённые оператором решения (2026-08-01)
+1. **Направление: ПОЛНЫЙ переезд** на систему Lovable (не патч Tokyo Night). Tokyo Night убирается.
+2. **Дефолт-тема при первом входе: Sand** (светлая бежевая, как в мокапах). Slate/Graphite/Night — в переключателе.
+3. **Темп: ИНКРЕМЕНТАЛЬНО** — Срез 1 (фундамент) даёт мгновенную перекраску ВСЕГО приложения, дальше постраничный перенос разметки коммит-за-коммитом.
+
+### Ключевое техническое открытие (3 аудита, обязательно к учёту)
+Текущая CSS-система **декопулирована** на два независимых слоя:
+- **`--tn-*`** (36 токенов, hex) — определены в `tokyo-night.css`, читаются ТОЛЬКО классами `.tn-*` в `app.css`.
+- **DaisyUI-слоты** `--p/--b1/--bc/--su/--wa/--er` (OKLCH) — читаются всеми DaisyUI-компонентами, `#htmx-loading-bar` (`app.css:9,14`), **И напрямую SVG в `spider.templ` через `oklch(var(--p))` (14 сайтов: `:50,:67,:77,:239,:240,:247,:261,:268,:275,:312-318`)**, и всем inline-HTML в handlers (~50 `alert`/`badge`/`card` через `simpleHTML` в `internal/web/*.go` + 1 raw `w.Write` в `nodes.go:131-134`).
+
+**Следствие (главное для плана):** если переназначить значения DaisyUI-слотов на Sand-палитру, **конвертировав hex→OKLCH**, то **автоматически, без единой правки handler-кода** перекрасятся: весь inline-HTML, spider SVG, loading-bar, все существующие DaisyUI-компоненты. **Handler-файлы (`internal/web/*.go`) НЕ трогаем** (кроме 1 тест-assertion'а). Проверено конверсией hex→OKLCH (валидно: `oklch(var(--p))` остаётся корректным — иначе сломал бы spider + loading-bar).
+
+**Конфликт имён** `.tn-card`/`.tn-table` (Lovable бэкает через DaisyUI-слоты, текущий — через `--tn-*`) → решается сохранением имён `.tn-*` как единого source-of-truth: `--tn-*` становятся **алиасами** на DaisyUI-слоты, тела `.tn-*` классов не меняются, существующие шаблоны продолжают работать.
+
+### План (готовился через ExitPlanMode, не утверждён — вернёмся когда решим)
+
+**СРЕЗ 1 — фундамент (один коммит, мгновенный эффект на ВСЁ приложение):**
+1. `web/static/css/themes.css` (замена `tokyo-night.css`): 4 темы `[data-theme="..."]` — `sand`(дефолт)/`slate`/`graphite`/`night`. DaisyUI-слоты в **OKLCH** (`--p/--pc/--s/--a/--n/--nc/--b1/--b2/--b3/--bc/--in/--su/--wa/--er`+content) для каждой темы. hex-значения из мокапов; Sand OKLCH уже посчитан (`--b1 96.20% 0.011 84.58, --b2 99.42% 0.007 88.64, --b3 92.64% 0.017 84.59, --bc 33.12% 0.017 82.30, --p 55.97% 0.058 71.78, --su 55.19% 0.091 131.19, --wa 61.36% 0.116 79.46, --er 54.03% 0.136 30.04, --in 55.20% 0.068 217.06`); для slate/graphite/night прогнать тот же конвертер. Сохранить `--rounded-box:12px/--rounded-btn:6px/--animation-btn:0.15s`.
+2. Переписать `app.css`: `--tn-*` → алиасы на DaisyUI-слоты (`--tn-bg-primary→--b1`, `--tn-bg-secondary→--b2`, `--tn-bg-tertiary→--b3`, `--tn-border→--bd`, `--tn-border-hover→--bdh`, `--tn-text-primary→--bc`, `--tn-text-secondary/muted→--mut`, `--tn-success→--su`, `--tn-error→--er`, `--tn-warning→--wa`, `--tn-info→--in`, `--tn-accent→--p`, `--tn-broken→--er`; `--tn-*-tint/-border` через `color-mix()`). Тела `.tn-*` классов НЕ трогать. Сохранить: `#htmx-loading-bar`+keyframes, scrollbar, `.theme-option`/`.theme-swatch`, `.mono`, `.input-bordered`/`.btn:focus-visible`. **Добавить новые классы из мокапов** (нет в текущем app.css): `.st`+`.st-ok/-warn/-err/-info/-pu/-mut`, `.pill`, `.lat-ok/-mid/-bad`, `.lvl`+`.lvl-entry/-relay/-exit`, `.seg`, `.inp/.sel/.ta/.lbl/.hint`, `.btn-primary/-outline/-ghost/-warning/-error/-icon/-sm`, `.code`, `.sect-title`, `.divider-x`, `.cb`, `.toggle-tn`, `.nav-a/.nav-a.active`, `.modal-tn`.
+3. `web/templates/base.templ`: темы `tokyonight/...→sand/slate/graphite/night` (`:11` data-theme, `:17-22` FOUC-скрипт, `:47` themes.css, `:105-117` dropdown+swatch'и). Перестроить sidebar (`:52-86`) + topbar (`:88-121`) по разметке `inbounds.html:100-134` (`.nav-a`, версия моно-плашкой, preset-pill+`.st.st-ok`+seg-переключатель). **Сохранить все `hx-*` и `i18n.T(ctx,...)` (Правило 1).**
+4. `web/static/js/app.js:116-170`: `TN_THEMES→['sand','slate','graphite','night']`, `TN_DARK='graphite'`, `TN_LIGHT='sand'`. Миграция legacy: `dark→graphite, light→sand, tokyonight→graphite, tokyonight-day→sand, tokyonight-storm→graphite`. Обновить `meta-theme-color` map (`:132`).
+5. Тест: `handlers_clients_test.go:49` — assertion `data-theme="tokyonight"→"sand"`.
+6. Верификация: `templ generate` + `go build ./...` + `go test ./internal/web/...` + локальный `serve` → скриншоты Sand/4 темы → spider авто-перекрасился → inline-alert'ы в новых цветах.
+
+**СРЕЗ 2 — постраничный перенос разметки (коммит за страницей, `refactor(ui): migrate <page>.templ`):** dashboard → inbounds (сег-контроль AWG 1.5/2.0/3.0 + `.awg3` подсекция HPK/CPM/RAT — прямая визуализация §43-фичи) → nodes (788стр) → chains → users (592) → presets → settings (548) → spider (только панели вокруг SVG; **геометрию SVG и `oklch(var(--p))` НЕ трогать**, уже перекрашено) → chainlevels/index/hosts.
+
+### Границы (НЕ делать)
+- ❌ React/JSX/vite (`src/` из архива) — выкинут, нарушает Правило 1.
+- ❌ Handler-логику (`internal/web/*.go`) — не трогать (кроме тест-assertion'а); inline-HTML перекрасится сам через DaisyUI-слоты.
+- ❌ Геометрию spider / `spider.js` — не трогать.
+- ❌ Frozen-протоколы (TUIC/Hysteria2) — не активировать.
+- ❌ Схему store / роутинг / бизнес-логику — только presentation layer.
+
+### TODO перед стартом
+- `.lovable-design/` (мокапы+src) и `lovable-*.png` (скриншоты) — untracked, не коммитить в основную ветку. Перед стартом реализации либо вынести в `.gitignore`, либо в отдельный artifact. Это справочный материал, НЕ часть Go-приложения.
+- Перепроверить embed (`web/embed.go:9`) — новый `themes.css` попадает в прод через `//go:embed static/css/*`, убедиться что подхватывается.
+
+**Файлы (когда будем делать):** `web/static/css/themes.css` (новый, замена tokyo-night.css), `web/static/css/app.css` (переписать алиасы + новые классы), `web/templates/base.templ` (shell + темы), `web/static/js/app.js` (тема-переключение), `internal/web/handlers_clients_test.go:49` (assertion), далее постранично `web/templates/*.templ`.

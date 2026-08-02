@@ -113,47 +113,51 @@ function filterPresetsForRow(protoSelect) {
     updateUI();
 })();
 
-// Theme system — Tokyo Night family (3 selectable themes) + dark/light shortcut.
-// Themes are CSS-override blocks in /static/css/tokyo-night.css keyed by
-// [data-theme="tokyonight"|"tokyonight-day"|"tokyonight-storm"]. Persisted in
-// localStorage('angrybox-theme'); default 'tokyonight'.
-var TN_THEMES = ['tokyonight', 'tokyonight-day', 'tokyonight-storm'];
-var TN_DARK = 'tokyonight';       // the canonical dark theme
-var TN_LIGHT = 'tokyonight-day';  // the canonical light theme
+// Theme system — the Angry-BOX / Lovable palette: 4 selectable themes
+// (sand/slate/graphite/night) keyed by [data-theme="..."] in
+// /static/css/themes.css. Persisted in localStorage('angrybox-theme');
+// default 'sand' (light, warm beige — the current brand).
+var AB_THEMES = ['sand', 'slate', 'graphite', 'night'];
+var AB_DARK = 'graphite';   // canonical dark theme
+var AB_LIGHT = 'sand';      // canonical light theme (also the default)
+// Legacy Tokyo Night → new-theme migration map (run once per stored value).
+var AB_LEGACY = {
+	'tokyonight': 'graphite', 'tokyonight-storm': 'graphite',
+	'tokyonight-day': 'sand', 'dark': 'graphite', 'light': 'sand'
+};
 
 function setTheme(name) {
-	if (TN_THEMES.indexOf(name) < 0) name = TN_DARK;
+	if (AB_THEMES.indexOf(name) < 0) name = AB_LIGHT;
 	document.documentElement.setAttribute('data-theme', name);
 	localStorage.setItem('angrybox-theme', name);
 	updateThemeIcons(name);
 	// keep <meta name="theme-color"> in sync for mobile browser chrome
 	var meta = document.querySelector('meta[name="theme-color"]');
 	if (meta) {
-		var colors = {'tokyonight':'#16161e','tokyonight-day':'#f0f0f3','tokyonight-storm':'#24283b'};
-		meta.setAttribute('content', colors[name] || '#16161e');
+		var colors = {'sand':'#f6f2ea','slate':'#eef0f3','graphite':'#17181a','night':'#0e0e10'};
+		meta.setAttribute('content', colors[name] || '#f6f2ea');
 	}
 }
 function toggleTheme() {
 	// dark/light shortcut: flip between the canonical dark and light themes.
 	var cur = document.documentElement.getAttribute('data-theme');
-	var next = (cur === TN_LIGHT) ? TN_DARK : TN_LIGHT;
+	var next = (cur === AB_LIGHT) ? AB_DARK : AB_LIGHT;
 	setTheme(next);
 }
 function updateThemeIcons(theme) {
 	var sun = document.getElementById('ico-sun');
 	var moon = document.getElementById('ico-moon');
 	// Show sun when in a LIGHT theme (click → go dark), moon when in a DARK theme.
-	var isLight = (theme === TN_LIGHT);
+	var isLight = (theme === AB_LIGHT || theme === 'slate');
 	if (sun) sun.classList.toggle('hidden', !isLight);
-	if (moon) sun && (moon.classList.toggle('hidden', isLight));
+	if (moon) moon.classList.toggle('hidden', isLight);
 }
 (function(){
-	// Migrate the old 'dark'/'light' localStorage values to the new theme names
-	// so an existing user keeps a sensible theme (old dark → tokyonight, light → tokyonight-day).
-	var t = localStorage.getItem('angrybox-theme') || TN_DARK;
-	if (t === 'dark') t = TN_DARK;
-	else if (t === 'light') t = TN_LIGHT;
-	if (TN_THEMES.indexOf(t) < 0) t = TN_DARK;
+	// Migrate legacy Tokyo Night / 'dark'/'light' stored values so an existing
+	// user keeps a sensible theme (old dark → graphite, light → sand).
+	var t = localStorage.getItem('angrybox-theme') || AB_LIGHT;
+	if (AB_LEGACY[t]) t = AB_LEGACY[t];
+	if (AB_THEMES.indexOf(t) < 0) t = AB_LIGHT;
 	document.documentElement.setAttribute('data-theme', t);
 	updateThemeIcons(t);
 })();

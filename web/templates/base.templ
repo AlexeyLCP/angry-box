@@ -8,23 +8,24 @@ import (
 
 templ Base(title string, content templ.Component) {
 	<!DOCTYPE html>
-	<html lang={ i18n.Lang(ctx) } data-theme="tokyonight">
+	<html lang={ i18n.Lang(ctx) } data-theme="sand">
 	<head>
 		<script>
-			// Pre-paint theme application (prevents FOUC). Migrate old dark/light
-			// localStorage values to the Tokyo Night theme names.
+			// Pre-paint theme application (prevents FOUC). Migrate the old
+			// Tokyo Night localStorage values to the new theme names so an
+			// existing user keeps a sensible theme.
 			(function(){
-				var t = localStorage.getItem('angrybox-theme') || 'tokyonight';
-				if (t === 'dark') t = 'tokyonight';
-				else if (t === 'light') t = 'tokyonight-day';
-				var valid = ['tokyonight','tokyonight-day','tokyonight-storm'];
-				if (valid.indexOf(t) < 0) t = 'tokyonight';
+				var t = localStorage.getItem('angrybox-theme') || 'sand';
+				var legacy = { 'tokyonight':'graphite','tokyonight-day':'sand','tokyonight-storm':'graphite','dark':'graphite','light':'sand' };
+				if (legacy[t]) t = legacy[t];
+				var valid = ['sand','slate','graphite','night'];
+				if (valid.indexOf(t) < 0) t = 'sand';
 				document.documentElement.setAttribute('data-theme', t);
 			})();
 		</script>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<meta name="theme-color" content="#16161e">
+		<meta name="theme-color" content="#f6f2ea">
 		<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg" />
 		<title>{ title } | Angry-BOX</title>
 
@@ -44,87 +45,91 @@ templ Base(title string, content templ.Component) {
 			.status-offline { @apply bg-error; }
 			.status-degraded { @apply bg-warning; }
 		</style>
-		<link href="/static/css/tokyo-night.css" rel="stylesheet" />
+		<link href="/static/css/themes.css" rel="stylesheet" />
 		<link href="/static/css/app.css" rel="stylesheet" />
 	</head>
 	<body class="min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased">
 		<div id="htmx-loading-bar"></div>
 		<div class="flex h-screen overflow-hidden">
-			<div class="w-64 bg-base-200/50 backdrop-blur-md border-r border-base-content/10 flex flex-col shadow-xl z-20">
-				<a href="/ui" class="block p-6 border-b border-base-content/10 hover:bg-base-content/5 transition-colors cursor-pointer">
-					<div class="flex items-center gap-2">
-						<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-							<span class="text-primary-content font-bold text-lg">A</span>
-						</div>
-						<div>
-							<div class="font-semibold text-lg">Angry-BOX</div>
-							<div class="text-xs text-base-content/60 -mt-1">{ i18n.T(ctx, "Orchestrator") }</div>
-						</div>
-					</div>
+			<aside class="w-64 flex flex-col flex-shrink-0" style="background: color-mix(in oklab, var(--b2) 80%, transparent); backdrop-filter: blur(12px); border-right: 1px solid var(--bd);">
+				<a href="/ui" class="flex items-center gap-3 px-4 h-16" style="border-bottom: 1px solid var(--bd); text-decoration: none;">
+					<span class="font-mono flex items-center justify-center font-bold text-lg" style="width: 32px; height: 32px; border-radius: 8px; background: var(--p); color: var(--pc);">A</span>
+					<span class="leading-tight">
+						<span class="block font-semibold" style="color: var(--bc)">Angry-BOX</span>
+						<span class="block text-[11px]" style="color: var(--mut2)">{ i18n.T(ctx, "Orchestrator") }</span>
+					</span>
 				</a>
-
-				<div class="flex-1 p-2">
-					<ul class="menu w-full">
-						<li><a hx-get="/ui" hx-target="#main-content" hx-push-url="true" class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z" /></svg><span>{ i18n.T(ctx, "Dashboard") }</span></a></li>
-						<li><a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg><span>{ i18n.T(ctx, "Nodes") }</span></a></li>
-						<li><a hx-get="/ui/inbounds" hx-target="#main-content" hx-push-url="true" class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><span>{ i18n.T(ctx, "Inbounds") }</span></a></li>
-						<li><a hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true" class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg><span>{ i18n.T(ctx, "Chains") }</span></a></li>
-						<li><a hx-get="/ui/clients" hx-target="#main-content" hx-push-url="true" class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" /></svg><span>{ i18n.T(ctx, "Clients") }</span></a></li>
-					</ul>
+				<nav class="flex-1 overflow-y-auto p-3 flex flex-col gap-1" aria-label="Main">
+					<a hx-get="/ui" hx-target="#main-content" hx-push-url="true" class="nav-a flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z" /></svg>
+						<span>{ i18n.T(ctx, "Dashboard") }</span>
+					</a>
+					<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="nav-a flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
+						<span>{ i18n.T(ctx, "Nodes") }</span>
+					</a>
+					<a hx-get="/ui/inbounds" hx-target="#main-content" hx-push-url="true" class="nav-a flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+						<span>{ i18n.T(ctx, "Inbounds") }</span>
+					</a>
+					<a hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true" class="nav-a flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+						<span>{ i18n.T(ctx, "Chains") }</span>
+					</a>
+					<a hx-get="/ui/clients" hx-target="#main-content" hx-push-url="true" class="nav-a flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" /></svg>
+						<span>{ i18n.T(ctx, "Clients") }</span>
+					</a>
+				</nav>
+				<div class="p-3 flex flex-col gap-1" style="border-top: 1px solid var(--bd)">
+					<a hx-get="/ui/settings" hx-target="#main-content" hx-push-url="true" class="nav-a flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+						<span>{ i18n.T(ctx, "Settings") }</span>
+					</a>
+					<span class="font-mono text-[11px] px-2 pt-2" style="color: var(--mut2)">{ i18n.T(ctx, "Angry-BOX • Orchestrator") } · { versionpkg.Version }</span>
 				</div>
-				<div class="p-2 border-t border-base-300">
-					<ul class="menu w-full">
-						<li><a hx-get="/ui/settings" hx-target="#main-content" hx-push-url="true" class="flex items-center gap-2">							<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-							<span>{ i18n.T(ctx, "Settings") }</span></a></li>
-					</ul>
-				</div>
-
-				<div class="p-4 border-t border-base-content/10 text-xs text-base-content/40 text-center font-medium">
-					{ i18n.T(ctx, "Angry-BOX • Orchestrator") }
-					<div class="text-[10px] text-base-content/30 mt-0.5 font-mono">{ versionpkg.Version }</div>
-				</div>
-			</div>
+			</aside>
 
 			<div class="flex-1 flex flex-col overflow-hidden relative">
-				<div class="h-16 border-b border-base-content/10 bg-base-100/40 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+				<header class="h-16 flex items-center justify-between px-6 sticky top-0 z-10" style="background: color-mix(in oklab, var(--b1) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--bd);">
+					<h1 class="text-lg font-semibold" id="page-title">{ title }</h1>
 					<div class="flex items-center gap-4">
-						<h1 class="text-lg font-semibold" id="page-title">{ title }</h1>
-					</div>
-					<div class="flex items-center gap-4">
-							<span class="text-[10px] text-base-content/20">PolyForm Noncommercial 1.0.0 &middot; { i18n.T(ctx, "Personal/Educational use only") }</span>
-							<div class="text-sm text-base-content/60 flex items-center gap-2">
-								<span>{ i18n.T(ctx, "Profile:") } <span class="font-mono text-primary">{ chain.GetDefaultPresetName() }</span></span>
-								<span id="connection-status" class="opacity-50">| { i18n.T(ctx, "Connected") }</span>
-								<div class="dropdown dropdown-end">
-									<div tabindex="0" role="button" class="btn btn-ghost btn-circle btn-sm" aria-label={ i18n.T(ctx, "Theme") } title={ i18n.T(ctx, "Theme") }>
-										<svg id="ico-sun" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-										<svg id="ico-moon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-									</div>
-									<ul tabindex="0" class="dropdown-content z-[1000] menu p-2 shadow-lg bg-base-200 rounded-box w-52 border border-base-300">
-										<li class="menu-title text-xs">{ i18n.T(ctx, "Theme") }</li>
-										<li><button data-set-theme="tokyonight" class="theme-option">
-											<span class="theme-swatch" style="background:#1a1b26;border:1px solid #3b4261"></span>
-											{ i18n.T(ctx, "Tokyo Night") }
-										</button></li>
-										<li><button data-set-theme="tokyonight-day" class="theme-option">
-											<span class="theme-swatch" style="background:#e9e9ed;border:1px solid #b8b9c0"></span>
-											{ i18n.T(ctx, "Tokyo Night Day") }
-										</button></li>
-										<li><button data-set-theme="tokyonight-storm" class="theme-option">
-											<span class="theme-swatch" style="background:#1f2335;border:1px solid #414868"></span>
-											{ i18n.T(ctx, "Tokyo Night Storm") }
-										</button></li>
-									</ul>
-								</div>
+						<span class="hidden xl:inline text-[11px]" style="color: var(--mut2)">PolyForm Noncommercial 1.0.0 · { i18n.T(ctx, "Personal/Educational use only") }</span>
+						<span class="pill font-mono" title={ i18n.T(ctx, "Default obfuscation preset") } style="color: var(--p)">{ i18n.T(ctx, "Profile:") } <span class="font-mono">{ chain.GetDefaultPresetName() }</span></span>
+						<span id="connection-status" class="st st-ok opacity-90"><span class="dot"></span>{ i18n.T(ctx, "Connected") }</span>
+						<div class="dropdown dropdown-end">
+							<div tabindex="0" role="button" class="btn btn-ghost btn-circle btn-sm" aria-label={ i18n.T(ctx, "Theme") } title={ i18n.T(ctx, "Theme") }>
+								<svg id="ico-sun" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+								<svg id="ico-moon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
 							</div>
+							<ul tabindex="0" class="dropdown-content z-[1000] menu p-2 shadow-lg rounded-box w-52" style="background: var(--b2); border: 1px solid var(--bd);">
+								<li class="menu-title text-xs">{ i18n.T(ctx, "Theme") }</li>
+								<li><button data-set-theme="sand" class="theme-option">
+									<span class="theme-swatch" style="background:#f6f2ea;border:1px solid #ded6c6"></span>
+									{ i18n.T(ctx, "Sand") }
+								</button></li>
+								<li><button data-set-theme="slate" class="theme-option">
+									<span class="theme-swatch" style="background:#eef0f3;border:1px solid #ccd2da"></span>
+									{ i18n.T(ctx, "Slate") }
+								</button></li>
+								<li><button data-set-theme="graphite" class="theme-option">
+									<span class="theme-swatch" style="background:#17181a;border:1px solid #3a3d42"></span>
+									{ i18n.T(ctx, "Graphite") }
+								</button></li>
+								<li><button data-set-theme="night" class="theme-option">
+									<span class="theme-swatch" style="background:#0e0e10;border:1px solid #2b2d31"></span>
+									{ i18n.T(ctx, "Night") }
+								</button></li>
+							</ul>
+						</div>
 					</div>
-				</div>
+				</header>
 
 				<div id="main-content" class="flex-1 overflow-auto p-6">
 					@content
 				</div>
 			</div>
-			</div>
+		</div>
 
 		<script>
 			// Server-rendered JS i18n dictionary for the few client-side strings.

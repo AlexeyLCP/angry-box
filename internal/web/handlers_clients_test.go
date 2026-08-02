@@ -46,7 +46,7 @@ func TestHandler_ClientsPage_UsesBaseLayout(t *testing.T) {
 	body := w.Body.String()
 	// Base layout markers: the <html data-theme="..."> attribute set by
 	// base.templ's pre-paint script, and the daisyui stylesheet <link>.
-	if !strings.Contains(body, `data-theme="tokyonight"`) {
+	if !strings.Contains(body, `data-theme="sand"`) {
 		t.Errorf("clients page missing base-layout data-theme attribute (rendered bare fragment?):\n%s", truncateBody(body))
 	}
 	if !strings.Contains(body, "daisyui") {

@@ -1,7 +1,10 @@
-/* Angry-BOX custom styles (non-Tailwind) + Tokyo Night component conventions.
-   The .tn-* classes use the --tn-* CSS custom props from tokyo-night.css
-   (which differ per theme). Ported from hoaxisr/awg-manager (MIT — see
-   docs/CREDITS.md). */
+/* Angry-BOX custom styles + component layer.
+   The .tn-* classes read the --tn-* aliases defined in themes.css (which in
+   turn alias onto the DaisyUI OKLCH slots, so they re-theme automatically).
+   The Lovable component classes (.st/.pill/.lvl/.seg/.inp/.lbl/.btn-* …) are
+   the new design-system layer migrated from the Lovable mockups; they also
+   read the theme tokens (DaisyUI slots + the --bd/--mut/--mut2/--pu props
+   from themes.css). Ported in part from hoaxisr/awg-manager (MIT) — docs/CREDITS.md. */
 
 /* HTMX loading indicator */
 #htmx-loading-bar {
@@ -164,3 +167,143 @@
 .tn-z-drawer { z-index: var(--tn-z-drawer); }
 .tn-z-modal { z-index: var(--tn-z-modal); }
 .tn-z-toast { z-index: var(--tn-z-toast); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Lovable component layer — migrated from the design mockups (.lovable-design/
+   public/mockups/*.html). Reads the DaisyUI OKLCH slots (via oklch()) plus the
+   Lovable tokens (--bd/--bdh/--mut/--mut2/--pu) from themes.css. These coexist
+   with the legacy .tn-* classes: the page-by-page markup migration (Slice 2)
+   progressively adopts these, but the .tn-* classes stay so existing pages
+   keep working untouched. Load belongs AFTER daisyui full.min.css + themes.css.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Status pill — semantically coloured badge with a leading dot. */
+.st {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.1rem 0.5rem; border-radius: 999px;
+  font-size: 11px; font-weight: 600; border: 1px solid transparent; white-space: nowrap;
+}
+.st .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; display: inline-block; }
+.st-ok   { color: var(--su); background: color-mix(in oklab, oklch(var(--su)) 14%, transparent);
+           border-color: color-mix(in oklab, oklch(var(--su)) 35%, transparent); }
+.st-warn { color: var(--wa); background: color-mix(in oklab, oklch(var(--wa)) 14%, transparent);
+           border-color: color-mix(in oklab, oklch(var(--wa)) 35%, transparent); }
+.st-err  { color: var(--er); background: color-mix(in oklab, oklch(var(--er)) 14%, transparent);
+           border-color: color-mix(in oklab, oklch(var(--er)) 35%, transparent); }
+.st-info { color: var(--in); background: color-mix(in oklab, oklch(var(--in)) 14%, transparent);
+           border-color: color-mix(in oklab, oklch(var(--in)) 35%, transparent); }
+.st-pu   { color: var(--pu, var(--a)); background: color-mix(in oklab, var(--pu, oklch(var(--a))) 14%, transparent);
+           border-color: color-mix(in oklab, var(--pu, oklch(var(--a))) 35%, transparent); }
+.st-mut  { color: var(--mut); background: color-mix(in oklab, var(--b3) 70%, transparent);
+           border-color: var(--bd); }
+
+/* Generic pill — mono chip for protocol/port/preset/assigned-nodes. */
+.pill {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.05rem 0.45rem; border-radius: 6px; font-size: 11px;
+  font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
+  border: 1px solid var(--bd); background: var(--b3); color: var(--bc);
+}
+
+/* Latency pill variants (green/amber/red borders). */
+.lat-ok  { color: var(--su); border-color: color-mix(in oklab, oklch(var(--su)) 35%, transparent); }
+.lat-mid { color: var(--wa); border-color: color-mix(in oklab, oklch(var(--wa)) 35%, transparent); }
+.lat-bad { color: var(--er); border-color: color-mix(in oklab, oklch(var(--er)) 35%, transparent); }
+
+/* Chain level pill — entry/relay/exit role colours. */
+.lvl {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 11px; font-weight: 600;
+  font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
+  border: 1px solid var(--bd);
+}
+.lvl-entry { color: var(--p); border-color: color-mix(in oklab, var(--p, oklch(var(--p))) 40%, transparent);
+             background: color-mix(in oklab, var(--p, oklch(var(--p))) 12%, transparent); }
+.lvl-relay { color: var(--pu, var(--a)); border-color: color-mix(in oklab, var(--pu, oklch(var(--a))) 40%, transparent);
+             background: color-mix(in oklab, var(--pu, oklch(var(--a))) 12%, transparent); }
+.lvl-exit  { color: var(--su); border-color: color-mix(in oklab, oklch(var(--su)) 40%, transparent);
+             background: color-mix(in oklab, oklch(var(--su)) 12%, transparent); }
+.arrow { color: var(--mut2); }
+
+/* Segmented control — radio group styled as a pill toggle (AWG version, theme). */
+.seg {
+  display: inline-flex; background: var(--b3); border: 1px solid var(--bd);
+  border-radius: 10px; padding: 2px; gap: 2px;
+}
+.seg label { cursor: pointer; }
+.seg input { position: absolute; opacity: 0; width: 0; height: 0; }
+.seg span { display: block; padding: 0.3rem 0.7rem; border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--mut); }
+.seg input:checked + span { background: var(--p); color: var(--pc); }
+.seg input:focus-visible + span { outline: 2px solid var(--p); outline-offset: 2px; }
+
+/* Form controls (Lovable): .inp/.sel/.ta shared baseline, .lbl label, .hint helper. */
+.inp, .sel, .ta {
+  width: 100%; background: var(--b3); border: 1px solid var(--bd); border-radius: 8px;
+  padding: 0.4rem 0.6rem; color: var(--bc); font-size: 13px; outline: none;
+  font-family: inherit;
+}
+.inp:focus-visible, .sel:focus-visible, .ta:focus-visible,
+.btn:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--p); outline-offset: 2px;
+}
+.inp::placeholder, .ta::placeholder { color: var(--mut2); }
+.lbl {
+  display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--mut); margin-bottom: 0.25rem;
+}
+.hint { font-size: 11px; color: var(--mut2); margin-top: 0.25rem; }
+.sect-title { font-size: 13px; font-weight: 600; color: var(--bc); }
+.divider-x { height: 1px; background: var(--bd); }
+
+/* Button variants (Lovable). Coexist with DaisyUI .btn — used in migrated pages. */
+.btn { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 8px;
+  font-weight: 600; font-size: 13px; padding: 0.4rem 0.75rem;
+  border: 1px solid transparent; cursor: pointer; transition: all 0.15s ease;
+  background: transparent; color: var(--bc); }
+.btn-sm { padding: 0.2rem 0.5rem; font-size: 12px; }
+.btn-icon { padding: 0.3rem; border-radius: 8px; border: 1px solid var(--bd); background: var(--b3); color: var(--mut); }
+.btn-icon:hover { color: var(--bc); border-color: var(--bdh); }
+.btn-primary { background: var(--p); color: var(--pc); }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-outline { border-color: var(--bd); background: var(--b3); }
+.btn-outline:hover { border-color: var(--bdh); }
+.btn-ghost:hover { background: var(--b3); }
+.btn-warning { background: var(--wa); color: var(--wac); }
+.btn-error { background: var(--er); color: var(--erc); }
+
+/* Checkbox (Lovable) — replaces DaisyUI checkbox in migrated forms. */
+input[type="checkbox"].cb {
+  appearance: none; width: 16px; height: 16px; border: 1px solid var(--bd);
+  border-radius: 4px; background: var(--b3); display: inline-block; vertical-align: -3px;
+}
+input[type="checkbox"].cb:checked { background: var(--p); border-color: var(--p); }
+
+/* Toggle (Lovable). */
+.toggle-tn {
+  appearance: none; width: 36px; height: 20px; border-radius: 999px;
+  background: var(--b3); border: 1px solid var(--bd); position: relative; cursor: pointer;
+}
+.toggle-tn::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 999px; background: var(--mut); transition: 0.15s; }
+.toggle-tn:checked { background: color-mix(in oklab, var(--p) 40%, transparent); border-color: var(--p); }
+.toggle-tn:checked::after { left: 18px; background: var(--p); }
+
+/* Nav link (sidebar) — selected state. */
+.nav-a {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.6rem;
+  border-radius: 8px; color: var(--mut); font-weight: 500; text-decoration: none;
+}
+.nav-a:hover { background: var(--b3); color: var(--bc); }
+.nav-a.active { background: color-mix(in oklab, var(--p) 14%, transparent); color: var(--p); }
+
+/* Code block — for client-config previews / share-URI. */
+.code {
+  background: var(--b3); border: 1px solid var(--bd); border-radius: 10px;
+  padding: 0.75rem; font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
+  font-size: 12px; color: var(--bc); white-space: pre; overflow: auto;
+}
+
+/* Modal (Lovable, CSS :target-driven); coexists with DaisyUI modals. */
+.modal-tn { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none;
+  align-items: center; justify-content: center; padding: 1rem; z-index: var(--tn-z-modal); }
+.modal-tn:target { display: flex; }
