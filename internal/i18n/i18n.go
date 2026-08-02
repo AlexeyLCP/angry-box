@@ -804,6 +804,13 @@ var locales = map[string]map[string]string{
 		"AWG 3.0 (header protection)": "AWG 3.0 (header protection)",
 		"AWG 1.5 (legacy, no CPS)": "AWG 1.5 (legacy, no CPS)",
 		"Invalid AWG version": "Invalid AWG version",
+		"AWG 3.0 header protection": "AWG 3.0 header protection",
+		"AWG 3.0 material hint": "Generated once at deploy (EnsureProfileAWGMaterial) and persisted; rotated only by re-deploy. HeaderProtectionKey is base64 on the wire; ContentPaddingAddition / RekeyAfterTime are lo-hi ranges.",
+		"Header protection key": "Header protection key",
+		"Content padding addition": "Content padding addition",
+		"Rekey after time": "Rekey after time",
+		"AWG3 material not generated yet": "AWG3 material not generated yet — it is created on the first deploy of this inbound.",
+		"Actions": "Actions",
 	},
 	"ru": {
 		"Dashboard": "Дашборд",
@@ -1634,6 +1641,13 @@ var locales = map[string]map[string]string{
 		"AWG 3.0 (header protection)": "AWG 3.0 (защита заголовков)",
 		"AWG 1.5 (legacy, no CPS)": "AWG 1.5 (legacy, без CPS)",
 		"Invalid AWG version": "Неверная версия AWG",
+		"AWG 3.0 header protection": "AWG 3.0 — защита заголовков",
+		"AWG 3.0 material hint": "Генерируется один раз при деплое (EnsureProfileAWGMaterial) и персистится; ротация — только повторным деплоем. HeaderProtectionKey передаётся в base64; ContentPaddingAddition / RekeyAfterTime — диапазоны lo-hi.",
+		"Header protection key": "Ключ защиты заголовков",
+		"Content padding addition": "Доп. паддинг контента",
+		"Rekey after time": "Rekey после (с)",
+		"AWG3 material not generated yet": "AWG3-материал ещё не сгенерирован — создаётся при первом деплое этого инбаунда.",
+		"Actions": "Действия",
 	},
 }
 

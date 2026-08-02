@@ -27,10 +27,11 @@ type InboundProfileView struct {
 }
 
 templ InboundsPage(views []InboundProfileView, nodes []*model.NodeInfo) {
-	<div class="space-y-4">
-		<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-6">
+		<div class="flex items-center justify-between flex-wrap gap-3">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Inbounds") }</h2>
 			<button class="btn btn-primary btn-sm" hx-get="/ui/inbounds/new" hx-target="#modal-container">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15" /></svg>
 				{ i18n.T(ctx, "+ Add Inbound") }
 			</button>
 		</div>
@@ -46,14 +47,14 @@ templ InboundsPage(views []InboundProfileView, nodes []*model.NodeInfo) {
 }
 
 templ InboundsList(views []InboundProfileView) {
-	<div class="card bg-base-100/50 border border-base-content/5">
-		<div class="card-body p-0">
-			if len(views) == 0 {
-				<div class="p-6 text-sm text-base-content/50">
-					{ i18n.T(ctx, "No inbounds yet. Create one and deploy it onto your nodes — then reference it from a chain.") }
-				</div>
-			} else {
-				<table class="table table-sm">
+	<section class="tn-card tn-card-hover">
+		if len(views) == 0 {
+			<div class="p-6 text-sm text-base-content/50">
+				{ i18n.T(ctx, "No inbounds yet. Create one and deploy it onto your nodes — then reference it from a chain.") }
+			</div>
+		} else {
+			<div class="overflow-x-auto">
+				<table class="tn-table">
 					<thead>
 						<tr>
 							<th>{ i18n.T(ctx, "Name") }</th>
@@ -62,7 +63,7 @@ templ InboundsList(views []InboundProfileView) {
 							<th>{ i18n.T(ctx, "Preset") }</th>
 							<th>{ i18n.T(ctx, "Nodes") }</th>
 							<th>{ i18n.T(ctx, "Chains") }</th>
-							<th class="w-px"></th>
+							<th class="text-right">{ i18n.T(ctx, "Actions") }</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -71,50 +72,58 @@ templ InboundsList(views []InboundProfileView) {
 						}
 					</tbody>
 				</table>
-			}
-		</div>
-	</div>
+			</div>
+		}
+	</section>
 }
 
 templ InboundRow(v InboundProfileView) {
 	<tr>
-		<td class="font-medium">{ v.Profile.Name }</td>
-		<td><span class="badge badge-sm badge-outline">{ v.Profile.Protocol }</span></td>
-		<td class="font-mono text-sm">{ fmt.Sprintf("%d", v.Profile.Port) }</td>
-		<td class="text-sm text-base-content/60">
+		<td class="font-semibold">{ v.Profile.Name }</td>
+		<td><span class="pill">{ v.Profile.Protocol }</span></td>
+		<td class="font-mono">{ fmt.Sprintf("%d", v.Profile.Port) }</td>
+		<td>
 			if v.Profile.Obfuscation != "" {
-				{ v.Profile.Obfuscation }
+				<span class="pill" style="color: var(--pu, var(--a))">{ v.Profile.Obfuscation }</span>
 			} else {
-				<span class="text-base-content/30">—</span>
+				<span class="st st-mut">{ i18n.T(ctx, "Default preset") }</span>
 			}
 		</td>
 		<td>
 			if len(v.NodeIDs) == 0 {
-				<span class="text-sm text-base-content/40">{ i18n.T(ctx, "not deployed") }</span>
-			}
-			for _, id := range v.NodeIDs {
-				<span class="badge badge-sm badge-ghost mr-1">{ id }</span>
-			}
-			if v.UsersTotal > 0 {
-				<span class="text-xs text-base-content/50 ml-1">{ fmt.Sprintf(i18n.T(ctx, "(%d users)"), v.UsersTotal) }</span>
+				<span class="st st-mut">{ i18n.T(ctx, "not deployed") }</span>
+			} else {
+				for _, id := range v.NodeIDs {
+					<span class="pill" style="margin-right: 0.25rem">{ id }</span>
+				}
+				if v.UsersTotal > 0 {
+					<span class="text-xs ml-1" style="color: var(--mut2)">{ fmt.Sprintf(i18n.T(ctx, "(%d users)"), v.UsersTotal) }</span>
+				}
 			}
 		</td>
 		<td>
-			for _, cn := range v.ChainRefs {
-				<span class="badge badge-sm badge-primary badge-outline mr-1">{ cn }</span>
+			if len(v.ChainRefs) == 0 {
+				<span class="st st-mut">—</span>
+			} else {
+				for _, cn := range v.ChainRefs {
+					<span class="lvl lvl-relay">{ cn }</span>
+				}
 			}
 		</td>
-		<td class="whitespace-nowrap">
-			<button class="btn btn-ghost btn-xs" hx-get={ "/ui/inbounds/" + v.Profile.ID + "/edit" } hx-target="#modal-container">
-				{ i18n.T(ctx, "Edit") }
-			</button>
-			<button class="btn btn-ghost btn-xs text-error"
-				hx-delete={ "/ui/inbounds/" + v.Profile.ID }
-				hx-confirm={ i18n.T(ctx, "Delete this inbound profile? It will be removed from all nodes.") }
-				hx-target="closest tr"
-				hx-swap="outerHTML">
-				{ i18n.T(ctx, "Delete") }
-			</button>
+		<td class="text-right whitespace-nowrap">
+			<div class="inline-flex gap-1">
+				<button class="btn-icon" title={ i18n.T(ctx, "Edit") } aria-label={ i18n.T(ctx, "Edit") }
+					hx-get={ "/ui/inbounds/" + v.Profile.ID + "/edit" } hx-target="#modal-container">
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>
+				</button>
+				<button class="btn-icon" title={ i18n.T(ctx, "Delete") } aria-label={ i18n.T(ctx, "Delete") } style="color: var(--er)"
+					hx-delete={ "/ui/inbounds/" + v.Profile.ID }
+					hx-confirm={ i18n.T(ctx, "Delete this inbound profile? It will be removed from all nodes.") }
+					hx-target="closest tr"
+					hx-swap="outerHTML">
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+				</button>
+			</div>
 		</td>
 	</tr>
 }
@@ -122,14 +131,14 @@ templ InboundRow(v InboundProfileView) {
 templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []*model.NodeInfo, presets []string, presetGroups []chain.PresetGroup) {
 	<dialog id="inbound-modal" class="modal" open>
 		<div class="modal-box max-w-2xl">
-			<h3 class="font-bold text-lg mb-4">
+			<h3 class="text-lg font-semibold mb-4">
 				if prof != nil {
 					{ i18n.T(ctx, "Edit inbound") }
 				} else {
 					{ i18n.T(ctx, "Add inbound") }
 				}
 			</h3>
-			<form class="space-y-4"
+			<form class="flex flex-col gap-4"
 				if prof != nil {
 					hx-post={ "/ui/inbounds/" + prof.ID + "/edit" }
 				} else {
@@ -137,151 +146,185 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 				}
 				hx-target="#modal-container"
 				hx-swap="innerHTML">
-				<div class="grid grid-cols-2 gap-4">
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Name") }</span></label>
-						<input type="text" name="name" class="input input-bordered" required
+				<div class="grid gap-4 md:grid-cols-2">
+					<div>
+						<label class="lbl" for="ibf-name">{ i18n.T(ctx, "Name") }</label>
+						<input id="ibf-name" type="text" name="name" class="inp" required
 							if prof != nil {
 								value={ prof.Name }
 							}
 						/>
 					</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Protocol") }</span></label>
-					<select name="protocol" class="select select-bordered" disabled?={ prof != nil }
-						onchange="var s=this.closest('form').querySelector('.awg-capture-section');if(s){s.style.display=this.value==='awg'?'block':'none'}">
-						<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
-						<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
-						<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
-					</select>
-					if prof != nil {
-						// disabled selects don't submit — carry the value
-						<input type="hidden" name="protocol" value={ prof.Protocol }/>
-						<span class="text-xs text-base-content/40 mt-1">{ i18n.T(ctx, "Protocol is locked while the inbound is deployed (credentials are protocol-specific)") }</span>
-					}
-				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Port") }</span></label>
-					<input type="number" name="port" class="input input-bordered" min="1" max="65535"
-						if prof != nil {
-							value={ fmt.Sprintf("%d", prof.Port) }
-						}
-					/>
-				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Obfuscation preset") }</span></label>
-					<select name="obfuscation" class="select select-bordered">
-						<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Use global default (Jc=120, premium)") }</option>
-						for _, g := range presetGroups {
-							<optgroup label={ g.Label }>
-								for _, o := range g.Options {
-									if o.Jc > 0 {
-										<option value={ o.Name } selected?={ prof != nil && prof.Obfuscation == o.Name }>{ o.Name } (Jc={ fmt.Sprintf("%d", o.Jc) })</option>
-									} else {
-										<option value={ o.Name } selected?={ prof != nil && prof.Obfuscation == o.Name }>{ o.Name }</option>
-									}
-								}
-							</optgroup>
-						}
-					</select>
-					<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Preset hint") }</span></label>
-				</div>
-			</div>
-
-			<div class="awg-capture-section form-control border border-base-300 rounded-lg p-3 space-y-3" style={ templ.KV("display:none", prof != nil && prof.Protocol != "awg") }>
-				<span class="text-sm font-medium">{ i18n.T(ctx, "AWG CPS obfuscation") }</span>
-				<div class="grid grid-cols-2 gap-3">
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "CPS Mimicry mode") }</span></label>
-						<select name="awg_cps_mimicry" class="select select-bordered select-sm"
-							onchange="var w=this.closest('.awg-capture-section').querySelector('.capture-domain-wrap');if(w){w.style.display=this.value==='quic-live'?'block':'none'}">
-							<option value="" selected?={ prof == nil || prof.AWGCPSMimicry == "" }>{ i18n.T(ctx, "Default (from preset)") }</option>
-							<option value="quic-live" selected?={ prof != nil && prof.AWGCPSMimicry == "quic-live" }>{ i18n.T(ctx, "quic-live (capture)") }</option>
-							<option value="quic" selected?={ prof != nil && prof.AWGCPSMimicry == "quic" }>{ i18n.T(ctx, "quic") }</option>
-							<option value="sip" selected?={ prof != nil && prof.AWGCPSMimicry == "sip" }>{ i18n.T(ctx, "sip") }</option>
-							<option value="dns" selected?={ prof != nil && prof.AWGCPSMimicry == "dns" }>{ i18n.T(ctx, "dns") }</option>
-							<option value="none" selected?={ prof != nil && prof.AWGCPSMimicry == "none" }>{ i18n.T(ctx, "none") }</option>
+					<div>
+						<label class="lbl" for="ibf-proto">{ i18n.T(ctx, "Protocol") }</label>
+						<select id="ibf-proto" name="protocol" class="sel" disabled?={ prof != nil }
+							onchange="var s=this.closest('form').querySelector('.awg-capture-section');if(s){s.style.display=this.value==='awg'?'block':'none'}">
+							<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
+							<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
+							<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
 						</select>
+						if prof != nil {
+							// disabled selects don't submit — carry the value
+							<input type="hidden" name="protocol" value={ prof.Protocol }/>
+							<p class="hint">{ i18n.T(ctx, "Protocol is locked while the inbound is deployed (credentials are protocol-specific)") }</p>
+						}
 					</div>
-					<div class="capture-domain-wrap form-control" style={ templ.KV("display:none", prof == nil || prof.AWGCPSMimicry != "quic-live") }>
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "QUIC Capture Domain") }</span></label>
-						<div class="join">
-							<input type="text" name="awg_cps_capture_domain" class="input input-bordered input-sm join-item"
-								if prof != nil {
-									value={ prof.AWGCPSCaptureDomain }
-								}
-								placeholder="disk.yandex.ru" />
-							<button type="button" class="btn btn-sm join-item"
-								hx-post="/ui/chains/capture-preview"
-								hx-target="#inbound-capture-preview-result"
-								hx-include="closest form">
-								{ i18n.T(ctx, "Capture now") }
-							</button>
+					<div>
+						<label class="lbl" for="ibf-port">{ i18n.T(ctx, "Port") }</label>
+						<input id="ibf-port" type="number" name="port" class="inp" min="1" max="65535"
+							if prof != nil {
+								value={ fmt.Sprintf("%d", prof.Port) }
+							}
+						/>
+					</div>
+					<div>
+						<label class="lbl" for="ibf-preset">{ i18n.T(ctx, "Obfuscation preset") }</label>
+						<select id="ibf-preset" name="obfuscation" class="sel">
+							<option value="" selected?={ prof == nil || prof.Obfuscation == "" }>{ i18n.T(ctx, "Use global default (Jc=120, premium)") }</option>
+							for _, g := range presetGroups {
+								<optgroup label={ g.Label }>
+									for _, o := range g.Options {
+										if o.Jc > 0 {
+											<option value={ o.Name } selected?={ prof != nil && prof.Obfuscation == o.Name }>{ o.Name } (Jc={ fmt.Sprintf("%d", o.Jc) })</option>
+										} else {
+											<option value={ o.Name } selected?={ prof != nil && prof.Obfuscation == o.Name }>{ o.Name }</option>
+										}
+									}
+								</optgroup>
+							}
+						</select>
+						<p class="hint">{ i18n.T(ctx, "Preset hint") }</p>
+					</div>
+				</div>
+
+				<div class="awg-capture-section" style={ templ.KV("display:none", prof != nil && prof.Protocol != "awg") }>
+					<div class="divider-x my-1"></div>
+					<div class="sect-title mb-2">{ i18n.T(ctx, "AWG CPS obfuscation") }</div>
+					<div class="grid gap-4 md:grid-cols-2">
+						<div>
+							<label class="lbl" for="ibf-cps">{ i18n.T(ctx, "CPS Mimicry mode") }</label>
+							<select id="ibf-cps" name="awg_cps_mimicry" class="sel"
+								onchange="var w=this.closest('.awg-capture-section').querySelector('.capture-domain-wrap');if(w){w.style.display=this.value==='quic-live'?'block':'none'}">
+								<option value="" selected?={ prof == nil || prof.AWGCPSMimicry == "" }>{ i18n.T(ctx, "Default (from preset)") }</option>
+								<option value="quic-live" selected?={ prof != nil && prof.AWGCPSMimicry == "quic-live" }>{ i18n.T(ctx, "quic-live (capture)") }</option>
+								<option value="quic" selected?={ prof != nil && prof.AWGCPSMimicry == "quic" }>{ i18n.T(ctx, "quic") }</option>
+								<option value="sip" selected?={ prof != nil && prof.AWGCPSMimicry == "sip" }>{ i18n.T(ctx, "sip") }</option>
+								<option value="dns" selected?={ prof != nil && prof.AWGCPSMimicry == "dns" }>{ i18n.T(ctx, "dns") }</option>
+								<option value="none" selected?={ prof != nil && prof.AWGCPSMimicry == "none" }>{ i18n.T(ctx, "none") }</option>
+							</select>
+						</div>
+						<div class="capture-domain-wrap" style={ templ.KV("display:none", prof == nil || prof.AWGCPSMimicry != "quic-live") }>
+							<label class="lbl" for="ibf-cdom">{ i18n.T(ctx, "QUIC Capture Domain") }</label>
+							<div class="join">
+								<input id="ibf-cdom" type="text" name="awg_cps_capture_domain" class="inp join-item"
+									if prof != nil {
+										value={ prof.AWGCPSCaptureDomain }
+									}
+									placeholder="disk.yandex.ru" />
+								<button type="button" class="btn btn-outline btn-sm join-item"
+									hx-post="/ui/chains/capture-preview"
+									hx-target="#inbound-capture-preview-result"
+									hx-include="closest form">
+									{ i18n.T(ctx, "Capture now") }
+								</button>
+							</div>
 						</div>
 					</div>
-				</div>
-				<div id="inbound-capture-preview-result"></div>
-				if prof != nil && prof.AWGCPSCapturedDomain != "" {
-					<div class="alert alert-info py-2">
-						<span class="text-xs"><strong>{ i18n.T(ctx, "Captured from") }:</strong> { prof.AWGCPSCapturedDomain }</span>
-					</div>
-				}
-				if prof != nil && prof.AWGCPSCaptureFailedDomain != "" {
-					<div class="alert alert-warning py-2">
-						<span class="text-xs"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { prof.AWGCPSCaptureFailedDomain } { i18n.T(ctx, "(synthesized packets in use)") }</span>
-					</div>
-				}
-				// AWG protocol version (AGENTS #5, revision). The canonical picker
-				// for AWG 1.5 / 2.0 / 3.0 — see model.AWGVersion* + EffectiveAWGVersion.
-				// 3.0 = header protection (HPK/CPM/RAT): the user-entry renders as a
-				// userspace `type:"awg"` sing-box endpoint (slice 1; kernel-render is
-				// slice 2 now that the amnezia-box kernel module has native HPK,
-				// PR #192 2026-07-30). HPK requires S1-S4 >= 12 (raised automatically
-				// at render); the client MUST be AWG3-capable (AmneziaWG app or
-				// userspace amneziawg-go), NOT Linux awg-quick. 2.0 = the current
-				// kernel+CPS default (awg-quick + TUN-overlay + CPS via PostUp).
-				// 1.5 = legacy AmneziaWG 1.x (Jc/S1-S2/fixed H1-H4, no CPS).
-				<div class="form-control border-t border-base-300 pt-3">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "AWG version") }</span></label>
-					<select name="awg_version" class="select select-bordered select-sm">
-						<option value="2" selected?={ prof == nil || (prof.AWGVersion == "2" || (!prof.AWG3Mode && prof.AWGVersion == "")) }>
-							{ i18n.T(ctx, "AWG 2.0 (kernel + CPS, default)") }
-						</option>
-						<option value="3" selected?={ prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") }>
-							{ i18n.T(ctx, "AWG 3.0 (header protection)") }
-						</option>
-						<option value="1.5" selected?={ prof != nil && prof.AWGVersion == "1.5" }>
-							{ i18n.T(ctx, "AWG 1.5 (legacy, no CPS)") }
-						</option>
-					</select>
-					<p class="text-xs text-base-content/60 mt-1">
-						{ i18n.T(ctx, "AWG version hint") }
-					</p>
-				</div>
-			</div>
-
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Deploy on nodes") }</span></label>
-					if len(nodes) == 0 {
-						<span class="text-sm text-base-content/50">{ i18n.T(ctx, "No nodes yet — add nodes first.") }</span>
+					<div id="inbound-capture-preview-result"></div>
+					if prof != nil && prof.AWGCPSCapturedDomain != "" {
+						<div class="alert alert-info py-2 mt-2">
+							<span class="text-xs"><strong>{ i18n.T(ctx, "Captured from") }:</strong> { prof.AWGCPSCapturedDomain }</span>
+						</div>
 					}
-					<div class="grid grid-cols-2 gap-2">
-						for _, n := range nodes {
-							<label class="flex items-center gap-2 border border-base-300 rounded-lg p-2 cursor-pointer hover:bg-base-200/50">
-								<input type="checkbox" name="node_ids" value={ n.ID } class="checkbox checkbox-sm"
-									checked?={ deployed[n.ID] }
-								/>
-								<span class="text-sm font-medium">{ n.ID }</span>
-								<span class="text-xs text-base-content/40">{ n.Addr }</span>
-							</label>
+					if prof != nil && prof.AWGCPSCaptureFailedDomain != "" {
+						<div class="alert alert-warning py-2 mt-2">
+							<span class="text-xs"><strong>{ i18n.T(ctx, "Last capture failed for") }:</strong> { prof.AWGCPSCaptureFailedDomain } { i18n.T(ctx, "(synthesized packets in use)") }</span>
+						</div>
+					}
+
+					<div class="divider-x my-3"></div>
+					// AWG protocol version (AGENTS #5, revision). The canonical picker
+					// for AWG 1.5 / 2.0 / 3.0 — see model.AWGVersion* + EffectiveAWGVersion.
+					// 3.0 = header protection (HPK/CPM/RAT): renders kernel awg-quick when
+					// the node's module supports HPK (PR #192), else userspace sing-box
+					// endpoint. HPK requires S1-S4 >= 12 (raised automatically at render);
+					// the client MUST be AWG3-capable (AmneziaWG app or userspace
+					// amneziawg-go), NOT Linux awg-quick. 2.0 = the current kernel+CPS
+					// default (awg-quick + TUN-overlay + CPS via PostUp). 1.5 = legacy
+					// AmneziaWG 1.x (Jc/S1-S2/fixed H1-H4, no CPS).
+					<div>
+						<span class="lbl">{ i18n.T(ctx, "AWG version") }</span>
+						<div class="seg" role="radiogroup" aria-label={ i18n.T(ctx, "AWG version") }
+							onchange="var w=this.closest('.awg-capture-section').querySelector('.awg3-section');if(w){w.style.display=this.querySelector('input[name=awg_version]:checked')&&this.querySelector('input[name=awg_version]:checked').value==='3'?'block':'none'}">
+							<label><input type="radio" name="awg_version" value="2" checked?={ prof == nil || (prof.AWGVersion == "2" || (!prof.AWG3Mode && prof.AWGVersion == "")) }/><span>{ i18n.T(ctx, "AWG 2.0 (kernel + CPS, default)") }</span></label>
+							<label><input type="radio" name="awg_version" value="3" checked?={ prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") }/><span>{ i18n.T(ctx, "AWG 3.0 (header protection)") }</span></label>
+							<label><input type="radio" name="awg_version" value="1.5" checked?={ prof != nil && prof.AWGVersion == "1.5" }/><span>{ i18n.T(ctx, "AWG 1.5 (legacy, no CPS)") }</span></label>
+						</div>
+						<p class="hint">{ i18n.T(ctx, "AWG version hint") }</p>
+					</div>
+
+					// AWG 3.0 header-protection material — read-only display. Generated
+					// once at deploy (EnsureProfileAWGMaterial) and persisted on the
+					// profile; never hand-edited (rotated only by re-deploy). For a NEW
+					// profile (prof==nil) the material is absent until first deploy.
+					<div class="awg3-section awg3-panel grid gap-4 md:grid-cols-3 p-4 mt-2"
+						style={ templ.KV("display:none", !(prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3"))) }>
+						<div class="md:col-span-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "AWG 3.0 header protection") }</div>
+						if prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") && prof.AWG3HeaderProtectionKey != "" {
+							<div>
+								<label class="lbl">{ i18n.T(ctx, "Header protection key") }</label>
+								<div class="code mono" style="overflow:hidden;text-overflow:ellipsis">{ prof.AWG3HeaderProtectionKey }</div>
+							</div>
+							<div>
+								<label class="lbl">{ i18n.T(ctx, "Content padding addition") }</label>
+								<div class="code mono">
+									if prof.AWG3ContentPaddingAddition != "" {
+										{ prof.AWG3ContentPaddingAddition }
+									} else {
+										<span style="color: var(--mut2)">—</span>
+									}
+								</div>
+							</div>
+							<div>
+								<label class="lbl">{ i18n.T(ctx, "Rekey after time") }</label>
+								<div class="code mono">
+									if prof.AWG3RekeyAfterTime != "" {
+										{ prof.AWG3RekeyAfterTime }
+									} else {
+										<span style="color: var(--mut2)">—</span>
+									}
+								</div>
+							</div>
+							<p class="hint md:col-span-3">{ i18n.T(ctx, "AWG 3.0 material hint") }</p>
+						} else {
+							<p class="hint md:col-span-3">{ i18n.T(ctx, "AWG3 material not generated yet") }</p>
 						}
 					</div>
-					<span class="text-xs text-base-content/40 mt-1">
-						{ i18n.T(ctx, "Checking a node deploys the inbound there with fresh per-node credentials; unchecking removes it (refused while a chain references it).") }
-					</span>
 				</div>
-				<div class="modal-action">
-					<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+
+				<div class="divider-x"></div>
+
+				<div>
+					<span class="lbl">{ i18n.T(ctx, "Deploy on nodes") }</span>
+					if len(nodes) == 0 {
+						<p class="text-sm" style="color: var(--mut)">{ i18n.T(ctx, "No nodes yet — add nodes first.") }</p>
+					} else {
+						<div class="grid grid-cols-2 gap-2">
+							for _, n := range nodes {
+								<label class="flex items-center gap-2 cursor-pointer" style="border: 1px solid var(--bd); border-radius: 8px; padding: 0.5rem;">
+									<input type="checkbox" name="node_ids" value={ n.ID } class="cb"
+										checked?={ deployed[n.ID] }
+									/>
+									<span class="text-sm font-medium">{ n.ID }</span>
+									<span class="text-xs font-mono" style="color: var(--mut2)">{ n.Addr }</span>
+								</label>
+							}
+						</div>
+						<p class="hint">{ i18n.T(ctx, "Checking a node deploys the inbound there with fresh per-node credentials; unchecking removes it (refused while a chain references it).") }</p>
+					}
+				</div>
+				<div class="flex justify-end gap-2">
+					<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
 					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
 				</div>
 			</form>

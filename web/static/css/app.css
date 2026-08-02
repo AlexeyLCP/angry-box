@@ -307,3 +307,11 @@ input[type="checkbox"].cb:checked { background: var(--p); border-color: var(--p)
 .modal-tn { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none;
   align-items: center; justify-content: center; padding: 1rem; z-index: var(--tn-z-modal); }
 .modal-tn:target { display: flex; }
+
+/* AWG 3.0 header-protection panel — dashed inset surface for the read-only
+   HPK/CPM/RAT material display in the inbound form. Static styling lives here
+   (the dynamic display:none is set inline by templ on prof==nil / non-v3). */
+.awg3-panel {
+  border: 1px dashed var(--bd); border-radius: 12px;
+  background: color-mix(in oklab, var(--b3) 45%, transparent);
+}
