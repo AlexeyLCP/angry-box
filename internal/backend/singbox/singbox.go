@@ -530,6 +530,43 @@ func (b *Backend) awgKernelModuleLoaded(ctx context.Context, client ports.SSHCli
 	return strings.TrimSpace(out) == "loaded"
 }
 
+// awg3Capable reports whether the node can run AWG 3.0 (header protection) via
+// the kernel path: the module exports awg_header_protection_set_key (PR #192)
+// AND the awg tools parse HeaderProtectionKey (major >= 3). Mirrors
+// chain.detectKernelAWG3 but is sudo-aware and local to the install path so the
+// installer can decide "skip" vs "upgrade".
+func (b *Backend) awg3Capable(ctx context.Context, client ports.SSHClient, useSudo bool) bool {
+	sym, _, _, _ := client.RunWithOutput(ctx,
+		sudoBash(useSudo, "grep -q awg_header_protection_set_key /proc/kallsyms && echo yes || echo no"),
+		30*time.Second)
+	if strings.TrimSpace(sym) != "yes" {
+		return false
+	}
+	tools, _, _, _ := client.RunWithOutput(ctx,
+		sudoBash(useSudo, "awg --version 2>/dev/null | head -1"),
+		30*time.Second)
+	return awgToolsMajorAtLeast3(tools)
+}
+
+// awgToolsMajorAtLeast3 parses an amneziawg-tools version line (e.g.
+// "amneziawg-tools v3.0.20260730") and reports major >= 3. Empty/garbage → false.
+func awgToolsMajorAtLeast3(line string) bool {
+	s := strings.TrimSpace(line)
+	s = strings.TrimPrefix(s, "amneziawg-tools")
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "v")
+	var n int
+	got := false
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			break
+		}
+		got = true
+		n = n*10 + int(r-'0')
+	}
+	return got && n >= 3
+}
+
 // validateTarballURL rejects anything that is not a clean http(s) URL and that
 // contains a single quote (the shell-escape character that would break out of
 // the curl argument in installAWGModule). Defense against operator-supplied
@@ -559,7 +596,11 @@ func validateTarballURL(raw string) error {
 // The old amneziawg-tools apt name and upstream install.sh URL are obsolete
 // (package missing on Debian 12; install.sh returns 404 as of 2026).
 func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, useSudo bool) error {
-	if b.awgKernelModuleLoaded(ctx, client, useSudo) {
+	// Skip only when the node is ALREADY AWG3-capable (module exports the HPK
+	// symbol AND tools parse HeaderProtectionKey). A node stuck on the v1 PPA
+	// module is loaded but NOT capable, so it falls through to the upgrade path
+	// below (lucx-ui: install is also the upgrade vehicle).
+	if b.awgKernelModuleLoaded(ctx, client, useSudo) && b.awg3Capable(ctx, client, useSudo) {
 		return b.persistAWGModules(ctx, client, useSudo)
 	}
 
@@ -593,7 +634,9 @@ export AB_AWG_URL='%s'
 export DEBIAN_FRONTEND=noninteractive
 echo "[awg] Installing build prerequisites..."
 apt-get update -qq
-apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 curl
+# git/libmnl-dev/pkg-config are needed to build amneziawg-tools from source
+# (the AWG3 userspace tools) when the PPA tools are missing or < v3.
+apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 curl git libmnl-dev pkg-config
 # Debian 13+ prerequisites (LucX-UI install-awg-module.sh lesson, verified on
 # our n1/n2): iptables is no longer installed by default there — our server
 # confs' PostUp lines (MASQUERADE/FORWARD) use the iptables shim, without it
@@ -628,33 +671,50 @@ if ! apt-cache show amneziawg 2>/dev/null | grep -q ^Package; then
   apt-get update -qq || echo "[awg] WARNING: apt-get update with PPA failed (will try DKMS fallback)"
 fi
 
-echo "[awg] Installing amneziawg from PPA..."
-if apt-get install -y -qq amneziawg; then
-  echo "[awg] PPA install OK"
-else
-  echo "[awg] PPA install failed, building from bundled DKMS source..."
-  rm -rf /tmp/awg-src && mkdir -p /tmp/awg-src
-  curl -fsSL "$AB_AWG_URL" -o /tmp/awg-src.tar.gz
-  tar -xzf /tmp/awg-src.tar.gz -C /tmp/awg-src --strip-components=1
-  # Read the module version straight from dkms.conf so dkms add/build/install
-  # always matches the tarball's PACKAGE_VERSION (hardcoding -v 1.0.0 breaks
-  # the moment the bundled amneziawg is bumped to a new release — dkms refuses
-  # to register a version that disagrees with dkms.conf, and the module won't
-  # auto-rebuild on kernel upgrade). Mirrors awg-multi-script's mod_ver flow.
-  AB_AWG_MODVER="$(awk -F'"' '/^PACKAGE_VERSION=/{print $2}' /tmp/awg-src/dkms.conf 2>/dev/null)"
-  if [ -z "$AB_AWG_MODVER" ]; then
-    echo "[awg] WARNING: could not read PACKAGE_VERSION from dkms.conf, falling back to 1.0.0"
-    AB_AWG_MODVER="1.0.0"
-  fi
-  echo "[awg] DKMS module version: $AB_AWG_MODVER"
-  rm -rf "/usr/src/amneziawg-$AB_AWG_MODVER"
-  cp -r /tmp/awg-src "/usr/src/amneziawg-$AB_AWG_MODVER"
-  dkms add -m amneziawg -v "$AB_AWG_MODVER" || true
-  dkms build -m amneziawg -v "$AB_AWG_MODVER"
-  dkms install -m amneziawg -v "$AB_AWG_MODVER"
-  modprobe amneziawg
-  rm -rf /tmp/awg-src /tmp/awg-src.tar.gz
-fi
+	echo "[awg] Installing amneziawg from PPA (baseline tools)..."
+	apt-get install -y -qq amneziawg || echo "[awg] PPA install failed (continuing to DKMS)"
+
+	# Ensure an AWG3-capable KERNEL MODULE. The PPA ships the v1 module (no HPK
+	# symbol); the bundled tarball is master (PR #192, AWG3-capable). If the
+	# loaded/installed module lacks the HPK symbol, build the bundled source via
+	# DKMS — this is the v1 -> v3 upgrade path (lucx-ui --force-rebuild lesson).
+	if ! grep -q awg_header_protection_set_key /proc/kallsyms 2>/dev/null; then
+		echo "[awg] module lacks AWG3 HPK — building bundled AWG3 source via DKMS..."
+		rm -rf /tmp/awg-src && mkdir -p /tmp/awg-src
+		curl -fsSL "$AB_AWG_URL" -o /tmp/awg-src.tar.gz
+		tar -xzf /tmp/awg-src.tar.gz -C /tmp/awg-src --strip-components=1
+		# Upstream stamps PACKAGE_VERSION/WIREGUARD_VERSION=1.0.0 into every build,
+		# so modinfo would report 1.0.0 even for an AWG3 build (lucx-ui c3001499
+		# found the version-parse probe broken by exactly this). Rewrite it so the
+		# registered DKMS version (and modinfo) reflect AWG3.
+		sed -i 's/^PACKAGE_VERSION=.*/PACKAGE_VERSION="3.0-awg3"/' /tmp/awg-src/dkms.conf 2>/dev/null || true
+		AB_AWG_MODVER="3.0-awg3"
+		echo "[awg] DKMS module version: $AB_AWG_MODVER"
+		rm -rf "/usr/src/amneziawg-$AB_AWG_MODVER"
+		cp -r /tmp/awg-src "/usr/src/amneziawg-$AB_AWG_MODVER"
+		dkms add -m amneziawg -v "$AB_AWG_MODVER" || true
+		dkms build -m amneziawg -v "$AB_AWG_MODVER"
+		dkms install -m amneziawg -v "$AB_AWG_MODVER"
+		rmmod amneziawg 2>/dev/null || true
+		modprobe amneziawg
+		rm -rf /tmp/awg-src /tmp/awg-src.tar.gz
+	fi
+
+	# Ensure AWG3-capable TOOLS (awg/awg-quick must parse HeaderProtectionKey).
+	# If the installed awg is missing or < v3, build amneziawg-tools from
+	# upstream master (lucx-ui install-awg-module.sh tools step).
+	TOOLS_MAJOR="$(awg version 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+	TOOLS_MAJOR="${TOOLS_MAJOR:-0}"
+	if [ "$TOOLS_MAJOR" -lt 3 ]; then
+		echo "[awg] tools v$TOOLS_MAJOR lack HPK — building amneziawg-tools from master..."
+		rm -rf /tmp/awg-tools
+		if git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-tools.git /tmp/awg-tools 2>/dev/null; then
+			( cd /tmp/awg-tools/src && make && make install ) || echo "[awg] WARNING: amneziawg-tools build failed (continuing)"
+		else
+			echo "[awg] WARNING: could not clone amneziawg-tools (offline?)"
+		fi
+		rm -rf /tmp/awg-tools
+	fi
 `, awgTarballURL))
 	if _, stderr, exit, err := client.RunWithOutput(ctx, cmd, 15*time.Minute); err != nil {
 		return fmt.Errorf("amneziawg install failed (exit %d): %s %s", exit, err, stderr)

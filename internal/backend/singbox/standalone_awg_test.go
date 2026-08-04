@@ -168,8 +168,12 @@ func TestGenerateConfig_Transport_TUIC(t *testing.T) {
 // TestInstallAWGModule_AlreadyLoaded verifies the short-circuit when the kernel
 // module is already loaded (only persist modules-load.d, no apt).
 func TestInstallAWGModule_AlreadyLoaded(t *testing.T) {
+	// The short-circuit now requires the node to be AWG3-capable (kallsyms HPK
+	// symbol + tools v3), not merely loaded — a loaded-but-v1 node must upgrade.
 	fake := newFakeSSH(
 		fakeRule{substring: "lsmod", out: "loaded"},
+		fakeRule{substring: "awg_header_protection_set_key", out: "yes"},
+		fakeRule{substring: "awg --version", out: "amneziawg-tools v3.0.20260730"},
 		fakeRule{substring: "modules-load.d/amneziawg.conf", out: ""},
 		fakeRule{substring: "", out: ""},
 	)

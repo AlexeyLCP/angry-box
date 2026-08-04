@@ -35,15 +35,23 @@ import (
 // detection outcome so the operator can see WHY a v3 inbound went userspace.
 // modinfo / awg --version are world-readable, so no sudo wrapping is needed.
 func detectKernelAWG3(ctx context.Context, client ports.SSHClient) bool {
-	// 1. Kernel module version (modinfo amneziawg). The PR #192 line ships a
-	//    `version:` of 3.0.20260731-04 or similar; the legacy module is
-	//    1.0.20260611. Parse the first numeric-major of the version line.
+	// 1. Kernel module HPK support. Prefer the FUNCTIONAL probe: the PR #192
+	//    build's header_protection.c exports awg_header_protection_set_key into
+	//    /proc/kallsyms — immune to the fake "1.0.0" PACKAGE_VERSION that upstream
+	//    stamps into every dkms.conf/Makefile (lucx-ui c3001499 found the
+	//    version-parse approach broken for exactly this reason). Fall back to the
+	//    modinfo major>=3 parse for modules that report a real 3.x version.
+	kallsyms, _, _, _ := client.RunWithOutput(ctx,
+		"grep -q awg_header_protection_set_key /proc/kallsyms && echo yes || echo no",
+		15*time.Second)
+	hasSym := strings.TrimSpace(kallsyms) == "yes"
+
 	modVer, _, _, _ := client.RunWithOutput(ctx,
 		"modinfo amneziawg 2>/dev/null | awk '/^version:/{print $2; exit}'",
 		15*time.Second)
 	modVer = strings.TrimSpace(modVer)
-	if !awgKernelVersionSupportsHPK(modVer) {
-		log.Printf("awg3-kernel: node module version %q does not support header protection (need >= 3.0, PR #192) — AWG 3.0 inbounds fall back to userspace", modVer)
+	if !hasSym && !awgKernelVersionSupportsHPK(modVer) {
+		log.Printf("awg3-kernel: node module (kallsyms=%v, version %q) does not support header protection (need PR #192) — AWG 3.0 inbounds fall back to userspace", hasSym, modVer)
 		return false
 	}
 
