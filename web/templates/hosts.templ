@@ -9,13 +9,13 @@ import (
 templ HostStatus(status *model.Status) {
 	<div class="flex flex-col gap-0.5 text-xs">
 		if status.Running {
-			<span class="badge badge-success badge-sm">{ i18n.T(ctx, "Running") }</span>
-			<span class="font-mono text-[10px] opacity-70">{ status.Version }</span>
+			<span class="st st-ok"><span class="dot"></span>{ i18n.T(ctx, "Running") }</span>
+			<span class="font-mono text-[10px]" style="color: var(--mut2)">{ status.Version }</span>
 		} else {
-			<span class="badge badge-error badge-sm">{ i18n.T(ctx, "Stopped") }</span>
+			<span class="st st-err"><span class="dot"></span>{ i18n.T(ctx, "Stopped") }</span>
 		}
 		if status.Error != "" {
-			<span class="text-error text-[10px] truncate max-w-[120px]" title={status.Error}>
+			<span class="text-[10px] truncate max-w-[120px]" style="color: var(--er)" title={status.Error}>
 				{ status.Error }
 			</span>
 		}
