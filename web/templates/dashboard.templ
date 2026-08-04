@@ -25,55 +25,54 @@ type DashboardStats struct {
 	PendingChanges int
 }
 
-// StatsCards renders just the four stat cards (used for polling).
+// StatsCards renders just the four stat cards (used for polling). The cards
+// carry a small label, a large mono number, an optional muted sub-label and a
+// color-tinted Heroicon — the Lovable "dense dashboard" card pattern.
 templ StatsCards(stats DashboardStats) {
-	<div class="grid grid-cols-2 md:grid-cols-4 gap-6" id="dashboard-stats">
-		<div class="tn-card tn-card-hover">
-			<div class="card-body p-6 flex flex-row items-center justify-between">
-				<div>
-					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Nodes") }</div>
-					<div class="text-4xl font-bold text-base-content mt-1">{ stats.TotalHosts }</div>
-				</div>
-				<div class="w-12 h-12 bg-base-200/50 rounded-xl flex items-center justify-center opacity-80">
-					<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-base-content/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
-				</div>
+	<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" id="dashboard-stats">
+		<div class="tn-card tn-card-hover flex items-start justify-between">
+			<div>
+				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Nodes") }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.TotalHosts }</div>
 			</div>
+			<span style="color: var(--p)">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
+			</span>
 		</div>
-		<div class="tn-card tn-card-hover">
-			<div class="card-body p-6 flex flex-row items-center justify-between">
-				<div>
-					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Online") }</div>
-					<div class="text-4xl font-bold text-success mt-1 drop-shadow-sm">{ stats.OnlineHosts }</div>
-				</div>
-				<div class="w-12 h-12 bg-success/10 rounded-xl flex items-center justify-center">
-					<span class="relative flex h-4 w-4">
-					  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-					  <span class="relative inline-flex rounded-full h-4 w-4 bg-success"></span>
-					</span>
-				</div>
+		<div class="tn-card tn-card-hover flex items-start justify-between">
+			<div>
+				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Online") }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.OnlineHosts }</div>
+				if stats.TotalHosts-stats.OnlineHosts > 0 {
+					<div class="text-[11px] mt-1" style="color: var(--mut2)">{ fmt.Sprintf(i18n.T(ctx, "%d not healthy"), stats.TotalHosts-stats.OnlineHosts) }</div>
+				} else if stats.TotalHosts > 0 {
+					<div class="text-[11px] mt-1" style="color: var(--mut2)">{ i18n.T(ctx, "all healthy") }</div>
+				}
 			</div>
+			<span style="color: var(--su)">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m4.5 12.75 6 6 9-13.5" /></svg>
+			</span>
 		</div>
-		<div class="tn-card tn-card-hover">
-			<div class="card-body p-6 flex flex-row items-center justify-between">
-				<div>
-					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Chains") }</div>
-					<div class="text-4xl font-bold text-primary mt-1 drop-shadow-sm">{ stats.TotalChains }</div>
-				</div>
-				<div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-					<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-				</div>
+		<div class="tn-card tn-card-hover flex items-start justify-between">
+			<div>
+				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Chains") }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.TotalChains }</div>
+				if stats.PendingChanges > 0 {
+					<div class="text-[11px] mt-1" style="color: var(--mut2)">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
+				}
 			</div>
+			<span style="color: var(--pu, var(--a))">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+			</span>
 		</div>
-		<div class="tn-card tn-card-hover">
-			<div class="card-body p-6 flex flex-row items-center justify-between">
-				<div>
-					<div class="text-sm font-medium text-base-content/60 uppercase tracking-wider">{ i18n.T(ctx, "Users") }</div>
-					<div class="text-4xl font-bold text-secondary mt-1 drop-shadow-sm">{ stats.TotalUsers }</div>
-				</div>
-				<div class="w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center">
-					<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-				</div>
+		<div class="tn-card tn-card-hover flex items-start justify-between">
+			<div>
+				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Users") }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.TotalUsers }</div>
 			</div>
+			<span style="color: var(--in)">
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+			</span>
 		</div>
 	</div>
 }
@@ -81,17 +80,17 @@ templ StatsCards(stats DashboardStats) {
 // Dashboard renders the main dashboard page: health stats, quick actions,
 // pending-changes card, node quick-status, mini topology, recent audit.
 templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.NodeMetrics, infos []*model.NodeInfo, chains []*model.Chain, audit []*model.AuditLog) {
-	<div class="space-y-6">
+	<div class="flex flex-col gap-6">
 		<div class="flex items-center justify-between flex-wrap gap-3">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Dashboard") }</h2>
 			<div class="flex gap-2 flex-wrap">
-				<button class="btn btn-sm btn-outline"
+				<button class="btn btn-outline btn-sm"
 					onclick="location.href='/ui/nodes/'+('n'+Math.floor(Date.now()/1000))+Math.floor(Math.random()*100)+'/capture'">
 					{ i18n.T(ctx, "+ Node") }
 				</button>
-				<button class="btn btn-sm btn-outline" hx-get="/ui/inbounds/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Inbound") }</button>
-				<button class="btn btn-sm btn-outline" hx-get="/ui/chains/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Chain") }</button>
-				<button class="btn btn-sm btn-outline" hx-get="/ui/users/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Client") }</button>
+				<button class="btn btn-outline btn-sm" hx-get="/ui/inbounds/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Inbound") }</button>
+				<button class="btn btn-outline btn-sm" hx-get="/ui/chains/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Chain") }</button>
+				<button class="btn btn-outline btn-sm" hx-get="/ui/users/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Client") }</button>
 			</div>
 		</div>
 
@@ -99,119 +98,112 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 		@StatsCards(stats)
 
 		if stats.PendingChanges > 0 {
-			<a hx-get="/ui/deploy-status" hx-target="#main-content" hx-push-url="true" class="tn-card tn-card-hover block border-l-4 border-warning cursor-pointer">
-				<div class="card-body p-4 flex flex-row items-center justify-between">
+			<a hx-get="/ui/deploy-status" hx-target="#main-content" hx-push-url="true"
+				class="tn-card tn-card-hover flex items-center justify-between cursor-pointer"
+				style="border-color: color-mix(in oklab, var(--wa) 45%, transparent); background: color-mix(in oklab, var(--wa) 8%, var(--b2));">
+				<div class="flex items-center gap-3">
+					<span style="color: var(--wa)">
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+					</span>
 					<div>
-						<div class="font-semibold text-warning">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
-						<div class="text-sm text-base-content/60">{ i18n.T(ctx, "Nodes with un-deployed config changes — review and apply.") }</div>
+						<div class="font-semibold" style="color: var(--wa)">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
+						<div class="text-[12px]" style="color: var(--mut)">{ i18n.T(ctx, "Nodes with un-deployed config changes — review and apply.") }</div>
 					</div>
-					<span class="btn btn-sm btn-warning">{ i18n.T(ctx, "Review") }</span>
 				</div>
+				<span class="btn btn-warning btn-sm">{ i18n.T(ctx, "Review") }</span>
 			</a>
 		}
 
 		<!-- Node List with Quick Status -->
-		<div class="tn-card">
-			<div class="card-body p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Nodes") }</h3>
-					<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">{ i18n.T(ctx, "Manage Nodes") }</a>
-				</div>
-				<div class="w-full overflow-x-clip">
-					<table class="tn-table">
-						<thead class="text-base-content/60 text-sm">
-							<tr class="border-b border-base-content/10">
-								<th class="font-medium">{ i18n.T(ctx, "Name") }</th>
-								<th class="font-medium">{ i18n.T(ctx, "Address") }</th>
-								<th class="font-medium">{ i18n.T(ctx, "Country") }</th>
-								<th class="font-medium">{ i18n.T(ctx, "Status") }</th>
-								<th class="font-medium">{ i18n.T(ctx, "Latency") }</th>
-								<th class="font-medium text-right">{ i18n.T(ctx, "Last Checked") }</th>
-							</tr>
-						</thead>
-						<tbody class="text-base-content/80">
-							for _, h := range hosts {
-								<tr class="hover:bg-base-200/50 transition-colors border-b border-base-content/5">
-									<td class="font-mono text-sm font-semibold">{ h.ID }</td>
-									<td class="font-mono text-xs opacity-70">{ h.Addr }</td>
-									<td>
-										@dashCountry(h.ID, infos)
-									</td>
-									<td>
-										@metricBadge(h.ID, metrics)
-									</td>
-									<td>
-										@metricLatency(h.ID, metrics)
-									</td>
-									<td class="text-right">
-										@metricTime(h.ID, metrics)
-									</td>
-								</tr>
-							}
-							if len(hosts) == 0 {
-								<tr>
-									<td colspan="6" class="text-center py-12 text-base-content/50">
-										<div class="flex flex-col items-center gap-3">
-											<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
-											<p>{ i18n.T(ctx, "No nodes registered yet.") }</p>
-											<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="btn btn-outline btn-sm btn-primary">{ i18n.T(ctx, "Add your first node") }</a>
-										</div>
-									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
+		<section class="tn-card tn-card-hover">
+			<div class="flex items-center justify-between mb-3">
+				<h3 class="sect-title">{ i18n.T(ctx, "Nodes") }</h3>
+				<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="btn btn-outline btn-sm">{ i18n.T(ctx, "Manage Nodes") }</a>
 			</div>
-		</div>
+			<div class="overflow-x-auto">
+				<table class="tn-table">
+					<thead>
+						<tr>
+							<th>{ i18n.T(ctx, "Name") }</th>
+							<th>{ i18n.T(ctx, "Address") }</th>
+							<th>{ i18n.T(ctx, "Country") }</th>
+							<th>{ i18n.T(ctx, "Status") }</th>
+							<th>{ i18n.T(ctx, "Latency") }</th>
+							<th class="text-right">{ i18n.T(ctx, "Last Checked") }</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, h := range hosts {
+							<tr>
+								<td class="font-semibold">{ h.ID }</td>
+								<td class="font-mono" style="color: var(--mut)">{ h.Addr }</td>
+								<td>@dashCountry(h.ID, infos)</td>
+								<td>@metricBadge(h.ID, metrics)</td>
+								<td>@metricLatency(h.ID, metrics)</td>
+								<td class="text-right">@metricTime(h.ID, metrics)</td>
+							</tr>
+						}
+						if len(hosts) == 0 {
+							<tr>
+								<td colspan="6" class="text-center py-12" style="color: var(--mut)">
+									<div class="flex flex-col items-center gap-3">
+										<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
+										<p>{ i18n.T(ctx, "No nodes registered yet.") }</p>
+										<a hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Add your first node") }</a>
+									</div>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</section>
 
-		<!-- Mini topology: level groups per chain (click → chains topology tab) -->
-		<div class="tn-card">
-			<div class="card-body p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Topology") }</h3>
-					<a hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">{ i18n.T(ctx, "Manage Chains") }</a>
+		<div class="grid gap-6 xl:grid-cols-2">
+			<!-- Mini topology: level groups per chain (click → chains topology tab) -->
+			<section class="tn-card tn-card-hover">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="sect-title">{ i18n.T(ctx, "Topology") }</h3>
+					<a hx-get="/ui/chains" hx-target="#main-content" hx-push-url="true" class="btn btn-outline btn-sm">{ i18n.T(ctx, "Manage Chains") }</a>
 				</div>
 				if len(chains) == 0 {
-					<p class="text-sm text-base-content/50 py-6 text-center bg-base-200/30 rounded-xl border border-base-content/5 border-dashed">{ i18n.T(ctx, "No chains configured. Create one on the Chains page.") }</p>
+					<p class="text-sm py-6 text-center" style="color: var(--mut); border: 1px dashed var(--bd); border-radius: 12px;">{ i18n.T(ctx, "No chains configured. Create one on the Chains page.") }</p>
 				} else {
-					<div class="space-y-3">
+					<div class="flex flex-col">
 						for _, c := range chains {
-							<div class="flex items-center gap-2 flex-wrap">
-								<span class="font-semibold text-sm w-28 truncate">{ c.Name }</span>
+							<div class="flex items-center gap-2 flex-wrap py-2" style="border-bottom: 1px solid color-mix(in oklab, var(--bd) 40%, transparent)">
+								<span class="w-40 shrink-0 font-semibold text-[13px] truncate">{ c.Name }</span>
 								@dashChainLevels(c)
 							</div>
 						}
 					</div>
 				}
-			</div>
-		</div>
+			</section>
 
-		<!-- Recent audit -->
-		<div class="tn-card">
-			<div class="card-body p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-xl font-semibold">{ i18n.T(ctx, "Recent events") }</h3>
+			<!-- Recent audit -->
+			<section class="tn-card tn-card-hover">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="sect-title">{ i18n.T(ctx, "Recent events") }</h3>
 					<div class="flex gap-1">
-						<a hx-get="/ui/status" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost">{ i18n.T(ctx, "System status") }</a>
-						<a hx-get="/ui/audit" hx-target="#main-content" hx-push-url="true" class="btn btn-sm btn-ghost text-primary hover:bg-primary/10">{ i18n.T(ctx, "Full audit log") }</a>
+						<a hx-get="/ui/status" hx-target="#main-content" hx-push-url="true" class="btn btn-ghost btn-sm">{ i18n.T(ctx, "System status") }</a>
+						<a hx-get="/ui/audit" hx-target="#main-content" hx-push-url="true" class="btn btn-outline btn-sm">{ i18n.T(ctx, "Full audit log") }</a>
 					</div>
 				</div>
 				if len(audit) == 0 {
-					<p class="text-sm text-base-content/50 py-4 text-center">{ i18n.T(ctx, "No events yet.") }</p>
+					<p class="text-sm py-4 text-center" style="color: var(--mut)">{ i18n.T(ctx, "No events yet.") }</p>
 				} else {
-					<div class="space-y-1">
+					<div class="flex flex-col">
 						for _, a := range audit {
-							<div class="flex items-center gap-3 text-sm border-b border-base-content/5 py-1.5 last:border-0">
-								<span class="badge badge-xs badge-outline w-16 justify-center">{ a.Action }</span>
-								<span class="text-base-content/60 text-xs">{ a.TargetType }</span>
-								<span class="font-mono text-xs truncate">{ a.TargetID }</span>
-								<span class="ml-auto text-xs text-base-content/40 whitespace-nowrap">{ a.TS.Format("01-02 15:04") }</span>
+							<div class="font-mono text-[12px] flex gap-3 py-1" style="border-bottom: 1px solid color-mix(in oklab, var(--bd) 30%, transparent)">
+								<span style="color: var(--mut2)">{ a.TS.Format("15:04:05") }</span>
+								<span style="width: 64px" class={ "font-semibold", auditActionClass(a.Action) }>{ a.Action }</span>
+								<span class="truncate" style="color: var(--p); max-width: 150px">{ a.TargetID }</span>
+								<span class="ml-auto whitespace-nowrap" style="color: var(--mut)">{ a.TargetType }</span>
 							</div>
 						}
 					</div>
 				}
-			</div>
+			</section>
 		</div>
 
 		<!-- Auto-refresh: poll stats every 30s while tab is open -->
@@ -227,28 +219,57 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 	<div id="modal-container"></div>
 }
 
-// dashChainLevels renders the mini level-group visualization for one chain
-// ([entry] → [hop] → [exit] with per-level node badges).
-templ dashChainLevels(c *model.Chain) {
-	if c.IsLevelized() {
-		for li, lv := range c.Levels {
-			if li > 0 {
-				<span class="text-base-content/30 text-xs">→</span>
-			}
-			<span class="inline-flex gap-0.5 items-center border border-base-300/60 rounded px-1 py-0.5">
-				for _, n := range lv.Nodes {
-					<span class="badge badge-outline badge-xs font-mono text-[10px] h-auto py-0.5">{ n.ID }</span>
-				}
-			</span>
-		}
-	} else {
-		for i, n := range c.Nodes {
-			if i > 0 {
-				<span class="text-base-content/30 text-xs">→</span>
-			}
-			<span class="badge badge-outline badge-xs font-mono text-[10px] h-auto py-0.5">{ n.ID }</span>
-		}
+// auditActionClass returns the theme-color class for an audit-log action so the
+// recent-events list reads at a glance (deploy/install → success green,
+// delete/error → red, create/update → accent, anything else → muted).
+func auditActionClass(action string) string {
+	switch action {
+	case "deploy", "install", "apply":
+		return "text-success"
+	case "delete", "error":
+		return "text-error"
+	case "create", "update", "assign", "unassign":
+		return "text-primary"
+	default:
+		return ""
 	}
+}
+
+// lvlRoleClass maps a level index within a chain to its Lovable level-pill
+// role color: first level = entry (primary), last level (when there are 2+) =
+// exit (success), everything in between = relay (purple).
+func lvlRoleClass(idx, total int) string {
+	if idx == 0 {
+		return "lvl lvl-entry"
+	}
+	if total > 1 && idx == total-1 {
+		return "lvl lvl-exit"
+	}
+	return "lvl lvl-relay"
+}
+
+// dashChainLevels renders the mini level-group visualization for one chain
+// ([entry] → [hop] → [exit] with per-level node pills).
+templ dashChainLevels(c *model.Chain) {
+	<div class="flex items-center gap-2 flex-wrap">
+		if c.IsLevelized() {
+			for li, lv := range c.Levels {
+				if li > 0 {
+					<span class="arrow">→</span>
+				}
+				for _, n := range lv.Nodes {
+					<span class={ lvlRoleClass(li, len(c.Levels)) }>{ fmt.Sprintf("L%d · %s", li, n.ID) }</span>
+				}
+			}
+		} else {
+			for i, n := range c.Nodes {
+				if i > 0 {
+					<span class="arrow">→</span>
+				}
+				<span class={ lvlRoleClass(i, len(c.Nodes)) }>{ n.ID }</span>
+			}
+		}
+	</div>
 }
 
 // Helper: find NodeInfo for a host ID
@@ -266,9 +287,9 @@ func getDashCountry(hostID string, infos []*model.NodeInfo) string {
 
 templ dashCountry(hostID string, infos []*model.NodeInfo) {
 	if c := getDashCountry(hostID, infos); c != "" {
-		<span>{ c }</span>
+		<span class="pill">{ c }</span>
 	} else {
-		<span class="text-base-content/30">—</span>
+		<span class="pill" style="color: var(--mut2)">—</span>
 	}
 }
 
@@ -299,21 +320,21 @@ func NodeState(m *model.NodeMetrics) string {
 	return model.NodeStateDown
 }
 
-// healthBadgeClass returns the DaisyUI badge classes for a node health state.
+// healthBadgeClass returns the .st status-pill classes for a node health state.
 // Shared by the dashboard metricBadge, the spider status dot, and the nodes
 // table status cell so all three surfaces agree on the visual language.
 func healthBadgeClass(state string) string {
 	switch state {
 	case model.NodeStateHealthy:
-		return "badge badge-success badge-xs"
+		return "st st-ok"
 	case model.NodeStateSuspect:
-		return "badge badge-warning badge-xs"
+		return "st st-warn"
 	case model.NodeStateDown, model.NodeStateUnreachable:
-		return "badge badge-error badge-xs"
+		return "st st-err"
 	case model.NodeStateBlocked:
-		return "badge badge-error badge-outline badge-xs"
+		return "st st-err"
 	default:
-		return "badge badge-ghost badge-xs"
+		return "st st-mut"
 	}
 }
 
@@ -335,36 +356,32 @@ func healthBadgeLabel(ctx context.Context, state string) string {
 	}
 }
 
-// Helper: show online/offline badge based on metrics
+// Helper: show online/offline status pill based on metrics
 templ metricBadge(hostID string, metrics []*model.NodeMetrics) {
 	{{ state := NodeState(getMetric(hostID, metrics))
 	_ = state }}
-	<span class={ healthBadgeClass(state) }>{ healthBadgeLabel(ctx, state) }</span>
+	<span class={ healthBadgeClass(state) }><span class="dot"></span>{ healthBadgeLabel(ctx, state) }</span>
 }
 
-// Helper: show last checked time from metrics
+// Helper: show latency as a color-coded pill from metrics
 templ metricLatency(hostID string, metrics []*model.NodeMetrics) {
 	if m := getMetric(hostID, metrics); m != nil && m.LatencyMs > 0 {
 		if m.LatencyMs < 100 {
-			<span class="text-success text-xs">{ fmt.Sprintf("%d", m.LatencyMs) }ms</span>
+			<span class="pill lat-ok">{ fmt.Sprintf("%d", m.LatencyMs) } ms</span>
 		} else if m.LatencyMs < 300 {
-			<span class="text-warning text-xs">{ fmt.Sprintf("%d", m.LatencyMs) }ms</span>
+			<span class="pill lat-mid">{ fmt.Sprintf("%d", m.LatencyMs) } ms</span>
 		} else {
-			<span class="text-error text-xs">{ fmt.Sprintf("%d", m.LatencyMs) }ms</span>
+			<span class="pill lat-bad">{ fmt.Sprintf("%d", m.LatencyMs) } ms</span>
 		}
 	} else {
-		<span class="text-base-content/30 text-xs">—</span>
+		<span class="pill" style="color: var(--mut2)">—</span>
 	}
 }
 
 templ metricTime(hostID string, metrics []*model.NodeMetrics) {
-	if m := getMetric(hostID, metrics); m != nil {
-		if m.LastChecked.IsZero() {
-			<span class="text-xs text-base-content/30">{ i18n.T(ctx, "Never") }</span>
-		} else {
-			<span class="text-xs text-base-content/50">{ fmtDuration(time.Since(m.LastChecked)) } { i18n.T(ctx, "ago") }</span>
-		}
+	if m := getMetric(hostID, metrics); m != nil && !m.LastChecked.IsZero() {
+		<span class="font-mono text-[12px]" style="color: var(--mut2)">{ fmtDuration(time.Since(m.LastChecked)) } { i18n.T(ctx, "ago") }</span>
 	} else {
-		<span class="text-xs text-base-content/30">{ i18n.T(ctx, "Never") }</span>
+		<span class="font-mono text-[12px]" style="color: var(--mut2)">{ i18n.T(ctx, "Never") }</span>
 	}
 }
