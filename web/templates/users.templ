@@ -21,20 +21,21 @@ type UserChainConfig struct {
 // ─── Users List ─────────────────────────────────────────────────────────────────
 
 templ Users(users []*model.User, chains []*model.Chain) {
-	<div class="space-y-6">
-		<div class="flex items-center justify-between">
+	<div class="flex flex-col gap-6">
+		<div class="flex items-center justify-between flex-wrap gap-3">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Users") }</h2>
 			<button
 				class="btn btn-primary btn-sm"
 				hx-get="/ui/users/new"
 				hx-target="#modal-container"
 				hx-swap="innerHTML">
+				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15" /></svg>
 				{ i18n.T(ctx, "+ Add User") }
 			</button>
 		</div>
 
-		<div class="tn-card">
-			<div class="w-full overflow-x-clip">
+		<section class="tn-card tn-card-hover">
+			<div class="overflow-x-auto">
 				<table class="tn-table">
 					<thead>
 						<tr>
@@ -44,7 +45,7 @@ templ Users(users []*model.User, chains []*model.Chain) {
 							<th>{ i18n.T(ctx, "Expires") }</th>
 							<th>{ i18n.T(ctx, "AWG traffic") }</th>
 							<th>{ i18n.T(ctx, "Status") }</th>
-							<th class="w-px"></th>
+							<th class="text-right">{ i18n.T(ctx, "Actions") }</th>
 						</tr>
 					</thead>
 					<tbody id="users-tbody">
@@ -53,7 +54,7 @@ templ Users(users []*model.User, chains []*model.Chain) {
 						}
 						if len(users) == 0 {
 							<tr>
-								<td colspan="6" class="text-center py-8 text-base-content/50">
+								<td colspan="7" class="text-center py-8" style="color: var(--mut)">
 									{ i18n.T(ctx, "No users yet. Add your first proxy user.") }
 								</td>
 							</tr>
@@ -61,7 +62,7 @@ templ Users(users []*model.User, chains []*model.Chain) {
 					</tbody>
 				</table>
 			</div>
-		</div>
+		</section>
 	</div>
 
 	<div id="modal-container"></div>
@@ -73,79 +74,88 @@ templ UserRow(u *model.User) {
 	<tr id={"user-" + u.ID}>
 		<td>
 			<div class="font-semibold">{ u.Name }</div>
-			<div class="text-xs text-base-content/50 font-mono">{ u.ID }</div>
+			<div class="text-[11px] font-mono" style="color: var(--mut2)">{ u.ID }</div>
 		</td>
 		<td>
 			<div class="flex flex-wrap gap-1">
 				for _, p := range u.Protocols {
-					<span class="badge badge-outline badge-xs">{ p }</span>
+					<span class="pill">{ p }</span>
 				}
 				if u.MTProxySecret != "" {
-					<span class="badge badge-warning badge-xs">{ i18n.T(ctx, "MTProxy") }</span>
+					<span class="pill" style="color: var(--wa)">{ i18n.T(ctx, "MTProxy") }</span>
 				}
 			</div>
 		</td>
 		<td>
 			<div class="flex flex-wrap gap-1">
 				for _, cn := range u.ChainNames {
-					<span class="badge badge-ghost badge-xs">{ cn }</span>
+					<span class="pill" style="color: var(--pu, var(--a))">{ cn }</span>
 				}
 				if len(u.ChainNames) == 0 {
-					<span class="text-base-content/30 text-xs">{ i18n.T(ctx, "None") }</span>
+					<span class="pill" style="color: var(--mut2)">{ i18n.T(ctx, "None") }</span>
 				}
 			</div>
 		</td>
 		<td>
 			if u.ExpiresAt.IsZero() {
-				<span class="badge badge-ghost badge-xs">{ i18n.T(ctx, "Never") }</span>
+				<span class="pill" style="color: var(--mut2)">{ i18n.T(ctx, "Never") }</span>
 			} else if u.IsExpired() {
-				<span class="text-error text-xs">{ u.ExpiresAt.Format("2006-01-02") }</span>
+				<span class="text-xs font-mono" style="color: var(--er)">{ u.ExpiresAt.Format("2006-01-02") }</span>
 			} else {
-				<span class="text-xs">{ fmtDuration(time.Until(u.ExpiresAt)) }</span>
+				<span class="text-xs font-mono">{ fmtDuration(time.Until(u.ExpiresAt)) }</span>
 			}
 		</td>
 		<td>
 			if u.AWGRxBytes > 0 || u.AWGTxBytes > 0 {
-				<span class="text-xs" title={ i18n.T(ctx, "Down / Up (cumulative, from kernel per-peer counters)") }>{ fmtBytes(u.AWGRxBytes) } ↓ / { fmtBytes(u.AWGTxBytes) } ↑</span>
+				<span class="text-xs font-mono" title={ i18n.T(ctx, "Down / Up (cumulative, from kernel per-peer counters)") }>{ fmtBytes(u.AWGRxBytes) } ↓ / { fmtBytes(u.AWGTxBytes) } ↑</span>
 			} else {
-				<span class="text-base-content/30 text-xs">—</span>
+				<span class="pill" style="color: var(--mut2)">—</span>
 			}
 		</td>
 		<td>
 			if status, cls := userStatusBadge(u); status != "" {
-				<span class={ "badge badge-xs " + cls }>{ i18n.T(ctx, status) }</span>
+				<span class={ "st " + cls }><span class="dot"></span>{ i18n.T(ctx, status) }</span>
 			}
 		</td>
-		<td>
-			<div class="flex flex-wrap gap-1">
+		<td class="text-right whitespace-nowrap">
+			<div class="inline-flex gap-1 items-center">
 				<button
-					class="btn btn-ghost btn-xs"
+					class="btn-icon"
+					title={ i18n.T(ctx, "Config") }
+					aria-label={ i18n.T(ctx, "Config") }
 					hx-get={"/ui/users/" + u.ID + "/config"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
-					{ i18n.T(ctx, "Config") }
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" /></svg>
 				</button>
 				<button
-					class="btn btn-ghost btn-xs"
+					class="btn-icon"
+					title={ i18n.T(ctx, "QR") }
+					aria-label={ i18n.T(ctx, "QR") }
 					hx-get={"/ui/users/" + u.ID + "/qr"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
-					{ i18n.T(ctx, "QR") }
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 3.75 9.375v-4.5ZM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5ZM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 13.5 9.375v-4.5Z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 6.75h.75v.75h-.75v-.75ZM6.75 16.5h.75v.75h-.75v-.75ZM16.5 6.75h.75v.75h-.75v-.75ZM13.5 13.5h.75v.75h-.75v-.75ZM13.5 19.5h.75v.75h-.75v-.75ZM19.5 13.5h.75v.75h-.75v-.75ZM19.5 19.5h.75v.75h-.75v-.75ZM16.5 16.5h.75v.75h-.75v-.75Z" /></svg>
 				</button>
 				<button
-					class="btn btn-ghost btn-xs"
+					class="btn-icon"
+					title={ i18n.T(ctx, "Edit") }
+					aria-label={ i18n.T(ctx, "Edit") }
 					hx-get={"/ui/users/" + u.ID + "/edit"}
 					hx-target="#modal-container"
 					hx-swap="innerHTML">
-					{ i18n.T(ctx, "Edit") }
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
 				</button>
 				<button
-					class="btn btn-ghost btn-xs text-error"
+					class="btn-icon"
+					style="color: var(--er)"
+					title={ i18n.T(ctx, "Delete") }
+					aria-label={ i18n.T(ctx, "Delete") }
 					hx-delete={"/ui/users/" + u.ID}
 					hx-confirm={i18n.T(ctx, "Delete user ") + u.Name + "?"}
 					hx-target="closest tr"
 					hx-swap="outerHTML">
-					{ i18n.T(ctx, "Delete") }
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
 				</button>
 			</div>
 		</td>
@@ -157,7 +167,7 @@ templ UserRow(u *model.User) {
 templ UserForm(u *model.User, chains []*model.Chain, subHost string) {
 	<dialog id="user-modal" class="modal" open>
 		<div class="modal-box max-w-2xl">
-			<h3 class="font-bold text-lg mb-4">
+			<h3 class="text-lg font-semibold mb-4">
 				if u != nil {
 					{ i18n.T(ctx, "Edit Client: ") }{ u.Name }
 				} else {
@@ -171,10 +181,10 @@ templ UserForm(u *model.User, chains []*model.Chain, subHost string) {
 					hx-target={"#user-" + u.ID}
 					hx-swap="outerHTML"
 					hx-on::after-request="this.closest('dialog').close()"
-					class="space-y-4">
+					class="flex flex-col gap-4">
 					@userFormBody(u, chains)
-					<div class="modal-action">
-						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<div class="flex justify-end gap-2">
+						<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
 						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
 					</div>
 				</form>
@@ -184,10 +194,10 @@ templ UserForm(u *model.User, chains []*model.Chain, subHost string) {
 					hx-target="#users-tbody"
 					hx-swap="beforeend"
 					hx-on::after-request="this.closest('dialog').close(); this.reset()"
-					class="space-y-4">
+					class="flex flex-col gap-4">
 					@userFormBody(nil, chains)
-					<div class="modal-action">
-						<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<div class="flex justify-end gap-2">
+						<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
 						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Create Client") }</button>
 					</div>
 				</form>
@@ -206,36 +216,36 @@ templ UserForm(u *model.User, chains []*model.Chain, subHost string) {
 templ userFormBody(u *model.User, chains []*model.Chain) {
 	<div class="grid grid-cols-2 gap-4">
 		if u == nil {
-			<div class="form-control">
-				<label class="label"><span class="label-text">{ i18n.T(ctx, "ID (unique)") }</span></label>
-				<input type="text" name="id" class="input input-bordered" required placeholder="user1" />
+			<div>
+				<label class="lbl">{ i18n.T(ctx, "ID (unique)") }</label>
+				<input type="text" name="id" class="inp" required placeholder="user1" />
 			</div>
 		}
-		<div class="form-control">
-			<label class="label"><span class="label-text">{ i18n.T(ctx, "Name") }</span></label>
-			<input type="text" name="name" class="input input-bordered" required
+		<div>
+			<label class="lbl">{ i18n.T(ctx, "Name") }</label>
+			<input type="text" name="name" class="inp" required
 				if u != nil { value={ u.Name } } placeholder="John Doe" />
 		</div>
 	</div>
 
-	<div class="form-control">
-		<label class="label"><span class="label-text">{ i18n.T(ctx, "Chains") }</span></label>
-		<div class="space-y-1 max-h-56 overflow-y-auto border border-base-300 rounded-lg p-3">
+	<div>
+		<label class="lbl">{ i18n.T(ctx, "Chains") }</label>
+		<div class="flex flex-col gap-1 max-h-56 overflow-y-auto p-3" style="border: 1px solid var(--bd); border-radius: 8px;">
 			if len(chains) == 0 {
-				<span class="text-sm text-base-content/50">{ i18n.T(ctx, "No chains available. Create chains first.") }</span>
+				<span class="text-sm" style="color: var(--mut)">{ i18n.T(ctx, "No chains available. Create chains first.") }</span>
 			}
 			for _, c := range chains {
 				<div>
 					<label class="flex items-center gap-2 cursor-pointer">
-						<input type="checkbox" name="chains" value={ c.Name } class="checkbox checkbox-sm"
+						<input type="checkbox" name="chains" value={ c.Name } class="cb"
 							if u == nil || containsProtocol(u.ChainNames, c.Name) { checked } />
 						<span class="text-sm font-mono">{ c.Name }</span>
-						<span class="text-xs text-base-content/40">({ fmt.Sprintf("%d %s", len(c.AllNodes()), i18n.T(ctx, "hops")) } · { c.UserProtocol })</span>
+						<span class="text-xs" style="color: var(--mut2)">({ fmt.Sprintf("%d %s", len(c.AllNodes()), i18n.T(ctx, "hops")) } · { c.UserProtocol })</span>
 					</label>
 					if u != nil && containsProtocol(u.ChainNames, c.Name) {
 						<div class="ml-6 flex items-center gap-2">
-							<span class="text-xs text-base-content/50">{ i18n.T(ctx, "Exit node") }:</span>
-							<select name={ "exit_" + c.Name } class="select select-bordered select-xs">
+							<span class="text-xs" style="color: var(--mut)">{ i18n.T(ctx, "Exit node") }:</span>
+							<select name={ "exit_" + c.Name } class="sel" style="padding: 0.15rem 0.4rem; font-size: 12px;">
 								<option value="">{ i18n.T(ctx, "default") }</option>
 								for _, n := range c.AllNodes() {
 									<option value={ n.ID } if u.ChainExit != nil && u.ChainExit[c.Name] == n.ID { selected }>{ n.ID }</option>
@@ -246,69 +256,69 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 				</div>
 			}
 		</div>
-		<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.") }</span></label>
+		<p class="hint">{ i18n.T(ctx, "Credentials (AWG peer, VLESS UUID) are generated automatically from the selected chains.") }</p>
 	</div>
 
 	if u != nil {
 		<label class="flex items-center gap-2 cursor-pointer">
-			<input type="checkbox" name="active" class="checkbox checkbox-sm"
+			<input type="checkbox" name="active" class="cb"
 				if u.Active { checked } />
-			<span class="label-text">{ i18n.T(ctx, "Active") }</span>
+			<span class="text-sm">{ i18n.T(ctx, "Active") }</span>
 		</label>
 	} else {
 		<input type="hidden" name="active" value="on" />
 	}
 
-	<details class="collapse collapse-arrow border border-base-300 rounded-lg">
+	<details class="collapse collapse-arrow" style="border: 1px solid var(--bd); border-radius: 8px;">
 		<summary class="collapse-title font-medium text-sm">{ i18n.T(ctx, "Advanced (contacts, expiry, quota, MTProxy, import)") }</summary>
-		<div class="collapse-content space-y-4">
+		<div class="collapse-content flex flex-col gap-4">
 			<div class="grid grid-cols-2 gap-4">
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Telegram (optional)") }</span></label>
-					<input type="text" name="telegram" class="input input-bordered input-sm"
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Telegram (optional)") }</label>
+					<input type="text" name="telegram" class="inp"
 						if u != nil { value={ u.Telegram } } placeholder="@username" />
 				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Email (optional)") }</span></label>
-					<input type="email" name="email" class="input input-bordered input-sm"
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Email (optional)") }</label>
+					<input type="email" name="email" class="inp"
 						if u != nil { value={ u.Email } } placeholder="user@example.com" />
 				</div>
 			</div>
 
-			<div class="form-control">
-				<label class="label"><span class="label-text">{ i18n.T(ctx, "Expire strategy") }</span></label>
-				<select name="expire_strategy" class="select select-bordered select-sm">
+			<div>
+				<label class="lbl">{ i18n.T(ctx, "Expire strategy") }</label>
+				<select name="expire_strategy" class="sel">
 					<option value="never" if u == nil || u.ExpireStrategy == "" || u.ExpireStrategy == "never" { selected }>{ i18n.T(ctx, "Never") }</option>
 					<option value="fixed_date" if u != nil && u.ExpireStrategy == "fixed_date" { selected }>{ i18n.T(ctx, "Fixed date") }</option>
 					<option value="start_on_first_use" if u != nil && u.ExpireStrategy == "start_on_first_use" { selected }>{ i18n.T(ctx, "Start on first use") }</option>
 				</select>
 			</div>
 			<div class="grid grid-cols-3 gap-4">
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Expires At") }</span></label>
-					<input type="date" name="expires_at" class="input input-bordered input-sm"
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Expires At") }</label>
+					<input type="date" name="expires_at" class="inp"
 						if u != nil && !u.ExpiresAt.IsZero() { value={ u.ExpiresAt.Format("2006-01-02") } } />
 				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Usage duration (seconds)") }</span></label>
-					<input type="number" name="usage_duration" class="input input-bordered input-sm"
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Usage duration (seconds)") }</label>
+					<input type="number" name="usage_duration" class="inp"
 						if u != nil && u.UsageDuration != 0 { value={ fmt.Sprintf("%d", u.UsageDuration) } } />
 				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Activation deadline") }</span></label>
-					<input type="date" name="activation_deadline" class="input input-bordered input-sm"
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Activation deadline") }</label>
+					<input type="date" name="activation_deadline" class="inp"
 						if u != nil && !u.ActivationDeadline.IsZero() { value={ u.ActivationDeadline.Format("2006-01-02") } } />
 				</div>
 			</div>
 			<div class="grid grid-cols-2 gap-4">
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Data limit (bytes, 0 = unlimited)") }</span></label>
-					<input type="number" name="data_limit" class="input input-bordered input-sm"
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Data limit (bytes, 0 = unlimited)") }</label>
+					<input type="number" name="data_limit" class="inp"
 						if u != nil && u.DataLimit != 0 { value={ fmt.Sprintf("%d", u.DataLimit) } } placeholder="0" />
 				</div>
-				<div class="form-control">
-					<label class="label"><span class="label-text">{ i18n.T(ctx, "Data limit reset strategy") }</span></label>
-					<select name="data_limit_reset_strategy" class="select select-bordered select-sm">
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Data limit reset strategy") }</label>
+					<select name="data_limit_reset_strategy" class="sel">
 						<option value="no_reset" if u == nil || u.DataLimitResetStrategy == "" || u.DataLimitResetStrategy == "no_reset" { selected }>{ i18n.T(ctx, "No reset") }</option>
 						<option value="day" if u != nil && u.DataLimitResetStrategy == "day" { selected }>{ i18n.T(ctx, "Daily") }</option>
 						<option value="week" if u != nil && u.DataLimitResetStrategy == "week" { selected }>{ i18n.T(ctx, "Weekly") }</option>
@@ -317,48 +327,48 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 				</div>
 			</div>
 
-			<div class="form-control">
-				<label class="label"><span class="label-text">{ i18n.T(ctx, "Import Secret (optional)") }</span></label>
-				<select name="secret_type" class="select select-bordered select-sm mb-2">
+			<div>
+				<label class="lbl">{ i18n.T(ctx, "Import Secret (optional)") }</label>
+				<select name="secret_type" class="sel mb-2">
 					<option value="" if u == nil || u.SecretType == "" { selected }>{ i18n.T(ctx, "None") }</option>
 					<option value="telemt" if u != nil && u.SecretType == "telemt" { selected }>{ i18n.T(ctx, "Telemt (MTProto) — Secret") }</option>
 					if u != nil && u.SecretType != "" && u.SecretType != "telemt" {
 						<option value={ u.SecretType } selected disabled>{ i18n.T(ctx, "Legacy import (edit-only)") }: { u.SecretType }</option>
 					}
 				</select>
-				<input type="text" name="imported_secret" class="input input-bordered input-sm font-mono"
+				<input type="text" name="imported_secret" class="inp font-mono"
 					if u != nil { value={ u.ImportedSecret } } placeholder={ i18n.T(ctx, "Paste your existing key here...") } />
 			</div>
 
-			<div class="collapse collapse-arrow border border-base-300 rounded-lg">
+			<div class="collapse collapse-arrow" style="border: 1px solid var(--bd); border-radius: 8px;">
 				<input type="checkbox" name="mtproxy_enabled" class="peer" if u != nil && u.MTProxySecret != "" { checked } />
 				<div class="collapse-title font-medium text-sm">
 					{ i18n.T(ctx, "MTProxy (Telegram FakeTLS)") }
 				</div>
-				<div class="collapse-content space-y-3">
+				<div class="collapse-content flex flex-col gap-3">
 					<div class="join">
-						<input type="text" name="mtproxy_secret" class="input input-bordered input-sm join-item font-mono"
+						<input type="text" name="mtproxy_secret" class="inp join-item font-mono"
 							if u != nil { value={ u.MTProxySecret } } maxlength="32" placeholder={ i18n.T(ctx, "Generate MTProxy Secret") } />
-						<button type="button" class="btn btn-sm join-item"
+						<button type="button" class="btn btn-sm btn-outline join-item"
 							hx-post="/ui/users/generate-mtproxy-secret"
 							hx-target="[name='mtproxy_secret']"
 							hx-swap="outerHTML">
 							{ i18n.T(ctx, "Generate") }
 						</button>
 					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "FakeTLS Domain") }</span></label>
-						<input type="text" name="mtproxy_domain" class="input input-bordered input-sm"
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "FakeTLS Domain") }</label>
+						<input type="text" name="mtproxy_domain" class="inp"
 							if u != nil && u.MTProxyDomain != "" { value={ u.MTProxyDomain } } else { value="disk.yandex.ru" } />
 					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Order Index") }</span></label>
-						<input type="number" name="mtproxy_order_index" class="input input-bordered input-sm"
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Order Index") }</label>
+						<input type="number" name="mtproxy_order_index" class="inp"
 							if u != nil && u.MTProxyOrderIndex != 0 { value={ fmt.Sprintf("%d", u.MTProxyOrderIndex) } } />
 					</div>
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "MTProxy Nodes") }</span></label>
-						<select name="mtproxy_nodes" multiple class="select select-bordered select-sm" size="4">
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "MTProxy Nodes") }</label>
+						<select name="mtproxy_nodes" multiple class="sel" size="4">
 							if len(chains) == 0 {
 								<option disabled>{ i18n.T(ctx, "Add a node first") }</option>
 							}
@@ -380,27 +390,27 @@ templ userFormBody(u *model.User, chains []*model.Chain) {
 templ UserConfigView(u *model.User, configs []UserChainConfig) {
 	<dialog id="config-modal" class="modal" open>
 		<div class="modal-box max-w-2xl">
-			<h3 class="font-bold text-lg mb-2">{ i18n.T(ctx, "Configs for ") }{ u.Name }</h3>
-			<div class="text-xs text-base-content/50 font-mono mb-4">{ u.ID }</div>
+			<h3 class="text-lg font-semibold mb-1">{ i18n.T(ctx, "Configs for ") }{ u.Name }</h3>
+			<div class="text-xs font-mono mb-4" style="color: var(--mut2)">{ u.ID }</div>
 
 			if len(configs) == 0 {
 				<div class="alert alert-warning">
 					<span>{ i18n.T(ctx, "No configs available. Assign chains to this user first.") }</span>
 				</div>
 			} else {
-				<div class="space-y-3">
+				<div class="flex flex-col gap-3">
 					for _, cfg := range configs {
-						<div class="border border-base-300 rounded-lg p-3">
+						<div class="tn-card">
 							<div class="flex items-center justify-between mb-2">
 								<div class="font-semibold text-sm">{ cfg.ChainName }</div>
-								<span class="badge badge-outline badge-xs">{ cfg.Protocol }</span>
+								<span class="pill">{ cfg.Protocol }</span>
 							</div>
-							<div class="text-xs text-base-content/50 mb-2">{ cfg.Description }</div>
+							<div class="text-xs mb-2" style="color: var(--mut)">{ cfg.Description }</div>
 							<div class="relative">
 								<textarea
 									rows="2"
 									readonly
-									class="textarea textarea-bordered w-full text-xs font-mono bg-base-200 resize-none">{ cfg.ConfigLink }</textarea>
+									class="ta w-full text-xs font-mono resize-none">{ cfg.ConfigLink }</textarea>
 								<button
 									class="btn btn-xs btn-ghost absolute top-1 right-1"
 									onclick="var ta=this.parentElement.querySelector('textarea'); ta.select(); navigator.clipboard.writeText(ta.value);">
@@ -421,7 +431,7 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 				</div>
 			}
 
-			<div class="modal-action">
+			<div class="flex justify-end mt-4">
 				<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
 			</div>
 		</div>
@@ -436,8 +446,8 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 templ UserQRView(u *model.User, links []string) {
 	<dialog id="qr-modal" class="modal" open>
 		<div class="modal-box max-w-2xl">
-			<h3 class="font-bold text-lg mb-2">{ i18n.T(ctx, "QR Codes for ") }{ u.Name }</h3>
-			<div class="text-xs text-base-content/50 font-mono mb-4">{ u.ID }</div>
+			<h3 class="text-lg font-semibold mb-1">{ i18n.T(ctx, "QR Codes for ") }{ u.Name }</h3>
+			<div class="text-xs font-mono mb-4" style="color: var(--mut2)">{ u.ID }</div>
 
 			if len(links) == 0 {
 				<div class="alert alert-warning">
@@ -447,7 +457,7 @@ templ UserQRView(u *model.User, links []string) {
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					for _, link := range links {
 						if !strings.HasPrefix(link, "#") {
-							<div class="border border-base-300 rounded-lg p-3 text-center">
+							<div class="tn-card text-center">
 								<div class="text-xs font-mono mb-2 truncate" title={ link }>
 									{ ellipsis(link, 50) }
 								</div>
@@ -470,7 +480,7 @@ templ UserQRView(u *model.User, links []string) {
 				</div>
 			}
 
-			<div class="modal-action">
+			<div class="flex justify-end mt-4">
 				<button type="button" class="btn" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
 			</div>
 		</div>
@@ -542,8 +552,8 @@ func displayShow(show bool) string {
 	return "none"
 }
 
-// userStatusBadge returns the i18n status label + DaisyUI badge class for a
-// user. Prefers the persisted u.Status (set by handlers via ComputeStatus);
+// userStatusBadge returns the i18n status label + the .st pill modifier class
+// for a user. Prefers the persisted u.Status (set by handlers via ComputeStatus);
 // falls back to deriving on the fly so the list renders correctly even for
 // users loaded before the Status field existed (legacy/empty).
 func userStatusBadge(u *model.User) (label, class string) {
@@ -553,17 +563,17 @@ func userStatusBadge(u *model.User) (label, class string) {
 	}
 	switch status {
 	case "active":
-		return "Active", "badge-success"
+		return "Active", "st-ok"
 	case "disabled":
-		return "Inactive", "badge-ghost"
+		return "Inactive", "st-mut"
 	case "expired":
-		return "Expired", "badge-error"
+		return "Expired", "st-err"
 	case "on_hold":
-		return "On hold", "badge-warning"
+		return "On hold", "st-warn"
 	case "limited":
-		return "Limited", "badge-warning"
+		return "Limited", "st-warn"
 	default:
-		return "Inactive", "badge-ghost"
+		return "Inactive", "st-mut"
 	}
 }
 
@@ -576,16 +586,16 @@ func userStatusBadge(u *model.User) (label, class string) {
 // subURL is the full https://host/sub/{token} string built by the handler.
 templ UserCreatedResult(u *model.User, subURL string) {
 	<tr id={ "user-" + u.ID }>
-		<td colspan="5" class="bg-success/10">
-			<div class="p-3 space-y-2">
+		<td colspan="7" style="background: color-mix(in oklab, var(--su) 10%, var(--b2))">
+			<div class="p-3 flex flex-col gap-2">
 				<div class="font-medium">{ u.Name }</div>
-				<div class="text-xs text-base-content/60">{ i18n.T(ctx, "Subscription URL") }</div>
+				<div class="text-xs" style="color: var(--mut)">{ i18n.T(ctx, "Subscription URL") }</div>
 				<div class="join w-full">
-					<input type="text" class="input input-bordered join-item input-sm font-mono w-full" value={ subURL } readonly id={ "sub-" + u.ID } />
-					<button type="button" class="btn join-item btn-sm" onclick="copySubURL(this)" data-target={ "sub-" + u.ID } data-copied={ i18n.T(ctx, "Copied") }>{ i18n.T(ctx, "Copy") }</button>
-					<button type="button" class="btn join-item btn-sm" hx-get={ "/ui/qr-image?data=" + url.QueryEscape(subURL) } hx-target="#qr-modal-container">{ i18n.T(ctx, "QR") }</button>
+					<input type="text" class="inp join-item font-mono w-full" value={ subURL } readonly id={ "sub-" + u.ID } />
+					<button type="button" class="btn btn-outline btn-sm join-item" onclick="copySubURL(this)" data-target={ "sub-" + u.ID } data-copied={ i18n.T(ctx, "Copied") }>{ i18n.T(ctx, "Copy") }</button>
+					<button type="button" class="btn btn-outline btn-sm join-item" hx-get={ "/ui/qr-image?data=" + url.QueryEscape(subURL) } hx-target="#qr-modal-container">{ i18n.T(ctx, "QR") }</button>
 				</div>
-				<div class="text-xs text-base-content/40">{ i18n.T(ctx, "Paste this into your client (v2rayNG/Nekoray/sing-box).") }</div>
+				<div class="text-xs" style="color: var(--mut2)">{ i18n.T(ctx, "Paste this into your client (v2rayNG/Nekoray/sing-box).") }</div>
 			</div>
 		</td>
 	</tr>
