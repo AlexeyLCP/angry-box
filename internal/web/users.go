@@ -724,11 +724,17 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 	// Amnezia params belong in [Interface] (BEFORE [Peer]) — awg-quick passes
 	// the stripped config to `awg setconf`, which parses amnezia fields only
 	// within [Interface]; after [Peer] setconf fails with "Line unrecognized".
-	var amn *config.AmneziaOptions
+	version := model.AWGVersion2
 	if ib != nil {
+		version = ib.EffectiveAWGVersion()
+	}
+	var amn *config.AmneziaOptions
+	var material *chain.AWGObfsMaterial
+	if ib != nil {
+		material = chain.InboundAWGObfsMaterial(ib)
 		preset := chain.ResolveStandaloneAWGPreset(ib)
 		if preset.AWG != nil {
-			amn = chain.BuildAWGAmnezia(preset.AWG, &preset, chain.InboundAWGObfsMaterial(ib))
+			amn = chain.BuildAWGAmnezia(preset.AWG, &preset, material)
 		}
 	} else if preset := chain.GetDefaultPreset(); preset.AWG != nil {
 		amn = chain.BuildAWGAmnezia(preset.AWG, &preset, nil)
@@ -739,13 +745,16 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 		b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
 		b.WriteString(fmt.Sprintf("S1 = %d\n", amn.S1))
 		b.WriteString(fmt.Sprintf("S2 = %d\n", amn.S2))
-		b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
-		b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+		// S3/S4 + I1-I5 are AWG 2.0+ (CPS); a 1.5 client must not receive them.
+		if model.AWGVersionAtLeast(version, model.AWGVersion2) {
+			b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
+			b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+		}
 		b.WriteString(fmt.Sprintf("H1 = %s\n", amn.H1))
 		b.WriteString(fmt.Sprintf("H2 = %s\n", amn.H2))
 		b.WriteString(fmt.Sprintf("H3 = %s\n", amn.H3))
 		b.WriteString(fmt.Sprintf("H4 = %s\n", amn.H4))
-		if amn.I1 != "" {
+		if amn.I1 != "" && model.AWGVersionAtLeast(version, model.AWGVersion2) {
 			b.WriteString(fmt.Sprintf("I1 = %s\n", amn.I1))
 			b.WriteString(fmt.Sprintf("I2 = %s\n", amn.I2))
 			b.WriteString(fmt.Sprintf("I3 = %s\n", amn.I3))
@@ -754,6 +763,19 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 		}
 		// Itime intentionally omitted — awg setconf and sing-box-extended
 		// endpoint both reject it; the default cache lifetime works.
+	}
+	// AWG 3.0 header protection (HPK/CPM/RAT) inline in [Interface] — the
+	// AmneziaWG client apps parse them natively. Previously this standalone
+	// builder omitted them entirely (a v3 inbound's client got no HPK).
+	if material != nil && material.AWG3Mode && material.HeaderProtectionKey != "" &&
+		model.AWGVersionAtLeast(version, model.AWGVersion3) {
+		b.WriteString(fmt.Sprintf("HeaderProtectionKey = %s\n", material.HeaderProtectionKey))
+		if material.ContentPaddingAddition != "" {
+			b.WriteString(fmt.Sprintf("ContentPaddingAddition = %s\n", material.ContentPaddingAddition))
+		}
+		if material.RekeyAfterTime != "" {
+			b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", material.RekeyAfterTime))
+		}
 	}
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))

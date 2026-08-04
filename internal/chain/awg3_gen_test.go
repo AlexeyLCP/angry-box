@@ -80,7 +80,7 @@ func TestAWG3GenPair(t *testing.T) {
 	}
 
 	// Client .conf via the same render path the product uses.
-	clientConf := renderAWGQuickConf("144.31.224.212", port, clientPriv, serverPub, "10.8.0.2/24", &preset, &mat)
+	clientConf := renderAWGQuickConf("144.31.224.212", port, clientPriv, serverPub, "10.8.0.2/24", &preset, &mat, model.AWGVersion3)
 	if err := os.WriteFile("/tmp/awg3-client.conf", []byte(clientConf), 0644); err != nil {
 		t.Fatalf("write client conf: %v", err)
 	}

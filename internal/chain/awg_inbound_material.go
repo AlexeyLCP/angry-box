@@ -42,7 +42,7 @@ func EnsureInboundAWGMaterial(ib *model.NodeInbound, preset ConnectionPreset) {
 		ensureInboundAWG3Material(ib)
 		return // cache valid
 	}
-	mat := GenerateAWGObfsMaterial(level, mimicry)
+	mat := GenerateAWGObfsMaterialForVersion(level, mimicry, ib.EffectiveAWGVersion())
 	strs := CPSMaterialStrings(mat)
 	ib.AWGCPSLevel = level
 	ib.AWGCPSMimicry = mimicry
@@ -260,7 +260,7 @@ func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPrese
 			prof.AWGCPSI3 = res.Packets[2]
 			prof.AWGCPSI4 = res.Packets[3]
 			prof.AWGCPSI5 = res.Packets[4]
-			mat := GenerateAWGObfsMaterial(level, "quic")
+			mat := GenerateAWGObfsMaterialForVersion(level, "quic", prof.EffectiveAWGVersion())
 			prof.AWGH1 = mat.H1
 			prof.AWGH2 = mat.H2
 			prof.AWGH3 = mat.H3
@@ -273,7 +273,7 @@ func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPrese
 		mimicry = "quic"
 	}
 	// Synthesized shared material (also the fallback for a failed capture).
-	mat := GenerateAWGObfsMaterial(level, mimicry)
+	mat := GenerateAWGObfsMaterialForVersion(level, mimicry, prof.EffectiveAWGVersion())
 	strs := CPSMaterialStrings(mat)
 	prof.AWGCPSLevel = level
 	prof.AWGCPSCapturedDomain = ""

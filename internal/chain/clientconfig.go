@@ -44,6 +44,11 @@ type ClientConfigParams struct {
 	// EntryHostOverride, when set, replaces the parsed entry node address in the
 	// TUIC outbound (e.g. "127.0.0.1" when the client runs on the entry VPS).
 	EntryHostOverride string
+	// AWGVersion selects the AWG protocol version (1.5/2/3) for the client .conf
+	// field set. Empty defaults to "2". When the entry inbound is resolved it is
+	// overridden by ib.EffectiveAWGVersion() so the client matches the server's
+	// per-inbound version (1.5 drops S3/S4+I1-I5; 3 adds header protection).
+	AWGVersion string
 }
 
 // RenderClientConfig produces the sing-box client config JSON for the chain's
@@ -319,6 +324,10 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 	port := chainEntryPort(c, entry.ID)
 	preset := resolveChainPreset(c)
 	material := ChainAWGObfsMaterial(c)
+	version := params.AWGVersion
+	if version == "" {
+		version = model.AWGVersion2
+	}
 	// v2: the selected entry's materialized inbound (profile credentials) wins
 	// over the chain's legacy fields — for chains created after the v2 model
 	// the chain-level AWGEntry*/CPS fields are empty and only the profile
@@ -337,6 +346,11 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 			// client stops matching the server (PROGRESS §39).
 			preset = ResolveChainEntryPreset(preset, ib)
 			material = InboundAWGObfsMaterial(ib)
+			// The client .conf must match the server's per-inbound AWG version
+			// (1.5 drops S3/S4+I1-I5; 3 adds header protection) or the handshake
+			// breaks. Coexisting inbounds of different versions each render their
+			// own field set.
+			version = ib.EffectiveAWGVersion()
 		}
 	}
 
@@ -349,7 +363,7 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 	// endpoint — a mismatch breaks the AWG handshake. Previously this hardcoded
 	// GetDefaultPreset(), which diverged whenever the chain used a non-default
 	// ObfuscationProfile.
-	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, material), nil
+	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, material, version), nil
 }
 
 // renderAWGQuickConf builds the awg-quick .conf text. preset + material supply
@@ -357,7 +371,10 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 // amnezia block or the handshake fails (chain callers pass the chain's preset
 // + persisted AWGObfsMaterial). clientPriv/address empty -> legacy fallback
 // (placeholder key + 10.8.0.2/24); the .conf is still structurally valid.
-func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string, preset *ConnectionPreset, material *AWGObfsMaterial) string {
+func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string, preset *ConnectionPreset, material *AWGObfsMaterial, version string) string {
+	if version == "" {
+		version = model.AWGVersion2
+	}
 	if address == "" {
 		address = "10.8.0.2/24"
 	}
@@ -385,13 +402,17 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 			b.WriteString(fmt.Sprintf("Jmax = %d\n", amn.JMAX))
 			b.WriteString(fmt.Sprintf("S1 = %d\n", amn.S1))
 			b.WriteString(fmt.Sprintf("S2 = %d\n", amn.S2))
-			b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
-			b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+			// S3/S4 + I1-I5 are AWG 2.0+ (CPS). A 1.5 client (awg-quick 1.x /
+			// old apps) must not receive them — mirror lucx-ui filterAwgObfuscation.
+			if model.AWGVersionAtLeast(version, model.AWGVersion2) {
+				b.WriteString(fmt.Sprintf("S3 = %d\n", amn.S3))
+				b.WriteString(fmt.Sprintf("S4 = %d\n", amn.S4))
+			}
 			b.WriteString(fmt.Sprintf("H1 = %s\n", amn.H1))
 			b.WriteString(fmt.Sprintf("H2 = %s\n", amn.H2))
 			b.WriteString(fmt.Sprintf("H3 = %s\n", amn.H3))
 			b.WriteString(fmt.Sprintf("H4 = %s\n", amn.H4))
-			if amn.I1 != "" {
+			if amn.I1 != "" && model.AWGVersionAtLeast(version, model.AWGVersion2) {
 				b.WriteString(fmt.Sprintf("I1 = %s\n", amn.I1))
 				b.WriteString(fmt.Sprintf("I2 = %s\n", amn.I2))
 				b.WriteString(fmt.Sprintf("I3 = %s\n", amn.I3))
@@ -418,7 +439,8 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 		// guard — see applyAWG3ToEndpoint. For consistency the client conf
 		// relies on a preset with S1-S4 >= 12 when AWG3 is on, enforced at
 		// inbound save time going forward.)
-		if material != nil && material.AWG3Mode && material.HeaderProtectionKey != "" {
+		if material != nil && material.AWG3Mode && material.HeaderProtectionKey != "" &&
+			model.AWGVersionAtLeast(version, model.AWGVersion3) {
 			b.WriteString(fmt.Sprintf("HeaderProtectionKey = %s\n", material.HeaderProtectionKey))
 			if material.ContentPaddingAddition != "" {
 				b.WriteString(fmt.Sprintf("ContentPaddingAddition = %s\n", material.ContentPaddingAddition))

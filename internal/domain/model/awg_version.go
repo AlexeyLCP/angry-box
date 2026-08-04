@@ -75,3 +75,25 @@ func IsKnownAWGVersion(v string) bool {
 		return false
 	}
 }
+
+// AWGVersionAtLeast reports whether v is >= floor in the version order
+// 1.5 < 2 < 3. v is normalized first (empty/unknown -> "2", AWG3Mode handled by
+// the caller via EffectiveAWGVersion), so a legacy inbound compares as 2.0.
+// floor is expected to be one of the canonical constants. Mirrors lucx-ui's
+// awgVersionAtLeast; used to gate per-version field emission in client/server
+// configs (1.5 drops S3/S4 + I1-I5; 3 adds header protection + device timers).
+func AWGVersionAtLeast(v, floor string) bool {
+	return awgVersionOrder(effectiveAWGVersion(false, v)) >= awgVersionOrder(floor)
+}
+
+// awgVersionOrder maps a canonical version to its numeric rank for comparisons.
+func awgVersionOrder(v string) int {
+	switch v {
+	case AWGVersion1x:
+		return 1
+	case AWGVersion3:
+		return 3
+	default:
+		return 2
+	}
+}

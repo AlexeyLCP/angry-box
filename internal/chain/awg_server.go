@@ -20,6 +20,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
@@ -56,6 +57,11 @@ type AWGServerConfParams struct {
 	// therefore never written to a server conf; clients get them via
 	// RenderClientAWGConf (apps) or PostUp `awg set` (awg-quick on Linux).
 	Amnezia *config.AmneziaOptions
+	// AWGVersion selects the AWG protocol version (1.5/2/3) for field emission:
+	// a 1.5 server conf omits S3/S4 (awg-quick 1.x rejects them), 2/3 write the
+	// full S1-S4. Empty defaults to "2". Mirrors the client .conf gates so the
+	// two sides stay identical.
+	AWGVersion string
 	// AWG3 is the AWG 3.0 header-protection material (AGENTS #5 revision). When
 	// non-nil AND HeaderProtectionKey is set, the kernel-render path emits
 	// HeaderProtectionKey / ContentPaddingAddition / RekeyAfterTime into the
@@ -125,7 +131,7 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 	// reads ispecs on receive, while awg setconf on kernel 6.12 rejects them
 	// (see Amnezia field doc).
 	if p.Amnezia != nil {
-		writeAmneziaConfLines(&b, p.Amnezia, false)
+		writeAmneziaConfLines(&b, p.Amnezia, false, p.AWGVersion)
 	}
 
 	// AWG 3.0 header protection (AGENTS #5 revision). On the kernel-AWG3 path
@@ -198,14 +204,21 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 // the kernel accepts on all kernel versions (netlink set path stores the desc
 // strings verbatim). Itime is intentionally omitted (runtime-breaking in both
 // awg setconf and sing-box UAPI — see AGENTS.md Known Issues and commit 6f1a108).
-func writeAmneziaConfLines(b *strings.Builder, a *config.AmneziaOptions, includeCPS bool) {
+func writeAmneziaConfLines(b *strings.Builder, a *config.AmneziaOptions, includeCPS bool, version string) {
+	if version == "" {
+		version = model.AWGVersion2
+	}
 	b.WriteString(fmt.Sprintf("Jc = %d\n", a.JC))
 	b.WriteString(fmt.Sprintf("Jmin = %d\n", a.JMIN))
 	b.WriteString(fmt.Sprintf("Jmax = %d\n", a.JMAX))
 	b.WriteString(fmt.Sprintf("S1 = %d\n", a.S1))
 	b.WriteString(fmt.Sprintf("S2 = %d\n", a.S2))
-	b.WriteString(fmt.Sprintf("S3 = %d\n", a.S3))
-	b.WriteString(fmt.Sprintf("S4 = %d\n", a.S4))
+	// S3/S4 are AWG 2.0+; a 1.5 server (awg-quick 1.x) rejects them. The client
+	// .conf applies the same gate so server and client stay identical.
+	if model.AWGVersionAtLeast(version, model.AWGVersion2) {
+		b.WriteString(fmt.Sprintf("S3 = %d\n", a.S3))
+		b.WriteString(fmt.Sprintf("S4 = %d\n", a.S4))
+	}
 	if a.H1 != "" {
 		b.WriteString(fmt.Sprintf("H1 = %s\n", a.H1))
 		b.WriteString(fmt.Sprintf("H2 = %s\n", a.H2))
@@ -350,7 +363,7 @@ func RenderExitAWGConf(p ExitClientConfParams) string {
 	b.WriteString(fmt.Sprintf("PrivateKey = %s\n", p.ClientPrivateKey))
 	b.WriteString(fmt.Sprintf("MTU = %d\n", p.MTU))
 	if p.Amnezia != nil {
-		writeAmneziaConfLines(&b, p.Amnezia, false)
+		writeAmneziaConfLines(&b, p.Amnezia, false, model.AWGVersion2)
 	}
 	// rp_filter=0 on the exit-client interface is CRITICAL for balancer egress
 	// (live-verified 2026-07-04). sing-box direct outbounds use bind_interface:
@@ -464,8 +477,9 @@ func RenderExitServerAWGConf(p ExitServerConfParams) string {
 	b.WriteString(fmt.Sprintf("MTU = %d\n", p.MTU))
 	if p.Amnezia != nil {
 		// Responder side of the exit link — I1-I5 dropped (kernel never reads
-		// ispecs on receive; setconf on 6.12 rejects them).
-		writeAmneziaConfLines(&b, p.Amnezia, false)
+		// ispecs on receive; setconf on 6.12 rejects them). Exit links are
+		// inter-node (AWG 2/3), so S3/S4 are always written.
+		writeAmneziaConfLines(&b, p.Amnezia, false, model.AWGVersion2)
 	}
 	// MASQUERADE + FORWARD for internet egress: when MASQUERADENetwork is set,
 	// emit PostUp/PostDown that NAT tunneled user traffic to the exit's public

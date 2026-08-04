@@ -443,6 +443,7 @@ func renderAWGServerConfFromInbound(ib *model.NodeInbound, preset ConnectionPres
 			// kernel-AWG3 node). The HPK is hex-persisted; writeAWG3ConfLines
 			// hex→base64 converts it for the awg-quick .conf form.
 			AWG3:          inboundAWG3MaterialForKernel(ib),
+			AWGVersion:    ib.EffectiveAWGVersion(),
 			Peers:         peers,
 			TUNInterface:  tunInterfaceName, // sing-box-tun: PostUp/PostDown FORWARD rules
 			InterfaceName: ifaceName,        // awg0 / awg1 — PostUp references this

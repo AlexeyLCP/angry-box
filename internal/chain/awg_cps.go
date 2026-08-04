@@ -53,10 +53,20 @@ type AWGObfsMaterial struct {
 	RekeyAfterTime            string
 }
 
-// GenerateAWGObfsMaterial is the main entry point used by applier and config command.
+// GenerateAWGObfsMaterial is the main entry point used by applier and config
+// command. It targets AWG 2.0 (quadrant H ranges); use
+// GenerateAWGObfsMaterialForVersion for a version-aware H1-H4 form (1.5).
 // level 0 = no extra obfuscation packets
 // level 3 + "quic" = maximum stealth (I1=1200B QUIC Initial Chrome fb, I2-I5 short)
 func GenerateAWGObfsMaterial(level int, mimicry string) AWGObfsMaterial {
+	return GenerateAWGObfsMaterialForVersion(level, mimicry, model.AWGVersion2)
+}
+
+// GenerateAWGObfsMaterialForVersion is GenerateAWGObfsMaterial with a
+// version-appropriate H1-H4 form: AWG 1.5 single-int (awg-quick 1.x rejects
+// "lo-hi"), 2/3 quadrant ranges. Used by the inbound/profile material paths
+// that know the effective AWG version.
+func GenerateAWGObfsMaterialForVersion(level int, mimicry string, version string) AWGObfsMaterial {
 	m := AWGObfsMaterial{
 		CPSLevel:       clamp(level, 0, 3),
 		MimicryProfile: mimicry,
@@ -66,13 +76,14 @@ func GenerateAWGObfsMaterial(level int, mimicry string) AWGObfsMaterial {
 		return m
 	}
 
-	// H1-H4: proper quadrant ranges per the AmneziaWG manual (4 non-overlapping
-	// ranges in [5, 2^31-1], width >= 1000). Profile scales with CPS level.
+	// H1-H4: version-appropriate form (1.5 single-int, 2/3 quadrant ranges) per
+	// the AmneziaWG manual (4 non-overlapping ranges in [5, 2^31-1], width >= 1000).
+	// Profile scales with CPS level.
 	profile := AWGProfileStandard
 	if level >= 3 {
 		profile = AWGProfilePro
 	}
-	params := GenAWGParams(profile)
+	params := GenAWGParamsForVersion(profile, version)
 	m.H1, m.H2, m.H3, m.H4 = params.H1, params.H2, params.H3, params.H4
 
 	switch mimicry {

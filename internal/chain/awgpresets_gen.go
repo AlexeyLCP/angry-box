@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
@@ -126,17 +127,46 @@ func GenAWGParams(profile AWGProfileName) AWGParams {
 	}
 
 	// Invariant 3 & 4: H1-H4 in 4 fixed non-overlapping quadrants of [5, 2^31-1].
-	quadrants := [4][2]int{
+	q := hQuadrants()
+	params.H1 = genQuadrantPair(q[0][0], q[0][1])
+	params.H2 = genQuadrantPair(q[1][0], q[1][1])
+	params.H3 = genQuadrantPair(q[2][0], q[2][1])
+	params.H4 = genQuadrantPair(q[3][0], q[3][1])
+
+	return params
+}
+
+// hQuadrants returns the 4 fixed non-overlapping quadrants of [5, 2^31-1] used
+// for H1-H4 (the AWG manual requires unique, non-overlapping header-junk ranges).
+func hQuadrants() [4][2]int {
+	return [4][2]int{
 		{5, 536870911},           // 5 .. 2^29-1
 		{536870912, 1073741823},  // 2^29 .. 2^30-1
 		{1073741824, 1610612735}, // 2^30 .. 3*2^29-1
 		{1610612736, 2147483647}, // 3*2^29 .. 2^31-1 (Windows signed-int32 limit)
 	}
-	params.H1 = genQuadrantPair(quadrants[0][0], quadrants[0][1])
-	params.H2 = genQuadrantPair(quadrants[1][0], quadrants[1][1])
-	params.H3 = genQuadrantPair(quadrants[2][0], quadrants[2][1])
-	params.H4 = genQuadrantPair(quadrants[3][0], quadrants[3][1])
+}
 
+// genHSingle returns a single integer H value within a quadrant. AWG 1.5
+// (awg-quick 1.x) rejects the "lo-hi" range form, so 1.5 configs carry bare
+// single-int H1-H4 (mirror lucx-ui cps/params.go genHSingle).
+func genHSingle(qmin, qmax int) string {
+	return fmt.Sprintf("%d", randRange(qmin, qmax))
+}
+
+// GenAWGParamsForVersion generates params with a version-appropriate H1-H4 form:
+// AWG 1.5 uses single-int H values (awg-quick 1.x cannot parse "lo-hi"), while
+// 2/3 use quadrant ranges. Mirrors lucx-ui cps/params.go:219-224. S/Jc are
+// version-independent (the client export filters S3/S4+I1-I5 for 1.5 at render).
+func GenAWGParamsForVersion(profile AWGProfileName, version string) AWGParams {
+	params := GenAWGParams(profile)
+	if version == model.AWGVersion1x {
+		q := hQuadrants()
+		params.H1 = genHSingle(q[0][0], q[0][1])
+		params.H2 = genHSingle(q[1][0], q[1][1])
+		params.H3 = genHSingle(q[2][0], q[2][1])
+		params.H4 = genHSingle(q[3][0], q[3][1])
+	}
 	return params
 }
 
