@@ -2328,3 +2328,6 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 ### Границы (соблюдены)
 - Frozen TUIC/Hysteria2 не тронуты; handler-логика и store-схема не менялись (только генерация конфигов + install).
 - E2E install-пути — только на n1 (тег e2eawg3), НЕ на продовых e2eServers (AGENTS.md).
+
+### Live-верификация (PENDING — нет доступа к ноде, 2026-08-05)
+Живой прогон (install → detectKernelAWG3 → v3/v2/v1.5 рендер) отложен: **n1 переустановлен** (host key ротировался, наш `id_ed25519` больше не в `authorized_keys` → `Permission denied (publickey)`; новый ED25519 принят по TOFU), а **GCloud test VPS остановлены** (connection timed out). Код Фаз 1–2 unit-тестирован и запушен; live E2E выполнить как только появится живая нода (восстановить pubkey на n1 через консоль или поднять vps-de-test-*). Запустить: `go test -tags e2eawg3 ./internal/chain/ -run TestE2EAWG3 -v -timeout 300s` на восстановленной ноде.
