@@ -2213,9 +2213,9 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Файлы:** `internal/domain/model/awg_version.go` (новый), `internal/domain/model/inbound.go`, `internal/domain/model/panel.go`, `internal/chain/presets.go`, `internal/chain/default_presets.json`, `internal/chain/awg_inbound_material.go`, `internal/chain/awg_deploy.go`, `internal/chain/awg_tun_overlay.go`, `internal/chain/merged_config.go`, `internal/chain/inbound_source.go`, `internal/chain/awg_version_test.go` (новый), `internal/chain/robust_presets_test.go`, `internal/web/inbounds.go`, `web/templates/inbounds.templ`, `web/templates/inbounds_templ.go`, `internal/i18n/i18n.go`, `AGENTS.md` (#5 ревизия), `docs/PROGRESS.md` (+§43).
 
-## §44. Редизайн UI: полный переезд на дизайн-систему Lovable (палитра Sand + компонентные классы) — Срез 1 SHIPPED (2026-08-02), Срез 2 (постраничная разметка) TODO
+## §44. Редизайн UI: полный переезд на дизайн-систему Lovable (палитра Sand + компонентные классы) — ПОЛНОСТЬЮ SHIPPED (Срез 1 2026-08-02, Срез 2 2026-08-04)
 
-**Статус:** Срез 1 (фундамент дизайн-системы) **реализован и верифицирован** 2026-08-02 — мгновенная перекраска ВСЕГО приложения без правок handler-кода. Срез 2 (постраничный перенос разметки на паттерны Lovable — `.st/.pill/.lvl/.seg/...`) — TODO, постранично, коммит за страницей.
+**Статус:** **ОБА среза завершены.** Срез 1 (фундамент) 2026-08-02 — мгновенная перекраска ВСЕГО приложения без правок handler-кода. Срез 2 (постраничный перенос разметки на паттерны Lovable — `.st/.pill/.lvl/.seg/.inp/.lbl/.btn-icon/...`) 2026-08-04 — **все 11 templ-страниц** переразмечены (10 коммитов), 0 незаменённых DaisyUI-классов форм, визуально верифицировано (скриншоты dashboard/settings в Sand).
 
 ### Срез 1 (SHIPPED) — фундамент: токены + классы + layout shell
 
@@ -2239,8 +2239,21 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Главное свойство Среза 1:** всё приложение (все 13 templ, `.tn-*` классы, spider SVG, `#htmx-loading-bar`, inline-alert'ы в handlers, DaisyUI-компоненты) **уже бежевое и работает в новом shell'е** без правки handler-кода (`internal/web/*.go` не тронут) и без правки тел `.tn-*` классов. Срез 2 — необязательное обогащение разметки паттернами Lovable.
 
-### Срез 2 (TODO) — постраничный перенос разметки на паттерны Lovable
-Коммит за страницей, `refactor(ui): migrate <page>.templ`. Порядок по ценности/сложности: dashboard → inbounds (сег-контроль AWG 1.5/2.0/3.0 + `.awg3` подсекция HPK/CPM/RAT — прямая визуализация §43-фичи) → nodes (788стр) → chains → users (592) → presets → settings (548) → spider (только панели вокруг SVG; геометрию SVG и `oklch(var(--p))` НЕ трогать, уже перекрашено) → chainlevels/index/hosts.
+### Срез 2 (SHIPPED 2026-08-04) — постраничный перенос разметки на паттерны Lovable
+Все 11 templ-страниц переразмечены коммит-за-страницей (`refactor(ui): перенос <page>.templ`):
+- `fe6effe` inbounds — **сег-контроль AWG 1.5/2.0/3.0** (`.seg` radio) + `.awg3` read-only подсекция HPK/CPM/RAT (прямая визуализация §43-фичи); `.tn-table` список с `.pill`/`.lvl`.
+- `337d3b3` dashboard — stat-карты (mono 36px + цветные иконки), warn-пилюля pending-changes, таблица нод, мини-топология `.lvl-entry/-relay/-exit` + `.arrow`, audit mono-строки; `healthBadgeClass` badge-*→`.st`.
+- `850255b` nodes (788) — таблица `.tn-table`, Deploy Role `.st st-pu/-mut`, действия `.btn-icon` (Heroicons), формы `.lbl/.inp/.sel`, HostKeyWarning warn-mix `.tn-card`; JS-селекторы `.manual-key-ta`/`.auto-install-preview` сохранены.
+- `8c9417f` chains — nodes-колонка `.lvl-*` через `lvlRoleClass` (dashboard), действия `.btn-icon`, AWG-keys блок `.code`.
+- `03fd1bd` users (592) — `.pill` protocols/chains, `userStatusBadge` badge-*→`.st`, действия `.btn-icon`, формы `.lbl/.inp/.sel/.cb`, QR bg-white сохранён.
+- `5a25d32` presets — `.tn-card` секции, AWG-поля во внутреннем grid (внешний `space-y-*` — корректно с JS `display:block` toggle), reveal-классы `.awg-fields` и т.д. сохранены.
+- `8f51344` settings (548) — плоские `.tn-card` секции, auth `.toggle-tn`, listen-port `.st st-warn`, SSH-keys `.pill`/`.st`, формы `.lbl/.inp/.sel/.ta/.cb`.
+- `95d71b7` spider — **только панели** вокруг SVG (canvas-обёртка, create-форма, Connections/Chains списки); геометрия SVG и `oklch(var(--p))` НЕ тронуты; `hx-target` Delete `closest .border`→`closest .spider-chain`.
+- `b3e0113` chainlevels/index/hosts — chain editor `.lbl/.inp/.sel` (`.chain-level`/`.inboundref-wrap` сохранены), welcome-карточки, HostStatus `.st`.
+
+**Полнота:** grep по `input-bordered|select-bordered|textarea-bordered|form-control|label-text|card-body|badge badge-` в `web/templates/*.templ` → **0** совпадений (все заменены). Функциональные DaisyUI-компоненты (modal/tabs/dropdown/alert/radio/collapse/join/link/loading/tooltip) намеренно оставлены — перекрашены через слоты Среза 1.
+
+**Верификация:** `go build ./...` ✓, `go vet` ✓, `go test ./internal/web/` — assertion'ы все PASS; редкие падения в полном прогоне — ИСКЛЮЧИТЕЛЬНО `testing.go:1464 TempDir RemoveAll cleanup` race на Windows/OneDrive (разные случайные тесты, не assertion; чистые прогоны exit=0) — пре-существующая environmental-проблема, не регрессия. Живой `serve`: все 9 страниц HTTP 200, `data-theme="sand"`, `themes.css`+`app.css` подключены (`tokyo-night.css` нет), новые классы присутствуют; скриншоты dashboard/settings подтверждают Sand-рендер.
 
 ### Границы (НЕ делать)
 - ❌ React/JSX/vite (`src/` из архива) — выкинут, нарушает Правило 1.
