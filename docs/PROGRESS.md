@@ -2305,3 +2305,26 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 - Перепроверить embed (`web/embed.go:9`) — новый `themes.css` попадает в прод через `//go:embed static/css/*`, убедиться что подхватывается.
 
 **Файлы (когда будем делать):** `web/static/css/themes.css` (новый, замена tokyo-night.css), `web/static/css/app.css` (переписать алиасы + новые классы), `web/templates/base.templ` (shell + темы), `web/static/js/app.js` (тема-переключение), `internal/web/handlers_clients_test.go:49` (assertion), далее постранично `web/templates/*.templ`.
+
+## §45. AWG 1.5/2/3: per-version генерация конфигов + сосуществование + установка AWG3-ядра и tools (референс lucx-ui) — SHIPPED (2026-08-02)
+
+**Контекст:** оператор указал на второй проект `AlexeyLCP/lucx-ui` как эталон: там переключатель версий AWG 1.5/2/3, конфиги генерируются под каждую версию, инбаунды разных версий сосуществуют, и ставятся новое ядро (PR #192) + tools v3. Закрыты пробелы angry-box по образцу lucx, НЕ ломая существующие деплои.
+
+### Фаза 1 — per-version генерация конфигов (коммит `981a75b`)
+- `model/awg_version.go`: `AWGVersionAtLeast(v, floor)` — порядок 1.5<2<3 (mirror lucx `awgVersionAtLeast`), для гейтов эмиссии полей.
+- `awgpresets_gen.go`: `GenAWGParamsForVersion` — H1-H4 для **1.5 single-int** (awg-quick 1.x отвергает "lo-hi"), для 2/3 quadrant ranges (mirror lucx `genHSingle`/`genHRange`).
+- `awg_cps.go`: `GenerateAWGObfsMaterialForVersion(level, mimicry, version)`; 2-arg `GenerateAWGObfsMaterial` остаётся (дефолт "2") — существующие тесты не тронуты. Inbound/profile пути передают `EffectiveAWGVersion()`.
+- `clientconfig.go`: `ClientConfigParams.AWGVersion`; `renderAWGQuickConf` гейты — S3/S4 + I1-I5 только `>=2`, HPK+таймеры только `>=3`; версия берётся из `ib.EffectiveAWGVersion()` в resolver-блоке → **сосуществование**: inbound v2 и v3 на одной ноде рендерят свои наборы.
+- `web/users.go buildAWGClientConf`: version-aware гейты + **добавлена отсутствовавшая эмиссия HPK/CPM/RAT** для v3 standalone (раньше клиент v3 не получал HPK).
+- `awg_server.go`: `AWGServerConfParams.AWGVersion`; `writeAmneziaConfLines` не пишет S3/S4 для 1.5 (server↔client паритет); exit-конфы (межузловые) = "2".
+- `awg_deploy.go`: `renderAWGServerConfFromInbound` передаёт `ib.EffectiveAWGVersion()`.
+- Тесты `awg_version_perversion_test.go`: ordering, H-форма 1.5 single-int, client .conf per-version field set, server S3/S4 паритет — все PASS; полный `go test` без регрессий (server↔client match и S3/S4-на-дефолте зелёные).
+
+### Фаза 2 — установка AWG3-ядра + tools v3 (коммит `c9b9587`)
+- `awg3_capability.go detectKernelAWG3`: kernel-половина заменена с `modinfo major>=3` на **FUNCTIONAL kallsyms-проб** (`grep awg_header_protection_set_key /proc/kallsyms`) — upstream штамповал `PACKAGE_VERSION=1.0.0` в каждый dkms.conf, ломая version-parse (lucx-ui `c3001499`); modinfo оставлен fallback.
+- `singbox.go installAWGModule`: early-exit только если нода УЖЕ AWG3-capable (loaded && kallsyms+tools v3); loaded-но-v1 нода падает в **upgrade-путь**. DKMS-ветка: `sed` rewrite `PACKAGE_VERSION→3.0-awg3` (modinfo не говорит 1.0.0) + `rmmod`/`modprobe` для безопасной замены. Tools: если `awg` отсутствует или < v3 — `git clone amneziawg-tools master` + `make install`. Prereqs: + `git libmnl-dev pkg-config`.
+- Тесты: `awg_install_test.go` (parse tools-версии); `standalone_awg_test.go TestInstallAWGModule_AlreadyLoaded` обновлён под capability-гейт. Полный `go test ./internal/...` — ok.
+
+### Границы (соблюдены)
+- Frozen TUIC/Hysteria2 не тронуты; handler-логика и store-схема не менялись (только генерация конфигов + install).
+- E2E install-пути — только на n1 (тег e2eawg3), НЕ на продовых e2eServers (AGENTS.md).
