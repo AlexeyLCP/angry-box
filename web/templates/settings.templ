@@ -9,360 +9,348 @@ import (
 
 // Settings renders the panel settings page.
 templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*model.Chain, authEnabled bool, authUsername string, listenAddr string, activeListenAddr string, systemKeys ...[]model.SSHKeyEntry) {
-	<div class="space-y-6">
+	<div class="flex flex-col gap-6">
 		<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Panel Settings") }</h2>
 
-		<div class="tn-card">
-			<div class="card-body p-4">
-				<h3 class="font-semibold mb-3">{ i18n.T(ctx, "General") }</h3>
-				<form
-					hx-post="/ui/settings"
-					hx-target="#settings-result"
-					hx-swap="innerHTML"
-					class="space-y-4">
+		<section class="tn-card tn-card-hover">
+			<h3 class="sect-title mb-3">{ i18n.T(ctx, "General") }</h3>
+			<form
+				hx-post="/ui/settings"
+				hx-target="#settings-result"
+				hx-swap="innerHTML"
+				class="flex flex-col gap-4">
 
-					<div class="grid grid-cols-1 gap-4 border-b border-base-300 pb-4 mb-4">
-						<div class="form-control">
-							<label class="label cursor-pointer justify-start gap-3">
-								<input type="checkbox" name="auth_enabled" class="toggle toggle-primary"
-									if authEnabled { checked } />
-								<span class="label-text font-medium">{ i18n.T(ctx, "Enable Web UI Authentication") }</span>
-							</label>
-							<div class="text-xs text-base-content/50 ml-12">{ i18n.T(ctx, "If disabled, anyone can access the orchestrator without a password.") }</div>
-						</div>
+				<div class="grid grid-cols-1 gap-4 pb-4" style="border-bottom: 1px solid var(--bd)">
+					<div>
+						<label class="flex items-center gap-3 cursor-pointer">
+							<input type="checkbox" name="auth_enabled" class="toggle-tn"
+								if authEnabled { checked } />
+							<span class="text-sm font-medium">{ i18n.T(ctx, "Enable Web UI Authentication") }</span>
+						</label>
+						<div class="text-xs ml-12" style="color: var(--mut)">{ i18n.T(ctx, "If disabled, anyone can access the orchestrator without a password.") }</div>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4" style="border-bottom: 1px solid var(--bd)">
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Web UI Username") }</label>
+						<input type="text" name="auth_username" class="inp"
+							value={ authUsername } required />
+						<p class="hint">{ i18n.T(ctx, "For Basic Authentication") }</p>
 					</div>
 
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-base-300 pb-4 mb-4">
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Web UI Username") }</span></label>
-							<input type="text" name="auth_username" class="input input-bordered"
-								value={ authUsername } required />
-							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "For Basic Authentication") }</span></div>
-						</div>
-						
-						<div class="form-control">
-							<label class="label">
-								<span class="label-text">{ i18n.T(ctx, "Web UI Listen Port") }</span>
-								if activeListenAddr != "" && listenAddr != activeListenAddr {
-									<span class="badge badge-warning badge-sm">{ i18n.T(ctx, "Currently active on: ") }{ activeListenAddr }</span>
-								}
-							</label>
-							<input type="text" name="listen_addr" class="input input-bordered"
-								value={ listenAddr } required />
-							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "e.g., :8090 or 127.0.0.1:8090") }</span></div>
-						</div>
-						
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Old Password (required to change)") }</span></label>
-							<input type="password" name="auth_old_password" class="input input-bordered"
-								placeholder={ i18n.T(ctx, "Enter current password") } autocomplete="current-password" />
-						</div>
-
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "New Password") }</span></label>
-							<input type="password" name="auth_new_password" class="input input-bordered"
-								placeholder={ i18n.T(ctx, "Leave empty to keep current") } autocomplete="new-password" />
-						</div>
-					</div>
-
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Language") }</span></label>
-							<select name="language" class="select select-bordered">
-								<option value="en" if settings.Language == "en" || settings.Language == "" { selected }>English</option>
-								<option value="ru" if settings.Language == "ru" { selected }>Русский</option>
-							</select>
-						</div>
-
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Panel Country") }</span></label>
-							<select name="panel_country" class="select select-bordered">
-								<option value="" if settings.PanelCountry == "" { selected }>{ i18n.T(ctx, "Auto-detect") }</option>
-								<option value="RU" if settings.PanelCountry == "RU" { selected }>{ i18n.T(ctx, "Russia (RU)") }</option>
-								<option value="IR" if settings.PanelCountry == "IR" { selected }>{ i18n.T(ctx, "Iran (IR)") }</option>
-								<option value="CN" if settings.PanelCountry == "CN" { selected }>{ i18n.T(ctx, "China (CN)") }</option>
-								<option value="OTHER" if settings.PanelCountry == "OTHER" { selected }>{ i18n.T(ctx, "Other") }</option>
-							</select>
-							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "Affects recommended obfuscation presets") }</span></div>
-						</div>
-
-						<div class="form-control">
-							<label class="label"><span class="label-text">{ i18n.T(ctx, "Metrics Refresh Interval (minutes)") }</span></label>
-							<input type="number" name="metrics_interval" class="input input-bordered"
-								value={ fmt.Sprintf("%d", settings.MetricsInterval) } min="1" max="1440" />
-							<div class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "How often to poll hosts when UI is closed (default: 240)") }</span></div>
-						</div>
-					</div>
-
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Default Protocol") }</span></label>
-						<select name="default_protocol" class="select select-bordered max-w-sm">
-							<option value="awg" if settings.DefaultProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
-							if settings.DefaultProtocol == "tuic" {
-								<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused — QUIC/TLS)") }</option>
+					<div>
+						<label class="lbl">
+							{ i18n.T(ctx, "Web UI Listen Port") }
+							if activeListenAddr != "" && listenAddr != activeListenAddr {
+								<span class="st st-warn ml-2">{ i18n.T(ctx, "Currently active on: ") }{ activeListenAddr }</span>
 							}
-							<option value="vless-reality" if settings.DefaultProtocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
+						</label>
+						<input type="text" name="listen_addr" class="inp"
+							value={ listenAddr } required />
+						<p class="hint">{ i18n.T(ctx, "e.g., :8090 or 127.0.0.1:8090") }</p>
+					</div>
+
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Old Password (required to change)") }</label>
+						<input type="password" name="auth_old_password" class="inp"
+							placeholder={ i18n.T(ctx, "Enter current password") } autocomplete="current-password" />
+					</div>
+
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "New Password") }</label>
+						<input type="password" name="auth_new_password" class="inp"
+							placeholder={ i18n.T(ctx, "Leave empty to keep current") } autocomplete="new-password" />
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Language") }</label>
+						<select name="language" class="sel">
+							<option value="en" if settings.Language == "en" || settings.Language == "" { selected }>English</option>
+							<option value="ru" if settings.Language == "ru" { selected }>Русский</option>
 						</select>
 					</div>
 
-					<div class="form-control">
-						<label class="label"><span class="label-text">{ i18n.T(ctx, "Default Reality SNI") }</span></label>
-						<input type="text" name="reality_sni" class="input input-bordered max-w-sm font-mono text-sm"
-							if settings.DefaultRealitySNI != "" { value={ settings.DefaultRealitySNI } } else { value="www.cloudflare.com" }
-							placeholder="www.cloudflare.com" />
-						<label class="label"><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "SNI domain for REALITY/TUIC inbounds when no preset specifies one") }</span></label>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Panel Country") }</label>
+						<select name="panel_country" class="sel">
+							<option value="" if settings.PanelCountry == "" { selected }>{ i18n.T(ctx, "Auto-detect") }</option>
+							<option value="RU" if settings.PanelCountry == "RU" { selected }>{ i18n.T(ctx, "Russia (RU)") }</option>
+							<option value="IR" if settings.PanelCountry == "IR" { selected }>{ i18n.T(ctx, "Iran (IR)") }</option>
+							<option value="CN" if settings.PanelCountry == "CN" { selected }>{ i18n.T(ctx, "China (CN)") }</option>
+							<option value="OTHER" if settings.PanelCountry == "OTHER" { selected }>{ i18n.T(ctx, "Other") }</option>
+						</select>
+						<p class="hint">{ i18n.T(ctx, "Affects recommended obfuscation presets") }</p>
 					</div>
 
-					<div class="pt-2">
-						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Settings") }</button>
-					</div>
-				</form>
-
-				<div id="settings-result" class="mt-2"></div>
-
-				<!-- SSH Keys — kept OUTSIDE the main settings form. The SSHKeyList
-				     component renders its own <form> elements (add/import/test/delete
-				     each hit their own /ui/settings/ssh-keys* endpoints), and HTML
-				     forbids nested <form>: a <form> inside the main settings <form>
-				     makes the browser close the outer form early, which drops the
-				     Save Settings button (and the language select's submit) out of
-				     the form — so Save Settings silently no-op'd and the language
-				     never changed. -->
-				<div class="border-t border-base-300 pt-4 mt-4">
-					<h4 class="font-medium mb-2">{ i18n.T(ctx, "SSH Keys") }</h4>
-					<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.") }</p>
-
-					<div id="ssh-keys-list" class="space-y-2">
-						@SSHKeyList(settings, systemKeysSlice(systemKeys), hosts)
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Metrics Refresh Interval (minutes)") }</label>
+						<input type="number" name="metrics_interval" class="inp"
+							value={ fmt.Sprintf("%d", settings.MetricsInterval) } min="1" max="1440" />
+						<p class="hint">{ i18n.T(ctx, "How often to poll hosts when UI is closed (default: 240)") }</p>
 					</div>
 				</div>
 
-				<!-- Add new key form (outside the main settings form + the ssh-keys-list
-				     so it is not re-rendered on every add/delete/test/delete swap). -->
-				<div class="mt-4 border border-dashed border-base-300 rounded-lg p-3">
-					<form
-						hx-post="/ui/settings/ssh-keys"
-						hx-target="#ssh-keys-list"
-						hx-swap="outerHTML"
-						hx-on::after-request="this.reset()"
-						class="space-y-2">
-					<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
-					<div class="form-control">
-						<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Default Protocol") }</label>
+					<select name="default_protocol" class="sel" style="max-width: 24rem;">
+						<option value="awg" if settings.DefaultProtocol == "awg" { selected }>{ i18n.T(ctx, "AWG (AmneziaWG)") }</option>
+						if settings.DefaultProtocol == "tuic" {
+							<option value="tuic" selected disabled>{ i18n.T(ctx, "TUIC v5 (paused — QUIC/TLS)") }</option>
+						}
+						<option value="vless-reality" if settings.DefaultProtocol == "vless-reality" { selected }>{ i18n.T(ctx, "VLESS Reality") }</option>
+					</select>
+				</div>
+
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Default Reality SNI") }</label>
+					<input type="text" name="reality_sni" class="inp font-mono" style="max-width: 24rem;"
+						if settings.DefaultRealitySNI != "" { value={ settings.DefaultRealitySNI } } else { value="www.cloudflare.com" }
+						placeholder="www.cloudflare.com" />
+					<p class="hint">{ i18n.T(ctx, "SNI domain for REALITY/TUIC inbounds when no preset specifies one") }</p>
+				</div>
+
+				<div class="pt-2">
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save Settings") }</button>
+				</div>
+			</form>
+
+			<div id="settings-result" class="mt-2"></div>
+
+			<!-- SSH Keys — kept OUTSIDE the main settings form. The SSHKeyList
+			     component renders its own <form> elements (add/import/test/delete
+			     each hit their own /ui/settings/ssh-keys* endpoints), and HTML
+			     forbids nested <form>: a <form> inside the main settings <form>
+			     makes the browser close the outer form early, which drops the
+			     Save Settings button (and the language select's submit) out of
+			     the form — so Save Settings silently no-op'd and the language
+			     never changed. -->
+			<div class="pt-4 mt-4" style="border-top: 1px solid var(--bd)">
+				<h4 class="sect-title mb-1">{ i18n.T(ctx, "SSH Keys") }</h4>
+				<p class="text-xs mb-3" style="color: var(--mut)">{ i18n.T(ctx, "Manage SSH keys for node capture. System keys auto-detected from ~/.ssh/.") }</p>
+
+				<div id="ssh-keys-list" class="flex flex-col gap-2">
+					@SSHKeyList(settings, systemKeysSlice(systemKeys), hosts)
+				</div>
+			</div>
+
+			<!-- Add new key form (outside the main settings form + the ssh-keys-list
+			     so it is not re-rendered on every add/delete/test/delete swap). -->
+			<div class="mt-4 p-3" style="border: 1px dashed var(--bd); border-radius: 8px;">
+				<form
+					hx-post="/ui/settings/ssh-keys"
+					hx-target="#ssh-keys-list"
+					hx-swap="outerHTML"
+					hx-on::after-request="this.reset()"
+					class="flex flex-col gap-2">
+				<div class="text-sm font-medium mb-1">{ i18n.T(ctx, "Add New SSH Key") }</div>
+					<div>
+						<input type="text" name="name" class="inp" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
 					</div>
-						<div class="form-control">
-							<textarea name="key_data" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
+						<div>
+							<textarea name="key_data" class="ta font-mono text-xs" rows="4"
 								required placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
 						</div>
-					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
-					</form>
-				</div>
+					<div><button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button></div>
+				</form>
 			</div>
-		</div>
+		</section>
 
 		<!-- System Info -->
-		<div class="tn-card">
-			<div class="card-body p-4">
-				<h3 class="font-semibold mb-3">{ i18n.T(ctx, "System Info") }</h3>
-				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-					<div>
-						<div class="text-base-content/60">{ i18n.T(ctx, "Nodes") }</div>
-						<div class="font-semibold">{ fmt.Sprintf("%d", len(hosts)) }</div>
-					</div>
-					<div>
-						<div class="text-base-content/60">{ i18n.T(ctx, "Chains") }</div>
-						<div class="font-semibold">{ fmt.Sprintf("%d", len(chains)) }</div>
-					</div>
-					<div>
-						<div class="text-base-content/60">{ i18n.T(ctx, "Default Obfuscation") }</div>
-						<div class="font-semibold text-sm">
-							if settings.PanelCountry != "" {
-								<span>{ settings.PanelCountry }</span>
-							} else {
-								<span class="text-base-content/50">{ i18n.T(ctx, "Global default") }</span>
-							}
-						</div>
-					</div>
-					<div>
-						<div class="text-base-content/60">{ i18n.T(ctx, "Metrics Interval") }</div>
-						<div class="font-semibold">{ fmt.Sprintf(i18n.T(ctx, "%d min"), settings.MetricsInterval) }</div>
+		<section class="tn-card tn-card-hover">
+			<h3 class="sect-title mb-3">{ i18n.T(ctx, "System Info") }</h3>
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+				<div>
+					<div class="text-[11px] uppercase tracking-wider font-semibold" style="color: var(--mut)">{ i18n.T(ctx, "Nodes") }</div>
+					<div class="font-mono font-semibold text-2xl">{ fmt.Sprintf("%d", len(hosts)) }</div>
+				</div>
+				<div>
+					<div class="text-[11px] uppercase tracking-wider font-semibold" style="color: var(--mut)">{ i18n.T(ctx, "Chains") }</div>
+					<div class="font-mono font-semibold text-2xl">{ fmt.Sprintf("%d", len(chains)) }</div>
+				</div>
+				<div>
+					<div class="text-[11px] uppercase tracking-wider font-semibold" style="color: var(--mut)">{ i18n.T(ctx, "Default Obfuscation") }</div>
+					<div class="font-semibold text-sm">
+						if settings.PanelCountry != "" {
+							<span>{ settings.PanelCountry }</span>
+						} else {
+							<span style="color: var(--mut)">{ i18n.T(ctx, "Global default") }</span>
+						}
 					</div>
 				</div>
+				<div>
+					<div class="text-[11px] uppercase tracking-wider font-semibold" style="color: var(--mut)">{ i18n.T(ctx, "Metrics Interval") }</div>
+					<div class="font-mono font-semibold text-2xl">{ fmt.Sprintf(i18n.T(ctx, "%d min"), settings.MetricsInterval) }</div>
+				</div>
 			</div>
-		</div>
+		</section>
 
 		<!-- License & Disclaimer -->
-		<div class="tn-card">
-				<div class="card-body p-4">
-					<h3 class="font-semibold mb-3">{ i18n.T(ctx, "License & Disclaimer") }</h3>
-					<div class="text-sm text-base-content/70 space-y-2">
-						<p><strong>{ i18n.T(ctx, "PolyForm Noncommercial License 1.0.0") }</strong></p>
-						<p>{ i18n.T(ctx, "This software is licensed for") } <strong>{ i18n.T(ctx, "personal, non-commercial, educational, and scientific use only") }</strong>. { i18n.T(ctx, "Any commercial use is strictly prohibited.") }</p>
-						<p>{ i18n.T(ctx, "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND. The author assumes no responsibility for any damage, data loss, or legal consequences resulting from the use of this software.") }</p>
-					<p>{ i18n.T(ctx, "By using Angry-BOX, you acknowledge that:") }</p>
-					<ul class="list-disc list-inside space-y-1">
-						<li>{ i18n.T(ctx, "Circumvention of network censorship may be illegal in your jurisdiction") }</li>
-						<li>{ i18n.T(ctx, "You are solely responsible for complying with applicable laws") }</li>
-						<li>{ i18n.T(ctx, "The software must not be used for any commercial purpose") }</li>
-					</ul>
-				</div>
+		<section class="tn-card tn-card-hover">
+			<h3 class="sect-title mb-3">{ i18n.T(ctx, "License & Disclaimer") }</h3>
+			<div class="text-sm flex flex-col gap-2" style="color: var(--bc)">
+				<p><strong>{ i18n.T(ctx, "PolyForm Noncommercial License 1.0.0") }</strong></p>
+				<p>{ i18n.T(ctx, "This software is licensed for") } <strong>{ i18n.T(ctx, "personal, non-commercial, educational, and scientific use only") }</strong>. { i18n.T(ctx, "Any commercial use is strictly prohibited.") }</p>
+				<p>{ i18n.T(ctx, "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND. The author assumes no responsibility for any damage, data loss, or legal consequences resulting from the use of this software.") }</p>
+				<p>{ i18n.T(ctx, "By using Angry-BOX, you acknowledge that:") }</p>
+				<ul class="list-disc list-inside space-y-1" style="color: var(--mut)">
+					<li>{ i18n.T(ctx, "Circumvention of network censorship may be illegal in your jurisdiction") }</li>
+					<li>{ i18n.T(ctx, "You are solely responsible for complying with applicable laws") }</li>
+					<li>{ i18n.T(ctx, "The software must not be used for any commercial purpose") }</li>
+				</ul>
 			</div>
+		</section>
 
-			<!-- Backups — full-panel export/import + per-node export (the import
-			     endpoint is on Settings because it is panel-wide; per-node export
-			     buttons live on the Nodes page). -->
-			<div class="tn-card">
-				<div class="card-body p-4">
-					<h3 class="font-semibold mb-3">{ i18n.T(ctx, "Backups") }</h3>
-					<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Export the whole panel (hosts, chains, transit keys, users, settings) as a portable JSON backup, or import one to restore/migrate.") }</p>
-					<div class="flex gap-2 flex-wrap">
-						<a class="btn btn-ghost btn-sm" href="/ui/backup/store" download>{ i18n.T(ctx, "Export panel") }</a>
-						<button type="button" class="btn btn-ghost btn-sm"
-							onclick="var f=document.getElementById('import-backup-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
-							{ i18n.T(ctx, "Import backup") }
-						</button>
-					</div>
-					<div id="import-backup-form" class="hidden mt-2 border border-dashed border-base-300 rounded-lg p-2">
-						<form
-							hx-post="/ui/backup/import"
-							hx-target="#import-backup-result"
-							hx-swap="innerHTML"
-							class="space-y-2">
-							<div class="form-control">
-								<textarea name="backup_json" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="6"
-									placeholder="{&quot;format&quot;:&quot;angry-box-store&quot;...}  /  {&quot;format&quot;:&quot;angry-box-node&quot;...}"></textarea>
-							</div>
-							<div class="form-control">
-								<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup passphrase") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "only for encrypted (ABBKP1) offsite blobs") }</span></label>
-								<input type="password" name="passphrase" class="input input-bordered input-sm" placeholder="••••••••" />
-							</div>
-							<label class="label cursor-pointer gap-2">
-								<input type="checkbox" name="force" class="checkbox checkbox-sm" />
-								<span class="label-text text-xs">{ i18n.T(ctx, "Overwrite existing (force)") }</span>
-							</label>
-							<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import backup") }</button>
-						</form>
-							<div id="import-backup-result" class="mt-1"></div>
-						</div>
-					</div>
-				</div>
-
-				<!-- Auto-relocate (P2b) — global master switch for moving
-				     down/unreachable nodes onto warm-pool spares. Double opt-in:
-				     this toggle AND the per-node "Auto-relocate on down" checkbox. -->
-				<div class="tn-card">
-					<div class="card-body p-4">
-						<h3 class="font-semibold mb-3">{ i18n.T(ctx, "Auto-relocate") }</h3>
-						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Automatically move a node to a spare (warm pool) VPS when its health check goes down/unreachable. Requires the per-node opt-in checkbox; the spare keeps the node's identity — existing clients are not reconfigured.") }</p>
-						<form
-							hx-post="/ui/settings/auto-relocate"
-							hx-target="#auto-relocate-result"
-							hx-swap="innerHTML"
-							class="space-y-3">
-							<div class="grid grid-cols-2 gap-3">
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Cooldown (hours between relocations of one node)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 6 default") }</span></label>
-									<input type="number" name="auto_relocate_cooldown" class="input input-bordered input-sm"
-										value={ autoRelocateCooldownVal(settings) } placeholder="6" />
-								</div>
-							</div>
-							<label class="label cursor-pointer gap-2">
-								<input type="checkbox" name="auto_relocate_enabled" class="checkbox checkbox-sm"
-									if settings.AutoRelocate != nil && settings.AutoRelocate.Enabled { checked } />
-								<span class="label-text text-xs">{ i18n.T(ctx, "Auto-relocate enabled (global)") }</span>
-							</label>
-							<div class="flex gap-2 flex-wrap">
-								<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save") }</button>
-							</div>
-						</form>
-						<div id="auto-relocate-result" class="mt-2"></div>
-					</div>
-				</div>
-
-				<!-- Offsite backup target (P2a) — push an encrypted copy of the
-				     store to an offsite SSH box on a schedule + on demand. The
-				     blob is passphrase-encrypted (scrypt/AES-GCM), so it is
-				     restorable without the host's master key. The master key
-				     file never leaves this host. -->
-				<div class="tn-card">
-					<div class="card-body p-4">
-						<h3 class="font-semibold mb-3">{ i18n.T(ctx, "Offsite backup") }</h3>
-						<p class="text-xs text-base-content/50 mb-3">{ i18n.T(ctx, "Push an encrypted copy of the panel to an offsite SSH target on a schedule. The blob is passphrase-encrypted — restorable without this host's master key (which never leaves this host).") }</p>
-						<form
-							hx-post="/ui/backup/offsite/save"
-							hx-target="#offsite-backup-result"
-							hx-swap="innerHTML"
-							class="space-y-3">
-							<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup target host") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "host:port") }</span></label>
-									<input type="text" name="offsite_host" class="input input-bordered input-sm"
-										value={ offsiteVal(settings, "Host") }
-										placeholder="backup.example:22" />
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "New SSH user (optional)") }</span></label>
-									<input type="text" name="offsite_user" class="input input-bordered input-sm"
-										value={ offsiteVal(settings, "User") } placeholder="backup" />
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "New SSH key (optional)") }</span></label>
-									<select name="offsite_ssh_key_id" class="select select-bordered select-sm">
-										<option value="">{ i18n.T(ctx, "Select...") }</option>
-										for _, k := range settings.SSHKeys {
-											if offsiteVal(settings, "SSHKeyID") == k.ID {
-												<option value={ k.ID } selected>{ k.Name }</option>
-											} else {
-												<option value={ k.ID }>{ k.Name }</option>
-											}
-										}
-									</select>
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Remote path") }</span></label>
-								<input type="text" name="offsite_remote_path" class="input input-bordered input-sm"
-									value={ offsiteVal(settings, "RemotePath") } placeholder="/home/backup/angry-box" />
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup passphrase") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "leave blank to keep current") }</span></label>
-									<input type="password" name="offsite_passphrase" class="input input-bordered input-sm" placeholder="••••••••" />
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Backup interval (minutes)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 6h default") }</span></label>
-									<input type="number" name="offsite_interval" class="input input-bordered input-sm"
-										value={ offsiteVal(settings, "IntervalMin") } placeholder="360" />
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "Retention (keep N blobs)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 5 default") }</span></label>
-									<input type="number" name="offsite_retention" class="input input-bordered input-sm"
-										value={ offsiteVal(settings, "Retention") } placeholder="5" />
-								</div>
-								<div class="form-control">
-									<label class="label py-1"><span class="label-text text-xs">{ i18n.T(ctx, "scrypt N (memory cost)") }</span><span class="label-text-alt text-base-content/50">{ i18n.T(ctx, "0 = 65536 default; lower = weaker/faster") }</span></label>
-									<input type="number" name="offsite_scrypt_n" class="input input-bordered input-sm"
-										value={ offsiteVal(settings, "ScryptN") } placeholder="65536" />
-								</div>
-							</div>
-							<label class="label cursor-pointer gap-2">
-								<input type="checkbox" name="offsite_enabled" class="checkbox checkbox-sm"
-									if settings.OffsiteBackup != nil && settings.OffsiteBackup.Enabled { checked } />
-								<span class="label-text text-xs">{ i18n.T(ctx, "Offsite backup enabled") }</span>
-							</label>
-							<div class="flex gap-2 flex-wrap">
-								<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save") }</button>
-								<button type="button" class="btn btn-ghost btn-sm"
-									hx-post="/ui/backup/offsite/now"
-									hx-target="#offsite-backup-result"
-									hx-swap="innerHTML">
-									{ i18n.T(ctx, "Backup now") }
-								</button>
-							</div>
-						</form>
-						<div id="offsite-backup-result" class="mt-2"></div>
-					</div>
-				</div>
+		<!-- Backups — full-panel export/import + per-node export (the import
+		     endpoint is on Settings because it is panel-wide; per-node export
+		     buttons live on the Nodes page). -->
+		<section class="tn-card tn-card-hover">
+			<h3 class="sect-title mb-1">{ i18n.T(ctx, "Backups") }</h3>
+			<p class="text-xs mb-3" style="color: var(--mut)">{ i18n.T(ctx, "Export the whole panel (hosts, chains, transit keys, users, settings) as a portable JSON backup, or import one to restore/migrate.") }</p>
+			<div class="flex gap-2 flex-wrap">
+				<a class="btn btn-outline btn-sm" href="/ui/backup/store" download>{ i18n.T(ctx, "Export panel") }</a>
+				<button type="button" class="btn btn-ghost btn-sm"
+					onclick="var f=document.getElementById('import-backup-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
+					{ i18n.T(ctx, "Import backup") }
+				</button>
 			</div>
-		</div>
+			<div id="import-backup-form" class="hidden mt-2 p-2" style="border: 1px dashed var(--bd); border-radius: 8px;">
+				<form
+					hx-post="/ui/backup/import"
+					hx-target="#import-backup-result"
+					hx-swap="innerHTML"
+					class="flex flex-col gap-2">
+					<div>
+						<textarea name="backup_json" class="ta font-mono text-xs" rows="6"
+							placeholder="{&quot;format&quot;:&quot;angry-box-store&quot;...}  /  {&quot;format&quot;:&quot;angry-box-node&quot;...}"></textarea>
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Backup passphrase") } · { i18n.T(ctx, "only for encrypted (ABBKP1) offsite blobs") }</label>
+						<input type="password" name="passphrase" class="inp" placeholder="••••••••" />
+					</div>
+					<label class="flex items-center gap-2 cursor-pointer">
+						<input type="checkbox" name="force" class="cb" />
+						<span class="text-xs">{ i18n.T(ctx, "Overwrite existing (force)") }</span>
+					</label>
+					<div><button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import backup") }</button></div>
+				</form>
+					<div id="import-backup-result" class="mt-1"></div>
+				</div>
+		</section>
+
+		<!-- Auto-relocate (P2b) — global master switch for moving
+		     down/unreachable nodes onto warm-pool spares. Double opt-in:
+		     this toggle AND the per-node "Auto-relocate on down" checkbox. -->
+		<section class="tn-card tn-card-hover">
+			<h3 class="sect-title mb-1">{ i18n.T(ctx, "Auto-relocate") }</h3>
+			<p class="text-xs mb-3" style="color: var(--mut)">{ i18n.T(ctx, "Automatically move a node to a spare (warm pool) VPS when its health check goes down/unreachable. Requires the per-node opt-in checkbox; the spare keeps the node's identity — existing clients are not reconfigured.") }</p>
+			<form
+				hx-post="/ui/settings/auto-relocate"
+				hx-target="#auto-relocate-result"
+				hx-swap="innerHTML"
+				class="flex flex-col gap-3">
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Cooldown (hours between relocations of one node)") } · { i18n.T(ctx, "0 = 6 default") }</label>
+						<input type="number" name="auto_relocate_cooldown" class="inp"
+							value={ autoRelocateCooldownVal(settings) } placeholder="6" />
+					</div>
+				</div>
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input type="checkbox" name="auto_relocate_enabled" class="cb"
+						if settings.AutoRelocate != nil && settings.AutoRelocate.Enabled { checked } />
+					<span class="text-xs">{ i18n.T(ctx, "Auto-relocate enabled (global)") }</span>
+				</label>
+				<div class="flex gap-2 flex-wrap">
+					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save") }</button>
+				</div>
+			</form>
+			<div id="auto-relocate-result" class="mt-2"></div>
+		</section>
+
+		<!-- Offsite backup target (P2a) — push an encrypted copy of the
+		     store to an offsite SSH box on a schedule + on demand. The
+		     blob is passphrase-encrypted (scrypt/AES-GCM), so it is
+		     restorable without the host's master key. The master key
+		     file never leaves this host. -->
+		<section class="tn-card tn-card-hover">
+			<h3 class="sect-title mb-1">{ i18n.T(ctx, "Offsite backup") }</h3>
+			<p class="text-xs mb-3" style="color: var(--mut)">{ i18n.T(ctx, "Push an encrypted copy of the panel to an offsite SSH target on a schedule. The blob is passphrase-encrypted — restorable without this host's master key (which never leaves this host).") }</p>
+			<form
+				hx-post="/ui/backup/offsite/save"
+				hx-target="#offsite-backup-result"
+				hx-swap="innerHTML"
+				class="flex flex-col gap-3">
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Backup target host") } · { i18n.T(ctx, "host:port") }</label>
+						<input type="text" name="offsite_host" class="inp"
+							value={ offsiteVal(settings, "Host") }
+							placeholder="backup.example:22" />
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "New SSH user (optional)") }</label>
+						<input type="text" name="offsite_user" class="inp"
+							value={ offsiteVal(settings, "User") } placeholder="backup" />
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "New SSH key (optional)") }</label>
+						<select name="offsite_ssh_key_id" class="sel">
+							<option value="">{ i18n.T(ctx, "Select...") }</option>
+							for _, k := range settings.SSHKeys {
+								if offsiteVal(settings, "SSHKeyID") == k.ID {
+									<option value={ k.ID } selected>{ k.Name }</option>
+								} else {
+									<option value={ k.ID }>{ k.Name }</option>
+								}
+							}
+						</select>
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Remote path") }</label>
+						<input type="text" name="offsite_remote_path" class="inp"
+							value={ offsiteVal(settings, "RemotePath") } placeholder="/home/backup/angry-box" />
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Backup passphrase") } · { i18n.T(ctx, "leave blank to keep current") }</label>
+						<input type="password" name="offsite_passphrase" class="inp" placeholder="••••••••" />
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Backup interval (minutes)") } · { i18n.T(ctx, "0 = 6h default") }</label>
+						<input type="number" name="offsite_interval" class="inp"
+							value={ offsiteVal(settings, "IntervalMin") } placeholder="360" />
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "Retention (keep N blobs)") } · { i18n.T(ctx, "0 = 5 default") }</label>
+						<input type="number" name="offsite_retention" class="inp"
+							value={ offsiteVal(settings, "Retention") } placeholder="5" />
+					</div>
+					<div>
+						<label class="lbl">{ i18n.T(ctx, "scrypt N (memory cost)") } · { i18n.T(ctx, "0 = 65536 default; lower = weaker/faster") }</label>
+						<input type="number" name="offsite_scrypt_n" class="inp"
+							value={ offsiteVal(settings, "ScryptN") } placeholder="65536" />
+					</div>
+				</div>
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input type="checkbox" name="offsite_enabled" class="cb"
+						if settings.OffsiteBackup != nil && settings.OffsiteBackup.Enabled { checked } />
+					<span class="text-xs">{ i18n.T(ctx, "Offsite backup enabled") }</span>
+				</label>
+				<div class="flex gap-2 flex-wrap">
+					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save") }</button>
+					<button type="button" class="btn btn-outline btn-sm"
+						hx-post="/ui/backup/offsite/now"
+						hx-target="#offsite-backup-result"
+						hx-swap="innerHTML">
+						{ i18n.T(ctx, "Backup now") }
+					</button>
+				</div>
+			</form>
+			<div id="offsite-backup-result" class="mt-2"></div>
+		</section>
+	</div>
 }
 
 // offsiteVal returns a field of the OffsiteBackupConfig for pre-filling the
@@ -410,7 +398,7 @@ func offsiteVal(settings *model.PanelSettings, field string) string {
 templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, hosts []*model.Host) {
 	<!-- Stored keys -->
 	for _, key := range settings.SSHKeys {
-		<div class="border border-base-300 rounded-lg p-2 space-y-2">
+		<div class="p-2 flex flex-col gap-2" style="border: 1px solid var(--bd); border-radius: 8px;">
 			<div class="flex gap-2 items-center">
 				<input type="radio" name="default_key" value={ key.ID } class="radio radio-sm radio-primary"
 					if settings.DefaultSSHKeyID == key.ID { checked }
@@ -419,14 +407,14 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, 
 					hx-target="#ssh-keys-list"
 					hx-swap="outerHTML" />
 				<div class="flex-1">
-					<div class="text-sm font-medium">
-						<span class="badge badge-primary badge-xs mr-1">{ keyBadge(ctx, key.Source) }</span>
+					<div class="text-sm font-medium flex items-center gap-1 flex-wrap">
+						<span class="pill" style="color: var(--p)">{ keyBadge(ctx, key.Source) }</span>
 						{ key.Name }
 						if settings.DefaultSSHKeyID == key.ID {
-							<span class="badge badge-success badge-xs ml-1">{ i18n.T(ctx, "Use as default") }</span>
+							<span class="st st-ok">{ i18n.T(ctx, "Use as default") }</span>
 						}
 					</div>
-					<div class="text-xs text-base-content/50">
+					<div class="text-xs" style="color: var(--mut)">
 						if key.Fingerprint != "" {
 							<span class="font-mono">{ key.Fingerprint }</span>
 						}
@@ -440,21 +428,21 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, 
 					onclick="var f=document.getElementById(this.dataset.target);if(f){f.style.display=f.style.display==='none'?'block':'none';}">
 					{ i18n.T(ctx, "Test key") }
 				</button>
-				<button class="btn btn-ghost btn-xs text-error"
+				<button class="btn btn-ghost btn-xs" style="color: var(--er)"
 					hx-delete={"/ui/settings/ssh-keys/" + key.ID}
 					hx-target="#ssh-keys-list"
 					hx-swap="outerHTML">
 					{ i18n.T(ctx, "Delete") }
 				</button>
 			</div>
-			<div id={ "test-form-" + key.ID } class="hidden border-t border-base-300 pt-2">
+			<div id={ "test-form-" + key.ID } class="hidden pt-2" style="border-top: 1px solid var(--bd)">
 				<form class="flex gap-2 items-end"
 					hx-post={ "/ui/settings/ssh-keys/" + key.ID + "/test" }
 					hx-target={ "#test-result-" + key.ID }
 					hx-swap="innerHTML">
-					<div class="form-control flex-1">
-						<label class="label"><span class="label-text text-xs">{ i18n.T(ctx, "Node") }</span></label>
-						<select name="target_node" class="select select-bordered select-sm">
+					<div class="flex-1">
+						<label class="lbl">{ i18n.T(ctx, "Node") }</label>
+						<select name="target_node" class="sel">
 							<option value="">{ i18n.T(ctx, "Select node…") }</option>
 							for _, h := range hosts {
 								<option value={ h.ID }>{ h.ID } — { h.Addr }</option>
@@ -469,13 +457,13 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, 
 	}
 	<!-- System keys (auto-detected) -->
 	for _, key := range systemKeys {
-		<div class="flex gap-2 items-end border border-base-300 rounded-lg p-2 opacity-70">
+		<div class="flex gap-2 items-end p-2 opacity-70" style="border: 1px solid var(--bd); border-radius: 8px;">
 			<div class="flex-1">
-				<div class="text-sm font-medium">
-					<span class="badge badge-ghost badge-xs mr-1">{ keyBadge(ctx, key.Source) }</span>
+				<div class="text-sm font-medium flex items-center gap-1">
+					<span class="st st-mut">{ keyBadge(ctx, key.Source) }</span>
 					🔑 { key.Name }
 				</div>
-				<div class="text-xs text-base-content/50">
+				<div class="text-xs" style="color: var(--mut)">
 					if key.Fingerprint != "" {
 						<span class="font-mono">{ key.Fingerprint }</span>
 						<span class="ml-1">—</span>
@@ -486,53 +474,53 @@ templ SSHKeyList(settings *model.PanelSettings, systemKeys []model.SSHKeyEntry, 
 		</div>
 	}
 	<!-- Import from ~/.ssh/ -->
-	<div class="mt-2 border border-dashed border-base-300 rounded-lg p-2">
+	<div class="mt-2 p-2" style="border: 1px dashed var(--bd); border-radius: 8px;">
 		<button type="button" class="btn btn-ghost btn-sm"
 			onclick="var f=document.getElementById('import-system-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
 			{ i18n.T(ctx, "Import from ~/.ssh/") }
 		</button>
-		<div id="import-system-form" class="hidden mt-2 space-y-2">
+		<div id="import-system-form" class="hidden mt-2 flex flex-col gap-2">
 			for _, k := range systemKeys {
 				<form class="flex gap-2 items-end"
 					hx-post="/ui/settings/ssh-keys/import-system"
 					hx-target="#ssh-keys-list"
 					hx-swap="outerHTML">
 					<input type="hidden" name="system_key_id" value={ k.ID } />
-					<div class="form-control flex-1">
-						<label class="label"><span class="label-text text-xs">🔑 { k.Name } <span class="opacity-60">{ k.KeyPath }</span></span></label>
-						<input type="text" name="name" class="input input-bordered input-sm" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
+					<div class="flex-1">
+						<label class="lbl">🔑 { k.Name } <span class="opacity-60">{ k.KeyPath }</span></label>
+						<input type="text" name="name" class="inp" required placeholder={ i18n.T(ctx, "Key name (e.g. Home Server)") } />
 					</div>
 					<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Save Key") }</button>
 				</form>
 			}
 			if len(systemKeys) == 0 {
-				<div class="text-xs text-base-content/50">{ i18n.T(ctx, "No SSH key configured and no default key set") }</div>
+				<div class="text-xs" style="color: var(--mut)">{ i18n.T(ctx, "No SSH key configured and no default key set") }</div>
 			}
 		</div>
 	</div>
 	<!-- Export / Import registry -->
 	<div class="mt-2 flex gap-2 flex-wrap">
-		<a class="btn btn-ghost btn-sm" href="/ui/settings/ssh-keys/export" download>{ i18n.T(ctx, "Export registry") }</a>
+		<a class="btn btn-outline btn-sm" href="/ui/settings/ssh-keys/export" download>{ i18n.T(ctx, "Export registry") }</a>
 		<button type="button" class="btn btn-ghost btn-sm"
 			onclick="var f=document.getElementById('import-registry-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
 			{ i18n.T(ctx, "Import registry") }
 		</button>
 	</div>
-	<div id="import-registry-form" class="hidden mt-2 border border-dashed border-base-300 rounded-lg p-2">
+	<div id="import-registry-form" class="hidden mt-2 p-2" style="border: 1px dashed var(--bd); border-radius: 8px;">
 		<form
 			hx-post="/ui/settings/ssh-keys/import"
 			hx-target="#import-result"
 			hx-swap="innerHTML"
-			class="space-y-2">
-			<div class="form-control">
-				<textarea name="keys_json" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="4"
+			class="flex flex-col gap-2">
+			<div>
+				<textarea name="keys_json" class="ta font-mono text-xs" rows="4"
 					placeholder="[{&quot;id&quot;:...,&quot;name&quot;:...,&quot;key_data&quot;:...}]"></textarea>
 			</div>
-			<label class="label cursor-pointer gap-2">
-				<input type="checkbox" name="force" class="checkbox checkbox-sm" />
-				<span class="label-text text-xs">{ i18n.T(ctx, "Are you sure?") } (overwrite)</span>
+			<label class="flex items-center gap-2 cursor-pointer">
+				<input type="checkbox" name="force" class="cb" />
+				<span class="text-xs">{ i18n.T(ctx, "Are you sure?") } (overwrite)</span>
 			</label>
-			<button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import registry") }</button>
+			<div><button type="submit" class="btn btn-primary btn-sm">{ i18n.T(ctx, "Import registry") }</button></div>
 		</form>
 		<div id="import-result" class="mt-1"></div>
 	</div>
