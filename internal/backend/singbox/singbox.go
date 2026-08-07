@@ -21,15 +21,15 @@ import (
 const (
 	// singBoxVersion is the short SHA of the amnezia-box fork commit we build
 	// the sing-box binary from. amnezia-box (our fork AlexeyLCP/amnezia-box, a
-	// fork of hoaxisr/amnezia-box sing-box 1.14 alpha) carries the AWG3 userspace
-	// endpoint type:"awg" (amneziawg-go feat/awg3) + our ports from
+	// fork of hoaxisr/amnezia-box sing-box 1.14 beta) carries the AWG3 userspace
+	// endpoint type:"awg" (amneziawg-go /v3) + our ports from
 	// sing-box-extended: mtproxy (with_mtproxy) and fallback round-robin (in the
 	// fork's tree). amneziawg-go is pinned in the fork's go.mod (hoaxisr/
-	// amneziawg-go awg3 @ fc48874 — InputPackets API for transport/awg/port.go).
+	// amneziawg-go/v3 @ e32b3b0 — InputPackets API for transport/awg/port.go).
 	//
 	// Built by scripts/build-singbox.sh; tarball in deps/. Mirrored in
 	// patchcheck_test.go (patchcheckABXRef) — bump all three together.
-	singBoxVersion = "acb804b3"
+	singBoxVersion = "3c554273"
 	installPath    = "/usr/local/bin/sing-box"
 	configDir      = "/etc/sing-box"
 	configFile     = "/etc/sing-box/config.json"
@@ -54,19 +54,19 @@ var singBoxDownloadURLs = map[string]string{
 // (fail-closed via checksumForArch) so a truncated/modified tarball is never
 // installed as root on the fleet.
 var singBoxChecksums = map[string]string{
-	"amd64": "969a7fd55e8fcc787b4572f3c055dcaff8bd4e1367bfc24813f0c44110bc60e3",
+	"amd64": "acaf995c4681b03d5adf18ef5cd882c8e4ca3da4086710dff6a4690004ea44b8",
 	"arm64": "",
 }
 
-// amneziaWGGoVersion is the SHORT SHA of the amneziawg-go awg3 commit pinned in
-// the amnezia-box fork's go.mod (hoaxisr/amneziawg-go awg3 @ fc48874). It is NOT
-// a separate deploy artifact anymore — amneziawg-go is compiled INTO the
-// sing-box binary (the `type:"awg"` endpoint runs it in-process via
-// transport/awg). The pin is kept here as a traceability constant: the
-// InputPackets API (commit 0464dbf) that transport/awg/port.go depends on lives
-// at this commit, and a bump must update the fork's go.mod replace + this const
-// + patchcheckAWGGORef together. See docs/PATCHES.md.
-const amneziaWGGoVersion = "fc48874"
+// amneziaWGGoVersion is the SHORT SHA of the amneziawg-go commit pinned in
+// the amnezia-box fork's go.mod (hoaxisr/amneziawg-go/v3 @ e32b3b0, module
+// path /v3, AWG3 official). It is NOT a separate deploy artifact anymore —
+// amneziawg-go is compiled INTO the sing-box binary (the `type:"awg"` endpoint
+// runs it in-process via transport/awg). The pin is kept here as a
+// traceability constant: the InputPackets API that transport/awg/port.go
+// depends on lives at this commit, and a bump must update the fork's go.mod
+// replace + this const + patchcheckAWGGORef together. See docs/PATCHES.md.
+const amneziaWGGoVersion = "e32b3b0"
 
 var _ ports.Backend = (*Backend)(nil)
 

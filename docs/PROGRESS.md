@@ -2331,3 +2331,45 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 ### Live-верификация (PENDING — нет доступа к ноде, 2026-08-05)
 Живой прогон (install → detectKernelAWG3 → v3/v2/v1.5 рендер) отложен: **n1 переустановлен** (host key ротировался, наш `id_ed25519` больше не в `authorized_keys` → `Permission denied (publickey)`; новый ED25519 принят по TOFU), а **GCloud test VPS остановлены** (connection timed out). Код Фаз 1–2 unit-тестирован и запушен; live E2E выполнить как только появится живая нода (восстановить pubkey на n1 через консоль или поднять vps-de-test-*). Запустить: `go test -tags e2eawg3 ./internal/chain/ -run TestE2EAWG3 -v -timeout 300s` на восстановленной ноде.
+
+
+---
+
+## §46. Bump amnezia-box fork: upstream 4bdfc140 (sing-box 1.14 beta) + amneziawg-go /v3 (2026-08-07)
+
+**Контекст:** upstream `hoaxisr/amnezia-box` ушёл вперёд на ~2 недели (последний коммит 2026-08-05): sing-box база подтянута до **v1.14.0-beta.4**, amneziawg-go переведён на **официальный AWG3 v3.0.20260805** (module path `/v3`), добавлены clashapi per-peer AWG handshake/tx/rx через UAPI, фиксы keepalive под content padding, UDP-форвардер в gVisor-туннеле, mieru 3.35.0. Наш форк `AlexeyLCP/amnezia-box` отставал (pin `acb804b3` на базе sing-box 1.14 alpha). Задача: догнать upstream, сохранив наши порты (mtproxy + fallback round-robin), пересобрать бинарь и обновить пины.
+
+### Что сделано
+
+**Rebase форка (коммит `3c554273` в `AlexeyLCP/amnezia-box`, ветка `main`).** Наш единственный порт-коммит (`acb804b3` — mtproxy + fallback + amneziawg-go pin) cherry-pick'нут поверх нового upstream HEAD `4bdfc140`. Конфликты только в `go.mod`/`go.sum`:
+- **amneziawg-go:** upstream перевёл на **module path `/v3`** (`github.com/amnezia-vpn/amneziawg-go/v3 => github.com/hoaxisr/amneziawg-go/v3 v3.0.0-20260805182705-e32b3b0feebe`, коммит `e32b3b0f`). Это официальный AWG3 v3.0.20260805 — `InputPackets` API на месте, `transport/awg/port.go` компилируется без изменений. Старый replace на `awg3 @ fc48874` (без /v3) удалён.
+- **mtg-multi:** наш replace `dolonet/mtg-multi => shtorm-7/mtg-multi v1.11.0-extended-1.0.0` сохранён (нужен для mtproxy).
+- **go directive:** 1.26.0 (mtg-multi требует go 1.26).
+- Прочее (mieru 3.35.0, x/*, cronet-go, tailscale deps) — взял upstream-версии, `go mod tidy`.
+
+**Результат rebase:** наши порты (mtproxy `with_mtproxy`, fallback round-robin в tree) + весь новый upstream. naive/mieru остались unconditional в `include/registry.go` (не тронуты). Ветка `awg-1.14` форка тоже обновлена до upstream HEAD.
+
+**Пересборка бинаря.** `scripts/build-singbox.sh` логика повторена вручную (Windows cross-compile, CGO_ENABLED=0, GOOS=linux):
+- Tarball `deps/sing-box-3c554273-amnezia-linux-amd64.tar.gz`, sha256 `acaf995c...`, опубликован в release `v0.1.0` (assет рядом со старым `acb804b3`).
+- Локальный `deps/sing-box.exe` (windows/amd64) пересобран с того же коммита `3c554273` — для реальных `sing-box check` тестов.
+
+**Обновление трёх пинов (PATCHES.md закон):**
+- `scripts/build-singbox.sh` + `build-singbox-windows.sh`: `ABX_REF` default `acb804b` → `3c554273`.
+- `internal/backend/singbox/singbox.go`: `singBoxVersion acb804b3 → 3c554273`, `singBoxChecksums[amd64] → acaf995c...`, `amneziaWGGoVersion fc48874 → e32b3b0`.
+- `internal/backend/singbox/patchcheck_test.go`: `patchcheckABXRef → 3c55427349dcd4fffff3d7da9f9adaaa486ef99a`, `patchcheckAWGGORef → e32b3b0feebea8b260f5d64011009c49aff5b232`.
+- `deps/checksums.txt` перегенерирован; старый tarball `acb804b3` удалён из `deps/`.
+
+### Регрессия, найденная новой базой (и фикс)
+
+Новый sing-box 1.14 beta на `sing-box check` **резолвит peer-адреса AWG-endpoint'ов** (раньше alpha этого не делала). Два реальных `sing-box check` теста (`TestAWGTransport_MergedConfig_SingBoxCheck`, `TestAWGTransport_MiddleNode_HasTransitEndpoint`) использовали фейковые домены `middle.example.test` → `no such host` → FATAL. В проде peer-адреса — всегда IP, так что это тестовый артефакт, не продуктовый баг. **Фикс:** все `*.example.test` в `awg_config_check_test.go` заменены на TEST-NET IP (`n1→192.0.2.1`, `entry→192.0.2.10`, `middle→192.0.2.20`, `exit→192.0.2.30`).
+
+### Верификация
+- `go build ./...` + `go vet ./...` — чистые.
+- `go test -tags=patchcheck` (version-match обоих пинов) — PASS.
+- Полный `go test ./internal/...` — зелёный (включая все реальные `sing-box check` тесты на новом бинаре `3c554273`).
+- Ручной `sing-box check` на новом бинаре: `type:"mtproxy"` + `type:"fallback"` (round-robin) — exit 0. `sing-box version` показывает `with_awg,with_mtproxy` (canary для `isPatchedExtended` на месте).
+
+### Live-верификация (PENDING — нет живой ноды)
+Как и §45, живой прогон (деплой нового бинаря на ноду, `sing-box check` в проде, handshake + egress) отложен: n1 переустановлен (нет нашего pubkey), GCloud test VPS остановлены. Выполнить на восстановленной ноде: деплой → `sing-box version` (Revision `3c554273`, tags `with_awg,with_mtproxy`) → handshake + egress.
+
+**Файлы:** `internal/backend/singbox/singbox.go`, `internal/backend/singbox/patchcheck_test.go`, `scripts/build-singbox.sh`, `scripts/build-singbox-windows.sh`, `internal/chain/awg_config_check_test.go` (TEST-NET IP), `deps/sing-box-3c554273-amnezia-linux-amd64.tar.gz` (новый), `deps/checksums.txt`, `deps/sing-box.exe` (пересобран), `docs/PATCHES.md`, `AGENTS.md`, `docs/PROGRESS.md` (§46).

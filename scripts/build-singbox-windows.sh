@@ -7,7 +7,7 @@
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
-ABX_REF="${ABX_REF:-acb804b}"
+ABX_REF="${ABX_REF:-3c554273}"
 BUILD_DIR="${BUILD_DIR:-/tmp/sing-box-build-angry}"
 OUT="$REPO_ROOT/deps/sing-box.exe"
 mkdir -p "$BUILD_DIR"

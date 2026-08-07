@@ -28,12 +28,12 @@ amneziawg-go is pinned in the fork's go.mod.
 
 ## amneziawg-go pin (in the fork's go.mod)
 
-The fork's `go.mod` pins `github.com/amnezia-vpn/amneziawg-go => github.com/hoaxisr/amneziawg-go v0.2.20-0.20260724135120-fc488742dbb4` (commit `fc488742`, branch `awg3`). This commit has the
+The fork's `go.mod` pins `github.com/amnezia-vpn/amneziawg-go/v3 => github.com/hoaxisr/amneziawg-go/v3 v3.0.0-20260805182705-e32b3b0feebe` (commit `e32b3b0f`, module path `/v3` — AWG3 went official in amneziawg-go v3.0; upstream hoaxisr/amnezia-box moved to it in `0482200c`, 2026-08-05). This commit has the
 `InputPackets` API (`device.InputPacketRef` + `device.InputPackets()` in
 `device/send.go`) that `transport/awg/port.go` depends on, plus the AWG3 UAPI
-fields (`header_protection_key`/`content_padding_addition`/`rekey_after_time`).
-`feat/awg3` is NOT merged upstream, so we pin a commit SHA (not a branch tag) —
-the API can change between commits.
+fields (`header_protection_key`/`content_padding_addition`/`rekey_after_time`),
+the keepalive-under-content-padding fix and the `BatchSize()` batching fix.
+We pin a pseudo-version (not a branch tag) — the API can change between commits.
 
 ## Version pin (THREE places — keep in sync)
 

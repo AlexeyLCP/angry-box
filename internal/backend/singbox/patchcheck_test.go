@@ -10,7 +10,7 @@ package singbox
 // sing-box 1.14 alpha) carries AWG3 (type:"awg" endpoint + amneziawg-go feat/awg3)
 // + our ports from sing-box-extended (mtproxy + fallback round-robin, committed
 // to the fork's tree — no patches/ to apply). amneziawg-go is pinned in the fork's
-// go.mod (hoaxisr/amneziawg-go awg3 @ fc48874 — InputPackets API for
+// go.mod (hoaxisr/amneziawg-go/v3 @ e32b3b0 — InputPackets API for
 // transport/awg/port.go).
 //
 // There are NO apply-cleanly subtests anymore — the old sing-box-extended patches
@@ -37,14 +37,14 @@ import (
 // consts, the deploy-time pins). Bump all three together.
 const (
 	// patchcheckABXRef is the full SHA of the AlexeyLCP/amnezia-box fork commit
-	// we build from. singBoxVersion is its 7-char short SHA.
-	patchcheckABXRef = "acb804b36ed83060d1036c8da1c919ffcfe0b0c9"
+	// we build from. singBoxVersion is its 8-char short SHA.
+	patchcheckABXRef = "3c55427349dcd4fffff3d7da9f9adaaa486ef99a"
 	abxRepo          = "https://github.com/AlexeyLCP/amnezia-box.git"
 
-	// patchcheckAWGGORef is the full SHA of the hoaxisr/amneziawg-go awg3 commit
-	// the fork's go.mod pins (InputPackets API). amneziaWGGoVersion is its
-	// 7-char short SHA.
-	patchcheckAWGGORef = "fc488742dbb49e39453fe1e5de2aad5e98d9e44b"
+	// patchcheckAWGGORef is the full SHA of the hoaxisr/amneziawg-go/v3 commit
+	// the fork's go.mod pins (InputPackets API, module path /v3).
+	// amneziaWGGoVersion is its 7-char short SHA.
+	patchcheckAWGGORef = "e32b3b0feebea8b260f5d64011009c49aff5b232"
 	awggoRepo          = "https://github.com/hoaxisr/amneziawg-go.git"
 )
 

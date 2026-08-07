@@ -6,7 +6,7 @@
 # AlexeyLCP/amnezia-box adds the ports we need from sing-box-extended: mtproxy
 # (build-tag with_mtproxy) and fallback round-robin (committed to the fork's
 # tree, not applied as a patch here). amneziawg-go is pinned in the fork's
-# go.mod (hoaxisr/amneziawg-go awg3 @ fc48874 — has the InputPackets API that
+# go.mod (hoaxisr/amneziawg-go/v3 @ e32b3b0 — has the InputPackets API that
 # transport/awg/port.go needs); we do NOT clone wireguard-go separately.
 #
 # Why: nodes must NOT compile Go themselves (weak VPSes hang during the build).
@@ -19,7 +19,7 @@
 # Usage:
 #   ./scripts/build-singbox.sh                              # amd64 only (default)
 #   ARCHES="amd64 arm64" ./scripts/build-singbox.sh
-#   ABX_REF=acb804b ./scripts/build-singbox.sh              # pin a fork commit
+#   ABX_REF=3c554273 ./scripts/build-singbox.sh             # pin a fork commit
 #
 # Requires: go >= 1.26 (mtg-multi needs go 1.26), git, tar, sha256sum. Run on
 # Linux or in WSL.
@@ -31,8 +31,9 @@ cd "$REPO_ROOT"
 # AlexeyLCP/amnezia-box fork ref. Pin a commit SHA (NOT a branch) so the
 # artifact is reproducible; a bump is a deliberate act mirrored into
 # internal/backend/singbox/singbox.go (singBoxVersion) and patchcheck_test.go.
-# Default: the commit that added mtproxy+fallback (acb804b). Override via env.
-ABX_REF="${ABX_REF:-acb804b}"
+# Default: mtproxy+fallback port rebased onto upstream 4bdfc140 (3c554273).
+# Override via env.
+ABX_REF="${ABX_REF:-3c554273}"
 ARCHES="${ARCHES:-amd64}"
 
 BUILD_DIR="${BUILD_DIR:-/tmp/sing-box-build-angry}"
@@ -63,7 +64,7 @@ git clone --quiet --no-checkout "$ABX_REPO" amnezia-box
 # No patches to apply: fallback round-robin is committed to the fork's tree, and
 # the wireguard-go awg-overlap fix is no longer relevant (AWG3 runs through
 # amneziawg-go, not the shtorm-7 wireguard-go userspace path that panicked). The
-# amneziawg-go pin (hoaxisr/amnezia-box awg3 @ fc48874) lives in the fork's
+# amneziawg-go pin (hoaxisr/amneziawg-go/v3 @ e32b3b0) lives in the fork's
 # go.mod replace — `go mod download` / `go build` resolves it.
 
 # Short SHA for the tarball name (traceable to the pinned fork commit).

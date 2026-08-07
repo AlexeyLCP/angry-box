@@ -125,7 +125,7 @@ func TestAWGMergedConfig_SingBoxCheck_EntryOnly(t *testing.T) {
 		Transport:          model.TransportXHTTP,
 		AWGEntryServerPriv: awgServerPriv,
 		Nodes: []model.ChainNode{
-			{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry},
+			{ID: "n1", Addr: "192.0.2.1:22", Role: model.NodeRoleEntry},
 		},
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "n1"}}
@@ -192,9 +192,9 @@ func TestAWGMergedConfig_SingBoxCheck_MultiHopWithRoute(t *testing.T) {
 		Transport:          model.TransportXHTTP,
 		AWGEntryServerPriv: awgServerPriv,
 		Nodes: []model.ChainNode{
-			{ID: "entry", Addr: "entry.example.test:22", Role: model.NodeRoleEntry},
-			{ID: "middle", Addr: "middle.example.test:22", Role: model.NodeRoleTransit},
-			{ID: "exit", Addr: "exit.example.test:22"}, // last node = exit (auto)
+			{ID: "entry", Addr: "192.0.2.10:22", Role: model.NodeRoleEntry},
+			{ID: "middle", Addr: "192.0.2.20:22", Role: model.NodeRoleTransit},
+			{ID: "exit", Addr: "192.0.2.30:22"}, // last node = exit (auto)
 		},
 	}
 	nodeInfo := &model.NodeInfo{Host: model.Host{ID: "entry"}}
@@ -272,7 +272,7 @@ func TestAWGClientConf_ValidStructure(t *testing.T) {
 		Name:              "awg-client",
 		UserProtocol:      model.UserProtocolAWG,
 		AWGEntryServerPub: genAWGPub(t),
-		Nodes:             []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+		Nodes:             []model.ChainNode{{ID: "n1", Addr: "192.0.2.1:22", Role: model.NodeRoleEntry}},
 	}
 	u := &model.User{
 		Name: "alice", Active: true,
@@ -289,7 +289,7 @@ func TestAWGClientConf_ValidStructure(t *testing.T) {
 		"PrivateKey = ",
 		"[Peer]",
 		"PublicKey = ",
-		"Endpoint = n1.example.test:",
+		"Endpoint = 192.0.2.1:",
 		"AllowedIPs = 0.0.0.0/0, ::/0",
 	} {
 		if !strings.Contains(conf, want) {
@@ -336,18 +336,18 @@ func awgTransportChain(t *testing.T) *model.Chain {
 		Transport:    model.TransportAWG,
 		Nodes: []model.ChainNode{
 			{
-				ID: "entry", Addr: "entry.example.test:22", Role: model.NodeRoleEntry, Port: 443,
+				ID: "entry", Addr: "192.0.2.10:22", Role: model.NodeRoleEntry, Port: 443,
 				TransitAWGClientPriv: entryClientPriv, TransitAWGClientPub: entryClientPub,
 				TransitAWGAddress: "10.9.0.2/32",
 			},
 			{
-				ID: "middle", Addr: "middle.example.test:22", Role: model.NodeRoleTransit, Port: 443,
+				ID: "middle", Addr: "192.0.2.20:22", Role: model.NodeRoleTransit, Port: 443,
 				TransitAWGServerPriv: middleServerPriv, TransitAWGServerPub: middleServerPub,
 				TransitAWGClientPriv: middleClientPriv, TransitAWGClientPub: middleClientPub,
 				TransitAWGAddress: "10.9.0.3/32",
 			},
 			{
-				ID: "exit", Addr: "exit.example.test:22", Port: 443,
+				ID: "exit", Addr: "192.0.2.30:22", Port: 443,
 				TransitAWGServerPriv: exitServerPriv, TransitAWGServerPub: exitServerPub,
 			},
 		},
@@ -472,7 +472,7 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	_, entryClientPub := deriveClientPub(entryClientPriv, t)
 	middleServerPriv, middleServerPub := genAWGKeypair(t)
 	entry := model.ChainNode{
-		ID: "entry", Port: 443, Addr: "entry.example.test:22",
+		ID: "entry", Port: 443, Addr: "192.0.2.10:22",
 		TransitAWGClientPriv: entryClientPriv, TransitAWGClientPub: entryClientPub,
 		TransitAWGAddress:    "10.9.0.2/32",
 		TransitAWGClientPort: 51821,
@@ -507,8 +507,8 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	// Explicit peer endpoint: entry's public IP + AWG client port. Without it
 	// sing-box-extended userspace endpoint does not send the handshake response
 	// (it logs "sending handshake response" but the packet never leaves the VPS).
-	if ep.Peers[0].Address != "entry.example.test" {
-		t.Errorf("inbound peer address=%q, want entry.example.test", ep.Peers[0].Address)
+	if ep.Peers[0].Address != "192.0.2.10" {
+		t.Errorf("inbound peer address=%q, want 192.0.2.10", ep.Peers[0].Address)
 	}
 	if ep.Peers[0].Port != 51821 {
 		t.Errorf("inbound peer port=%d, want 51821", ep.Peers[0].Port)
@@ -520,7 +520,7 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	// Outbound (client endpoint) on entry, dialing middle. sing-box-extended
 	// 1.13 has no wireguard outbound, so the client side is a WireGuard endpoint
 	// with a peer that dials the next node.
-	outJSON, err := buildAWGTransportOutbound(&entry, &middle, "middle.example.test", "ch-t-out", &preset, nil)
+	outJSON, err := buildAWGTransportOutbound(&entry, &middle, "192.0.2.20", "ch-t-out", &preset, nil)
 	if err != nil {
 		t.Fatalf("buildAWGTransportOutbound: %v", err)
 	}
@@ -541,8 +541,8 @@ func TestAWGTransport_Builders_Fields(t *testing.T) {
 	if p.PublicKey != middleServerPub {
 		t.Errorf("outbound peer public_key=%s, want middle server pub %s", p.PublicKey, middleServerPub)
 	}
-	if p.Address != "middle.example.test" || p.Port != 443 {
-		t.Errorf("outbound peer address=%s port=%d, want middle.example.test:443", p.Address, p.Port)
+	if p.Address != "192.0.2.20" || p.Port != 443 {
+		t.Errorf("outbound peer address=%s port=%d, want 192.0.2.20:443", p.Address, p.Port)
 	}
 	// Fixed source port (NAT-traversal: random ephemeral port breaks on GCloud —
 	// handshake responses map to a port that's gone after a re-handshake retry).
@@ -601,7 +601,7 @@ func TestAWGCPSMaterial_PersistedAndConsistent(t *testing.T) {
 		Name:         "awg-cps",
 		UserProtocol: model.UserProtocolAWG,
 		Transport:    model.TransportXHTTP,
-		Nodes:        []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+		Nodes:        []model.ChainNode{{ID: "n1", Addr: "192.0.2.1:22", Role: model.NodeRoleEntry}},
 	}
 	preset := resolveChainPreset(c)
 	EnsureChainAWGMaterial(c, preset)
@@ -671,7 +671,7 @@ func TestAWGClientConf_UsesChainPreset(t *testing.T) {
 		UserProtocol:       model.UserProtocolAWG,
 		Transport:          model.TransportXHTTP,
 		ObfuscationProfile: altName,
-		Nodes:              []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+		Nodes:              []model.ChainNode{{ID: "n1", Addr: "192.0.2.1:22", Role: model.NodeRoleEntry}},
 	}
 	EnsureChainAWGMaterial(c, altPreset)
 	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{
@@ -744,7 +744,7 @@ func TestAWGAmnezia_S3S4ITime(t *testing.T) {
 		UserProtocol:       model.UserProtocolAWG,
 		Transport:          model.TransportXHTTP,
 		ObfuscationProfile: p.Name,
-		Nodes:              []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+		Nodes:              []model.ChainNode{{ID: "n1", Addr: "192.0.2.1:22", Role: model.NodeRoleEntry}},
 	}
 	EnsureChainAWGMaterial(c, p)
 	conf, err := RenderClientAWGConf(ClientConfigParams{Chain: c, User: &model.User{
@@ -775,7 +775,7 @@ func TestAWGAmnezia_H1H4_QuadrantRanges(t *testing.T) {
 		Name:         "awg-h",
 		UserProtocol: model.UserProtocolAWG,
 		Transport:    model.TransportXHTTP,
-		Nodes:        []model.ChainNode{{ID: "n1", Addr: "n1.example.test:22", Role: model.NodeRoleEntry}},
+		Nodes:        []model.ChainNode{{ID: "n1", Addr: "192.0.2.1:22", Role: model.NodeRoleEntry}},
 	}
 	EnsureChainAWGMaterial(c, preset)
 	if c.AWGCPSLevel <= 0 {

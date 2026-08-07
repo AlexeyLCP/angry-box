@@ -214,9 +214,9 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
 ## amnezia-box (our base sing-box fork, NOT plain sing-box)
 
 - Project uses **amnezia-box** — our fork `AlexeyLCP/amnezia-box` (a fork of
-  `hoaxisr/amnezia-box`, which is itself sing-box 1.14 alpha). It carries:
-  - the AWG3 userspace endpoint `type:"awg"` (amneziawg-go `feat/awg3` pinned in
-    the fork's go.mod — `hoaxisr/amneziawg-go awg3 @ fc48874`, the InputPackets API
+  `hoaxisr/amnezia-box`, which is itself sing-box 1.14 beta). It carries:
+  - the AWG3 userspace endpoint `type:"awg"` (amneziawg-go `/v3` pinned in
+    the fork's go.mod — `hoaxisr/amneziawg-go/v3 @ e32b3b0`, the InputPackets API
     that `transport/awg/port.go` needs). AWG3 obfuscation fields
     (HeaderProtectionKey / ContentPaddingAddition / RekeyAfterTime) are FLAT on
     the `awg` endpoint (no nested `amnezia:{}` block, unlike the old
@@ -293,7 +293,7 @@ If you add a new core feature (e.g., a new protocol, a new routing strategy), do
     - **Services удалены** (страница/роуты/applyServiceToUser); `PanelSettings.Services` dormant (backup-compat), `User.ServiceID` игнорируется. Клиент = имя + цепочки; protocols derive из цепочек.
 
 19. **NaiveProxy + Mieru — одобренное расширение scope (дизайн зафиксирован, имплементация pending).** AGENTS «Product Focus: scope is frozen» — naive/mieru = **явное одобренное расширение по запросу оператора**, не нарушение freeze. Развёрнутый дизайн-док: `docs/PROGRESS.md` §42. Кратко здесь (закон для будущего имплементатора):
-    - **Статус в форке — уже собрано, пересборка НЕ нужна.** `AlexeyLCP/amnezia-box@acb804b3` содержит `protocol/naive/inbound.go` и `protocol/mieru/inbound.go` **без build-tag** (`package naive`/`package mieru` сразу, без `//go:build`). Оба **уже зарегистрированы** в `include/registry.go` `InboundRegistry()` (`naive.RegisterInbound(registry)`, `mieru.RegisterInbound(registry)`). → текущий бинарник `deps/sing-box-acb804b3-...tar.gz` уже принимает `type:"naive"` и `type:"mieru"`. (Upstream sing-box gate'ит naive за `with_naive` — это НЕ про наш форк; в amnezia-box они unconditional.)
+    - **Статус в форке — уже собрано, пересборка НЕ нужна.** `AlexeyLCP/amnezia-box@3c554273` содержит `protocol/naive/inbound.go` и `protocol/mieru/inbound.go` **без build-tag** (`package naive`/`package mieru` сразу, без `//go:build`). Оба **уже зарегистрированы** в `include/registry.go` `InboundRegistry()` (`naive.RegisterInbound(registry)`, `mieru.RegisterInbound(registry)`). → текущий бинарник `deps/sing-box-3c554273-...tar.gz` уже принимает `type:"naive"` и `type:"mieru"`. (Upstream sing-box gate'ит naive за `with_naive` — это НЕ про наш форк; в amnezia-box они unconditional.)
     - **trusttunnel В форке НЕТ** (404 на `protocol/trusttunnel`). Был canary-tag `with_trusttunnel` в старом sing-box-extended (выпилен при переходе на amnezia-box). Добавление = отдельный эпик: порт `protocol/trusttunnel` из sing-box-extended + bump fork-ref + пересборка + release. Не смешивать с naive/mieru.
     - **Архитектурная роль: standalone inbound only** (как MTProxy/Hysteria2). НЕ inter-node transit: naive outbound gated `with_naive_outbound` + `cronet-go` (Chromium, НЕ в нашем бинарнике); mieru outbound безусловный, но первый срез = standalone-only. Chain user-entry — опционально позже.
     - **JSON-контракты опций (из форка @acb804b3):**
