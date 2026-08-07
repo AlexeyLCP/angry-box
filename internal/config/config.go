@@ -33,6 +33,11 @@ type Config struct {
 	AuthEnabled      bool   `toml:"auth_enabled"`
 	AuthUsername     string `toml:"auth_username"`
 	AuthPasswordHash string `toml:"auth_password_hash"`
+
+	// path is the absolute/resolved path this config was loaded from (or will
+	// be saved to). Not serialized — used by SavePath so Settings → Auth writes
+	// back to the same file Load used (avoids CWD-relative split-brain).
+	path string `toml:"-"`
 }
 
 // DefaultConfig returns sensible defaults.
@@ -147,6 +152,8 @@ func Load(path string) (*Config, error) {
 
 	needsSave := !fileExtisted
 
+	cfg.path = path
+
 	// Если аутентификация включена, но пароль не задан, сгенерируем случайный.
 	if cfg.AuthEnabled && cfg.AuthPasswordHash == "" {
 		b := make([]byte, 8)
@@ -162,9 +169,18 @@ func Load(path string) (*Config, error) {
 		cfg.AuthPasswordHash = string(hash)
 		needsSave = true
 
+		// Persist plaintext once next to the config so install.sh / operators can
+		// find it after journal noise scrolls past (tester request: password at
+		// end of install like 3x-ui). Mode 0600; delete after first login.
+		passFile := InitialAdminPasswordPath(path)
+		if werr := os.WriteFile(passFile, []byte(randomPass+"\n"), 0o600); werr != nil {
+			log.Printf("WARNING: could not write initial password file %s: %v", passFile, werr)
+		}
+
 		log.Println("=========================================================")
 		log.Println("WARNING: No admin password found in config.")
 		log.Printf("Generated random password for '%s': %s\n", cfg.AuthUsername, randomPass)
+		log.Printf("Also written to: %s (delete after saving)\n", passFile)
 		log.Println("Please save this password or change it in Settings -> Auth.")
 		log.Println("=========================================================")
 	}
@@ -180,6 +196,37 @@ func Load(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// Path returns the filesystem path this config was loaded from / should be
+// saved to. Empty when the Config was built in-memory (tests / DefaultConfig).
+func (c *Config) Path() string {
+	if c == nil {
+		return ""
+	}
+	return c.path
+}
+
+// SavePath writes the config back to the path it was loaded from, falling back
+// to DefaultConfigPath when Path is empty. Prefer this over Save(DefaultConfigPath())
+// so Settings edits never land in a CWD-relative file different from Load.
+func (c *Config) SavePath() error {
+	p := c.Path()
+	if p == "" {
+		p = DefaultConfigPath()
+	}
+	return c.Save(p)
+}
+
+// InitialAdminPasswordPath is the sibling file next to the config that holds the
+// one-time plaintext password generated on first run (0600). install.sh prints
+// its contents at the end of install.
+func InitialAdminPasswordPath(configPath string) string {
+	dir := filepath.Dir(configPath)
+	if dir == "" || dir == "." {
+		return "initial-admin-password"
+	}
+	return filepath.Join(dir, "initial-admin-password")
 }
 
 // Save marshals the config back to TOML file.
@@ -206,16 +253,36 @@ func (c *Config) Save(path string) error {
 	return os.Chmod(path, 0o600)
 }
 
-// DefaultConfigPath returns the standard location for the orchestrator config.
-// Portable by default: CWD on Windows and when no XDG_CONFIG_HOME is set, so the
-// binary runs "from the desktop" without writing to /etc. System packagers can
-// set XDG_CONFIG_HOME or pass --config explicitly.
+// DefaultConfigPath returns the canonical ABSOLUTE location for the orchestrator
+// config — same root-awareness as DefaultStorePath. Previously this was
+// CWD-relative `angry-box.toml`, which let systemd (cwd /var/lib/angry-box) and
+// a hand-launched `serve -listen 0.0.0.0:8090` (cwd /root) mint DIFFERENT
+// password hashes for the same store lock — external login rejected, tunnel OK
+// (tester report). Systemd/install pass --config explicitly; this default
+// covers bare-binary runs.
+//
+// Resolution:
+//   - Linux/macOS, euid 0                         → /var/lib/angry-box/angry-box.toml
+//   - Linux/macOS, non-root                       → $XDG_CONFIG_HOME/angry-box/…,
+//                                                     else $HOME/.config/angry-box/…
+//   - Windows                                     → %APPDATA%/angry-box/angry-box.toml
+//   - fallback                                    → angry-box.toml (relative, CWD)
 func DefaultConfigPath() string {
-	if runtime.GOOS == "windows" {
-		return "angry-box.toml"
-	}
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "angry-box", "angry-box.toml")
+	switch runtime.GOOS {
+	case "windows":
+		if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+			return filepath.Join(dir, "angry-box", "angry-box.toml")
+		}
+	default:
+		if os.Geteuid() == 0 {
+			return "/var/lib/angry-box/angry-box.toml"
+		}
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			return filepath.Join(xdg, "angry-box", "angry-box.toml")
+		}
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, ".config", "angry-box", "angry-box.toml")
+		}
 	}
 	return "angry-box.toml"
 }

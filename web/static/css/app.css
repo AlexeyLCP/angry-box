@@ -251,56 +251,71 @@
   display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--mut); margin-bottom: 0.25rem;
 }
-.hint { font-size: 11px; color: var(--mut2); margin-top: 0.25rem; }
-.sect-title { font-size: 13px; font-weight: 600; color: var(--bc); }
+/* DaisyUI slots (--p/--b*/--bc/…) are OKLCH triples; wrap in oklch() at use.
+   Bare var(--p) is invalid CSS and made Lovable surfaces transparent after the
+   redesign port (unreadable checkboxes + "layered" text on dark themes). */
+.hint { font-size: 11px; color: var(--mut2); margin-top: 0.25rem; line-height: 1.35; overflow-wrap: anywhere; }
+.sect-title { font-size: 13px; font-weight: 600; color: oklch(var(--bc)); }
 .divider-x { height: 1px; background: var(--bd); }
 
 /* Button variants (Lovable). Coexist with DaisyUI .btn — used in migrated pages. */
 .btn { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 8px;
   font-weight: 600; font-size: 13px; padding: 0.4rem 0.75rem;
   border: 1px solid transparent; cursor: pointer; transition: all 0.15s ease;
-  background: transparent; color: var(--bc); }
+  background: transparent; color: oklch(var(--bc)); }
 .btn-sm { padding: 0.2rem 0.5rem; font-size: 12px; }
-.btn-icon { padding: 0.3rem; border-radius: 8px; border: 1px solid var(--bd); background: var(--b3); color: var(--mut); }
-.btn-icon:hover { color: var(--bc); border-color: var(--bdh); }
-.btn-primary { background: var(--p); color: var(--pc); }
+.btn-icon { padding: 0.3rem; border-radius: 8px; border: 1px solid var(--bd); background: oklch(var(--b3)); color: var(--mut); }
+.btn-icon:hover { color: oklch(var(--bc)); border-color: var(--bdh); }
+.btn-primary { background: oklch(var(--p)); color: oklch(var(--pc)); }
 .btn-primary:hover { filter: brightness(1.08); }
-.btn-outline { border-color: var(--bd); background: var(--b3); }
+.btn-outline { border-color: var(--bd); background: oklch(var(--b3)); }
 .btn-outline:hover { border-color: var(--bdh); }
-.btn-ghost:hover { background: var(--b3); }
-.btn-warning { background: var(--wa); color: var(--wac); }
-.btn-error { background: var(--er); color: var(--erc); }
+.btn-ghost:hover { background: oklch(var(--b3)); }
+.btn-warning { background: oklch(var(--wa)); color: oklch(var(--wac)); }
+.btn-error { background: oklch(var(--er)); color: oklch(var(--erc)); }
 
-/* Checkbox (Lovable) — replaces DaisyUI checkbox in migrated forms. */
+/* Checkbox (Lovable) — OKLCH-safe fill + visible tick (appearance:none strips native). */
 input[type="checkbox"].cb {
-  appearance: none; width: 16px; height: 16px; border: 1px solid var(--bd);
-  border-radius: 4px; background: var(--b3); display: inline-block; vertical-align: -3px;
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; border: 1.5px solid var(--bdh);
+  border-radius: 4px; background: oklch(var(--b3));
+  display: inline-grid; place-content: center; vertical-align: -3px;
+  flex-shrink: 0; cursor: pointer; color: oklch(var(--pc));
 }
-input[type="checkbox"].cb:checked { background: var(--p); border-color: var(--p); }
+input[type="checkbox"].cb:checked {
+  background: oklch(var(--p)); border-color: oklch(var(--p));
+}
+input[type="checkbox"].cb:checked::after {
+  content: ""; width: 9px; height: 9px; background: currentColor;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+input[type="checkbox"].cb:focus-visible {
+  outline: 2px solid oklch(var(--p)); outline-offset: 2px;
+}
 
 /* Toggle (Lovable). */
 .toggle-tn {
   appearance: none; width: 36px; height: 20px; border-radius: 999px;
-  background: var(--b3); border: 1px solid var(--bd); position: relative; cursor: pointer;
+  background: oklch(var(--b3)); border: 1px solid var(--bd); position: relative; cursor: pointer;
 }
 .toggle-tn::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
   border-radius: 999px; background: var(--mut); transition: 0.15s; }
-.toggle-tn:checked { background: color-mix(in oklab, var(--p) 40%, transparent); border-color: var(--p); }
-.toggle-tn:checked::after { left: 18px; background: var(--p); }
+.toggle-tn:checked { background: color-mix(in oklab, oklch(var(--p)) 40%, transparent); border-color: oklch(var(--p)); }
+.toggle-tn:checked::after { left: 18px; background: oklch(var(--p)); }
 
 /* Nav link (sidebar) — selected state. */
 .nav-a {
   display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.6rem;
   border-radius: 8px; color: var(--mut); font-weight: 500; text-decoration: none;
 }
-.nav-a:hover { background: var(--b3); color: var(--bc); }
-.nav-a.active { background: color-mix(in oklab, var(--p) 14%, transparent); color: var(--p); }
+.nav-a:hover { background: oklch(var(--b3)); color: oklch(var(--bc)); }
+.nav-a.active { background: color-mix(in oklab, oklch(var(--p)) 14%, transparent); color: oklch(var(--p)); }
 
 /* Code block — for client-config previews / share-URI. */
 .code {
-  background: var(--b3); border: 1px solid var(--bd); border-radius: 10px;
+  background: oklch(var(--b3)); border: 1px solid var(--bd); border-radius: 10px;
   padding: 0.75rem; font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
-  font-size: 12px; color: var(--bc); white-space: pre; overflow: auto;
+  font-size: 12px; color: oklch(var(--bc)); white-space: pre; overflow: auto;
 }
 
 /* Modal (Lovable, CSS :target-driven); coexists with DaisyUI modals. */
@@ -313,5 +328,5 @@ input[type="checkbox"].cb:checked { background: var(--p); border-color: var(--p)
    (the dynamic display:none is set inline by templ on prof==nil / non-v3). */
 .awg3-panel {
   border: 1px dashed var(--bd); border-radius: 12px;
-  background: color-mix(in oklab, var(--b3) 45%, transparent);
+  background: color-mix(in oklab, oklch(var(--b3)) 45%, transparent);
 }

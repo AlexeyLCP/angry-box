@@ -358,7 +358,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_PATH serve -listen 127.0.0.1:9080 -file $CONFIG_DIR/store.json
+ExecStart=$INSTALL_PATH serve -listen 127.0.0.1:9080 -file $CONFIG_DIR/store.json -config $CONFIG_DIR/angry-box.toml
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -402,7 +402,7 @@ Wants=network-online.target
 Type=simple
 User=angry-box
 Group=angry-box
-ExecStart=$INSTALL_PATH serve --listen 127.0.0.1:9080 --file $DATA_DIR/store.json
+ExecStart=$INSTALL_PATH serve --listen 127.0.0.1:9080 --file $DATA_DIR/store.json --config $DATA_DIR/angry-box.toml
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -493,9 +493,14 @@ print_done() {
     echo "=============================================="
     echo ""
 
+    # Resolve the real config/password paths used by the running unit.
+    CFG_PATH=""
+    PASS_PATH=""
     if [ "$IS_KEENETIC" = true ]; then
+        CFG_PATH="/opt/etc/angry-box/angry-box.toml"
+        PASS_PATH="/opt/var/lib/angry-box/initial-admin-password"
         echo "  Binary:     /opt/bin/angry-box"
-        echo "  Config:     /opt/etc/angry-box/angry-box.toml"
+        echo "  Config:     $CFG_PATH"
         echo "  Data:       /opt/var/lib/angry-box/"
         echo "  Logs:       /opt/var/log/angry-box.log"
         echo ""
@@ -504,8 +509,10 @@ print_done() {
         echo ""
     else
         if [ "$USER_MODE" = true ]; then
+            CFG_PATH="$CONFIG_DIR/angry-box.toml"
+            PASS_PATH="$CONFIG_DIR/initial-admin-password"
             echo "  Binary:     $INSTALL_PATH"
-            echo "  Config:     $CONFIG_DIR/angry-box.toml"
+            echo "  Config:     $CFG_PATH"
             echo "  Data:       $DATA_DIR/"
             echo ""
             echo "  Control (user mode):"
@@ -513,9 +520,11 @@ print_done() {
             echo "    systemctl --user {start|stop|restart} angry-box"
             echo ""
         else
+            CFG_PATH="$DATA_DIR/angry-box.toml"
+            PASS_PATH="$DATA_DIR/initial-admin-password"
             echo "  Binary:     /usr/local/bin/angry-box"
-            echo "  Config:     /etc/angry-box/angry-box.toml"
-            echo "  Data:       /var/lib/angry-box/"
+            echo "  Config:     $CFG_PATH"
+            echo "  Data:       $DATA_DIR/"
             echo ""
             echo "  Control:"
             echo "    systemctl status angry-box"
@@ -524,11 +533,44 @@ print_done() {
         fi
     fi
 
+    # Web UI credentials — printed LAST so they are not lost in journal noise
+    # (tester request: like 3x-ui, show login/password at end of install).
+    echo "  ────────────────────────────────────────────"
+    echo "  Web UI (loopback only by default):"
+    echo "    URL:      http://127.0.0.1:9080"
+    echo "    Username: admin"
+    if [ -f "$PASS_PATH" ]; then
+        echo "    Password: $(tr -d '\n' < "$PASS_PATH")"
+        echo "    (also in $PASS_PATH — delete after saving)"
+    else
+        echo "    Password: (see journal if first start already rotated it)"
+        if [ "$USER_MODE" = true ]; then
+            echo "      systemctl --user status angry-box -n 50"
+        else
+            echo "      journalctl -u angry-box -n 50 --no-pager | grep -i password"
+        fi
+    fi
+    echo ""
+    echo "  Access from another machine (pick ONE):"
+    echo "    A) SSH tunnel (recommended, no public exposure):"
+    echo "         ssh -L 9080:127.0.0.1:9080 user@this-host"
+    echo "         open http://127.0.0.1:9080 on your laptop"
+    echo "    B) Public bind (plain HTTP — only on trusted nets / behind TLS):"
+    echo "         systemctl edit angry-box"
+    echo "         # [Service]"
+    echo "         # ExecStart="
+    echo "         # ExecStart=/usr/local/bin/angry-box serve --listen 0.0.0.0:8090 \\"
+    echo "         #   --file $DATA_DIR/store.json --config $CFG_PATH"
+    echo "         systemctl daemon-reload && systemctl restart angry-box"
+    echo "       Do NOT run a second 'angry-box serve' by hand — stop the"
+    echo "       systemd unit first (single-instance store lock)."
+    echo "  ────────────────────────────────────────────"
+    echo ""
     echo "  Quick start:"
     echo "    angry-box host add mynode --addr <IP> --user root --key ~/.ssh/id_ed25519"
     echo "    angry-box deploy -addr <IP> -key ~/.ssh/id_ed25519"
     echo ""
-    echo "  API:  http://localhost:9080/health"
+    echo "  Health:  http://127.0.0.1:9080/health"
     echo ""
     echo "  For routers (Keenetic / OpenWRT), prefer direct .ipk installation from Releases:"
     echo "    opkg install angry-box_${TAG}_mipsel_24kc.ipk         # Keenetic MIPS"
@@ -638,18 +680,10 @@ if [ "$IS_KEENETIC" != true ]; then
         echo ""
         echo "===================================================================="
         echo "  INFO: This machine has a public IP address."
-        echo "  The Web UI will be reachable from the internet."
-        echo ""
-        echo "  The Web UI is now password-protected by default."
-        echo "  On first run, a random password is generated for 'admin'."
-        echo "  You can find this password in the system logs:"
-        echo ""
-        if [ "$USER_MODE" = true ]; then
-            echo "    systemctl --user status angry-box -n 50"
-        else
-            echo "    systemctl status angry-box -n 50"
-            echo "    journalctl -u angry-box -n 50 --no-pager"
-        fi
+        echo "  The Web UI binds 127.0.0.1:9080 by default (NOT public)."
+        echo "  Use an SSH tunnel, or a systemd drop-in with --listen 0.0.0.0:PORT"
+        echo "  (preferably behind TLS). Login/password are printed at the END"
+        echo "  of this install (and saved to initial-admin-password)."
         echo "===================================================================="
         echo ""
     fi

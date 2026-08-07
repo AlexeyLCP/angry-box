@@ -21,10 +21,11 @@ type authLimiter struct {
 	failures    map[string][]time.Time
 }
 
-// defaultAuthLimiter is the process-wide limiter for the auth gate. 5 failures
-// per IP per 15 minutes throttles brute-force without locking out a forgetful
-// admin for too long (CTO-review L3).
-var defaultAuthLimiter = newAuthLimiter(5, 15*time.Minute)
+// defaultAuthLimiter is the process-wide limiter for the auth gate. 10 wrong
+// password/username attempts per IP per 15 minutes throttles brute-force
+// without locking out a forgetful admin. Missing Basic-Auth credentials (the
+// browser challenge) are NOT counted — see BasicAuthMiddleware.
+var defaultAuthLimiter = newAuthLimiter(10, 15*time.Minute)
 
 // resetDefaultAuthLimiterForTest clears the process-wide auth limiter's state.
 // It is intended ONLY for tests: the auth-failure tests (auth_audit_test.go,
@@ -86,4 +87,11 @@ func (l *authLimiter) recordFailure(ip string) {
 		}
 	}
 	l.failures[ip] = append(keep, now)
+}
+
+// clear drops all recorded failures for ip (e.g. after a successful login).
+func (l *authLimiter) clear(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.failures, ip)
 }

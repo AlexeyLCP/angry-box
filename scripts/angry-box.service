@@ -18,7 +18,9 @@ Group=angry-box
 # default). Remote access MUST be fronted by a TLS-terminating reverse proxy
 # (nginx/caddy). Operators who insist on direct remote access can override
 # --listen in a drop-in override unit, but they then own the exposure.
-ExecStart=/usr/local/bin/angry-box serve --listen 127.0.0.1:9080 --file /var/lib/angry-box/store.json
+# --config is explicit so a hand-launched serve from another cwd cannot mint a
+# second password hash (auth split-brain: external login fails, tunnel works).
+ExecStart=/usr/local/bin/angry-box serve --listen 127.0.0.1:9080 --file /var/lib/angry-box/store.json --config /var/lib/angry-box/angry-box.toml
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576

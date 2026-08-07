@@ -4,6 +4,38 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.26] — 2026-08-07
+
+### Fix — external login loop, install password UX, chain "+ Level", UI checkboxes
+
+Tester report (SacredX) after v0.8.25 install:
+
+1. **External Basic Auth "endless login", tunnel OK.** Missing credentials
+   (browser challenge) counted toward the per-IP rate limit — external IP locked
+   after ~5 page loads while `127.0.0.1` via SSH tunnel still worked. Fix: do
+   not rate-limit bare challenges; clear failures on success; threshold 10.
+2. **Password / config split-brain.** `DefaultConfigPath` was CWD-relative;
+   systemd and a hand-launched `serve -listen 0.0.0.0:8090` minted different
+   password hashes. Fix: absolute path (root → `/var/lib/angry-box/angry-box.toml`),
+   explicit `--config` in unit/install, `Config.SavePath()`, one-time
+   `initial-admin-password` file (0600). install.sh prints login/password at the
+   END and documents tunnel vs public bind (no second bare `serve`).
+3. **Chain editor "+ Уровень" closed the modal** instead of adding an exit level.
+   Form `hx-on::after-request` closed on any child HTMX success. Fix: close only
+   when `event.detail.elt===this`; `hx-disinherit="*"` on the add-level button.
+4. **Unreadable Lovable checkboxes / "layered" RU text.** DaisyUI OKLCH triples
+   used bare (`background: var(--p)`) → invalid CSS → transparent fills. Fix:
+   `oklch(var(--*))` + visible tick on `.cb`; solid surfaces / hint line-height.
+5. **XHTTP apply still hit awg-quick.** Merged deploy correctly keeps leftover
+   AWG inbounds, but InstallAWGModule only looked at the current chain and the
+   error was opaque. Fix: install module when rendered AWG files are non-empty;
+   error appends why (`standalone inbound "…"`, other AWG chain, …).
+
+**Files:** `internal/web/auth.go`, `authlimiter.go`, `settings.go`,
+`internal/config/config.go`, `internal/chain/applier_build.go`, `awg_push.go`,
+`scripts/install.sh`, `angry-box.service`, `web/static/css/app.css`,
+`web/templates/chainlevels.templ` (+ generated), `internal/version/version.go`.
+
 ## [v0.8.25] — 2026-08-07
 
 ### Fix — takeover self-loop on empty sing-box scaffold after Deploy

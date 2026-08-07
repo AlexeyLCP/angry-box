@@ -432,37 +432,6 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// (CTO-review §8). Fall back to the dialing variants otherwise.
 		cb, isClientBackend := backend.(ports.ClientBackend)
 
-		// Install AWG kernel module when AWG is the user-entry protocol OR the
-		// inter-node transport. The transport case covers transit nodes that
-		// carry an AWG link (chain.Transport == AWG) even when the user entry is
-		// TUIC/VLESS — without this the transit AWG endpoint has no module.
-		if chain.UserProtocol == model.UserProtocolAWG || chain.Transport == model.TransportAWG {
-			var awgErr error
-			if isClientBackend {
-				awgErr = cb.InstallAWGModuleWithClient(ctx, deployOpts, client)
-			} else {
-				awgErr = backend.InstallAWGModuleWithOptions(ctx, node.Host(), deployOpts)
-			}
-			if awgErr != nil {
-				client.Close()
-				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
-				continue
-			}
-			// Enable IPv4 forwarding for EVERY AWG-chain node — not just nodes that
-			// get an awg0.conf (user-entry/standalone/exit-server/balancer, handled
-			// in pushAWGConfs), but ALSO AWG transit nodes (userspace transport
-			// endpoint, no awg0.conf → falls through to plain pushConfig). A transit
-			// node forwards packets between the transport-in endpoint and the
-			// egress outbound; without ip_forward=1 the kernel drops them and
-			// egress through the chain silently fails. Same condition as the module
-			// install: UserProtocol==AWG || Transport==AWG.
-			if fwdErr := ensureIPForward(ctx, client, nodeInfo.UseSudo); fwdErr != nil {
-				client.Close()
-				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "enable ip_forward: " + fwdErr.Error()})
-				continue
-			}
-		}
-
 		// Deploy sing-box with the node's UseSudo flag — Deploy() alone assumes
 		// root and cannot reinstall a root-owned binary on a non-root sudoer
 		// node (CTO-review follow-up to H5: the chain apply path also needs the
@@ -481,11 +450,41 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 
 		// Render the kernel awg-quick .conf files this node needs under the
 		// kernel-AWG architecture (user-entry awg0, multi-exit awg-exit-nX, exit
-		// server awg0, or standalone awg0). Empty for non-AWG nodes —
+		// server awg0, or standalone awg0). Empty for pure XHTTP/VLESS nodes —
 		// pushConfigWithAWG then falls through to the plain pushConfig path.
+		// IMPORTANT: gate is the MERGED node state (all chains + standalone
+		// inbounds), NOT only the chain being applied — leftover AWG inbounds
+		// still force awg-quick (tester: "I chose XHTTP why AWG?").
 		awgFiles, awgTeardown, awgWarns := renderAWGDeployPlan(store, nodeInfo, nodeChains)
 		for _, w := range awgWarns {
 			log.Printf("deploy: %s", w)
+		}
+
+		// Install AWG kernel module when THIS apply needs kernel AWG files OR
+		// the chain being applied is AWG (user-entry / transport — transit
+		// userspace endpoints need the module even without awg0.conf). Aligns
+		// InstallAWGModule with RenderNodeAWGConfs (previously only looked at
+		// the current chain → leftover standalone AWG pushed without module).
+		needAWGModule := len(awgFiles) > 0 ||
+			chain.UserProtocol == model.UserProtocolAWG ||
+			chain.Transport == model.TransportAWG
+		if needAWGModule {
+			var awgErr error
+			if isClientBackend {
+				awgErr = cb.InstallAWGModuleWithClient(ctx, deployOpts, client)
+			} else {
+				awgErr = backend.InstallAWGModuleWithOptions(ctx, node.Host(), deployOpts)
+			}
+			if awgErr != nil {
+				client.Close()
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "install awg module: " + awgErr.Error()})
+				continue
+			}
+			if fwdErr := ensureIPForward(ctx, client, nodeInfo.UseSudo); fwdErr != nil {
+				client.Close()
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "enable ip_forward: " + fwdErr.Error()})
+				continue
+			}
 		}
 
 		_, pushErr := pushConfigWithAWGTeardown(ctx, client, node.ID, string(cfgJSON), awgFiles, awgTeardown, nodeInfo.UseSudo)
@@ -498,7 +497,14 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 				}
 				results = append(results, NodeResult{ID: node.ID, Success: false, Error: errMsg})
 			} else {
-				results = append(results, NodeResult{ID: node.ID, Success: false, Error: "push config: " + pushErr.Error()})
+				errMsg := "push config: " + pushErr.Error()
+				if len(awgFiles) > 0 && strings.Contains(pushErr.Error(), "awg") {
+					// Explain WHY awg-quick ran even if the applied chain is XHTTP.
+					errMsg += " [kernel AWG still required on this node: " +
+						awgDeployReasonSummary(nodeInfo, nodeChains, awgFiles) +
+						" — remove leftover AWG inbounds/other AWG chains if this apply is XHTTP-only]"
+				}
+				results = append(results, NodeResult{ID: node.ID, Success: false, Error: errMsg})
 			}
 			continue
 		}

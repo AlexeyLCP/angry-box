@@ -331,3 +331,61 @@ func renderAWGDeployPlan(
 	teardown = AWGTeardownInterfaces(nodeInfo, nodeChains, files)
 	return files, teardown, warnings
 }
+
+// awgDeployReasonSummary explains why kernel AWG files were emitted for a node
+// — used in apply error messages so "I chose XHTTP, why awg-quick?" is answerable
+// without dumping the store.
+func awgDeployReasonSummary(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, files []AWGConfFile) string {
+	var parts []string
+	for _, c := range nodeChains {
+		if c == nil {
+			continue
+		}
+		if c.UserProtocol == model.UserProtocolAWG {
+			parts = append(parts, "chain \""+c.Name+"\" user-entry AWG")
+		}
+		if c.Transport == model.TransportAWG {
+			parts = append(parts, "chain \""+c.Name+"\" transport AWG")
+		}
+		for _, n := range c.AllNodes() {
+			if nodeInfo != nil && n.ID == nodeInfo.ID {
+				if n.Role == model.NodeRoleExit {
+					parts = append(parts, "node role=exit (balancer)")
+				}
+				if len(n.ExitAWGLinks) > 0 {
+					parts = append(parts, fmt.Sprintf("%d ExitAWGLinks", len(n.ExitAWGLinks)))
+				}
+			}
+		}
+	}
+	if nodeInfo != nil {
+		for _, ib := range nodeInfo.Inbounds {
+			if ib.Protocol == "awg" && !IsChainSourcedInbound(&ib) {
+				tag := ib.Tag
+				if tag == "" {
+					tag = ib.Protocol
+				}
+				parts = append(parts, "standalone inbound \""+tag+"\"")
+			}
+		}
+	}
+	if len(parts) == 0 {
+		// Fall back to rendered file names if we couldn't classify.
+		for _, f := range files {
+			parts = append(parts, f.ServiceName)
+		}
+	}
+	if len(parts) == 0 {
+		return "unknown"
+	}
+	// Dedup while preserving order.
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range parts {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, "; ")
+}

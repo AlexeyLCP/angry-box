@@ -37,7 +37,11 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 
 		user, pass, ok := r.BasicAuth()
 		if !ok {
-			defaultAuthLimiter.recordFailure(ip)
+			// Do NOT count missing credentials as a rate-limit failure: every
+			// bare browser GET issues a Basic-Auth challenge with no creds.
+			// Counting those locked external IPs after ~5 page loads while
+			// SSH-tunnel (127.0.0.1) still worked — the tester's "endless login
+			// from outside, OK via tunnel" report.
 			slog.Warn("auth: missing credentials",
 				"remote_addr", r.RemoteAddr,
 				"path", r.URL.Path,
@@ -73,6 +77,9 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 			return
 		}
 
+		// Correct password — clear any prior failures so a recovered admin is
+		// not stuck behind a half-full window from earlier typos.
+		defaultAuthLimiter.clear(ip)
 		next.ServeHTTP(w, r)
 	}
 }

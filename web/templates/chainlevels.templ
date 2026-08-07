@@ -99,7 +99,7 @@ templ ChainLevelsForm(d ChainLevelsFormData) {
 					hx-target="#chains-tbody"
 					hx-swap="beforeend"
 				}
-				hx-on::after-request="if(event.detail.xhr.status<300){this.closest('dialog').close()}"
+				hx-on::after-request="if(event.detail.successful && event.detail.elt===this){this.closest('dialog').close()}"
 				class="flex flex-col gap-4">
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -151,7 +151,8 @@ templ ChainLevelsForm(d ChainLevelsFormData) {
 							hx-get="/ui/chains/level-row"
 							hx-vals="js:{i: document.querySelectorAll('#chain-levels .chain-level').length}"
 							hx-target="#chain-levels"
-							hx-swap="beforeend">
+							hx-swap="beforeend"
+							hx-disinherit="*">
 							{ i18n.T(ctx, "+ Add level") }
 						</button>
 					</div>

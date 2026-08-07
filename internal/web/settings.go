@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
-	"github.com/alexeylcp/angry-box/internal/config"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
 	"github.com/alexeylcp/angry-box/web/templates"
@@ -115,7 +114,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 		if configNeedsSave {
 			// Save config to default location
-			if err := s.cfg.Save(config.DefaultConfigPath()); err != nil {
+			if err := s.cfg.SavePath(); err != nil {
 				log.Printf("failed to save config: %v", err)
 				s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>`+i18n.T(r.Context(), "Settings saved, but config write failed: %v")+`</span></div>`, err)})
 				return

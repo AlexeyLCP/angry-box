@@ -2391,3 +2391,18 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Файлы:** `internal/takeover/detect.go`, `internal/takeover/takeover.go`, `internal/takeover/detect_takeover_test.go`, `internal/web/nodes.go`, `internal/web/takeover.go`, `internal/i18n/i18n.go`, `docs/PROGRESS.md` (§47).
 
+---
+
+## §48. Tester UX pack (auth external / install password / +Level / checkboxes / AWG reason) — v0.8.26 (2026-08-07)
+
+Репорт SacredX после v0.8.25: (1) admin+пароль не принимаются снаружи, через SSH-tunnel OK; (2) пароль теряется в journal; (3) `serve -listen 0.0.0.0` упирается в store lock; (4) «+ Уровень» закрывает модалку; (5) нечитаемые чекбоксы + «наслоение» RU; (6) XHTTP-цепь → `awg push: enable/restart awg-quick`.
+
+**Фиксы:**
+- Auth limiter: missing Basic Auth НЕ считает failure; clear on success; threshold 10.
+- Config path absolute + `--config` в unit/install + `SavePath` + `initial-admin-password`; install печатает login/password в конце + tunnel/drop-in.
+- Chain form: close modal only when `event.detail.elt===this`; `hx-disinherit` on +Level.
+- CSS: `oklch(var(--*))` + tick on `.cb`.
+- ApplyChain: InstallAWG when rendered files non-empty; error explains leftover AWG reason.
+
+**Файлы:** см. CHANGELOG v0.8.26.
+
