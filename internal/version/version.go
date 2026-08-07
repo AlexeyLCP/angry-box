@@ -12,4 +12,4 @@ package version
 
 // Version is the angry-box build version. Override at link time with
 // -ldflags "-X version.Version=vX.Y.Z".
-var Version = "v0.8.23"
+var Version = "v0.8.24"

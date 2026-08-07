@@ -4,6 +4,45 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.24] — 2026-08-07
+
+### Chore — amnezia-box fork bumped to upstream 4bdfc140 (sing-box 1.14 beta) + amneziawg-go /v3
+
+The `AlexeyLCP/amnezia-box` fork is rebased onto the upstream HEAD
+(`hoaxisr/amnezia-box @ 4bdfc140`, 2026-08-05); our ports (mtproxy
+`with_mtproxy` + fallback round-robin) are re-applied on top (fork commit
+`3c554273`). The deployed sing-box binary changes accordingly.
+
+**What the upstream bump brings:**
+- sing-box base aligned to **v1.14.0-beta.4** API.
+- **amneziawg-go → official AWG3 v3.0.20260805** (module path `/v3`,
+  `hoaxisr/amneziawg-go/v3 @ e32b3b0`): keepalive-under-content-padding fix,
+  `InputPackets` batched by `device.BatchSize()`.
+- clashapi exposes real per-peer AWG handshake/tx/rx via UAPI.
+- AWG UDP forwarder starts inside the gVisor tunnel; mieru 3.35.0 (+ UDP
+  transport domain resolve, inbound `listen_ports`).
+
+**Pins (three places per docs/PATCHES.md):** `ABX_REF` in
+`scripts/build-singbox.sh` / `build-singbox-windows.sh` → `3c554273`;
+`singBoxVersion` / `singBoxChecksums` / `amneziaWGGoVersion` in
+`internal/backend/singbox/singbox.go`; `patchcheckABXRef` /
+`patchcheckAWGGORef` in `patchcheck_test.go`. New tarball
+`sing-box-3c554273-amnezia-linux-amd64.tar.gz` (sha256 `acaf995c…`)
+published to the `v0.1.0` release the deploy path pins; `deps/checksums.txt`
+regenerated.
+
+**Behavior change found by the new base (test-only fix):** sing-box 1.14 beta
+resolves AWG endpoint peer addresses during `sing-box check` — the fake
+`*.example.test` hostnames in `awg_config_check_test.go` were replaced with
+TEST-NET IPs (production peer addresses are always IPs; no product change).
+
+**Verified:** `go build` / `go vet` clean; full `go test ./internal/...` green
+including all real `sing-box check` tests against the new binary; patchcheck
+version-match tests PASS; manual `sing-box check` accepts `type:"mtproxy"` +
+`type:"fallback"`; `sing-box version` reports `with_awg,with_mtproxy` (the
+`isPatchedExtended` canary). Live-node deploy verification pending (n1
+reimaged, GCloud test VPS stopped) — PROGRESS §46.
+
 ## [v0.8.23] — 2026-08-07
 
 ### Feature — AWG 1.5 / 2.0 / 3.0 per-version config generation + AWG3 kernel/tools install (lucx-ui reference)
