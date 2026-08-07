@@ -4,6 +4,37 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.27] — 2026-08-07
+
+### Fix — AmneziaWG PPA `NO_PUBKEY` on RU/Ubuntu 24.04 (stale list + keyserver blocked)
+
+On RU nodes (and any host where gpg keyservers are firewalled) `install awg
+module` still failed with:
+
+```
+NO_PUBKEY 4166F2C257290828
+E: The repository '.../amnezia/ppa/ubuntu noble InRelease' is not signed
+```
+
+even after v0.8.19's modern-keyring path. Two remaining holes:
+
+1. **First `apt-get update` ran under `set -e` BEFORE the key was fixed.** A
+   leftover broken PPA list (lucx / ihor / empty keyring) made that update exit
+   100 and aborted the whole script — DKMS fallback never ran.
+2. **`gpg --keyserver` is often unreachable from RU.** Empty keyring +
+   `signed-by=` → same NO_PUBKEY.
+
+**Fix (`installAWGModule` shell):**
+- Install the PPA key **before** any `apt-get update`: curl HTTP keyserver API →
+  embedded armored key (offline) → gpg keyserver last resort; always
+  `gpg --dearmor` into `/usr/share/keyrings/amnezia-archive-keyring.gpg`.
+- Wipe legacy `amnezia*.list` / unsigned lines, rewrite
+  `deb [signed-by=…] … $CODENAME main` (Debian codenames mapped to jammy).
+- All `apt-get update/install` non-fatal so bundled DKMS still runs when PPA is
+  unusable.
+
+**Files:** `internal/backend/singbox/singbox.go`, `internal/version/version.go`.
+
 ## [v0.8.26] — 2026-08-07
 
 ### Fix — external login loop, install password UX, chain "+ Level", UI checkboxes

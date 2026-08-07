@@ -2406,3 +2406,13 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Файлы:** см. CHANGELOG v0.8.26.
 
+---
+
+## §49. fix(awg): PPA NO_PUBKEY на RU/noble — key до apt-get + embedded key (v0.8.27)
+
+**Симптом (SacredX, RU-нода ihor/Ubuntu 24.04):** `install awg module: … NO_PUBKEY 4166F2C257290828 … noble InRelease is not signed` (exit 100).
+
+**Корень:** (1) первый `apt-get update` под `set -e` до починки ключа — stale broken PPA (lucx/ihor) валит весь скрипт, DKMS недостижим; (2) `gpg --keyserver` из РФ часто недоступен → пустой keyring.
+
+**Фикс:** ключ ДО update (curl HTTP → embedded armored → keyserver); wipe legacy lists; non-fatal apt; Debian→jammy map. См. CHANGELOG v0.8.27.
+

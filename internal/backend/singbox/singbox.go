@@ -632,11 +632,113 @@ func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, 
 	cmd := sudoBash(useSudo, fmt.Sprintf(`set -e
 export AB_AWG_URL='%s'
 export DEBIAN_FRONTEND=noninteractive
+
+# ─── Amnezia PPA key + sources BEFORE any apt-get update ───────────────────
+# A stale/broken amnezia list (empty keyring, no signed-by, leftover from lucx/
+# ihor/manual) makes the FIRST apt-get update exit 100 with NO_PUBKEY and aborts
+# the whole install under set -e — DKMS fallback never runs. RU nodes also often
+# cannot reach gpg keyservers. Fix: (1) always (re)write key via curl HTTP or
+# embedded armored key, (2) always rewrite sources with signed-by, (3) only then
+# apt-get update (non-fatal). Fingerprint 4166F2C257290828 = Launchpad PPA for
+# Iurii Egorov (amnezia/ppa).
+install -d -m 0755 /usr/share/keyrings /etc/apt/sources.list.d
+AB_KEYRING=/usr/share/keyrings/amnezia-archive-keyring.gpg
+AB_KEY_OK=0
+# Prefer curl HTTP (works when hkps keyservers are firewalled in RU).
+if command -v curl >/dev/null 2>&1; then
+  for AB_KEY_URL in \
+    "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x4166F2C257290828" \
+    "http://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x4166F2C257290828" \
+    "https://keys.openpgp.org/vks/v1/by-fingerprint/75C9DD72C799870E310542E24166F2C257290828"
+  do
+    if curl -fsSL --connect-timeout 8 --max-time 30 "$AB_KEY_URL" 2>/dev/null \
+      | gpg --batch --yes --dearmor -o "$AB_KEYRING" 2>/dev/null \
+      && [ -s "$AB_KEYRING" ]; then
+      AB_KEY_OK=1
+      echo "[awg] PPA key installed via curl ($AB_KEY_URL)"
+      break
+    fi
+    rm -f "$AB_KEYRING"
+  done
+fi
+# Embedded armored key — offline / keyserver-blocked fallback (same fingerprint).
+if [ "$AB_KEY_OK" != "1" ]; then
+  echo "[awg] Installing embedded Amnezia PPA key..."
+  gpg --batch --yes --dearmor -o "$AB_KEYRING" <<'AB_PPA_KEY' 2>/dev/null || true
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+xsFNBGV0UhsBEAC33rMndHSN/k+u7gcZbh9/FjgYfGltQAtVe2QDxzn7UV+k/ChX
+OrYRw6Izw/DrhaapkNCThK2jwJE64e0NjboLH7UrrmSJLXMfOlDFbyGJVRA+1sTB
+lo7kKHY0xiZ1CHDzjKNV3czbesu80A9nuTZYyWHEn9ax6wsqKG3N8SvzQkUrIOVD
+2wZjh0p273CCEGkBnax1ghAV3MF8OrsPU6FRJ+ZakzKbu54g68xoV+2813YECme0
+JKsWfUUe/1uEJOXCvuACURSxnYr0sihJd8QI/jHSGlfeq72e5MflFEOrnu5xaDSJ
+r2W5lvUetG7EGSxtNKd7Jm/KhUV04g7arA0qydRjRToW3QqyzG7VB2nXKz3AOBYN
+earWAuBcTkfPvRVchxbjiYonKZA5tIlVrpawMZsdxKvYwl6LVnpBcccFWPhpudfy
+4TpCqCxRoAanOCvSirI3/y7TcZMBw643SaxXi1ifGeg6eyMzrLtP3CeonKBHGzrt
+1eeKGtEw/PFN4RmwpBePxi+uj0CoTD6zjCQa3c8EeB4Qz7tt6PnpibxdtZE8sBdd
+51wSA/fPGi2tFph8IVAsws7oxcQxZYl8CyncKDLcoR4dxVHYdFEDDf1GjRjoQ3Ai
+nD7fxD5qYzExe50DBVpuUbWcAiGICNxfvzQtUSRRtMoSHDcvzsy03KC6VwARAQAB
+zR5MYXVuY2hwYWQgUFBBIGZvciBJdXJpaSBFZ29yb3bCwY4EEwEKADgWIQR1yd1y
+x5mHDjEFQuJBZvLCVykIKAUCZXRSGwIbAwULCQgHAgYVCgkICwIEFgIDAQIeAQIX
+gAAKCRBBZvLCVykIKBu5D/9akmHCHlUqm2RTTBeTMbLNGc0l6YugpPaCM6vz0O9k
+BFP5PfRaNSRzyF7wHFHNY3JUHcor28my1fD8AE4+C3PwXz8tVYLh57UUsp4wjqHY
++MTl/1ngDViPGD3PRjB8ZlO+19yerfplZv1Jaw7FZZv2BZOAXb+ddqUG4EmlzOnC
+EhcSDdFrzEBB3RGthjIb3QkKWKGbELDiMfogmsO9BE139Raiw23blagDrbnWsG4j
+ReZeu3atjG6AW8eL7m+i7bKKshD2CYVMznI5cYGLMKo9w7sb33uylPj1Vx9O7joP
+2GFf2rTpCY8wgzk7i1RqsipJ80u1/DY91Xdizv3f2BBe6UY7qHKoK00O11J0y8yU
+is2Asycy33Wy51pf6rCFUBLQu+c1fEypHF6jqANmQwaH7pPBliy4gGWvrVggzV4m
+xv7SnRiMi4PFyVwjKWm8dmuMxi/B9s++VG/ed+5aYgJYL58MohG3MUI/L58eitSC
+DDcQ1iAnBmawnGMKPqzMgRFB3OU3wDwfh7LNVvQqWpQ4q7pr4Cq1CvZvGoggXWDo
+1/vylPsRmiiuNetfsoVYmrkgtj1om07m5Xp1v4SyXJH11c3dc/xfMmn/4RlMWIpq
+86IsOjpr3avsw3FVUNCgD5Wf5+rHG+7gNmM6Cm/F8MDfAnnRmsw4h6hgvcJNQT5D
+ig==
+=OY2W
+-----END PGP PUBLIC KEY BLOCK-----
+AB_PPA_KEY
+  if [ -s "$AB_KEYRING" ]; then AB_KEY_OK=1; fi
+fi
+# Last resort: classic gpg keyserver (often blocked in RU).
+if [ "$AB_KEY_OK" != "1" ]; then
+  gpg --batch --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 4166F2C257290828 2>/dev/null \
+    || gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys 4166F2C257290828 2>/dev/null \
+    || true
+  gpg --batch --export 4166F2C257290828 2>/dev/null | gpg --batch --yes --dearmor -o "$AB_KEYRING" 2>/dev/null || true
+  if [ -s "$AB_KEYRING" ]; then AB_KEY_OK=1; fi
+fi
+chmod 0644 "$AB_KEYRING" 2>/dev/null || true
+
+# Drop legacy broken lists (no signed-by / empty keyring / old amnezia.gpg name).
+rm -f /etc/apt/sources.list.d/amnezia-ppa.list \
+      /etc/apt/sources.list.d/amnezia-ubuntu-ppa-*.list \
+      /etc/apt/sources.list.d/amnezia*.list 2>/dev/null || true
+# Also strip any amnezia lines from sources.list itself.
+if [ -f /etc/apt/sources.list ]; then
+  sed -i '/ppa.launchpadcontent.net\/amnezia/d;/ppa.launchpad.net\/amnezia/d' /etc/apt/sources.list 2>/dev/null || true
+fi
+
+. /etc/os-release 2>/dev/null || true
+AB_CODENAME="${VERSION_CODENAME:-focal}"
+# Amnezia PPA publishes Ubuntu series only; map Debian codenames → nearest Ubuntu.
+case "$AB_CODENAME" in
+  bookworm|trixie|sid|testing|stable) AB_CODENAME=jammy ;;
+  noble|jammy|focal|mantic|lunar|kinetic) ;;
+  *) AB_CODENAME=jammy ;;
+esac
+echo "[awg] distro codename for PPA: $AB_CODENAME (key_ok=$AB_KEY_OK)"
+if [ "$AB_KEY_OK" = "1" ]; then
+  echo "deb [signed-by=$AB_KEYRING] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu $AB_CODENAME main" \
+    > /etc/apt/sources.list.d/amnezia-ppa.list
+else
+  echo "[awg] WARNING: could not install PPA key — skipping PPA (DKMS fallback only)"
+fi
+
 echo "[awg] Installing build prerequisites..."
-apt-get update -qq
+# Non-fatal: a flaky mirror must not abort before DKMS.
+apt-get update -qq || echo "[awg] WARNING: apt-get update failed (continuing)"
 # git/libmnl-dev/pkg-config are needed to build amneziawg-tools from source
 # (the AWG3 userspace tools) when the PPA tools are missing or < v3.
-apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 curl git libmnl-dev pkg-config
+apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 curl git libmnl-dev pkg-config \
+  || echo "[awg] WARNING: prereq apt install failed (continuing to DKMS)"
 # Debian 13+ prerequisites (LucX-UI install-awg-module.sh lesson, verified on
 # our n1/n2): iptables is no longer installed by default there — our server
 # confs' PostUp lines (MASQUERADE/FORWARD) use the iptables shim, without it
@@ -645,34 +747,8 @@ apt-get install -y -qq dkms build-essential linux-headers-$(uname -r) gnupg2 cur
 # required for sing-box TUN auto_redirect (AB_AWG_AUTO_REDIRECT=1).
 apt-get install -y -qq iptables nftables openresolv || echo "[awg] WARNING: iptables/nftables/openresolv install failed (continuing)"
 
-if ! apt-cache show amneziawg 2>/dev/null | grep -q ^Package; then
-  echo "[awg] Adding Amnezia PPA..."
-  # Detect the distro codename (focal/jammy/noble/...) from os-release instead
-  # of hardcoding "focal" — a hardcoded focal on Ubuntu 24.04/26.04 mismatches
-  # the PPA's expected codename and newer apt rejects the unsigned/wrong repo.
-  . /etc/os-release 2>/dev/null || true
-  AB_CODENAME="${VERSION_CODENAME:-focal}"
-  echo "[awg] distro codename: $AB_CODENAME"
-  # Modern keyring (apt-key is deprecated since Ubuntu 22.04 and on 24.04+ it
-  # silently fails to import → 'NO_PUBKEY 4166F2C257290828, repository not
-  # signed'. Use the FULL fingerprint, not the 8-hex tail 57290828, and place
-  # the key in /usr/share/keyrings with signed-by= so apt trusts only this PPA.
-  # keyserver on port 80 first (firewall-friendly), fall back to hkps:443.
-  install -d -m 0755 /usr/share/keyrings
-  gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 4166F2C257290828 2>/dev/null \
-    || gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 4166F2C257290828 2>/dev/null \
-    || true
-  gpg --export 4166F2C257290828 > /usr/share/keyrings/amnezia.gpg 2>/dev/null || true
-  echo "deb [signed-by=/usr/share/keyrings/amnezia.gpg] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu $AB_CODENAME main" > /etc/apt/sources.list.d/amnezia-ppa.list
-  # Do NOT let a failed update abort the whole script under set -e — if the PPA
-  # stays unsigned/unreachable, the DKMS-from-bundled-source fallback below must
-  # still be reached. (Previously update died on the unsigned repo and the
-  # bundled-DKMS fallback was never tried.)
-  apt-get update -qq || echo "[awg] WARNING: apt-get update with PPA failed (will try DKMS fallback)"
-fi
-
-	echo "[awg] Installing amneziawg from PPA (baseline tools)..."
-	apt-get install -y -qq amneziawg || echo "[awg] PPA install failed (continuing to DKMS)"
+echo "[awg] Installing amneziawg from PPA (baseline tools)..."
+apt-get install -y -qq amneziawg || echo "[awg] PPA install failed (continuing to DKMS)"
 
 	# Ensure an AWG3-capable KERNEL MODULE. The PPA ships the v1 module (no HPK
 	# symbol); the bundled tarball is master (PR #192, AWG3-capable). If the
