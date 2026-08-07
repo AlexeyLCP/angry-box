@@ -4,6 +4,28 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.25] — 2026-08-07
+
+### Fix — takeover self-loop on empty sing-box scaffold after Deploy
+
+Selecting all three post-capture options (Deploy sing-box + Install AWG +
+Detect existing VPN) made angry-box install its own minimal scaffold
+(`inbounds:[]`), then treat that scaffold as a foreign VPN. Convert failed
+with `sing-box config had no convertible inbounds` and the UI showed a false
+`rolled-back` / 0 inbounds.
+
+**Fix (three layers):**
+1. **Detect** skips empty/minimal/TUN-only sing-box configs as primary; foreign
+   xray/AWG/MTProxy still win. Note explains the scaffold case.
+2. **Capture** does not queue the empty Deploy when takeover is also ticked —
+   takeover installs sing-box itself after converting the foreign VPN.
+3. **Status**: empty → `"nothing"` (info alert, not error); pre-cutover convert
+   fail → `"failed"` (not `"rolled-back"`). i18n: «Нечего перехватывать».
+
+**Files:** `internal/takeover/detect.go`, `takeover.go`,
+`detect_takeover_test.go`, `internal/web/nodes.go`, `takeover.go`,
+`internal/i18n/i18n.go`, `docs/PROGRESS.md` (§47). Tests green.
+
 ## [v0.8.24] — 2026-08-07
 
 ### Chore — amnezia-box fork bumped to upstream 4bdfc140 (sing-box 1.14 beta) + amneziawg-go /v3
