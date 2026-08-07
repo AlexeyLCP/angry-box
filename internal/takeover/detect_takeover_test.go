@@ -76,12 +76,14 @@ func TestDetectVPN_ConnectFails(t *testing.T) {
 	}
 }
 
-// TestDetectVPN_ActiveSingBox verifies an active sing-box service is detected as
-// the primary VPN.
+// TestDetectVPN_ActiveSingBox verifies an active sing-box service with a real
+// convertible inbound is detected as the primary VPN.
 func TestDetectVPN_ActiveSingBox(t *testing.T) {
+	realCfg := `{"inbounds":[{"type":"vless","listen_port":443,"users":[{"uuid":"11111111-1111-1111-1111-111111111111"}],"tls":{"enabled":true,"server_name":"example.com","reality":{"enabled":true,"private_key":"x","short_id":["abcd"]}}}]}`
 	fake := newFakeSSH(
 		// sing-box is-active -> active.
 		fakeRule{substring: "is-active sing-box", out: "active"},
+		fakeRule{substring: "cat /etc/sing-box/config.json", out: realCfg},
 		// everything else (is-enabled, other services, cat) returns "".
 		fakeRule{substring: "", out: ""},
 	)
@@ -100,11 +102,57 @@ func TestDetectVPN_ActiveSingBox(t *testing.T) {
 	}
 }
 
-// TestDetectVPN_ConfigOnly verifies a config file present (no active service)
-// is detected.
-func TestDetectVPN_ConfigOnly(t *testing.T) {
+// TestDetectVPN_EmptySingBoxScaffold_Skipped verifies the angry-box Deploy
+// minimal config (inbounds:[]) is NOT treated as a takeover target — the
+// self-takeover loop when "deploy sing-box" + "detect VPN" are both ticked.
+func TestDetectVPN_EmptySingBoxScaffold_Skipped(t *testing.T) {
+	// Deploy's exact scaffold shape.
+	minimal := `{"log":{"level":"info"},"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}]}`
 	fake := newFakeSSH(
-		fakeRule{substring: "cat /etc/sing-box/config.json", out: `{"inbounds":[]}`},
+		fakeRule{substring: "is-active sing-box", out: "active"},
+		fakeRule{substring: "is-enabled sing-box", out: "enabled"},
+		fakeRule{substring: "cat /etc/sing-box/config.json", out: minimal},
+		fakeRule{substring: "", out: ""},
+	)
+	det, err := DetectVPN(context.Background(), hostA, false, &fakeConnector{client: fake})
+	if err != nil {
+		t.Fatalf("DetectVPN: %v", err)
+	}
+	if det.Type != DetectedNone {
+		t.Errorf("Type: got %q, want none (empty scaffold skipped)", det.Type)
+	}
+	if det.Note == "" || !contains(det.Note, "empty") {
+		t.Errorf("Note should explain empty scaffold, got %q", det.Note)
+	}
+}
+
+// TestDetectVPN_EmptySingBox_PrefersXray verifies that when sing-box is only a
+// scaffold, a foreign xray service is still selected as primary.
+func TestDetectVPN_EmptySingBox_PrefersXray(t *testing.T) {
+	minimal := `{"inbounds":[]}`
+	xrayCfg := `{"inbounds":[{"protocol":"vless","port":443,"settings":{"clients":[{"id":"11111111-1111-1111-1111-111111111111"}]},"streamSettings":{"security":"reality","realitySettings":{"privateKey":"x","shortIds":["ab"]}}}]}`
+	fake := newFakeSSH(
+		fakeRule{substring: "is-active sing-box", out: "active"},
+		fakeRule{substring: "is-active xray", out: "active"},
+		fakeRule{substring: "cat /etc/sing-box/config.json", out: minimal},
+		fakeRule{substring: "cat /usr/local/etc/xray/config.json", out: xrayCfg},
+		fakeRule{substring: "", out: ""},
+	)
+	det, err := DetectVPN(context.Background(), hostA, false, &fakeConnector{client: fake})
+	if err != nil {
+		t.Fatalf("DetectVPN: %v", err)
+	}
+	if det.Type != DetectedXray {
+		t.Errorf("Type: got %q, want xray (empty sing-box skipped)", det.Type)
+	}
+}
+
+// TestDetectVPN_ConfigOnly verifies a config file with a convertible inbound
+// (no active service) is detected.
+func TestDetectVPN_ConfigOnly(t *testing.T) {
+	realCfg := `{"inbounds":[{"type":"shadowsocks","listen_port":8388,"method":"aes-128-gcm","password":"p"}]}`
+	fake := newFakeSSH(
+		fakeRule{substring: "cat /etc/sing-box/config.json", out: realCfg},
 		fakeRule{substring: "", out: ""},
 	)
 	det, err := DetectVPN(context.Background(), hostA, false, &fakeConnector{client: fake})
@@ -145,7 +193,7 @@ func TestTakeover_NilDetection(t *testing.T) {
 }
 
 // TestTakeover_ConvertFails verifies a convert failure (bad config content)
-// returns the rolled-back status without panicking.
+// returns Status "failed" (nothing was cut over — not a rollback).
 func TestTakeover_ConvertFails(t *testing.T) {
 	st := newStore(t)
 	det := &Detection{
@@ -162,8 +210,58 @@ func TestTakeover_ConvertFails(t *testing.T) {
 	if res == nil {
 		t.Fatal("expected non-nil result")
 	}
-	if res.Status != "rolled-back" {
-		t.Errorf("Status: got %q, want rolled-back", res.Status)
+	if res.Status != "failed" {
+		t.Errorf("Status: got %q, want failed", res.Status)
+	}
+}
+
+// TestTakeover_EmptySingBoxNothing verifies an empty/minimal sing-box config
+// maps to Status "nothing" (no error, no rolled-back claim) — the self-takeover
+// loop the capture form used to hit when deploy+detect were both ticked.
+func TestTakeover_EmptySingBoxNothing(t *testing.T) {
+	st := newStore(t)
+	det := &Detection{
+		Type:          DetectedSingBox,
+		ServiceName:   "sing-box",
+		IsActive:      true,
+		ConfigPath:    "/etc/sing-box/config.json",
+		ConfigContent: `{"log":{"level":"info"},"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}]}`,
+	}
+	res, err := Takeover(context.Background(), st, noopFactory{}, hostA, false, det)
+	if err != nil {
+		t.Fatalf("Takeover: %v", err)
+	}
+	if res.Status != "nothing" {
+		t.Errorf("Status: got %q, want nothing", res.Status)
+	}
+	if !contains(res.Message, "no convertible") {
+		t.Errorf("Message: got %q, want no convertible", res.Message)
+	}
+}
+
+// TestSingBoxConfigConvertible covers the empty-scaffold / TUN-only / real
+// inbound cases used by DetectVPN filtering.
+func TestSingBoxConfigConvertible(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  string
+		want bool
+	}{
+		{"empty json object", `{}`, false},
+		{"empty inbounds", `{"inbounds":[]}`, false},
+		{"deploy scaffold", `{"log":{"level":"info"},"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}]}`, false},
+		{"tun only", `{"inbounds":[{"type":"tun","tag":"tun-in"}]}`, false},
+		{"vless", `{"inbounds":[{"type":"vless","listen_port":443}]}`, true},
+		{"shadowsocks", `{"inbounds":[{"type":"shadowsocks"}]}`, true},
+		{"unparseable", `{not json`, true}, // let Convert surface parse error
+		{"blank", ``, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := singBoxConfigConvertible(tc.cfg); got != tc.want {
+				t.Errorf("singBoxConfigConvertible(%q)=%v, want %v", tc.name, got, tc.want)
+			}
+		})
 	}
 }
 

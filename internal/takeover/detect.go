@@ -10,6 +10,7 @@ package takeover
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -146,6 +147,37 @@ func DetectVPN(ctx context.Context, host model.Host, useSudo bool, connector ...
 	binaries := strings.Fields(binOut)
 	_ = binaries // noted but service/config hits are authoritative
 
+	// Drop empty/minimal sing-box from primary candidates. angry-box Deploy writes
+	// a scaffold config with inbounds:[] so the unit can start; if the operator
+	// also ticks "Detect existing VPN" right after, that scaffold would otherwise
+	// be mistaken for a foreign VPN and takeover would fail with
+	// "no convertible inbounds" (self-takeover loop). Still surface it in Note/
+	// Other so the operator knows sing-box is present.
+	skippedEmptySingBox := false
+	var filteredCfg []cfgHit
+	for _, c := range cfgHits {
+		if c.kind == DetectedSingBox && !singBoxConfigConvertible(c.content) {
+			skippedEmptySingBox = true
+			continue
+		}
+		filteredCfg = append(filteredCfg, c)
+	}
+	cfgHits = filteredCfg
+
+	var filteredHits []svcHit
+	for _, h := range hits {
+		if h.kind == DetectedSingBox {
+			if _, ok := configForKind(cfgHits, DetectedSingBox); !ok {
+				// Service up but no convertible config (scaffold / missing) —
+				// not a takeover target.
+				skippedEmptySingBox = true
+				continue
+			}
+		}
+		filteredHits = append(filteredHits, h)
+	}
+	hits = filteredHits
+
 	// Build the primary detection. Priority: active service (with its config if
 	// found) > enabled service > config file present. AWG via awg0.conf is
 	// detected even without a single unit (awg-quick@awg0 may be inactive in
@@ -206,11 +238,52 @@ func DetectVPN(ctx context.Context, host model.Host, useSudo bool, connector ...
 			seen[c.kind] = true
 		}
 	}
+	if skippedEmptySingBox && !seen[DetectedSingBox] {
+		primary.Other = append(primary.Other, "singbox (empty/minimal config — skipped)")
+	}
 
 	if primary.Type == DetectedNone {
-		primary.Note = "No existing VPN detected. Use Install to deploy sing-box from scratch."
+		if skippedEmptySingBox {
+			primary.Note = "Only empty/minimal sing-box found (angry-box deploy scaffold). Nothing to take over — add inbounds or capture a foreign VPN (xray/AWG/MTProxy)."
+		} else {
+			primary.Note = "No existing VPN detected. Use Install to deploy sing-box from scratch."
+		}
 	}
 	return primary, nil
+}
+
+// singBoxConfigConvertible reports whether a sing-box config.json has at least
+// one inbound that Convert would keep (user-facing protocols). Empty inbounds
+// (Deploy's minimal scaffold) and TUN/direct-only configs are NOT convertible —
+// they are our own install, not a foreign VPN to take over. Unparseable JSON
+// returns true so Convert can surface the parse error instead of silently
+// skipping a broken foreign config.
+func singBoxConfigConvertible(cfgJSON string) bool {
+	if strings.TrimSpace(cfgJSON) == "" {
+		return false
+	}
+	var cfg struct {
+		Inbounds []json.RawMessage `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(cfgJSON), &cfg); err != nil {
+		return true
+	}
+	for _, raw := range cfg.Inbounds {
+		var ib struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &ib); err != nil {
+			continue
+		}
+		switch ib.Type {
+		case "", "tun", "direct", "block", "dns":
+			// Routing infra / empty — not a user-facing inbound.
+			continue
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // configForKind returns the first config hit matching kind.

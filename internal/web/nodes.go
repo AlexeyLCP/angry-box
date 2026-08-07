@@ -344,12 +344,20 @@ func (s *Server) handleCaptureNode(w http.ResponseWriter, r *http.Request) {
 	// Post-capture options: binary deploy + AWG module run async (the capture
 	// response returns immediately; outcomes land in the audit log). Takeover
 	// is a consent flow — surface a detect button instead of auto-running it.
-	if r.FormValue("opt_deploy_singbox") == "on" || r.FormValue("opt_install_awg") == "on" {
-		go s.postCaptureInstall(id, r.FormValue("opt_deploy_singbox") == "on", r.FormValue("opt_install_awg") == "on")
+	//
+	// When takeover is also requested, SKIP the empty sing-box scaffold deploy:
+	// Takeover installs sing-box itself after converting the foreign VPN. Deploying
+	// the scaffold first made DetectVPN see OUR install as "existing VPN" and
+	// fail with "no convertible inbounds" (self-takeover loop).
+	wantTakeover := r.FormValue("opt_takeover") == "on"
+	deploySingBox := r.FormValue("opt_deploy_singbox") == "on" && !wantTakeover
+	installAWG := r.FormValue("opt_install_awg") == "on"
+	if deploySingBox || installAWG {
+		go s.postCaptureInstall(id, deploySingBox, installAWG)
 		statusLine += " · " + i18n.T(r.Context(), "binary/AWG install queued")
 	}
 	takeoverBtn := ""
-	if r.FormValue("opt_takeover") == "on" {
+	if wantTakeover {
 		takeoverBtn = `<button class="btn btn-sm btn-secondary ml-2" hx-get="/ui/nodes/` + escHTML(id) + `/detect-vpn" hx-target="#main-content" hx-push-url="true">` + i18n.T(r.Context(), "Detect VPN") + `</button>`
 	}
 

@@ -44,7 +44,18 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	// 1. Convert the detected config → NodeInbounds (+ extra raw inbounds).
 	inbounds, extra, err := Convert(det)
 	if err != nil {
-		return &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "convert failed: " + err.Error()}, err
+		// Empty/minimal sing-box (or nothing to convert) is not a rollback — nothing
+		// was touched. Surface as "nothing" so the UI does not claim rolled-back.
+		if isNothingToConvert(err) {
+			return &TakeoverResult{
+				Status:   "nothing",
+				FromType: string(det.Type),
+				Message:  err.Error(),
+			}, nil
+		}
+		// Convert failed before any cutover — old VPN untouched. Status "failed"
+		// (not "rolled-back") so the operator does not think we restored something.
+		return &TakeoverResult{Status: "failed", FromType: string(det.Type), Message: "convert failed: " + err.Error()}, err
 	}
 
 	// Load/create the NodeInfo and persist the converted inbounds + takeover state.
@@ -263,6 +274,19 @@ func errString(err error) string {
 		return "no server config parsed"
 	}
 	return err.Error()
+}
+
+// isNothingToConvert reports convert errors that mean "no foreign VPN content"
+// rather than a hard failure — empty/minimal sing-box scaffold, explicit none,
+// or no convertible inbounds. Callers map these to Status "nothing".
+func isNothingToConvert(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no convertible inbounds") ||
+		strings.Contains(msg, "nothing to convert") ||
+		strings.Contains(msg, "empty sing-box config")
 }
 
 // renderTakeoverConfig produces the sing-box config JSON from the converted

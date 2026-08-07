@@ -2373,3 +2373,21 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 Как и §45, живой прогон (деплой нового бинаря на ноду, `sing-box check` в проде, handshake + egress) отложен: n1 переустановлен (нет нашего pubkey), GCloud test VPS остановлены. Выполнить на восстановленной ноде: деплой → `sing-box version` (Revision `3c554273`, tags `with_awg,with_mtproxy`) → handshake + egress.
 
 **Файлы:** `internal/backend/singbox/singbox.go`, `internal/backend/singbox/patchcheck_test.go`, `scripts/build-singbox.sh`, `scripts/build-singbox-windows.sh`, `internal/chain/awg_config_check_test.go` (TEST-NET IP), `deps/sing-box-3c554273-amnezia-linux-amd64.tar.gz` (новый), `deps/checksums.txt`, `deps/sing-box.exe` (пересобран), `docs/PATCHES.md`, `AGENTS.md`, `docs/PROGRESS.md` (§46).
+
+---
+
+## §47. Takeover self-loop: empty sing-box scaffold после Deploy — FIX (2026-08-07)
+
+**Симптом (репорт тестера):** на capture-форме отметили все 3 пункта (Deploy sing-box + Install AWG + Detect existing VPN). Angry-box поставил scaffold sing-box (`inbounds:[]`), потом takeover увидел **свой же** install как «существующий VPN», convert упал с `sing-box config had no convertible inbounds`, UI показал `Перехват rolled-back` / `Преобразовано входящих: 0`.
+
+**Корень:** `Backend.Deploy` пишет minimal config `{"inbounds":[],"outbounds":[{"type":"direct"...}]}` чтобы unit стартовал. `DetectVPN` считал любой active `sing-box` + любой config.json primary-целью. Convert пустого → error → Takeover Status `"rolled-back"` (хотя cutover не начинался).
+
+**Фикс (3 слоя):**
+1. **Detect** (`detect.go`): `singBoxConfigConvertible` — empty/TUN-only/scaffold skip'аются как primary; foreign xray/AWG/MTProxy остаются. Note объясняет empty scaffold. Unparseable JSON **не** skip'ается (Convert покажет parse error).
+2. **Capture** (`nodes.go`): при `opt_takeover=on` **не** очередь empty Deploy — takeover сам ставит sing-box после convert foreign VPN. AWG-module install по-прежнему можно.
+3. **Takeover status** (`takeover.go` + UI): empty/nothing → Status `"nothing"` (info, не error/rolled-back); pre-cutover convert fail → `"failed"` (не `"rolled-back"`). i18n: `"Nothing to take over"` / «Нечего перехватывать».
+
+**Тесты:** `TestDetectVPN_EmptySingBoxScaffold_Skipped`, `TestDetectVPN_EmptySingBox_PrefersXray`, `TestTakeover_EmptySingBoxNothing`, `TestSingBoxConfigConvertible`; обновлены ActiveSingBox/ConfigOnly (нужен convertible inbound), ConvertFails → Status failed. `go test ./internal/takeover/` + `./internal/web/` PASS.
+
+**Файлы:** `internal/takeover/detect.go`, `internal/takeover/takeover.go`, `internal/takeover/detect_takeover_test.go`, `internal/web/nodes.go`, `internal/web/takeover.go`, `internal/i18n/i18n.go`, `docs/PROGRESS.md` (§47).
+

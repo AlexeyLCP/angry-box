@@ -70,11 +70,15 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 
 	// Render the result.
 	var b strings.Builder
-	if err != nil && res != nil && res.Status != "taken" {
+	switch {
+	case res != nil && res.Status == "nothing":
+		// Empty scaffold / no foreign VPN — not an error, not a success.
+		b.WriteString(fmt.Sprintf(`<div class="alert alert-info"><b>`+i18n.T(r.Context(), "Nothing to take over")+`</b><br>%s</div>`, escHTML(res.Message)))
+	case err != nil && res != nil && res.Status != "taken":
 		b.WriteString(fmt.Sprintf(`<div class="alert alert-error"><b>`+i18n.T(r.Context(), "Takeover %s")+`</b><br>%s</div>`, escHTML(res.Status), escHTML(res.Message)))
-	} else if err != nil {
+	case err != nil:
 		b.WriteString(fmt.Sprintf(`<div class="alert alert-error">`+i18n.T(r.Context(), "Takeover failed: %s")+`</div>`, escHTML(err.Error())))
-	} else {
+	default:
 		b.WriteString(fmt.Sprintf(`<div class="alert alert-success"><b>`+i18n.T(r.Context(), "Takeover successful")+`</b><br>%s</div>`, escHTML(res.Message)))
 	}
 	if res != nil {
