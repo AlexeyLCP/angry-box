@@ -4,6 +4,69 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.23] — 2026-08-07
+
+### Feature — AWG 1.5 / 2.0 / 3.0 per-version config generation + AWG3 kernel/tools install (lucx-ui reference)
+
+Closes the remaining gaps vs the lucx-ui AWG version switcher: each protocol
+version emits its own field set, different versions coexist on one node, and
+deploy upgrades the remote kernel module + tools when the node is not yet
+AWG3-capable.
+
+**Per-version field gates** (`AWGVersionAtLeast`, order 1.5 < 2 < 3):
+- **1.5** — legacy: Jc/S1-S2, H1-H4 as single-int (awg-quick 1.x rejects `lo-hi` ranges); no S3/S4, no CPS I1-I5, no HPK.
+- **2.0** — kernel + CPS default: +S3/S4, I1-I5, H1-H4 quadrant ranges.
+- **3.0** — + HeaderProtectionKey / ContentPaddingAddition / RekeyAfterTime.
+
+Server and client paths stay in parity (`writeAmneziaConfLines` skips S3/S4 on
+1.5; client `.conf` gates S3/S4+I1-I5 to ≥2 and HPK/timers to ≥3). Standalone
+v3 client conf now also emits the previously-missing HPK/CPM/RAT block.
+Inter-node exit confs stay version `"2"`. Two inbounds on one node (v2 + v3)
+render independent field sets from `ib.EffectiveAWGVersion()`.
+
+**AWG3 install path** (`installAWGModule` + `detectKernelAWG3`):
+- Kernel capability probe switched from modinfo major≥3 to a **functional
+  kallsyms probe** (`awg_header_protection_set_key`) — upstream still stamps
+  `PACKAGE_VERSION=1.0.0` into every dkms.conf, which broke version parsing.
+  modinfo remains a fallback.
+- Early-exit only when the node is already AWG3-capable (loaded + kallsyms +
+  tools ≥ v3). A loaded-but-v1 node takes the upgrade path: DKMS install with
+  `PACKAGE_VERSION` rewritten to `3.0-awg3`, then `rmmod`/`modprobe`.
+- Tools < v3 (or missing): `git clone amneziawg-tools master` + `make install`.
+  Prereqs gain `git libmnl-dev pkg-config`.
+
+**Tests:** `awg_version_perversion_test.go` (ordering, H-shape, client field
+set, server S3/S4 parity), tools-version parse tests. `go build` / `go vet` /
+`go test ./internal/...` green. Live E2E install on n1 still pending (node
+reimaged; GCloud test VPS stopped) — unit path is shipped.
+
+**Files:** `internal/domain/model/awg_version.go`, `internal/chain/awgpresets_gen.go`,
+`awg_cps.go`, `clientconfig.go`, `awg_server.go`, `awg_deploy.go`,
+`awg3_capability.go`, `internal/backend/singbox/singbox.go`, `internal/web/users.go`,
+`awg_version_perversion_test.go`, `awg_install_test.go`, `docs/PROGRESS.md` §45,
+`internal/version/version.go` (v0.8.23).
+
+### Feature — UI redesign: Lovable design system (Sand palette) fully shipped
+
+Full presentation-layer migration off Tokyo Night onto the Lovable design
+system. Handler/business logic untouched.
+
+**Slice 1 — design tokens + shell:** new `web/static/css/themes.css` replaces
+`tokyo-night.css` with four themes (`sand` default / `slate` / `graphite` /
+`night`). DaisyUI semantic slots in OKLCH (required for `oklch(var(--p))` in
+spider SVG + loading bar); `--tn-*` become aliases so existing `.tn-*`
+components recolor without body edits. New component classes from the mockups
+(`.st`/`.pill`/`.lvl`/`.seg`/`.inp`/`.btn-*`/`.nav-a`/…). `base.templ` shell +
+theme dropdown; FOUC script migrates legacy theme names.
+
+**Slice 2 — page markup:** all 11 templ pages reworked onto Lovable patterns
+(inbounds AWG version segmented control, dashboard, nodes, chains, users,
+presets, settings, spider panels, chainlevels/index/hosts). Zero remaining
+`input-bordered`/`form-control`/`badge badge-*` form classes in templates.
+
+**Files:** `web/static/css/themes.css`, `app.css`, `web/templates/*.templ`,
+`web/static/js/app.js`, `docs/PROGRESS.md` §44. `go build` + `go test ./internal/web/` green.
+
 ## [v0.8.22] — 2026-07-31
 
 ### Feature — kernel-AWG3 render path (AWG 3.0 via kernel awg-quick + TUN-overlay, live-verified on n1)
