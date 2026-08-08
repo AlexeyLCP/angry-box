@@ -388,6 +388,8 @@ var locales = map[string]map[string]string{
 		"+ Add Host": "+ Add Host",
 		"+ Add Inbound": "+ Add Inbound",
 		"+ Add User": "+ Add User",
+		"Add User": "Add User",
+		"Add Inbound": "Add Inbound",
 		"+ Create Chain": "+ Create Chain",
 		"0 inbounds": "0 inbounds",
 		"== Enter key manually ==": "== Enter key manually ==",
@@ -979,6 +981,8 @@ var locales = map[string]map[string]string{
 
 		// Users
 		"+ Add User": "+ Добавить пользователя",
+		"Add User": "Добавить пользователя",
+		"Add Inbound": "Добавить входящее",
 		"Protocols": "Протоколы",
 		"Expires": "Истекает",
 		"No users yet. Add your first proxy user.": "Пока нет пользователей. Добавьте первого прокси-пользователя.",
