@@ -33,16 +33,16 @@ templ StatsCards(stats DashboardStats) {
 		<div class="tn-card tn-card-hover flex items-start justify-between">
 			<div>
 				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Nodes") }</div>
-				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.TotalHosts }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: oklch(var(--bc))">{ stats.TotalHosts }</div>
 			</div>
-			<span style="color: var(--p)">
+			<span style="color: oklch(var(--p))">
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
 			</span>
 		</div>
 		<div class="tn-card tn-card-hover flex items-start justify-between">
 			<div>
 				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Online") }</div>
-				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.OnlineHosts }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: oklch(var(--bc))">{ stats.OnlineHosts }</div>
 				if stats.TotalHosts-stats.OnlineHosts > 0 {
 					<div class="text-[11px] mt-1" style="color: var(--mut2)">{ fmt.Sprintf(i18n.T(ctx, "%d not healthy"), stats.TotalHosts-stats.OnlineHosts) }</div>
 				} else if stats.TotalHosts > 0 {
@@ -56,7 +56,7 @@ templ StatsCards(stats DashboardStats) {
 		<div class="tn-card tn-card-hover flex items-start justify-between">
 			<div>
 				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Chains") }</div>
-				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.TotalChains }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: oklch(var(--bc))">{ stats.TotalChains }</div>
 				if stats.PendingChanges > 0 {
 					<div class="text-[11px] mt-1" style="color: var(--mut2)">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
 				}
@@ -68,7 +68,7 @@ templ StatsCards(stats DashboardStats) {
 		<div class="tn-card tn-card-hover flex items-start justify-between">
 			<div>
 				<div class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "Users") }</div>
-				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: var(--bc)">{ stats.TotalUsers }</div>
+				<div class="font-mono font-semibold" style="font-size: 36px; line-height: 1.1; color: oklch(var(--bc))">{ stats.TotalUsers }</div>
 			</div>
 			<span style="color: var(--in)">
 				<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -84,13 +84,12 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 		<div class="flex items-center justify-between flex-wrap gap-3">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Dashboard") }</h2>
 			<div class="flex gap-2 flex-wrap">
-				<button class="btn btn-outline btn-sm"
-					onclick="location.href='/ui/nodes/'+('n'+Math.floor(Date.now()/1000))+Math.floor(Math.random()*100)+'/capture'">
+				<button type="button" class="btn btn-outline btn-sm" onclick="addNodeOpenCapture()">
 					{ i18n.T(ctx, "+ Node") }
 				</button>
-				<button class="btn btn-outline btn-sm" hx-get="/ui/inbounds/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Inbound") }</button>
-				<button class="btn btn-outline btn-sm" hx-get="/ui/chains/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Chain") }</button>
-				<button class="btn btn-outline btn-sm" hx-get="/ui/users/new" hx-target="#modal-container">{ i18n.T(ctx, "+ Client") }</button>
+				<button type="button" class="btn btn-outline btn-sm" hx-get="/ui/inbounds/new" hx-target="#modal-container" hx-swap="innerHTML">{ i18n.T(ctx, "+ Inbound") }</button>
+				<button type="button" class="btn btn-outline btn-sm" hx-get="/ui/chains/new" hx-target="#modal-container" hx-swap="innerHTML">{ i18n.T(ctx, "+ Chain") }</button>
+				<button type="button" class="btn btn-outline btn-sm" hx-get="/ui/users/new" hx-target="#modal-container" hx-swap="innerHTML">{ i18n.T(ctx, "+ Client") }</button>
 			</div>
 		</div>
 
@@ -100,13 +99,13 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 		if stats.PendingChanges > 0 {
 			<a hx-get="/ui/deploy-status" hx-target="#main-content" hx-push-url="true"
 				class="tn-card tn-card-hover flex items-center justify-between cursor-pointer"
-				style="border-color: color-mix(in oklab, var(--wa) 45%, transparent); background: color-mix(in oklab, var(--wa) 8%, var(--b2));">
+				style="border-color: color-mix(in oklab, oklch(var(--wa)) 45%, transparent); background: color-mix(in oklab, oklch(var(--wa)) 8%, oklch(var(--b2)));">
 				<div class="flex items-center gap-3">
-					<span style="color: var(--wa)">
+					<span style="color: oklch(var(--wa))">
 						<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
 					</span>
 					<div>
-						<div class="font-semibold" style="color: var(--wa)">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
+						<div class="font-semibold" style="color: oklch(var(--wa))">{ fmt.Sprintf(i18n.T(ctx, "%d pending changes"), stats.PendingChanges) }</div>
 						<div class="text-[12px]" style="color: var(--mut)">{ i18n.T(ctx, "Nodes with un-deployed config changes — review and apply.") }</div>
 					</div>
 				</div>
@@ -197,7 +196,7 @@ templ Dashboard(stats DashboardStats, hosts []*model.Host, metrics []*model.Node
 							<div class="font-mono text-[12px] flex gap-3 py-1" style="border-bottom: 1px solid color-mix(in oklab, var(--bd) 30%, transparent)">
 								<span style="color: var(--mut2)">{ a.TS.Format("15:04:05") }</span>
 								<span style="width: 64px" class={ "font-semibold", auditActionClass(a.Action) }>{ a.Action }</span>
-								<span class="truncate" style="color: var(--p); max-width: 150px">{ a.TargetID }</span>
+								<span class="truncate" style="color: oklch(var(--p)); max-width: 150px">{ a.TargetID }</span>
 								<span class="ml-auto whitespace-nowrap" style="color: var(--mut)">{ a.TargetType }</span>
 							</div>
 						}

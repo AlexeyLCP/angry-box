@@ -194,7 +194,7 @@
            border-color: color-mix(in oklab, oklch(var(--in)) 35%, transparent); }
 .st-pu   { color: var(--pu, var(--a)); background: color-mix(in oklab, var(--pu, oklch(var(--a))) 14%, transparent);
            border-color: color-mix(in oklab, var(--pu, oklch(var(--a))) 35%, transparent); }
-.st-mut  { color: var(--mut); background: color-mix(in oklab, var(--b3) 70%, transparent);
+.st-mut  { color: var(--mut); background: color-mix(in oklab, oklch(var(--b3)) 70%, transparent);
            border-color: var(--bd); }
 
 /* Generic pill — mono chip for protocol/port/preset/assigned-nodes. */
@@ -202,13 +202,13 @@
   display: inline-flex; align-items: center; gap: 0.35rem;
   padding: 0.05rem 0.45rem; border-radius: 6px; font-size: 11px;
   font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
-  border: 1px solid var(--bd); background: var(--b3); color: var(--bc);
+  border: 1px solid var(--bd); background: oklch(var(--b3)); color: oklch(var(--bc));
 }
 
 /* Latency pill variants (green/amber/red borders). */
-.lat-ok  { color: var(--su); border-color: color-mix(in oklab, oklch(var(--su)) 35%, transparent); }
-.lat-mid { color: var(--wa); border-color: color-mix(in oklab, oklch(var(--wa)) 35%, transparent); }
-.lat-bad { color: var(--er); border-color: color-mix(in oklab, oklch(var(--er)) 35%, transparent); }
+.lat-ok  { color: oklch(var(--su)); border-color: color-mix(in oklab, oklch(var(--su)) 35%, transparent); }
+.lat-mid { color: oklch(var(--wa)); border-color: color-mix(in oklab, oklch(var(--wa)) 35%, transparent); }
+.lat-bad { color: oklch(var(--er)); border-color: color-mix(in oklab, oklch(var(--er)) 35%, transparent); }
 
 /* Chain level pill — entry/relay/exit role colours. */
 .lvl {
@@ -217,34 +217,34 @@
   font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
   border: 1px solid var(--bd);
 }
-.lvl-entry { color: var(--p); border-color: color-mix(in oklab, var(--p, oklch(var(--p))) 40%, transparent);
-             background: color-mix(in oklab, var(--p, oklch(var(--p))) 12%, transparent); }
-.lvl-relay { color: var(--pu, var(--a)); border-color: color-mix(in oklab, var(--pu, oklch(var(--a))) 40%, transparent);
+.lvl-entry { color: oklch(var(--p)); border-color: color-mix(in oklab, oklch(var(--p)) 40%, transparent);
+             background: color-mix(in oklab, oklch(var(--p)) 12%, transparent); }
+.lvl-relay { color: var(--pu, oklch(var(--a))); border-color: color-mix(in oklab, var(--pu, oklch(var(--a))) 40%, transparent);
              background: color-mix(in oklab, var(--pu, oklch(var(--a))) 12%, transparent); }
-.lvl-exit  { color: var(--su); border-color: color-mix(in oklab, oklch(var(--su)) 40%, transparent);
+.lvl-exit  { color: oklch(var(--su)); border-color: color-mix(in oklab, oklch(var(--su)) 40%, transparent);
              background: color-mix(in oklab, oklch(var(--su)) 12%, transparent); }
 .arrow { color: var(--mut2); }
 
 /* Segmented control — radio group styled as a pill toggle (AWG version, theme). */
 .seg {
-  display: inline-flex; background: var(--b3); border: 1px solid var(--bd);
+  display: inline-flex; background: oklch(var(--b3)); border: 1px solid var(--bd);
   border-radius: 10px; padding: 2px; gap: 2px;
 }
 .seg label { cursor: pointer; }
 .seg input { position: absolute; opacity: 0; width: 0; height: 0; }
 .seg span { display: block; padding: 0.3rem 0.7rem; border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--mut); }
-.seg input:checked + span { background: var(--p); color: var(--pc); }
-.seg input:focus-visible + span { outline: 2px solid var(--p); outline-offset: 2px; }
+.seg input:checked + span { background: oklch(var(--p)); color: oklch(var(--pc)); }
+.seg input:focus-visible + span { outline: 2px solid oklch(var(--p)); outline-offset: 2px; }
 
 /* Form controls (Lovable): .inp/.sel/.ta shared baseline, .lbl label, .hint helper. */
 .inp, .sel, .ta {
-  width: 100%; background: var(--b3); border: 1px solid var(--bd); border-radius: 8px;
-  padding: 0.4rem 0.6rem; color: var(--bc); font-size: 13px; outline: none;
+  width: 100%; background: oklch(var(--b3)); border: 1px solid var(--bd); border-radius: 8px;
+  padding: 0.4rem 0.6rem; color: oklch(var(--bc)); font-size: 13px; outline: none;
   font-family: inherit;
 }
 .inp:focus-visible, .sel:focus-visible, .ta:focus-visible,
 .btn:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--p); outline-offset: 2px;
+  outline: 2px solid oklch(var(--p)); outline-offset: 2px;
 }
 .inp::placeholder, .ta::placeholder { color: var(--mut2); }
 .lbl {

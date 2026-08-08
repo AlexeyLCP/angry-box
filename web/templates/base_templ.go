@@ -61,7 +61,7 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " | Angry-BOX</title><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><link href=\"/static/css/fonts.css\" rel=\"stylesheet\"><link href=\"https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css\" rel=\"stylesheet\" type=\"text/css\"><script src=\"https://cdn.tailwindcss.com\"></script><script src=\"https://unpkg.com/htmx.org@1.9.12\"></script><style>\n\t\t\thtml, body { overflow-x: hidden; max-width: 100vw; }\n\t\t\tbody { font-family: 'IBM Plex Sans', 'Inter', sans-serif; font-size: 14px; line-height: 1.5; }\n\t\t\t.font-mono, code, pre, kbd { font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace; }\n\t\t\t* { box-sizing: border-box; }\n\t\t\t.sidebar-active { @apply bg-primary/20 text-primary border-r-2 border-primary; }\n\t\t\t.status-online { @apply bg-success; }\n\t\t\t.status-offline { @apply bg-error; }\n\t\t\t.status-degraded { @apply bg-warning; }\n\t\t</style><link href=\"/static/css/themes.css\" rel=\"stylesheet\"><link href=\"/static/css/app.css\" rel=\"stylesheet\"></head><body class=\"min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased\"><div id=\"htmx-loading-bar\"></div><div class=\"flex h-screen overflow-hidden\"><aside class=\"w-64 flex flex-col flex-shrink-0\" style=\"background: color-mix(in oklab, var(--b2) 80%, transparent); backdrop-filter: blur(12px); border-right: 1px solid var(--bd);\"><a href=\"/ui\" class=\"flex items-center gap-3 px-4 h-16\" style=\"border-bottom: 1px solid var(--bd); text-decoration: none;\"><span class=\"font-mono flex items-center justify-center font-bold text-lg\" style=\"width: 32px; height: 32px; border-radius: 8px; background: var(--p); color: var(--pc);\">A</span> <span class=\"leading-tight\"><span class=\"block font-semibold\" style=\"color: var(--bc)\">Angry-BOX</span> <span class=\"block text-[11px]\" style=\"color: var(--mut2)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " | Angry-BOX</title><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><link href=\"/static/css/fonts.css\" rel=\"stylesheet\"><link href=\"https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css\" rel=\"stylesheet\" type=\"text/css\"><script src=\"https://cdn.tailwindcss.com\"></script><script src=\"https://unpkg.com/htmx.org@1.9.12\"></script><style>\n\t\t\thtml, body { overflow-x: hidden; max-width: 100vw; }\n\t\t\tbody { font-family: 'IBM Plex Sans', 'Inter', sans-serif; font-size: 14px; line-height: 1.5; }\n\t\t\t.font-mono, code, pre, kbd { font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace; }\n\t\t\t* { box-sizing: border-box; }\n\t\t\t.sidebar-active { @apply bg-primary/20 text-primary border-r-2 border-primary; }\n\t\t\t.status-online { @apply bg-success; }\n\t\t\t.status-offline { @apply bg-error; }\n\t\t\t.status-degraded { @apply bg-warning; }\n\t\t</style><link href=\"/static/css/themes.css\" rel=\"stylesheet\"><link href=\"/static/css/app.css\" rel=\"stylesheet\"></head><body class=\"min-h-screen bg-gradient-to-br from-base-300 to-base-100 text-base-content antialiased\"><div id=\"htmx-loading-bar\"></div><div class=\"flex h-screen overflow-hidden\"><aside class=\"w-64 flex flex-col flex-shrink-0\" style=\"background: color-mix(in oklab, oklch(var(--b2)) 80%, transparent); backdrop-filter: blur(12px); border-right: 1px solid var(--bd);\"><a href=\"/ui\" class=\"flex items-center gap-3 px-4 h-16\" style=\"border-bottom: 1px solid var(--bd); text-decoration: none;\"><span class=\"font-mono flex items-center justify-center font-bold text-lg\" style=\"width: 32px; height: 32px; border-radius: 8px; background: oklch(var(--p)); color: oklch(var(--pc));\">A</span> <span class=\"leading-tight\"><span class=\"block font-semibold\" style=\"color: oklch(var(--bc))\">Angry-BOX</span> <span class=\"block text-[11px]\" style=\"color: var(--mut2)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -178,7 +178,7 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span></div></aside><div class=\"flex-1 flex flex-col overflow-hidden relative\"><header class=\"h-16 flex items-center justify-between px-6 sticky top-0 z-10\" style=\"background: color-mix(in oklab, var(--b1) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--bd);\"><h1 class=\"text-lg font-semibold\" id=\"page-title\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span></div></aside><div class=\"flex-1 flex flex-col overflow-hidden relative\"><header class=\"h-16 flex items-center justify-between px-6 sticky top-0 z-10\" style=\"background: color-mix(in oklab, oklch(var(--b1)) 85%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--bd);\"><h1 class=\"text-lg font-semibold\" id=\"page-title\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -217,14 +217,14 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" style=\"color: var(--p)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" style=\"color: oklch(var(--p))\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "Profile:"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 98, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 98, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -237,7 +237,7 @@ func Base(title string, content templ.Component) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(chain.GetDefaultPresetName())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 98, Col: 193}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/base.templ`, Line: 98, Col: 200}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -282,7 +282,7 @@ func Base(title string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><svg id=\"ico-sun\" class=\"w-4 h-4 hidden\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z\"></path></svg> <svg id=\"ico-moon\" class=\"w-4 h-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg></div><ul tabindex=\"0\" class=\"dropdown-content z-[1000] menu p-2 shadow-lg rounded-box w-52\" style=\"background: var(--b2); border: 1px solid var(--bd);\"><li class=\"menu-title text-xs\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><svg id=\"ico-sun\" class=\"w-4 h-4 hidden\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z\"></path></svg> <svg id=\"ico-moon\" class=\"w-4 h-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg></div><ul tabindex=\"0\" class=\"dropdown-content z-[1000] menu p-2 shadow-lg rounded-box w-52 bg-base-200 text-base-content\" style=\"background: oklch(var(--b2)); border: 1px solid var(--bd); color: oklch(var(--bc));\"><li class=\"menu-title text-xs\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

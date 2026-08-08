@@ -4,6 +4,25 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.29] — 2026-08-08
+
+### Fix — dark theme dropdowns stay light; + Node opens bare unstyled page
+
+1. **Theme picker / dropdowns white on graphite/night.** DaisyUI slots are OKLCH
+   triples (`--b2: 23% 0.006 …`); markup and `--tn-*` aliases used them as
+   colors (`background: var(--b2)`) → invalid CSS → browser default light
+   surface. Fix: shared post-theme aliases resolve triples via `oklch(var(--*))`
+   for `--tn-bg-*` / tints; theme dropdown + shell use `oklch(var(--b2))`;
+   Lovable `.pill`/`.seg`/`.inp`/`.lvl` likewise.
+2. **Dashboard "+ Node"** used `location.href=…/capture` full-page navigation.
+   Capture form is a bare `<dialog>` (no Base/CSS/htmx) → unstyled page; Close
+   left a blank white document. Fix: `onclick="addNodeOpenCapture()"` (HTMX into
+   `#modal-container`, same as Nodes page). Quick-action buttons get explicit
+   `hx-swap="innerHTML"`.
+
+**Files:** `web/static/css/themes.css`, `app.css`, `web/templates/base.templ`,
+`dashboard.templ` (+ generated), `internal/version/version.go`.
+
 ## [v0.8.28] — 2026-08-07
 
 ### Fix — `serve` rejected `--config` → systemd unit crash after install

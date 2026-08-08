@@ -257,3 +257,46 @@
   --pu: #7a6595; --pfg: #fffdf8;
   --tn-meta-theme-color: #f6f2ea;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   OKLCH-safe project aliases (AFTER every theme block).
+
+   DaisyUI slots (--p/--b1/--bc/…) MUST stay bare "L% C H" triples so
+   oklch(var(--p)) works for DaisyUI + spider SVG. But --tn-* and bare
+   background: var(--b2) in markup treated them as colors → INVALID on dark
+   themes (theme dropdown stayed light/white; cards transparent). These
+   aliases resolve the triples once so .tn-*, theme dropdown, and legacy
+   inline styles get real colors that track the active [data-theme].
+   ════════════════════════════════════════════════════════════════════════ */
+:root,
+:root[data-theme="sand"],
+:root[data-theme="slate"],
+:root[data-theme="graphite"],
+:root[data-theme="night"] {
+  --tn-accent: oklch(var(--p));
+  --tn-success: oklch(var(--su));
+  --tn-error: oklch(var(--er));
+  --tn-warning: oklch(var(--wa));
+  --tn-info: oklch(var(--in));
+  --tn-broken: oklch(var(--er));
+  --tn-bg-primary: oklch(var(--b1));
+  --tn-bg-secondary: oklch(var(--b2));
+  --tn-bg-tertiary: oklch(var(--b3));
+  --tn-bg-hover: color-mix(in oklab, oklch(var(--b3)) 80%, oklch(var(--b1)));
+  --tn-text-primary: oklch(var(--bc));
+  --tn-tunneled-row: color-mix(in oklab, oklch(var(--p)) 4%, transparent);
+  --tn-accent-tint:  color-mix(in oklab, oklch(var(--p)) 18%, transparent);
+  --tn-accent-border: color-mix(in oklab, oklch(var(--p)) 40%, transparent);
+  --tn-success-tint:  color-mix(in oklab, oklch(var(--su)) 18%, transparent);
+  --tn-success-border: color-mix(in oklab, oklch(var(--su)) 40%, transparent);
+  --tn-error-tint:   color-mix(in oklab, oklch(var(--er)) 18%, transparent);
+  --tn-error-border: color-mix(in oklab, oklch(var(--er)) 40%, transparent);
+  --tn-warning-tint: color-mix(in oklab, oklch(var(--wa)) 18%, transparent);
+  --tn-warning-border: color-mix(in oklab, oklch(var(--wa)) 40%, transparent);
+  --tn-info-tint:    color-mix(in oklab, oklch(var(--in)) 18%, transparent);
+  --tn-info-border:  color-mix(in oklab, oklch(var(--in)) 40%, transparent);
+  --tn-broken-tint:  color-mix(in oklab, oklch(var(--er)) 14%, transparent);
+  --tn-broken-border: color-mix(in oklab, oklch(var(--er)) 40%, transparent);
+  --tn-muted-tint:   color-mix(in oklab, var(--mut) 12%, transparent);
+  --tn-muted-border: color-mix(in oklab, var(--mut) 30%, transparent);
+}
