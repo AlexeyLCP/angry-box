@@ -4,6 +4,17 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.30] — 2026-08-08
+
+### Fix — double plus on Add buttons (SVG + "+ Add …" text)
+
+Primary action buttons (Add User / Inbound / Create Chain) rendered both the
+plus SVG icon and a label that already started with "+", producing "++ Add
+User". Labels no longer include the leading plus when an icon is present.
+
+**Files:** `web/templates/users.templ`, `inbounds.templ`, `chains.templ`,
+`internal/i18n/i18n.go`, `internal/version/version.go`.
+
 ## [v0.8.29] — 2026-08-08
 
 ### Fix — dark theme dropdowns stay light; + Node opens bare unstyled page
