@@ -125,9 +125,11 @@ func main() {
 		configPath = config.DefaultConfigPath()
 	}
 
-	// Quick pre-parse for global --config flag (before subcommand flag sets)
+	// Quick pre-parse for global --config / -config (before subcommand flag sets).
+	// systemd unit passes `serve --config PATH`; serveCmd also declares -config
+	// so FlagSet.Parse does not reject it (v0.8.27: "flag provided but not defined").
 	for i, arg := range os.Args {
-		if arg == "--config" && i+1 < len(os.Args) {
+		if (arg == "--config" || arg == "-config") && i+1 < len(os.Args) {
 			configPath = os.Args[i+1]
 			break
 		}
@@ -773,15 +775,37 @@ func nodeCmd(cmd string) {
 func serveCmd() {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 
-	// Load orchestrator-level config first for defaults
-	cfg, _ := config.Load(configPath)
-	defaultListen := cfg.ListenAddr
-	if defaultListen == "" {
-		defaultListen = ":9080"
+	// -config must be declared here: unit runs `serve --config PATH ...` and
+	// FlagSet.Parse rejects undeclared flags (install printed password then
+	// crashed with "flag provided but not defined: -config").
+	cfgFlag := fs.String("config", configPath, "path to angry-box.toml (auth + listen defaults)")
+	listen := fs.String("listen", "127.0.0.1:9080", "HTTP listen address")
+	fs.StringVar(&storePath, "file", defaultStorePath, "store file path")
+	devMode := fs.Bool("dev", false, "development mode: load UI from web/ instead of embedded")
+	// TLS: optional. When both cert and key are provided, the panel serves
+	// HTTPS instead of plain HTTP — strongly recommended whenever the panel is
+	// reachable beyond the loopback interface (the control plane carries SSH
+	// private keys and can issue fleet-wide RCE via config pushes).
+	tlsCert := fs.String("tls-cert", "", "path to TLS certificate (enables HTTPS when set together with --tls-key)")
+	tlsKey := fs.String("tls-key", "", "path to TLS private key (enables HTTPS when set together with --tls-key)")
+	_ = fs.Parse(os.Args[2:])
+
+	if *cfgFlag != "" && *cfgFlag != configPath {
+		configPath = *cfgFlag
 	}
-	defaultStore := cfg.StoreFile
-	if defaultStore == "" {
-		defaultStore = config.DefaultConfig().StoreFile
+	// Load orchestrator-level config (password hash, listen default, store_file).
+	// main() already loaded once for defaultStorePath; reload if serve -config
+	// pointed elsewhere, otherwise reuse the same path (idempotent).
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config load error (%s): %v\n", configPath, err)
+		os.Exit(1)
+	}
+	if *listen == "127.0.0.1:9080" && cfg.ListenAddr != "" {
+		*listen = cfg.ListenAddr
+	}
+	if storePath == defaultStorePath && cfg.StoreFile != "" {
+		storePath = cfg.StoreFile
 	}
 
 	// Apply global default obfuscation profile (this becomes the default for all config generation)
@@ -797,17 +821,6 @@ func serveCmd() {
 	if cfg.PresetsFile != "" {
 		loadExternalPresets(cfg.PresetsFile)
 	}
-
-	listen := fs.String("listen", defaultListen, "HTTP listen address")
-	fs.StringVar(&storePath, "file", defaultStore, "store file path")
-	devMode := fs.Bool("dev", false, "development mode: load UI from web/ instead of embedded")
-	// TLS: optional. When both cert and key are provided, the panel serves
-	// HTTPS instead of plain HTTP — strongly recommended whenever the panel is
-	// reachable beyond the loopback interface (the control plane carries SSH
-	// private keys and can issue fleet-wide RCE via config pushes).
-	tlsCert := fs.String("tls-cert", "", "path to TLS certificate (enables HTTPS when set together with --tls-key)")
-	tlsKey := fs.String("tls-key", "", "path to TLS private key (enables HTTPS when set together with --tls-cert)")
-	_ = fs.Parse(os.Args[2:])
 
 	// Dev mode can also be enabled via environment variable
 	if !*devMode {

@@ -4,6 +4,23 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.28] — 2026-08-07
+
+### Fix — `serve` rejected `--config` → systemd unit crash after install
+
+install.sh v0.8.26+ writes `ExecStart=… serve --config /var/lib/angry-box/angry-box.toml`,
+but the `serve` FlagSet did not declare `-config`. Result after fresh install:
+
+```
+flag provided but not defined: -config
+angry-box.service: Failed with result 'exit-code'
+```
+
+Password was generated (and printed) then the process exited. Fix: declare
+`-config` on the serve FlagSet; pre-parse accepts `-config` and `--config`.
+
+**Files:** `cmd/angry-box/main.go`, `internal/version/version.go`.
+
 ## [v0.8.27] — 2026-08-07
 
 ### Fix — AmneziaWG PPA `NO_PUBKEY` on RU/Ubuntu 24.04 (stale list + keyserver blocked)
