@@ -32,6 +32,7 @@ const (
 	AWGVersion1x = "1.5"
 	AWGVersion2  = "2"
 	AWGVersion3  = "3"
+	AWGVersion31 = "3.1"
 )
 
 // EffectiveAWGVersion returns the canonical AWG protocol version for an
@@ -54,6 +55,9 @@ func (ib NodeInbound) EffectiveAWGVersion() string {
 // and NodeInbound. Legacy AWG3Mode bool is honored as "3" (the v0.8.10 toggle);
 // an unrecognized/empty version falls back to "2".
 func effectiveAWGVersion(awg3Mode bool, version string) string {
+	if version == AWGVersion31 {
+		return AWGVersion31
+	}
 	if awg3Mode || version == AWGVersion3 {
 		return AWGVersion3
 	}
@@ -69,7 +73,16 @@ func effectiveAWGVersion(awg3Mode bool, version string) string {
 // Used by the preset resolver + UI validation to reject bogus values early.
 func IsKnownAWGVersion(v string) bool {
 	switch v {
-	case AWGVersion1x, AWGVersion2, AWGVersion3:
+	case AWGVersion1x, AWGVersion2, AWGVersion3, AWGVersion31:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsAWG3Family(v string) bool {
+	switch effectiveAWGVersion(false, v) {
+	case AWGVersion3, AWGVersion31:
 		return true
 	default:
 		return false
@@ -93,6 +106,8 @@ func awgVersionOrder(v string) int {
 		return 1
 	case AWGVersion3:
 		return 3
+	case AWGVersion31:
+		return 4
 	default:
 		return 2
 	}

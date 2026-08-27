@@ -51,6 +51,8 @@ type AWGObfsMaterial struct {
 	HeaderProtectionKey       string
 	ContentPaddingAddition    string
 	RekeyAfterTime            string
+	RandomTrailers            bool
+	DisableCookies            bool
 }
 
 // GenerateAWGObfsMaterial is the main entry point used by applier and config

@@ -388,6 +388,64 @@ func (b *Backend) generateStandaloneNode(params model.ConfigParams) (*model.Conf
 			}
 			data, _ := json.Marshal(inb)
 			finalInbounds = append(finalInbounds, data)
+		case "naive":
+			serverName := "www.microsoft.com"
+			if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+				serverName = preset.Reality.ServerNames[0]
+			}
+			tls := &config.InboundTLSOptions{Enabled: true, ServerName: serverName, ALPN: []string{"h2"}}
+			cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+			if cert == "" || key == "" {
+				if c, k, err := chain.GenerateSelfSignedCert(serverName); err == nil {
+					cert, key = c, k
+				}
+			}
+			if cert != "" && key != "" {
+				tls.Certificate = cert
+				tls.Key = key
+			}
+			inb := config.NaiveInbound{
+				Type: "naive", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+				Users: []config.NaiveUser{{Username: "user", Password: uuid}},
+				Network: "tcp", TLS: tls,
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
+		case "mieru":
+			transport := ib.MieruTransport
+			if transport == "" {
+				transport = "TCP"
+			}
+			inb := config.MieruInbound{
+				Type: "mieru", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+				Users: []config.MieruUser{{Name: "user", Password: uuid}},
+				Transport: transport,
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
+		case "trusttunnel":
+			serverName := "www.microsoft.com"
+			if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+				serverName = preset.Reality.ServerNames[0]
+			}
+			tls := &config.InboundTLSOptions{Enabled: true, ServerName: serverName, ALPN: []string{"h2"}}
+			cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+			if cert == "" || key == "" {
+				if c, k, err := chain.GenerateSelfSignedCert(serverName); err == nil {
+					cert, key = c, k
+				}
+			}
+			if cert != "" && key != "" {
+				tls.Certificate = cert
+				tls.Key = key
+			}
+			inb := config.TrustTunnelInbound{
+				Type: "trusttunnel", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+				Users: []config.TrustTunnelUser{{Name: "user", Password: uuid}},
+				Network: "tcp", TLS: tls,
+			}
+			data, _ := json.Marshal(inb)
+			finalInbounds = append(finalInbounds, data)
 		case "hysteria2":
 			serverName := "www.microsoft.com"
 			if preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {

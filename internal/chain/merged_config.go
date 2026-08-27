@@ -251,6 +251,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	}
 
 	addIfMissing(&outbounds, seenOB, buildDirectOutbound("direct-out"))
+	injectAWGOutboundDirects(&outbounds, seenOB, nodeInfo)
 	if needsBlock(roles) {
 		blockJSON, _ := json.Marshal(map[string]any{"type": "block", "tag": "block"})
 		addIfMissing(&outbounds, seenOB, blockJSON)
@@ -1013,7 +1014,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		// HPK/CPM/RAT, and awgTUNOverlayNeeded enables the overlay — so NO
 		// userspace endpoint is emitted here. Only fall back to the userspace
 		// `type:"awg"` endpoint (the v0.8.10 path) when the kernel can't.
-		if ib.EffectiveAWGVersion() == model.AWGVersion3 && !kernelAWG3EnabledFor(nodeInfo) {
+		if model.IsAWG3Family(ib.EffectiveAWGVersion()) && !kernelAWG3EnabledFor(nodeInfo) {
 			users := usersByInbound[tag]
 			// The endpoint's own tunnel address must sit in the inbound's subnet
 			// (AWGServerAddress), not the hardcoded 10.8.0.1/32 — otherwise the
@@ -1087,6 +1088,89 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			Users:  []config.Hysteria2User{{Password: ib.UUID}},
 			UpMbps: 1000, DownMbps: 1000,
 			Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: ib.ObfsPassword},
+		}
+		data, _ := json.Marshal(inb)
+		inbounds = append(inbounds, data)
+
+	case "naive":
+		tls := &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
+			ALPN:       []string{"h2"},
+		}
+		cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+		if cert == "" || key == "" {
+			if c, k, err := GenerateSelfSignedCert(serverName); err == nil {
+				cert, key = c, k
+				ib.TLSCertificate = c
+				ib.TLSPrivateKey = k
+			}
+		}
+		if cert != "" && key != "" {
+			tls.Certificate = cert
+			tls.Key = key
+		}
+		var nusers []config.NaiveUser
+		for _, u := range usersByInbound[tag] {
+			if !u.Active || u.NaiveUsername == "" || u.NaivePassword == "" {
+				continue
+			}
+			nusers = append(nusers, config.NaiveUser{Username: u.NaiveUsername, Password: u.NaivePassword})
+		}
+		inb := config.NaiveInbound{
+			Type: "naive", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Users: nusers, Network: "tcp", TLS: tls,
+		}
+		data, _ := json.Marshal(inb)
+		inbounds = append(inbounds, data)
+
+	case "trusttunnel":
+		tls := &config.InboundTLSOptions{
+			Enabled:    true,
+			ServerName: serverName,
+			ALPN:       []string{"h2"},
+		}
+		cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+		if cert == "" || key == "" {
+			if c, k, err := GenerateSelfSignedCert(serverName); err == nil {
+				cert, key = c, k
+				ib.TLSCertificate = c
+				ib.TLSPrivateKey = k
+			}
+		}
+		if cert != "" && key != "" {
+			tls.Certificate = cert
+			tls.Key = key
+		}
+		var tusers []config.TrustTunnelUser
+		for _, u := range usersByInbound[tag] {
+			if !u.Active || u.TrustTunnelUsername == "" || u.TrustTunnelPassword == "" {
+				continue
+			}
+			tusers = append(tusers, config.TrustTunnelUser{Name: u.TrustTunnelUsername, Password: u.TrustTunnelPassword})
+		}
+		inb := config.TrustTunnelInbound{
+			Type: "trusttunnel", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Users: tusers, Network: "tcp", TLS: tls,
+		}
+		data, _ := json.Marshal(inb)
+		inbounds = append(inbounds, data)
+
+	case "mieru":
+		transport := ib.MieruTransport
+		if transport == "" {
+			transport = "TCP"
+		}
+		var musers []config.MieruUser
+		for _, u := range usersByInbound[tag] {
+			if !u.Active || u.MieruUsername == "" || u.MieruPassword == "" {
+				continue
+			}
+			musers = append(musers, config.MieruUser{Name: u.MieruUsername, Password: u.MieruPassword})
+		}
+		inb := config.MieruInbound{
+			Type: "mieru", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Users: musers, Transport: transport,
 		}
 		data, _ := json.Marshal(inb)
 		inbounds = append(inbounds, data)

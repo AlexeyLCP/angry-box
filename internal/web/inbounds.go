@@ -85,7 +85,7 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 	}
 	proto := strings.TrimSpace(r.FormValue("protocol"))
 	switch proto {
-	case "awg", "vless-reality", "mtproxy":
+	case "awg", "vless-reality", "mtproxy", "naive", "mieru", "trusttunnel":
 	default:
 		return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "unsupported protocol"))
 	}
@@ -142,7 +142,7 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 		// AWG3Mode is mirrored as a synonym so old read-sites keep working.
 		version := strings.TrimSpace(r.FormValue("awg_version"))
 		switch version {
-		case model.AWGVersion1x, model.AWGVersion2, model.AWGVersion3:
+		case model.AWGVersion1x, model.AWGVersion2, model.AWGVersion3, model.AWGVersion31:
 			p.AWGVersion = version
 		case "":
 			// Legacy form (pre-version dropdown) — honor the AWG3 checkbox.
@@ -152,7 +152,14 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 		default:
 			return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "Invalid AWG version"))
 		}
-		p.AWG3Mode = p.EffectiveAWGVersion() == model.AWGVersion3
+		p.AWG3Mode = p.AWGVersion == model.AWGVersion3
+	}
+	if proto == "mieru" {
+		t := strings.ToUpper(strings.TrimSpace(r.FormValue("mieru_transport")))
+		if t != "UDP" {
+			t = "TCP"
+		}
+		p.MieruTransport = t
 	}
 	return p, nodeIDs, nil
 }

@@ -26,6 +26,8 @@ func TestEffectiveAWGVersion(t *testing.T) {
 		{"v1.5 explicit", false, model.AWGVersion1x, model.AWGVersion1x},
 		{"empty defaults to v2", false, "", model.AWGVersion2},
 		{"bogus falls back to v2", false, "9.9", model.AWGVersion2},
+		{"explicit v3.1", false, model.AWGVersion31, model.AWGVersion31},
+		{"v3.1 wins over AWG3Mode", true, model.AWGVersion31, model.AWGVersion31},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -44,7 +46,7 @@ func TestEffectiveAWGVersion(t *testing.T) {
 // TestIsKnownAWGVersion guards the canonical version set used by the UI
 // validator + preset resolver.
 func TestIsKnownAWGVersion(t *testing.T) {
-	for _, v := range []string{model.AWGVersion1x, model.AWGVersion2, model.AWGVersion3} {
+	for _, v := range []string{model.AWGVersion1x, model.AWGVersion2, model.AWGVersion3, model.AWGVersion31} {
 		if !model.IsKnownAWGVersion(v) {
 			t.Errorf("IsKnownAWGVersion(%q) = false, want true", v)
 		}

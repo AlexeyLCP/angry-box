@@ -2416,3 +2416,44 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Фикс:** ключ ДО update (curl HTTP → embedded armored → keyserver); wipe legacy lists; non-fatal apt; Debian→jammy map. См. CHANGELOG v0.8.27.
 
+---
+
+## §50. LucX-port: naive/mieru + vpn:// + Clash + PSK + AWG speed (2026-08-27)
+
+Порт lucx-ui фич (без ROSCOM geo и без маршрутизации). Sidecar’ы TrustTunnel / olcRTC / qWDTT и AWG-outbound — не в этом срезе (нет в amnezia-box / отдельный деплой бинарей).
+
+**Сделано:**
+- NaiveProxy + Mieru standalone inbound (sing-box native): типы, креды, render, UI, share URI `naive+https://` / `mierus://`. Все активные клиенты попадают в inbound (как lucx HMAC).
+- Подписка: `?format=vpn` (Amnezia `vpn://` qCompress), `?format=clash` (Clash Meta + `amnezia-wg-option`), HTML-страница для браузера.
+- AWG PresharedKey на новом пире (сервер .conf + клиент .conf).
+- Живая скорость AWG (bytes/s с последнего fold) в таблице клиентов.
+
+**Тесты:** `internal/awg/vpnuri`, `TestEnsureUserCreds_NaiveMieruAndPSK`, `TestHandler_CreateInbound_NaiveMieru`, `TestSub_FormatVPNAndClash`, `TestBuildAWGClientConf_PSK`, PSK в `TestRenderServerAWGConf_PlainWireGuard`. `go test` chain/web/i18n/vpnuri + `go build ./...` зелёные.
+
+**Файлы:** `internal/awg/vpnuri/`, `internal/singbox/config/types.go`, `internal/domain/model/{panel,inbound}.go`, `internal/chain/{cryptogen,merged_config,profile_deploy,presets,awg_server,awg_deploy,clientconfig,awgtraffic,applier_build}.go`, `internal/web/{inbounds,users,subscription,sub_clash}.go`, `web/templates/{inbounds,users,subpage}.templ`, `internal/i18n/i18n.go`.
+
+---
+
+## §51. LucX-port: docker/toolza import + AWG outbound + client version clamp (2026-08-27)
+
+Продолжение §50.
+
+- **Foreign AWG import:** SSH `docker ps` + `docker exec cat` (amnezia-awg/awg2/awg3/wireguard), `/etc/awg3/*.conf` (toolza3). Пиры из самого .conf. DetectVPN видит docker Amnezia. После успешного takeover — `docker stop` / `systemctl stop awg3`.
+- **AWG outbound:** нода как клиент чужого AWG (`awgo-N`, Table=off, bind_interface). Paste `.conf` / `vpn://` в форме ноды.
+- **Клиентский AWG version clamp:** кнопки 1.5/2.0/3.0 на конфиге пользователя (не выше потолка inbound).
+
+**Тесты:** `TestImportAWG_Docker`, `TestParseAllPeers`, `TestParseAndRenderAWGOutbound`, `TestParseAWGOutbound_VPNURI`.
+
+---
+
+## §52. amnezia-box AWG 3.1 + TrustTunnel (2026-08-27)
+
+Апстрим `hoaxisr/awg-1.14-rc1` (AWG 3.1) + порт mtproxy/fallback + TrustTunnel из sbe. olcRTC/qWDTT не тащим.
+
+- **Форк** `AlexeyLCP/amnezia-box` `922fc605` (локальный коммит, нужен push): hoaxisr AWG 3.1 + mtproxy + fallback + `with_trusttunnel`. amneziawg-go `ae4523c` (`v3.1.0-awgm.1`).
+- **TrustTunnel inbound** в панели: как naive (TLS, user/pass, URI `tt://`).
+- **AWG 3.1:** версия `"3.1"` (HPK как 3.0 + `RandomTrailers`). Kernel src `v3.1.20260827`.
+- **Пин:** `singBoxVersion`/`ABX_REF`=`922fc605`, checksum `4272d04d…`. Tarball `deps/sing-box-922fc605-amnezia-linux-amd64.tar.gz`.
+
+---
+

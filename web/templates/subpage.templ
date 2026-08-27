@@ -1,0 +1,35 @@
+package templates
+
+import "github.com/alexeylcp/angry-box/internal/i18n"
+
+templ SubPage(userName string, links []string, vpnURIs []string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<title>{ i18n.T(ctx, "Subscription") } — { userName }</title>
+		<style>
+			body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #e8eaed; background: #111; }
+			h1 { font-size: 1.25rem; }
+			h2 { font-size: 0.95rem; margin-top: 1.5rem; color: #9aa0a6; }
+			pre { background: #1e1e1e; padding: 0.75rem; overflow: auto; border-radius: 8px; font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; }
+			.muted { color: #9aa0a6; font-size: 0.85rem; }
+		</style>
+	</head>
+	<body>
+		<h1>{ i18n.T(ctx, "Subscription") }: { userName }</h1>
+		<p class="muted">{ i18n.T(ctx, "Sub page hint") }</p>
+		if len(vpnURIs) > 0 {
+			<h2>{ i18n.T(ctx, "Amnezia vpn://") }</h2>
+			for _, u := range vpnURIs {
+				<pre>{ u }</pre>
+			}
+		}
+		<h2>{ i18n.T(ctx, "Share links") }</h2>
+		for _, l := range links {
+			<pre>{ l }</pre>
+		}
+	</body>
+	</html>
+}

@@ -280,7 +280,67 @@ func EnsureUserCreds(u *model.User) error {
 			u.AWGPublicKey = pub
 		}
 	}
+	if has("awg") && u.AWGPresharedKey == "" {
+		psk, err := GenerateWGPresharedKey()
+		if err != nil {
+			return err
+		}
+		u.AWGPresharedKey = psk
+	}
+	if err := ensureTunnelUserCreds(u); err != nil {
+		return err
+	}
 	return nil
+}
+
+// ensureTunnelUserCreds fills Naive/Mieru username+password when empty.
+// Generated for every user (not gated on Protocols) so a naive/mieru inbound
+// can include all active clients without a separate protocol pick.
+func ensureTunnelUserCreds(u *model.User) error {
+	if u.NaiveUsername == "" {
+		u.NaiveUsername = sanitizeProxyUsername(u.Name)
+	}
+	if u.NaivePassword == "" {
+		pw, err := GenerateProxyPassword()
+		if err != nil {
+			return err
+		}
+		u.NaivePassword = pw
+	}
+	if u.MieruUsername == "" {
+		u.MieruUsername = sanitizeProxyUsername(u.Name)
+	}
+	if u.MieruPassword == "" {
+		pw, err := GenerateProxyPassword()
+		if err != nil {
+			return err
+		}
+		u.MieruPassword = pw
+	}
+	if u.TrustTunnelUsername == "" {
+		u.TrustTunnelUsername = sanitizeProxyUsername(u.Name)
+	}
+	if u.TrustTunnelPassword == "" {
+		pw, err := GenerateProxyPassword()
+		if err != nil {
+			return err
+		}
+		u.TrustTunnelPassword = pw
+	}
+	return nil
+}
+
+func sanitizeProxyUsername(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "user"
+	}
+	return b.String()
 }
 
 // EnsureUserAWGAddress allocates a unique AWG tunnel IP for the user when AWG

@@ -140,6 +140,10 @@ func ApplyProfileToNodes(st *Store, prof *model.InboundProfile, desired []string
 				ib.Obfuscation = prof.Obfuscation
 				changed = true
 			}
+			if ib.MieruTransport != prof.MieruTransport {
+				ib.MieruTransport = prof.MieruTransport
+				changed = true
+			}
 			if ib.Protocol == string(model.UserProtocolAWG) {
 				before := ib.AWGCPSI1 + ib.AWGH1
 				preset := ResolveStandaloneAWGPreset(ib)
@@ -251,6 +255,27 @@ func buildProfileInbound(prof *model.InboundProfile, ni *model.NodeInfo) (model.
 			return ib, fmt.Errorf("derive reality pubkey: %w", err)
 		}
 		ib.ServerPubKey = pub
+	case "naive":
+		sni := EffectiveDefaultSNI()
+		cert, key, err := GenerateSelfSignedCert(sni)
+		if err != nil {
+			return ib, fmt.Errorf("generate naive tls: %w", err)
+		}
+		ib.TLSCertificate = cert
+		ib.TLSPrivateKey = key
+	case "trusttunnel":
+		sni := EffectiveDefaultSNI()
+		cert, key, err := GenerateSelfSignedCert(sni)
+		if err != nil {
+			return ib, fmt.Errorf("generate trusttunnel tls: %w", err)
+		}
+		ib.TLSCertificate = cert
+		ib.TLSPrivateKey = key
+	case "mieru":
+		ib.MieruTransport = prof.MieruTransport
+		if ib.MieruTransport == "" {
+			ib.MieruTransport = "TCP"
+		}
 	case "mtproxy":
 		// Secrets are per-user (User.MTProxySecret); nothing per-node here.
 	case "tuic":

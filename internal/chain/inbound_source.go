@@ -87,7 +87,7 @@ func chainEntryAWG3Inbound(nodeInfo *model.NodeInfo, c *model.Chain, entry *mode
 		if !match {
 			match = ib.Source == "chain:"+c.Name
 		}
-		if match && ib.EffectiveAWGVersion() == model.AWGVersion3 {
+		if match && model.IsAWG3Family(ib.EffectiveAWGVersion()) {
 			return ib
 		}
 	}

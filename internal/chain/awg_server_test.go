@@ -16,7 +16,7 @@ func TestRenderServerAWGConf_PlainWireGuard(t *testing.T) {
 		ListenPort:       51820,
 		TunnelAddress:    "10.8.0.1/24",
 		Peers: []AWGServerPeer{
-			{PublicKey: "PUB1", AllowedIPs: "10.8.0.2/32"},
+			{PublicKey: "PUB1", AllowedIPs: "10.8.0.2/32", PresharedKey: "psk1"},
 			{PublicKey: "PUB2", AllowedIPs: "10.8.0.3/32"},
 		},
 	})
@@ -44,6 +44,9 @@ func TestRenderServerAWGConf_PlainWireGuard(t *testing.T) {
 	}
 	if !strings.Contains(out, "AllowedIPs = 10.8.0.2/32") {
 		t.Error("missing peer 1 AllowedIPs")
+	}
+	if !strings.Contains(out, "PresharedKey = psk1") {
+		t.Error("missing peer PresharedKey")
 	}
 	// No amnezia block → no Jc line.
 	if strings.Contains(out, "Jc =") {

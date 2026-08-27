@@ -45,6 +45,60 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	s.renderContent(w, r, i18n.T(r.Context(), "Nodes"), templates.Nodes(hosts, infos, metrics, activeChains))
 }
 
+func (s *Server) handleAddAWGOutbound(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	ob, err := chain.ParseAWGOutboundConf(r.FormValue("conf"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil || info == nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	ob.ID = fmt.Sprintf("%d", len(info.AWGOutbounds)+1)
+	ob.Tag = ob.IfaceName()
+	ob.Enabled = true
+	info.AWGOutbounds = append(info.AWGOutbounds, *ob)
+	if err := st.SaveNodeInfo(info); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	chain.ScheduleAutoApply(id, "awg-outbound-add")
+	host, _ := st.GetHost(id)
+	settings, _ := st.GetSettings()
+	s.render(w, r, templates.NodeForm(host, settings, mergeSSHKeys(settings.SSHKeys, detectSystemKeys()), info))
+}
+
+func (s *Server) handleDeleteAWGOutbound(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	oid := r.PathValue("oid")
+	st := s.store()
+	info, err := st.GetNodeInfo(id)
+	if err != nil || info == nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	var kept []model.AWGOutbound
+	for _, ob := range info.AWGOutbounds {
+		if ob.ID != oid {
+			kept = append(kept, ob)
+		}
+	}
+	info.AWGOutbounds = kept
+	_ = st.SaveNodeInfo(info)
+	chain.ScheduleAutoApply(id, "awg-outbound-del")
+	host, _ := st.GetHost(id)
+	settings, _ := st.GetSettings()
+	s.render(w, r, templates.NodeForm(host, settings, mergeSSHKeys(settings.SSHKeys, detectSystemKeys()), info))
+}
+
 func (s *Server) handleEditNodeForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	st := s.store()
@@ -665,6 +719,8 @@ func (s *Server) registerNodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/nodes/{id}/clone", s.auth(s.handleCloneNode))
 	// awg-diagnostics: deep read-only probe of the node's AWG data plane.
 	mux.HandleFunc("GET /ui/nodes/{id}/awg-diagnostics", s.auth(s.handleAWGDiagnostics))
+	mux.HandleFunc("POST /ui/nodes/{id}/awg-outbounds", s.auth(s.handleAddAWGOutbound))
+	mux.HandleFunc("POST /ui/nodes/{id}/awg-outbounds/{oid}/delete", s.auth(s.handleDeleteAWGOutbound))
 	// health: operator mark/clear a DPI block (P1a). Not auto-detected — the
 	// orchestrator can't see a block from its free-region vantage point.
 	mux.HandleFunc("POST /ui/nodes/{id}/block", s.auth(s.handleMarkNodeBlocked))

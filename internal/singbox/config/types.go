@@ -439,6 +439,8 @@ type AwgEndpointOptions struct {
 	HeaderProtectionKey    string           `json:"header_protection_key,omitempty"`
 	ContentPaddingAddition string           `json:"content_padding_addition,omitempty"`
 	RekeyAfterTime         string           `json:"rekey_after_time,omitempty"`
+	RandomTrailers         bool             `json:"random_trailers,omitempty"`
+	DisableCookies         bool             `json:"disable_cookies,omitempty"`
 	Peers                 []AwgPeerOptions  `json:"peers,omitempty"`
 }
 
@@ -530,4 +532,60 @@ type MTProxyInbound struct {
 type MTProxyUser struct {
 	Name   string `json:"name"`
 	Secret string `json:"secret"`
+}
+
+// NaiveInbound is a sing-box NaiveProxy inbound (amnezia-box, unconditional).
+// TLS is required (ALPN h2 for TCP).
+type NaiveInbound struct {
+	Type                   string             `json:"type"` // "naive"
+	Tag                    string             `json:"tag"`
+	Listen                 string             `json:"listen,omitempty"`
+	ListenPort             int                `json:"listen_port,omitempty"`
+	Users                  []NaiveUser        `json:"users"`
+	Network                string             `json:"network,omitempty"` // "tcp" or "udp"
+	QUICCongestionControl  string             `json:"quic_congestion_control,omitempty"`
+	TLS                    *InboundTLSOptions `json:"tls,omitempty"`
+}
+
+// NaiveUser is per-client NaiveProxy basic-auth.
+type NaiveUser struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// MieruInbound is a sing-box mieru inbound (amnezia-box, unconditional).
+// No TLS — obfuscation is TrafficPattern. Transport is "TCP" or "UDP".
+type MieruInbound struct {
+	Type                string      `json:"type"` // "mieru"
+	Tag                 string      `json:"tag"`
+	Listen              string      `json:"listen,omitempty"`
+	ListenPort          int         `json:"listen_port,omitempty"`
+	Users               []MieruUser `json:"users"`
+	Transport           string      `json:"transport,omitempty"` // "TCP" or "UDP"
+	TrafficPattern      string      `json:"traffic_pattern,omitempty"`
+	UserHintIsMandatory bool        `json:"user_hint_is_mandatory,omitempty"`
+}
+
+// MieruUser is per-client mieru name/password.
+type MieruUser struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
+
+// TrustTunnelInbound is sing-box type:"trusttunnel" (with_trusttunnel).
+// TLS is required. Users are name/password.
+type TrustTunnelInbound struct {
+	Type                 string             `json:"type"` // "trusttunnel"
+	Tag                  string             `json:"tag"`
+	Listen               string             `json:"listen,omitempty"`
+	ListenPort           int                `json:"listen_port,omitempty"`
+	Users                []TrustTunnelUser  `json:"users"`
+	Network              string             `json:"network,omitempty"`
+	CongestionController string             `json:"congestion_controller,omitempty"`
+	TLS                  *InboundTLSOptions `json:"tls,omitempty"`
+}
+
+type TrustTunnelUser struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
 }

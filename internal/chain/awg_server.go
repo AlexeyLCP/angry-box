@@ -28,8 +28,9 @@ import (
 // WireGuard public key and their inner tunnel IP (the peer's AllowedIPs,
 // which doubles as the per-client source_ip_cidr route key).
 type AWGServerPeer struct {
-	PublicKey  string // user.AWGPublicKey — the peer's WG public key
-	AllowedIPs string // user.AWGAddress, e.g. "10.8.0.2/32" (single host route)
+	PublicKey    string // user.AWGPublicKey — the peer's WG public key
+	AllowedIPs   string // user.AWGAddress, e.g. "10.8.0.2/32" (single host route)
+	PresharedKey string // user.AWGPresharedKey — optional per-peer PSK
 }
 
 // AWGServerConfParams describes a kernel awg0.conf to render.
@@ -184,6 +185,9 @@ func RenderServerAWGConf(p AWGServerConfParams) string {
 		b.WriteString("\n")
 		b.WriteString("[Peer]\n")
 		b.WriteString(fmt.Sprintf("PublicKey = %s\n", peer.PublicKey))
+		if peer.PresharedKey != "" {
+			b.WriteString(fmt.Sprintf("PresharedKey = %s\n", peer.PresharedKey))
+		}
 		allowed := peer.AllowedIPs
 		if allowed == "" {
 			allowed = "10.8.0.2/32"
@@ -266,6 +270,12 @@ func writeAWG3ConfLines(b *strings.Builder, m *AWGObfsMaterial) {
 	}
 	if m.RekeyAfterTime != "" {
 		b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", m.RekeyAfterTime))
+	}
+	if m.RandomTrailers {
+		b.WriteString("RandomTrailers = true\n")
+	}
+	if m.DisableCookies {
+		b.WriteString("DisableCookies = true\n")
 	}
 }
 

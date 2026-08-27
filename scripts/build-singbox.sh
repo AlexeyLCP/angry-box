@@ -6,7 +6,7 @@
 # AlexeyLCP/amnezia-box adds the ports we need from sing-box-extended: mtproxy
 # (build-tag with_mtproxy) and fallback round-robin (committed to the fork's
 # tree, not applied as a patch here). amneziawg-go is pinned in the fork's
-# go.mod (hoaxisr/amneziawg-go/v3 @ e32b3b0 — has the InputPackets API that
+# go.mod (hoaxisr/amneziawg-go/v3 @ ae4523c — has the InputPackets API that
 # transport/awg/port.go needs); we do NOT clone wireguard-go separately.
 #
 # Why: nodes must NOT compile Go themselves (weak VPSes hang during the build).
@@ -31,9 +31,9 @@ cd "$REPO_ROOT"
 # AlexeyLCP/amnezia-box fork ref. Pin a commit SHA (NOT a branch) so the
 # artifact is reproducible; a bump is a deliberate act mirrored into
 # internal/backend/singbox/singbox.go (singBoxVersion) and patchcheck_test.go.
-# Default: mtproxy+fallback port rebased onto upstream 4bdfc140 (3c554273).
+# Default: mtproxy+fallback+trusttunnel on hoaxisr AWG 3.1 (922fc605).
 # Override via env.
-ABX_REF="${ABX_REF:-3c554273}"
+ABX_REF="${ABX_REF:-922fc605}"
 ARCHES="${ARCHES:-amd64}"
 
 BUILD_DIR="${BUILD_DIR:-/tmp/sing-box-build-angry}"
@@ -45,10 +45,9 @@ ABX_REPO="https://github.com/AlexeyLCP/amnezia-box.git"
 
 # Build tags. amnezia-box has with_awg (AWG3 endpoint) natively; with_mtproxy is
 # our port. Drop the old sing-box-extended canary tags (with_masque,
-# with_trusttunnel, with_sudoku, with_manager, with_profiler) — amnezia-box has
-# neither the protocols nor the tags; they were unused canaries. snell is
-# unconditional in amnezia-box (no tag needed).
-BUILD_TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_awg,with_mtproxy,with_acme,with_clash_api,with_tailscale,with_openvpn"
+# with_sudoku, with_manager, with_profiler). with_trusttunnel is our port from
+# sing-box-extended. snell is unconditional in amnezia-box (no tag needed).
+BUILD_TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_awg,with_mtproxy,with_trusttunnel,with_acme,with_clash_api,with_tailscale,with_openvpn"
 
 echo "==> Preparing amnezia-box source in $BUILD_DIR"
 rm -rf "$BUILD_DIR"

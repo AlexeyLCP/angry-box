@@ -168,6 +168,32 @@ func TestEnsureUserCreds_GeneratesPerProtocol(t *testing.T) {
 	}
 }
 
+func TestEnsureUserCreds_NaiveMieruAndPSK(t *testing.T) {
+	u := &model.User{ID: "u1", Name: "alice-1", Protocols: []string{"awg"}}
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatal(err)
+	}
+	if u.NaiveUsername == "" || u.NaivePassword == "" {
+		t.Error("naive creds missing")
+	}
+	if u.MieruUsername == "" || u.MieruPassword == "" {
+		t.Error("mieru creds missing")
+	}
+	if u.TrustTunnelUsername == "" || u.TrustTunnelPassword == "" {
+		t.Error("trusttunnel creds missing")
+	}
+	if u.AWGPresharedKey == "" {
+		t.Error("AWG PSK missing")
+	}
+	psk := u.AWGPresharedKey
+	if err := EnsureUserCreds(u); err != nil {
+		t.Fatal(err)
+	}
+	if u.AWGPresharedKey != psk {
+		t.Error("PSK rotated")
+	}
+}
+
 func TestEnsureUserCreds_PreservesExisting(t *testing.T) {
 	// Existing creds must be preserved (not regenerated) on re-apply.
 	u := &model.User{

@@ -2,8 +2,8 @@
 
 Angry-box runs **amnezia-box** — our fork `AlexeyLCP/amnezia-box` (a fork of
 `hoaxisr/amnezia-box`, which is sing-box 1.14 alpha). amnezia-box carries the
-AWG3 userspace endpoint (`type:"awg"`, amneziawg-go `feat/awg3`) + our ports from
-sing-box-extended (mtproxy, fallback round-robin). There are NO `patches/`
+AWG 3.1 userspace endpoint (`type:"awg"`, amneziawg-go v3.1) + our ports from
+sing-box-extended (mtproxy, fallback round-robin, TrustTunnel). There are NO `patches/`
 applied at build time anymore — the ports are committed to the fork's tree, and
 amneziawg-go is pinned in the fork's go.mod.
 
@@ -28,7 +28,7 @@ amneziawg-go is pinned in the fork's go.mod.
 
 ## amneziawg-go pin (in the fork's go.mod)
 
-The fork's `go.mod` pins `github.com/amnezia-vpn/amneziawg-go/v3 => github.com/hoaxisr/amneziawg-go/v3 v3.0.0-20260805182705-e32b3b0feebe` (commit `e32b3b0f`, module path `/v3` — AWG3 went official in amneziawg-go v3.0; upstream hoaxisr/amnezia-box moved to it in `0482200c`, 2026-08-05). This commit has the
+The fork's `go.mod` pins `github.com/amnezia-vpn/amneziawg-go/v3 => github.com/hoaxisr/amneziawg-go/v3 v3.1.0-awgm.1` (commit `ae4523cf`, module path `/v3` — AWG 3.1: RandomTrailers/DisableCookies). This commit has the
 `InputPackets` API (`device.InputPacketRef` + `device.InputPackets()` in
 `device/send.go`) that `transport/awg/port.go` depends on, plus the AWG3 UAPI
 fields (`header_protection_key`/`content_padding_addition`/`rekey_after_time`),

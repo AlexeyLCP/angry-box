@@ -1,1 +1,1 @@
-acaf995c4681b03d5adf18ef5cd882c8e4ca3da4086710dff6a4690004ea44b8 *sing-box-3c554273-amnezia-linux-amd64.tar.gz
+4272d04d9956b4b4f2fff2af5e50f836e728d34d6934bdd13cec36b2637a884a *sing-box-922fc605-amnezia-linux-amd64.tar.gz

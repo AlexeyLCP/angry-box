@@ -108,6 +108,9 @@ templ UserRow(u *model.User) {
 		<td>
 			if u.AWGRxBytes > 0 || u.AWGTxBytes > 0 {
 				<span class="text-xs font-mono" title={ i18n.T(ctx, "Down / Up (cumulative, from kernel per-peer counters)") }>{ fmtBytes(u.AWGRxBytes) } ↓ / { fmtBytes(u.AWGTxBytes) } ↑</span>
+				if u.AWGRxRate > 0 || u.AWGTxRate > 0 {
+					<span class="text-xs font-mono" style="color: var(--mut2)"> { fmtBytes(u.AWGRxRate) }/s ↓ { fmtBytes(u.AWGTxRate) }/s ↑</span>
+				}
 			} else {
 				<span class="pill" style="color: var(--mut2)">—</span>
 			}
@@ -417,6 +420,15 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 									{ i18n.T(ctx, "Copy") }
 								</button>
 							</div>
+							if cfg.Protocol == "awg" {
+								<div class="flex gap-1 mt-2">
+									<span class="text-xs" style="color: var(--mut2)">{ i18n.T(ctx, "AWG version") }:</span>
+									<button type="button" class="btn btn-xs btn-ghost" hx-get={ "/ui/users/" + u.ID + "/config?awg_version=1.5" } hx-target="#modal-container" hx-swap="innerHTML">1.5</button>
+									<button type="button" class="btn btn-xs btn-ghost" hx-get={ "/ui/users/" + u.ID + "/config?awg_version=2" } hx-target="#modal-container" hx-swap="innerHTML">2.0</button>
+									<button type="button" class="btn btn-xs btn-ghost" hx-get={ "/ui/users/" + u.ID + "/config?awg_version=3" } hx-target="#modal-container" hx-swap="innerHTML">3.0</button>
+									<button type="button" class="btn btn-xs btn-ghost" hx-get={ "/ui/users/" + u.ID + "/config?awg_version=3.1" } hx-target="#modal-container" hx-swap="innerHTML">3.1</button>
+								</div>
+							}
 							<div class="flex justify-end mt-2">
 								<button
 									type="button"

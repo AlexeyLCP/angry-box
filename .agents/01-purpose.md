@@ -13,7 +13,7 @@ Extracted from AGENTS.md. This file is project law.
 
 ### Product Focus (scope is frozen — do NOT expand it)
 
-**Ship first:** AWG (kernel + balancer; + AWG 3.0 header-protection as opt-in per-inbound, v0.8.10), VLESS+Reality+XHTTP (inter-node transport + standalone), MTProxy/Telemt.
+**Ship first:** AWG (kernel + balancer; + AWG 3.0 header-protection as opt-in per-inbound, v0.8.10), VLESS+Reality+XHTTP (inter-node transport + standalone), MTProxy/Telemt, NaiveProxy + Mieru (standalone inbound).
 
 **Paused (do NOT implement, test, or expose in UI for new configs):**
 - **TUIC** — user entry + standalone (QUIC/TLS cert hassle + unresolved bugs; .agents/04-current-state.md #6).

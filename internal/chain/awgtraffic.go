@@ -76,6 +76,13 @@ func FoldAWGTraffic(st *Store, nodeID, iface string, current map[string][2]int64
 			continue
 		}
 		if u, ok := byPub[pub]; ok {
+			if !u.AWGTrafficAt.IsZero() {
+				sec := time.Since(u.AWGTrafficAt).Seconds()
+				if sec > 0 {
+					u.AWGRxRate = int64(float64(dRx) / sec)
+					u.AWGTxRate = int64(float64(dTx) / sec)
+				}
+			}
 			u.AWGRxBytes += dRx
 			u.AWGTxBytes += dTx
 			u.AWGTrafficAt = time.Now()

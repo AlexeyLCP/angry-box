@@ -21,7 +21,7 @@ import "time"
 type InboundProfile struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
-	Protocol string `json:"protocol"`              // "awg" | "vless-reality" | "mtproxy" (frozen protocols rejected)
+	Protocol string `json:"protocol"`              // "awg" | "vless-reality" | "mtproxy" | "naive" | "mieru" | "trusttunnel"
 	Port     int    `json:"port"`                  // default listen port for new materializations
 	Obfuscation string `json:"obfuscation,omitempty"` // preset name (AWG) / notes
 	// AWGCPSCaptureDomain enables the live QUIC signature capture for AWG
@@ -88,6 +88,9 @@ type InboundProfile struct {
 	AWG3HeaderProtectionKey   string `json:"awg3_header_protection_key,omitempty"`
 	AWG3ContentPaddingAddition string `json:"awg3_content_padding_addition,omitempty"`
 	AWG3RekeyAfterTime        string `json:"awg3_rekey_after_time,omitempty"`
+
+	// MieruTransport is "TCP" or "UDP" (fork validation). Empty = TCP.
+	MieruTransport string `json:"mieru_transport,omitempty"`
 
 	CreatedAt          time.Time `json:"created_at"`
 }

@@ -120,12 +120,14 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 	// PushConfigWithAWG (atomic awg0.conf + sing-box, rollback both on failure).
 	var cfgContent string
 	var awgFiles []chain.AWGConfFile
+	var stopTargets []string
 	if det.Type == DetectedAWG {
 		imp, ierr := chain.ImportAWGConfigsViaClient(client, useSudo, nil)
 		if ierr != nil || imp == nil || imp.ServerConfig == nil {
 			res := &TakeoverResult{Status: "rolled-back", FromType: string(det.Type), Message: "awg import failed: " + errString(ierr)}
 			return res, fmt.Errorf("takeover: awg import: %v", ierr)
 		}
+		stopTargets = imp.StopTargets
 
 		// (a) Materialize peers as users BEFORE the push so the fresh awg0.conf
 		// renders them. Rollback (step 7 failure) deletes synthesized users.
@@ -258,6 +260,7 @@ func Takeover(ctx context.Context, store *chain.Store, f ports.Factory, host mod
 		slog.Warn("takeover: save node info (taken) failed", "node", host.ID, "err", err)
 	}
 	chain.WriteTakeoverAudit(store, host.ID, string(det.Type), "taken", res.ConvertedInbounds)
+	chain.StopImportSources(client, useSudo, stopTargets)
 	res.Status = "taken"
 	oldMsg := ""
 	if det.ServiceName != "" {

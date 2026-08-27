@@ -435,7 +435,7 @@ func (s *Server) scheduleAutoApplyForUser(st *chain.Store, u *model.User, reason
 	nodes, _ := st.ListNodeInfos()
 	for _, node := range nodes {
 		for _, ib := range node.Inbounds {
-			if contains(ib.ForUsers, u.ID) {
+			if ib.Protocol == "naive" || ib.Protocol == "mieru" || ib.Protocol == "trusttunnel" || contains(ib.ForUsers, u.ID) {
 				chain.ScheduleAutoApply(node.ID, reason+":standalone")
 				break // one schedule per node is enough
 			}
@@ -479,6 +479,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.T(r.Context(), "user not found"), http.StatusNotFound)
 		return
 	}
+	persistUserCreds(st, u)
 
 	// Generate configs for user's assigned chains
 	var configs []templates.UserChainConfig
@@ -488,7 +489,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// Build a config link for this chain
-		link := buildConnectionLink(st, c, u)
+		link := buildConnectionLink(st, c, u, strings.TrimSpace(r.URL.Query().Get("awg_version")))
 		configs = append(configs, templates.UserChainConfig{
 			ChainName:   chainName,
 			Protocol:    string(c.UserProtocol),
@@ -505,7 +506,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 			if chain.IsChainSourcedInbound(&ib) {
 				continue // chain-entry materialization — served via the chain link above
 			}
-			if contains(ib.ForUsers, u.ID) {
+			if ib.Protocol == "naive" || ib.Protocol == "mieru" || ib.Protocol == "trusttunnel" || contains(ib.ForUsers, u.ID) {
 				link := buildStandaloneLink(node.Addr, ib, u)
 				configs = append(configs, templates.UserChainConfig{
 					ChainName:   "node: " + node.ID,
@@ -578,7 +579,7 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, templates.UserConfigView(u, configs))
 }
 
-func buildConnectionLink(st *chain.Store, c *model.Chain, u *model.User) string {
+func buildConnectionLink(st *chain.Store, c *model.Chain, u *model.User, clampVersion ...string) string {
 	nodes := c.AllNodes()
 	if len(nodes) == 0 {
 		return "# no nodes in chain"
@@ -592,9 +593,14 @@ func buildConnectionLink(st *chain.Store, c *model.Chain, u *model.User) string 
 	// AWG chains render a per-user awg-quick .conf (each user is their own
 	// WireGuard peer; per-client routing keys on the peer's inner source IP).
 	if c.UserProtocol == model.UserProtocolAWG {
+		awgVer := ""
+		if len(clampVersion) > 0 {
+			awgVer = clampVersion[0]
+		}
 		conf, err := chain.RenderClientAWGConf(chain.ClientConfigParams{
-			Chain: c,
-			User:  u,
+			Chain:      c,
+			User:       u,
+			AWGVersion: awgVer,
 			// v2: resolve the selected entry's materialized inbound (profile
 			// credentials) — chain-level AWG creds are empty on v2 chains.
 			EntryInboundResolver: func(nodeID, profileID string) *model.NodeInbound {
@@ -665,15 +671,25 @@ func ensureStandaloneAWGMaterial(st *chain.Store, nodes []*model.NodeInfo) {
 
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
 	ip := strings.Split(addr, ":")[0]
-	if ib.Protocol == "awg" && u.ImportedSecret == "" && ib.AWGClientPriv != "" {
-		// Full AWG client .conf with Amnezia obfuscation params from the active
-		// preset (Jc/Jmin/Jmax/S1-S4/H1-H4 + I1-I5 when CPS is enabled). This
-		// matches the server-side amnezia block so the client connects.
-		return buildAWGClientConf(ip, ib.Port, ib.AWGClientPriv, ib.ServerPubKey, ib.AWGClientPub, "", "", &ib)
-	}
-	if ib.Protocol == "awg" && u.ImportedSecret != "" && u.SecretType == "awg" {
-		// Imported AWG private key — build a .conf using it.
-		return buildAWGClientConf(ip, ib.Port, u.ImportedSecret, ib.ServerPubKey, "", "", "", &ib)
+	if ib.Protocol == "awg" {
+		priv := ""
+		addrIP := ""
+		psk := ""
+		if u != nil {
+			priv = u.AWGPrivateKey
+			addrIP = u.AWGAddress
+			psk = u.AWGPresharedKey
+			if priv == "" && u.ImportedSecret != "" && u.SecretType == "awg" {
+				priv = u.ImportedSecret
+			}
+		}
+		if priv == "" {
+			priv = ib.AWGClientPriv
+		}
+		if priv == "" {
+			return buildClientURI("awg", ip, ib.Port, "", "", ib.ServerPubKey, "", ib.Protocol, u, "", false)
+		}
+		return buildAWGClientConf(ip, ib.Port, priv, ib.ServerPubKey, ib.AWGClientPub, "", addrIP, &ib, psk)
 	}
 	if ib.Protocol == "mtproxy" {
 		full, err := chain.MTProxyFullSecret(ib.UUID, defaultFakeTLSDomain(ib))
@@ -708,7 +724,7 @@ func defaultFakeTLSDomain(ib model.NodeInbound) string {
 // obfs material (proper quadrant H1-H4 + stable CPS I1-I5) are rendered so the
 // client matches the server exactly. nil = legacy fallback (default preset,
 // fresh material — imported-secret paths without an inbound context).
-func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride, address string, ib *model.NodeInbound) string {
+func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, hostOverride, address string, ib *model.NodeInbound, psk string) string {
 	host := hostOverride
 	if host == "" {
 		host = ip
@@ -776,9 +792,18 @@ func buildAWGClientConf(ip string, port int, clientPriv, serverPub, clientPub, h
 		if material.RekeyAfterTime != "" {
 			b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", material.RekeyAfterTime))
 		}
+		if material.RandomTrailers {
+			b.WriteString("RandomTrailers = true\n")
+		}
+		if material.DisableCookies {
+			b.WriteString("DisableCookies = true\n")
+		}
 	}
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
+	if psk != "" {
+		b.WriteString(fmt.Sprintf("PresharedKey = %s\n", psk))
+	}
 	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
 	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
 	b.WriteString("PersistentKeepalive = 25\n")
@@ -800,9 +825,42 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 	switch proto {
 	case "awg":
 		if u != nil && u.ImportedSecret != "" && u.SecretType == "awg" {
-			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "", "", nil)
+			return buildAWGClientConf(ip, port, u.ImportedSecret, pubKey, "", "", "", nil, u.AWGPresharedKey)
 		}
-		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=&mtu=1420", ip, port, pubKey)
+		psk := ""
+		if u != nil {
+			psk = u.AWGPresharedKey
+		}
+		return fmt.Sprintf("awg://%s:%d?pub=%s&psk=%s&mtu=1420", ip, port, pubKey, url.QueryEscape(psk))
+	case "naive":
+		user, pass := "", ""
+		if u != nil {
+			user, pass = u.NaiveUsername, u.NaivePassword
+		}
+		sni := "www.microsoft.com"
+		if preset := chain.GetDefaultPreset(); preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+			sni = preset.Reality.ServerNames[0]
+		}
+		return fmt.Sprintf("naive+https://%s:%s@%s:%d?padding=true&sni=%s#%s",
+			url.QueryEscape(user), url.QueryEscape(pass), ip, port, url.QueryEscape(sni), name)
+	case "mieru":
+		user, pass := "", ""
+		if u != nil {
+			user, pass = u.MieruUsername, u.MieruPassword
+		}
+		return fmt.Sprintf("mierus://%s:%s@%s:%d?transport=TCP#%s",
+			url.QueryEscape(user), url.QueryEscape(pass), ip, port, name)
+	case "trusttunnel":
+		user, pass := "", ""
+		if u != nil {
+			user, pass = u.TrustTunnelUsername, u.TrustTunnelPassword
+		}
+		sni := "www.microsoft.com"
+		if preset := chain.GetDefaultPreset(); preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
+			sni = preset.Reality.ServerNames[0]
+		}
+		return fmt.Sprintf("tt://%s:%s@%s:%d?security=tls&sni=%s&alpn=h2#%s",
+			url.QueryEscape(user), url.QueryEscape(pass), ip, port, url.QueryEscape(sni), name)
 	case "tuic":
 		if u != nil && u.ImportedSecret != "" && u.SecretType == "tuic" {
 			return fmt.Sprintf("tuic://%s:%s@%s:%d?congestion_control=bbr&alpn=h3",

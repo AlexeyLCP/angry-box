@@ -87,6 +87,8 @@ type ImportResult struct {
 	Log            string
 	Imported       map[string]bool // awg0_conf, exit_nodes, peers, singbox_config, db_updated
 	DBUpdated      string          // human-readable summary
+	StopTargets    []string        // docker:name / systemd:unit — stop after commit
+	ForeignSources []string        // docker / toolza3 / opt-amnezia
 }
 
 // ImportAWGConfigs connects to host over SSH, reads the AWG configs, parses
@@ -163,6 +165,17 @@ func importAWGConfigsViaClient(client ports.SSHClient, useSudo bool, info *model
 		res.Imported["peers"] = true
 		res.Log += fmt.Sprintf("parsed %d peers\n", len(res.Peers))
 	}
+	if len(res.Peers) == 0 && res.ServerConfig != nil {
+		if out, _, _, err := client.RunWithOutput(ctx, priv("cat "+awg0ConfPath), 30*time.Second); err == nil {
+			if peers := parseAllPeers(out); len(peers) > 0 {
+				res.Peers = peers
+				res.Imported["peers"] = true
+				res.Log += fmt.Sprintf("parsed %d peers from awg0.conf\n", len(peers))
+			}
+		}
+	}
+
+	discoverForeignAWG(client, useSudo, res)
 
 	// 4. sing-box config.json (best-effort)
 	if out, _, _, err := client.RunWithOutput(ctx, priv("cat /usr/local/etc/sing-box/config.json 2>/dev/null || cat /etc/sing-box/config.json 2>/dev/null"), 30*time.Second); err == nil && strings.TrimSpace(out) != "" {
@@ -308,6 +321,62 @@ func parsePeersList(content string) []AwgPeerEntry {
 			}
 		} else if k == "Address" {
 			current.Address = v
+		}
+	}
+	if inPeer && current.PublicKey != "" {
+		out = append(out, current)
+	}
+	return out
+}
+
+// parseAllPeers extracts every [Peer] block from a server .conf (docker/toolza
+// keep peers in the conf itself, not awg0-peers.list).
+func parseAllPeers(content string) []AwgPeerEntry {
+	var out []AwgPeerEntry
+	current := AwgPeerEntry{AllowedIPs: "0.0.0.0/0"}
+	inPeer := false
+	pendingName := ""
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			if name != "" && !strings.HasPrefix(name, "expires=") {
+				if inPeer && current.Name == "" {
+					current.Name = name
+				} else {
+					pendingName = name
+				}
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			if inPeer && current.PublicKey != "" {
+				out = append(out, current)
+			}
+			current = AwgPeerEntry{AllowedIPs: "0.0.0.0/0", Name: pendingName}
+			pendingName = ""
+			inPeer = strings.TrimSuffix(strings.TrimPrefix(line, "["), "]") == "Peer"
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 || !inPeer {
+			continue
+		}
+		k := strings.TrimSpace(line[:idx])
+		v := strings.TrimSpace(line[idx+1:])
+		switch k {
+		case "PublicKey":
+			current.PublicKey = v
+		case "AllowedIPs":
+			current.AllowedIPs = v
+			if strings.HasPrefix(v, "10.") || strings.HasPrefix(v, "172.") || strings.HasPrefix(v, "192.168.") {
+				current.Address = strings.Split(v, ",")[0]
+			}
+		case "PresharedKey":
+			current.PresharedKey = v
 		}
 	}
 	if inPeer && current.PublicKey != "" {

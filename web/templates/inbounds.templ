@@ -158,10 +158,13 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 					<div>
 						<label class="lbl" for="ibf-proto">{ i18n.T(ctx, "Protocol") }</label>
 						<select id="ibf-proto" name="protocol" class="sel" disabled?={ prof != nil }
-							onchange="var s=this.closest('form').querySelector('.awg-capture-section');if(s){s.style.display=this.value==='awg'?'block':'none'}">
+							onchange="var f=this.closest('form');var s=f.querySelector('.awg-capture-section');if(s){s.style.display=this.value==='awg'?'block':'none'};var m=f.querySelector('.mieru-section');if(m){m.style.display=this.value==='mieru'?'block':'none'}">
 							<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
 							<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
 							<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
+							<option value="naive" selected?={ prof != nil && prof.Protocol == "naive" }>NaiveProxy</option>
+							<option value="mieru" selected?={ prof != nil && prof.Protocol == "mieru" }>Mieru</option>
+							<option value="trusttunnel" selected?={ prof != nil && prof.Protocol == "trusttunnel" }>{ i18n.T(ctx, "TrustTunnel") }</option>
 						</select>
 						if prof != nil {
 							// disabled selects don't submit — carry the value
@@ -255,9 +258,10 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 					<div>
 						<span class="lbl">{ i18n.T(ctx, "AWG version") }</span>
 						<div class="seg" role="radiogroup" aria-label={ i18n.T(ctx, "AWG version") }
-							onchange="var w=this.closest('.awg-capture-section').querySelector('.awg3-section');if(w){w.style.display=this.querySelector('input[name=awg_version]:checked')&&this.querySelector('input[name=awg_version]:checked').value==='3'?'block':'none'}">
+							onchange="var w=this.closest('.awg-capture-section').querySelector('.awg3-section');var v=this.querySelector('input[name=awg_version]:checked');if(w){w.style.display=v&&(v.value==='3'||v.value==='3.1')?'block':'none'}">
 							<label><input type="radio" name="awg_version" value="2" checked?={ prof == nil || (prof.AWGVersion == "2" || (!prof.AWG3Mode && prof.AWGVersion == "")) }/><span>{ i18n.T(ctx, "AWG 2.0 (kernel + CPS, default)") }</span></label>
-							<label><input type="radio" name="awg_version" value="3" checked?={ prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") }/><span>{ i18n.T(ctx, "AWG 3.0 (header protection)") }</span></label>
+							<label><input type="radio" name="awg_version" value="3" checked?={ prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") && prof.AWGVersion != "3.1" }/><span>{ i18n.T(ctx, "AWG 3.0 (header protection)") }</span></label>
+							<label><input type="radio" name="awg_version" value="3.1" checked?={ prof != nil && prof.AWGVersion == "3.1" }/><span>{ i18n.T(ctx, "AWG 3.1 (random trailers)") }</span></label>
 							<label><input type="radio" name="awg_version" value="1.5" checked?={ prof != nil && prof.AWGVersion == "1.5" }/><span>{ i18n.T(ctx, "AWG 1.5 (legacy, no CPS)") }</span></label>
 						</div>
 						<p class="hint">{ i18n.T(ctx, "AWG version hint") }</p>
@@ -268,9 +272,9 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 					// profile; never hand-edited (rotated only by re-deploy). For a NEW
 					// profile (prof==nil) the material is absent until first deploy.
 					<div class="awg3-section awg3-panel grid gap-4 md:grid-cols-3 p-4 mt-2"
-						style={ templ.KV("display:none", !(prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3"))) }>
+						style={ templ.KV("display:none", !(prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3" || prof.AWGVersion == "3.1"))) }>
 						<div class="md:col-span-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--mut)">{ i18n.T(ctx, "AWG 3.0 header protection") }</div>
-						if prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3") && prof.AWG3HeaderProtectionKey != "" {
+						if prof != nil && (prof.AWG3Mode || prof.AWGVersion == "3" || prof.AWGVersion == "3.1") && prof.AWG3HeaderProtectionKey != "" {
 							<div>
 								<label class="lbl">{ i18n.T(ctx, "Header protection key") }</label>
 								<div class="code mono" style="overflow:hidden;text-overflow:ellipsis">{ prof.AWG3HeaderProtectionKey }</div>
@@ -300,6 +304,15 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 							<p class="hint md:col-span-3">{ i18n.T(ctx, "AWG3 material not generated yet") }</p>
 						}
 					</div>
+				</div>
+
+				<div class="mieru-section" style={ templ.KV("display:none", prof == nil || prof.Protocol != "mieru") }>
+					<div class="divider-x my-1"></div>
+					<label class="lbl" for="ibf-mieru-tr">{ i18n.T(ctx, "Mieru transport") }</label>
+					<select id="ibf-mieru-tr" name="mieru_transport" class="sel">
+						<option value="TCP" selected?={ prof == nil || prof.MieruTransport == "" || prof.MieruTransport == "TCP" }>TCP</option>
+						<option value="UDP" selected?={ prof != nil && prof.MieruTransport == "UDP" }>UDP</option>
+					</select>
 				</div>
 
 				<div class="divider-x"></div>

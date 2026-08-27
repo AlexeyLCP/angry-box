@@ -42,22 +42,31 @@ type User struct {
 	// Hysteria2Password is the per-user Hysteria2 password (the inbound's users
 	// array carries password-based auth, no separate UUID).
 	Hysteria2Password string `json:"hysteria2_password,omitempty"`
+	NaiveUsername     string `json:"naive_username,omitempty"`
+	NaivePassword     string `json:"naive_password,omitempty"`
+	MieruUsername          string `json:"mieru_username,omitempty"`
+	MieruPassword          string `json:"mieru_password,omitempty"`
+	TrustTunnelUsername    string `json:"trusttunnel_username,omitempty"`
+	TrustTunnelPassword    string `json:"trusttunnel_password,omitempty"`
 	// AWG per-user peer credentials. AWGPrivateKey is the client's WireGuard
 	// private key (rendered into the per-user awg-quick .conf). AWGPublicKey is
 	// the corresponding public key — it goes into the server endpoint's Peers[]
 	// so the server accepts this user's handshakes. AWGAddress is the user's
 	// unique tunnel IP (e.g. "10.8.0.3/32"); it is both the peer's AllowedIPs
 	// on the server and the source_ip_cidr used by per-client route rules.
-	AWGPrivateKey string `json:"awg_private_key,omitempty"`
-	AWGPublicKey  string `json:"awg_public_key,omitempty"`
-	AWGAddress    string `json:"awg_address,omitempty"`
+	AWGPrivateKey    string `json:"awg_private_key,omitempty"`
+	AWGPublicKey     string `json:"awg_public_key,omitempty"`
+	AWGAddress       string `json:"awg_address,omitempty"`
+	AWGPresharedKey  string `json:"awg_preshared_key,omitempty"`
 
 	// Per-user AWG traffic counters (cumulative bytes, folded from the kernel's
 	// per-peer `awg show transfer` by the background metrics loop — v0.7).
 	// Counters survive node redeploys and interface restarts (the folder
 	// handles kernel counter resets); they are usage telemetry, not billing.
-	AWGRxBytes  int64     `json:"awg_rx_bytes,omitempty"`
-	AWGTxBytes  int64     `json:"awg_tx_bytes,omitempty"`
+	AWGRxBytes   int64     `json:"awg_rx_bytes,omitempty"`
+	AWGTxBytes   int64     `json:"awg_tx_bytes,omitempty"`
+	AWGRxRate    int64     `json:"awg_rx_rate,omitempty"` // bytes/sec since last fold
+	AWGTxRate    int64     `json:"awg_tx_rate,omitempty"`
 	AWGTrafficAt time.Time `json:"awg_traffic_at,omitempty"` // last traffic observation
 
 	// MTProxy (Telegram FakeTLS) credentials. Optional — set when the user is
@@ -353,6 +362,10 @@ type NodeInfo struct {
 	// User-facing inbounds on this node (for per-user config generation).
 	Inbounds []NodeInbound `json:"inbounds,omitempty"`
 
+	// AWGOutbounds are kernel AWG client tunnels (awgo-N) to an upstream
+	// AWG server. Each becomes a sing-box direct outbound with bind_interface.
+	AWGOutbounds []AWGOutbound `json:"awg_outbounds,omitempty"`
+
 	// PendingHostKeyFingerprint is the remote SSH host-key fingerprint the
 	// orchestrator observed during a capture/apply attempt that failed the
 	// TOFU check (host key changed or untrusted). It is stored so that the
@@ -430,6 +443,47 @@ type TakeoverState struct {
 	// #10). Populated on the success path; rollback deletes these users so a
 	// rolled-back takeover does not leave phantom users in the store.
 	SynthesizedUserIDs []string `json:"synthesized_user_ids,omitempty"`
+}
+
+// AWGOutbound is a kernel AWG client tunnel on a node (awgo-N) to an upstream
+// AWG server. Traffic is steered via sing-box bind_interface, not default route.
+type AWGOutbound struct {
+	ID                  string `json:"id"`
+	Tag                 string `json:"tag,omitempty"`
+	Enabled             bool   `json:"enabled"`
+	PrivateKey          string `json:"private_key"`
+	Address             string `json:"address"`
+	MTU                 int    `json:"mtu,omitempty"`
+	PublicKey           string `json:"public_key"`
+	PresharedKey        string `json:"preshared_key,omitempty"`
+	Endpoint            string `json:"endpoint"`
+	AllowedIPs          string `json:"allowed_ips,omitempty"`
+	Keepalive           int    `json:"keepalive,omitempty"`
+	Jc                  int    `json:"jc,omitempty"`
+	Jmin                int    `json:"jmin,omitempty"`
+	Jmax                int    `json:"jmax,omitempty"`
+	S1                  int    `json:"s1,omitempty"`
+	S2                  int    `json:"s2,omitempty"`
+	S3                  int    `json:"s3,omitempty"`
+	S4                  int    `json:"s4,omitempty"`
+	H1                  string `json:"h1,omitempty"`
+	H2                  string `json:"h2,omitempty"`
+	H3                  string `json:"h3,omitempty"`
+	H4                  string `json:"h4,omitempty"`
+	HeaderProtectionKey string `json:"header_protection_key,omitempty"`
+	AWGVersion          string `json:"awg_version,omitempty"`
+}
+
+// IfaceName is the kernel interface (awgo-<id-suffix>).
+func (o AWGOutbound) IfaceName() string {
+	id := o.ID
+	if id == "" {
+		id = o.Tag
+	}
+	if id == "" {
+		return "awgo-1"
+	}
+	return "awgo-" + id
 }
 
 // NodeInbound describes a user-facing inbound on a node.
@@ -522,6 +576,9 @@ type NodeInbound struct {
 	AWG3HeaderProtectionKey    string `json:"awg3_header_protection_key,omitempty"`
 	AWG3ContentPaddingAddition string `json:"awg3_content_padding_addition,omitempty"`
 	AWG3RekeyAfterTime         string `json:"awg3_rekey_after_time,omitempty"`
+
+	// MieruTransport is "TCP" or "UDP". Empty = TCP. Copied from the profile.
+	MieruTransport string `json:"mieru_transport,omitempty"`
 }
 
 // ConnectionLink represents a link between two nodes in a chain (spider web edge).

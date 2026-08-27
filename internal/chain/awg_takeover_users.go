@@ -176,7 +176,7 @@ func RenderTakeoverAWGConf(server *AwgServerConfig, users []model.User) AWGConfF
 		if !u.Active || u.AWGPublicKey == "" || u.AWGAddress == "" {
 			continue
 		}
-		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress})
+		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress, PresharedKey: u.AWGPresharedKey})
 	}
 	tunnelAddr := server.Address
 	if tunnelAddr == "" {

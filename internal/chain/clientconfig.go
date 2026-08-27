@@ -351,6 +351,9 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 			// breaks. Coexisting inbounds of different versions each render their
 			// own field set.
 			version = ib.EffectiveAWGVersion()
+			if params.AWGVersion != "" && model.AWGVersionAtLeast(version, params.AWGVersion) {
+				version = params.AWGVersion
+			}
 		}
 	}
 
@@ -363,7 +366,11 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 	// endpoint — a mismatch breaks the AWG handshake. Previously this hardcoded
 	// GetDefaultPreset(), which diverged whenever the chain used a non-default
 	// ObfuscationProfile.
-	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, material, version), nil
+	psk := ""
+	if params.User != nil {
+		psk = params.User.AWGPresharedKey
+	}
+	return renderAWGQuickConf(host, port, clientPriv, serverPub, address, &preset, material, version, psk), nil
 }
 
 // renderAWGQuickConf builds the awg-quick .conf text. preset + material supply
@@ -371,7 +378,7 @@ func RenderClientAWGConf(params ClientConfigParams) (string, error) {
 // amnezia block or the handshake fails (chain callers pass the chain's preset
 // + persisted AWGObfsMaterial). clientPriv/address empty -> legacy fallback
 // (placeholder key + 10.8.0.2/24); the .conf is still structurally valid.
-func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string, preset *ConnectionPreset, material *AWGObfsMaterial, version string) string {
+func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address string, preset *ConnectionPreset, material *AWGObfsMaterial, version, psk string) string {
 	if version == "" {
 		version = model.AWGVersion2
 	}
@@ -448,10 +455,19 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 			if material.RekeyAfterTime != "" {
 				b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", material.RekeyAfterTime))
 			}
+			if material.RandomTrailers {
+				b.WriteString("RandomTrailers = true\n")
+			}
+			if material.DisableCookies {
+				b.WriteString("DisableCookies = true\n")
+			}
 		}
 	}
 	b.WriteString("\n[Peer]\n")
 	b.WriteString(fmt.Sprintf("PublicKey = %s\n", serverPub))
+	if psk != "" {
+		b.WriteString(fmt.Sprintf("PresharedKey = %s\n", psk))
+	}
 	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
 	b.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", host, port))
 	b.WriteString("PersistentKeepalive = 25\n")

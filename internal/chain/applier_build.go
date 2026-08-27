@@ -1340,6 +1340,8 @@ func applyAWG3ToEndpoint(ep *config.AwgEndpointOptions, material *AWGObfsMateria
 	ep.HeaderProtectionKey = hpkB64
 	ep.ContentPaddingAddition = material.ContentPaddingAddition
 	ep.RekeyAfterTime = material.RekeyAfterTime
+	ep.RandomTrailers = material.RandomTrailers
+	ep.DisableCookies = material.DisableCookies
 	// Header protection needs S1-S4 >= 12 (the 12-byte ChaCha20 nonce). The
 	// preset may carry smaller values (e.g. s4=12 is common, but s1 can be 15
 	// and s3/s4 can dip below 12 on some presets); raise them in place.
@@ -1671,7 +1673,24 @@ func usersByInboundMap(store *Store, inbounds []model.NodeInbound) map[string][]
 	}
 	out := map[string][]model.User{}
 	for _, ib := range inbounds {
-		if ib.Tag == "" || len(ib.ForUsers) == 0 {
+		if ib.Tag == "" {
+			continue
+		}
+		if ib.Protocol == "naive" || ib.Protocol == "mieru" || ib.Protocol == "trusttunnel" {
+			for _, u := range all {
+				if !u.Active || u.IsExpired() {
+					continue
+				}
+				before := u.NaivePassword + u.MieruPassword
+				_ = EnsureUserCreds(u)
+				if u.NaivePassword+u.MieruPassword != before {
+					_ = store.SaveUser(u)
+				}
+				out[ib.Tag] = append(out[ib.Tag], *u)
+			}
+			continue
+		}
+		if len(ib.ForUsers) == 0 {
 			continue
 		}
 		for _, uid := range ib.ForUsers {

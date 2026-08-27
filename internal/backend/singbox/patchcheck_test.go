@@ -38,13 +38,13 @@ import (
 const (
 	// patchcheckABXRef is the full SHA of the AlexeyLCP/amnezia-box fork commit
 	// we build from. singBoxVersion is its 8-char short SHA.
-	patchcheckABXRef = "3c55427349dcd4fffff3d7da9f9adaaa486ef99a"
+	patchcheckABXRef = "922fc6051b152bfa46f2deaf1e77eb21b2e5a041"
 	abxRepo          = "https://github.com/AlexeyLCP/amnezia-box.git"
 
 	// patchcheckAWGGORef is the full SHA of the hoaxisr/amneziawg-go/v3 commit
 	// the fork's go.mod pins (InputPackets API, module path /v3).
 	// amneziaWGGoVersion is its 7-char short SHA.
-	patchcheckAWGGORef = "e32b3b0feebea8b260f5d64011009c49aff5b232"
+	patchcheckAWGGORef = "ae4523cffd89c0001edb3341c0b881fbf0159fa5"
 	awggoRepo          = "https://github.com/hoaxisr/amneziawg-go.git"
 )
 

@@ -7,7 +7,7 @@
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
-ABX_REF="${ABX_REF:-3c554273}"
+ABX_REF="${ABX_REF:-922fc605}"
 BUILD_DIR="${BUILD_DIR:-/tmp/sing-box-build-angry}"
 OUT="$REPO_ROOT/deps/sing-box.exe"
 mkdir -p "$BUILD_DIR"
@@ -16,7 +16,7 @@ if [ ! -d amnezia-box ]; then
   git clone --quiet --no-checkout https://github.com/AlexeyLCP/amnezia-box.git amnezia-box
 fi
 ( cd amnezia-box && git fetch --quiet origin && git checkout --quiet "$ABX_REF" )
-BUILD_TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_awg,with_mtproxy,with_acme,with_clash_api,with_tailscale,with_openvpn"
+BUILD_TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_awg,with_mtproxy,with_trusttunnel,with_acme,with_clash_api,with_tailscale,with_openvpn"
 echo "==> Building amnezia-box @ $ABX_REF for windows/amd64"
 ( cd amnezia-box && \
   CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOFLAGS=-mod=mod \

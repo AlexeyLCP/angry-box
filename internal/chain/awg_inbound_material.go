@@ -66,7 +66,7 @@ func EnsureInboundAWGMaterial(ib *model.NodeInbound, preset ConnectionPreset) {
 // fields in place (harmless — they are only emitted when AWG3Mode is on); a
 // clean re-enable after an off cycle reuses the old key, which is safe.
 func ensureInboundAWG3Material(ib *model.NodeInbound) {
-	if ib.EffectiveAWGVersion() != model.AWGVersion3 {
+	if !model.IsAWG3Family(ib.EffectiveAWGVersion()) {
 		return
 	}
 	if ib.AWG3HeaderProtectionKey != "" {
@@ -83,7 +83,7 @@ func ensureInboundAWG3Material(ib *model.NodeInbound) {
 // AWG3 material (plain WG / not yet populated), so callers can pass it
 // straight to BuildAWGAmnezia and get the no-CPS path.
 func InboundAWGObfsMaterial(ib *model.NodeInbound) *AWGObfsMaterial {
-	isV3 := ib.EffectiveAWGVersion() == model.AWGVersion3
+	isV3 := model.IsAWG3Family(ib.EffectiveAWGVersion())
 	if ib.AWGCPSI1 == "" && !isV3 {
 		return nil
 	}
@@ -108,6 +108,7 @@ func InboundAWGObfsMaterial(ib *model.NodeInbound) *AWGObfsMaterial {
 		m.HeaderProtectionKey = ib.AWG3HeaderProtectionKey
 		m.ContentPaddingAddition = ib.AWG3ContentPaddingAddition
 		m.RekeyAfterTime = ib.AWG3RekeyAfterTime
+		m.RandomTrailers = ib.EffectiveAWGVersion() == model.AWGVersion31
 	}
 	return m
 }
@@ -209,7 +210,7 @@ func resolveAWGPresetForVersion(preset ConnectionPreset, version string) Connect
 // a failed one (suppresses re-dialing the same flaky domain on every deploy).
 func EnsureProfileAWGMaterial(prof *model.InboundProfile, preset ConnectionPreset) bool {
 	changed := false
-	if prof.EffectiveAWGVersion() == model.AWGVersion3 && prof.AWG3HeaderProtectionKey == "" {
+	if model.IsAWG3Family(prof.EffectiveAWGVersion()) && prof.AWG3HeaderProtectionKey == "" {
 		awg3 := GenerateAWG3Material()
 		prof.AWG3HeaderProtectionKey = awg3.HeaderProtectionKey
 		prof.AWG3ContentPaddingAddition = awg3.ContentPaddingAddition
@@ -306,7 +307,7 @@ func applyProfileAWGMaterial(ib *model.NodeInbound, prof *model.InboundProfile) 
 	ib.AWG3RekeyAfterTime = prof.AWG3RekeyAfterTime
 	if prof.AWGCPSI1 == "" {
 		// No shared CPS material, but AWG3 may still be profile-backed.
-		return prof.AWG3Mode || prof.AWGVersion == model.AWGVersion3
+		return prof.AWG3Mode || model.IsAWG3Family(prof.AWGVersion)
 	}
 	ib.AWGCPSLevel = prof.AWGCPSLevel
 	ib.AWGCPSMimicry = prof.AWGCPSMimicry

@@ -237,6 +237,9 @@ templ NodeForm(h *model.Host, settings *model.PanelSettings, allKeys []model.SSH
 						<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Save") }</button>
 					</div>
 				</form>
+				if len(nodeInfo) > 0 && nodeInfo[0] != nil {
+					@awgOutboundSection(h.ID, nodeInfo[0])
+				}
 			}
 		</div>
 		<form method="dialog" class="modal-backdrop">
@@ -311,6 +314,28 @@ templ nodeFormFields(nodeInfo ...*model.NodeInfo) {
 			<span class="text-sm">{ i18n.T(ctx, "Auto-relocate on down") }</span>
 		</label>
 	</div>
+}
+
+templ awgOutboundSection(nodeID string, info *model.NodeInfo) {
+	<div class="divider-x my-3"></div>
+	<div class="sect-title mb-2">{ i18n.T(ctx, "AWG outbound") }</div>
+	<p class="hint mb-2">{ i18n.T(ctx, "AWG outbound hint") }</p>
+	if info != nil {
+		for _, ob := range info.AWGOutbounds {
+			<div class="flex items-center justify-between text-sm mb-1" style="border: 1px solid var(--bd); border-radius: 8px; padding: 0.4rem 0.6rem;">
+				<span class="font-mono">{ ob.IfaceName() }</span>
+				<span class="text-xs" style="color: var(--mut)">{ ob.Endpoint }</span>
+				<button type="button" class="btn btn-xs btn-ghost"
+					hx-post={ "/ui/nodes/" + nodeID + "/awg-outbounds/" + ob.ID + "/delete" }
+					hx-target="#modal-container"
+					hx-swap="innerHTML">{ i18n.T(ctx, "Delete") }</button>
+			</div>
+		}
+	}
+	<form hx-post={ "/ui/nodes/" + nodeID + "/awg-outbounds" } hx-target="#modal-container" hx-swap="innerHTML" class="flex flex-col gap-2">
+		<textarea name="conf" class="ta font-mono text-xs" rows="6" placeholder={"[Interface]\n...\n[Peer]\n...\nvpn://"}></textarea>
+		<button type="submit" class="btn btn-sm btn-outline">{ i18n.T(ctx, "Add AWG outbound") }</button>
+	</form>
 }
 
 templ NodeCaptureForm(host *model.Host, settings *model.PanelSettings, allKeys []model.SSHKeyEntry) {

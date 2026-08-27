@@ -1,0 +1,329 @@
+// Package vpnuri encodes AmneziaVPN vpn:// share links from a WireGuard/AWG
+// client .conf. Ported from lucx-ui (PolyForm Noncommercial). Format matches
+// amnezia-client ExportController:
+//
+//	vpn:// + Base64URL( qCompress(JSON) )
+//
+// where qCompress is Qt's wrapper: 4-byte big-endian uncompressed length +
+// raw DEFLATE (zlib) body.
+package vpnuri
+
+import (
+	"bytes"
+	"compress/zlib"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+const (
+	containerName = "amnezia-awg"
+	protoName     = "awg"
+)
+
+// EncodeConf builds a vpn:// URI from an awg-quick client .conf body.
+func EncodeConf(conf string) (string, error) {
+	conf = strings.TrimSpace(conf)
+	if conf == "" {
+		return "", fmt.Errorf("vpnuri: empty conf")
+	}
+	if !strings.Contains(conf, "[Interface]") || !strings.Contains(conf, "[Peer]") {
+		return "", fmt.Errorf("vpnuri: conf missing [Interface]/[Peer]")
+	}
+	payload, err := json.Marshal(amneziaEnvelope(conf))
+	if err != nil {
+		return "", err
+	}
+	compressed, err := qCompress(payload)
+	if err != nil {
+		return "", err
+	}
+	return "vpn://" + base64.RawURLEncoding.EncodeToString(compressed), nil
+}
+
+func amneziaEnvelope(conf string) map[string]any {
+	meta := parseConf(conf)
+	innerJSON, _ := json.Marshal(meta.inner)
+	awg := map[string]any{
+		"last_config":        string(innerJSON),
+		"isThirdPartyConfig": true,
+		"transport_proto":    "udp",
+	}
+	if meta.port > 0 {
+		awg["port"] = strconv.Itoa(meta.port)
+	}
+	env := map[string]any{
+		"defaultContainer": containerName,
+		"containers": []any{
+			map[string]any{
+				"container": containerName,
+				protoName:   awg,
+			},
+		},
+	}
+	if meta.host != "" {
+		env["hostName"] = meta.host
+	}
+	if meta.desc != "" {
+		env["description"] = meta.desc
+	}
+	if meta.dns1 != "" {
+		env["dns1"] = meta.dns1
+	}
+	if meta.dns2 != "" {
+		env["dns2"] = meta.dns2
+	}
+	return env
+}
+
+var awgLastConfigKeys = map[string]string{
+	"jc":                     "Jc",
+	"jmin":                   "Jmin",
+	"jmax":                   "Jmax",
+	"s1":                     "S1",
+	"s2":                     "S2",
+	"s3":                     "S3",
+	"s4":                     "S4",
+	"h1":                     "H1",
+	"h2":                     "H2",
+	"h3":                     "H3",
+	"h4":                     "H4",
+	"i1":                     "I1",
+	"i2":                     "I2",
+	"i3":                     "I3",
+	"i4":                     "I4",
+	"i5":                     "I5",
+	"headerprotectionkey":    "HeaderProtectionKey",
+	"contentpaddingaddition": "ContentPaddingAddition",
+	"rekeyaftertime":         "RekeyAfterTime",
+	"rekeytimeout":           "RekeyTimeout",
+	"rejectaftertime":        "RejectAfterTime",
+	"keepalivetimeout":       "KeepaliveTimeout",
+	"maxhandshakeattempts":   "MaxHandshakeAttempts",
+	"randomtrailers":         "RandomTrailers",
+	"disablecookies":         "DisableCookies",
+}
+
+type confMeta struct {
+	host, dns1, dns2, desc string
+	port                   int
+	inner                  map[string]any
+}
+
+// ParseConfFields extracts host/port/keys/obfuscation from an awg-quick .conf.
+func ParseConfFields(conf string) map[string]string {
+	out := map[string]string{}
+	for _, raw := range strings.Split(conf, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if val != "" {
+			out[key] = val
+		}
+	}
+	return out
+}
+
+func parseConf(conf string) confMeta {
+	meta := confMeta{inner: map[string]any{"config": conf}}
+	for _, raw := range strings.Split(conf, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			if meta.desc == "" {
+				meta.desc = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "[") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if val == "" {
+			continue
+		}
+		switch strings.ToLower(key) {
+		case "endpoint":
+			if meta.host == "" {
+				meta.host, meta.port = splitHostPort(val)
+				if meta.host != "" {
+					meta.inner["hostName"] = meta.host
+				}
+				if meta.port > 0 {
+					meta.inner["port"] = meta.port
+				}
+			}
+		case "dns":
+			parts := strings.Split(val, ",")
+			if meta.dns1 == "" && len(parts) > 0 {
+				meta.dns1 = strings.TrimSpace(parts[0])
+			}
+			if meta.dns2 == "" && len(parts) > 1 {
+				meta.dns2 = strings.TrimSpace(parts[1])
+			}
+		case "privatekey":
+			meta.inner["client_priv_key"] = val
+		case "address":
+			meta.inner["client_ip"] = val
+		case "publickey":
+			meta.inner["server_pub_key"] = val
+		case "presharedkey":
+			meta.inner["psk_key"] = val
+		case "mtu":
+			meta.inner["mtu"] = val
+		case "persistentkeepalive":
+			meta.inner["persistent_keep_alive"] = val
+		case "allowedips":
+			var ips []string
+			for _, p := range strings.Split(val, ",") {
+				if ip := strings.TrimSpace(p); ip != "" {
+					ips = append(ips, ip)
+				}
+			}
+			if len(ips) > 0 {
+				meta.inner["allowed_ips"] = ips
+			}
+		default:
+			if jsonKey, ok := awgLastConfigKeys[strings.ToLower(key)]; ok {
+				meta.inner[jsonKey] = val
+			}
+		}
+	}
+	return meta
+}
+
+func splitHostPort(s string) (string, int) {
+	if strings.HasPrefix(s, "[") {
+		end := strings.LastIndex(s, "]")
+		if end < 0 {
+			return s, 0
+		}
+		host := s[1:end]
+		rest := s[end+1:]
+		if !strings.HasPrefix(rest, ":") {
+			return host, 0
+		}
+		p, err := strconv.Atoi(rest[1:])
+		if err != nil {
+			return host, 0
+		}
+		return host, p
+	}
+	i := strings.LastIndex(s, ":")
+	if i < 0 {
+		return s, 0
+	}
+	p, err := strconv.Atoi(s[i+1:])
+	if err != nil {
+		return s, 0
+	}
+	return s[:i], p
+}
+
+func qCompress(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	var size [4]byte
+	binary.BigEndian.PutUint32(size[:], uint32(len(data)))
+	buf.Write(size[:])
+	w := zlib.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		_ = w.Close()
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Decode returns uncompressed payload bytes (JSON envelope or legacy raw .conf).
+func Decode(uri string) ([]byte, error) {
+	s := strings.TrimSpace(uri)
+	s = strings.TrimPrefix(s, "vpn://")
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		raw, err = base64.URLEncoding.DecodeString(s)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(raw) < 4 {
+		return nil, fmt.Errorf("vpnuri: truncated payload")
+	}
+	r, err := zlib.NewReader(bytes.NewReader(raw[4:]))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var out bytes.Buffer
+	if _, err := out.ReadFrom(r); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// ConfFromPayload extracts the awg-quick .conf from a Decode() result.
+func ConfFromPayload(payload []byte) (string, error) {
+	trimmed := strings.TrimSpace(string(payload))
+	if trimmed != "" && trimmed[0] != '{' && strings.Contains(trimmed, "[Interface]") && strings.Contains(trimmed, "[Peer]") {
+		return trimmed, nil
+	}
+	var env map[string]any
+	if err := json.Unmarshal(payload, &env); err != nil {
+		return "", fmt.Errorf("vpnuri: not JSON and not .conf")
+	}
+	containers, _ := env["containers"].([]any)
+	if len(containers) == 0 {
+		return "", fmt.Errorf("vpnuri: no containers")
+	}
+	last, _ := containers[len(containers)-1].(map[string]any)
+	if last == nil {
+		return "", fmt.Errorf("vpnuri: bad container")
+	}
+	proto, _ := last["awg"].(map[string]any)
+	if proto == nil {
+		proto, _ = last["wireguard"].(map[string]any)
+	}
+	if proto == nil {
+		return "", fmt.Errorf("vpnuri: no awg/wireguard")
+	}
+	switch lc := proto["last_config"].(type) {
+	case string:
+		var inner map[string]any
+		if err := json.Unmarshal([]byte(lc), &inner); err == nil {
+			if c, ok := inner["config"].(string); ok && strings.Contains(c, "[Interface]") {
+				return strings.TrimSpace(c), nil
+			}
+		}
+		if strings.Contains(lc, "[Interface]") {
+			return strings.TrimSpace(lc), nil
+		}
+	case map[string]any:
+		if c, ok := lc["config"].(string); ok && strings.Contains(c, "[Interface]") {
+			return strings.TrimSpace(c), nil
+		}
+	}
+	return "", fmt.Errorf("vpnuri: last_config has no .conf")
+}
+
+// IsAWGConf reports whether s looks like an awg-quick client .conf body.
+func IsAWGConf(s string) bool {
+	return strings.Contains(s, "[Interface]") && strings.Contains(s, "[Peer]")
+}

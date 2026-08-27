@@ -142,6 +142,16 @@ func DetectVPN(ctx context.Context, host model.Host, useSudo bool, connector ...
 		}
 	}
 
+	if names, _, _, err := client.RunWithOutput(ctx, priv("docker ps --format '{{.Names}}' 2>/dev/null"), 15*time.Second); err == nil {
+		for _, name := range strings.Split(names, "\n") {
+			name = strings.TrimSpace(name)
+			if name == "amnezia-awg" || strings.HasPrefix(name, "amnezia-awg") || name == "amnezia-wireguard" || strings.HasPrefix(name, "amnezia-wireguard-") {
+				cfgHits = append(cfgHits, cfgHit{DetectedAWG, "docker:" + name, "amnezia-docker"})
+				break
+			}
+		}
+	}
+
 	// Also probe binaries (informational — feeds Detection.Other / Note).
 	binOut, _, _, _ := client.RunWithOutput(ctx, sudoBash("command -v sing-box xray mtg awg awg-quick 2>/dev/null"), 15*time.Second)
 	binaries := strings.Fields(binOut)

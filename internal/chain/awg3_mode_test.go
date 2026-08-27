@@ -191,7 +191,7 @@ func TestAWG3ClientConf_HasHPK(t *testing.T) {
 	preset := GetDefaultPreset()
 	EnsureInboundAWGMaterial(ib, preset)
 	mat := InboundAWGObfsMaterial(ib)
-	conf := renderAWGQuickConf("1.2.3.4", 51841, "CLIENTPRIV", "SERVERPUB", "10.8.0.2/32", &preset, mat, ib.EffectiveAWGVersion())
+	conf := renderAWGQuickConf("1.2.3.4", 51841, "CLIENTPRIV", "SERVERPUB", "10.8.0.2/32", &preset, mat, ib.EffectiveAWGVersion(), "")
 	if !strings.Contains(conf, "HeaderProtectionKey = ") {
 		t.Errorf("client .conf must carry HeaderProtectionKey:\n%s", conf)
 	}
@@ -207,7 +207,7 @@ func TestAWG3ClientConf_HasHPK(t *testing.T) {
 	// Off case.
 	ib2 := &model.NodeInbound{Protocol: "awg", Port: 51841, AWG3Mode: false}
 	EnsureInboundAWGMaterial(ib2, preset)
-	conf2 := renderAWGQuickConf("1.2.3.4", 51841, "CLIENTPRIV", "SERVERPUB", "10.8.0.2/32", &preset, InboundAWGObfsMaterial(ib2), ib2.EffectiveAWGVersion())
+	conf2 := renderAWGQuickConf("1.2.3.4", 51841, "CLIENTPRIV", "SERVERPUB", "10.8.0.2/32", &preset, InboundAWGObfsMaterial(ib2), ib2.EffectiveAWGVersion(), "")
 	if strings.Contains(conf2, "HeaderProtectionKey") {
 		t.Errorf("AWG3-off client .conf must NOT carry HeaderProtectionKey:\n%s", conf2)
 	}

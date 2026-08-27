@@ -98,13 +98,28 @@ func RenderNodeAWGConfs(
 	//    10.8.0.1/24). A standalone with a distinct AWGServerAddress (10.8.1.1/24,
 	//    ...) would need a separate interface (awg1) — that multi-interface
 	//    support is a follow-up; for now we warn and skip to keep awg0 consistent.
+	for i, ob := range nodeInfo.AWGOutbounds {
+		if !ob.Enabled || ob.PrivateKey == "" {
+			continue
+		}
+		if ob.ID == "" {
+			ob.ID = fmt.Sprintf("%d", i+1)
+		}
+		iface := ob.IfaceName()
+		files = append(files, AWGConfFile{
+			Path:        awgConfPath(iface),
+			ServiceName: awgServiceName(iface),
+			Content:     RenderAWGOutboundConf(ob),
+		})
+	}
+
 	standaloneAdded := false
 	for i := range nodeInfo.Inbounds {
 		ib := &nodeInfo.Inbounds[i]
 		if ib.Protocol != "awg" {
 			continue
 		}
-		if ib.EffectiveAWGVersion() == model.AWGVersion3 && !kernelAWG3 {
+		if model.IsAWG3Family(ib.EffectiveAWGVersion()) && !kernelAWG3 {
 			// AWG 3.0 userspace fallback = `type:"awg"` endpoint rendered in the
 			// merged config (buildStandaloneInOut), NOT a kernel awg0/awg1 .conf.
 			// On a kernel-AWG3 node (KernelAWG3Supported) the v3 inbound falls
@@ -223,7 +238,7 @@ func AWGTeardownInterfaces(
 	}
 	for i := range nodeInfo.Inbounds {
 		ib := &nodeInfo.Inbounds[i]
-		if ib.Protocol != "awg" || ib.EffectiveAWGVersion() != model.AWGVersion3 {
+		if ib.Protocol != "awg" || !model.IsAWG3Family(ib.EffectiveAWGVersion()) {
 			continue
 		}
 		if kernelAWG3 {
@@ -282,7 +297,7 @@ func renderChainEntryAWG0Conf(r chainRole, users []model.User) AWGConfFile {
 		if !u.Active || u.AWGPublicKey == "" || u.AWGAddress == "" {
 			continue
 		}
-		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress})
+		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress, PresharedKey: u.AWGPresharedKey})
 	}
 	return AWGConfFile{
 		Path:        awg0ConfPath,
@@ -409,7 +424,7 @@ func renderAWGServerConfFromInbound(ib *model.NodeInbound, preset ConnectionPres
 		if !u.Active || u.AWGPublicKey == "" || u.AWGAddress == "" {
 			continue
 		}
-		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress})
+		peers = append(peers, AWGServerPeer{PublicKey: u.AWGPublicKey, AllowedIPs: u.AWGAddress, PresharedKey: u.AWGPresharedKey})
 	}
 	var amnezia *config.AmneziaOptions
 	if awg.CPSLevel > 0 || preset.CPSLevel > 0 {
@@ -456,7 +471,7 @@ func renderAWGServerConfFromInbound(ib *model.NodeInbound, preset ConnectionPres
 // inbound is not AWG 3.0 (so non-v3 inbounds render a plain kernel conf). The
 // returned *AWGObfsMaterial carries the hex-persisted HPK + CPM/RAT ranges.
 func inboundAWG3MaterialForKernel(ib *model.NodeInbound) *AWGObfsMaterial {
-	if ib == nil || ib.EffectiveAWGVersion() != model.AWGVersion3 {
+	if ib == nil || !model.IsAWG3Family(ib.EffectiveAWGVersion()) {
 		return nil
 	}
 	return InboundAWGObfsMaterial(ib)

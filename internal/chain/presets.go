@@ -298,6 +298,8 @@ func presetSupportsProtocol(p ConnectionPreset, protocol string) bool {
 		return p.TUIC != nil
 	case "vless-reality":
 		return p.Reality != nil
+	case "naive", "mieru", "mtproxy", "trusttunnel":
+		return false
 	default: // shadowsocks, trojan, vmess, hysteria2, telemt — transport obfuscation
 		return p.XHTTP != nil
 	}
@@ -379,7 +381,7 @@ func defaultPresetForProtocol(protocol string) string {
 // (e.g. a v3 inbound paired with a v2-only preset by an old store).
 func defaultPresetForAWGVersion(version string) string {
 	switch version {
-	case model.AWGVersion3:
+	case model.AWGVersion3, model.AWGVersion31:
 		return "maximum_stealth_2026_awg3"
 	default: // AWGVersion1x, AWGVersion2, ""
 		return "maximum_stealth_2026_awg"
@@ -408,7 +410,7 @@ func PresetSupportsAWGVersion(p ConnectionPreset, version string) bool {
 	if version == "" {
 		version = model.AWGVersion2
 	}
-	if version == model.AWGVersion3 {
+	if model.IsAWG3Family(version) {
 		return presetVer == model.AWGVersion3
 	}
 	return presetVer != model.AWGVersion3

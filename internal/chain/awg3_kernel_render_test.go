@@ -81,6 +81,21 @@ func TestWriteAWG3ConfLines_OmitsEmptyOptional(t *testing.T) {
 	}
 }
 
+func TestWriteAWG3ConfLines_RandomTrailers(t *testing.T) {
+	var b strings.Builder
+	writeAWG3ConfLines(&b, &AWGObfsMaterial{
+		HeaderProtectionKey: validHexKey,
+		RandomTrailers:      true,
+	})
+	out := b.String()
+	if !strings.Contains(out, "RandomTrailers = true\n") {
+		t.Errorf("RandomTrailers missing\ngot:\n%s", out)
+	}
+	if strings.Contains(out, "DisableCookies") {
+		t.Errorf("DisableCookies should stay off\ngot:\n%s", out)
+	}
+}
+
 // TestRenderServerAWGConf_AWG3InInterface pins that RenderServerAWGConf emits
 // the HPK/CPM/RAT block inside [Interface] and BEFORE [Peer] (awg setconf parses
 // device-level fields only in [Interface]). This is the kernel-AWG3 server conf

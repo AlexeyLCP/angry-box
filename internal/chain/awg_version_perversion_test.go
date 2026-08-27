@@ -28,6 +28,9 @@ func TestAWGVersionAtLeast(t *testing.T) {
 		{"3", model.AWGVersion1x, true},
 		{"3", model.AWGVersion2, true},
 		{"3", model.AWGVersion3, true},
+		{"3.1", model.AWGVersion3, true},
+		{"3.1", model.AWGVersion31, true},
+		{"3", model.AWGVersion31, false},
 		// empty/unknown normalize to "2"
 		{"", model.AWGVersion2, true},
 		{"", model.AWGVersion3, false},
@@ -76,7 +79,7 @@ func TestRenderAWGQuickConf_PerVersionFields(t *testing.T) {
 
 	// 1.5: no S3/S4, no I1-I5, no HPK.
 	m15 := GenerateAWGObfsMaterialForVersion(2, "quic", model.AWGVersion1x)
-	c15 := renderAWGQuickConf("1.2.3.4", 51820, "PRIV", "PUB", "10.8.0.2/32", &preset, &m15, model.AWGVersion1x)
+	c15 := renderAWGQuickConf("1.2.3.4", 51820, "PRIV", "PUB", "10.8.0.2/32", &preset, &m15, model.AWGVersion1x, "")
 	if strings.Contains(c15, "S3 = ") || strings.Contains(c15, "I1 = ") {
 		t.Errorf("1.5 client conf must NOT carry S3/I1-I5:\n%s", c15)
 	}
@@ -86,7 +89,7 @@ func TestRenderAWGQuickConf_PerVersionFields(t *testing.T) {
 
 	// 2: S3/S4 + I1-I5 present, no HPK.
 	m2 := GenerateAWGObfsMaterialForVersion(2, "quic", model.AWGVersion2)
-	c2 := renderAWGQuickConf("1.2.3.4", 51820, "PRIV", "PUB", "10.8.0.2/32", &preset, &m2, model.AWGVersion2)
+	c2 := renderAWGQuickConf("1.2.3.4", 51820, "PRIV", "PUB", "10.8.0.2/32", &preset, &m2, model.AWGVersion2, "")
 	if !strings.Contains(c2, "S3 = ") || !strings.Contains(c2, "I1 = ") {
 		t.Errorf("2.0 client conf must carry S3 + I1-I5:\n%s", c2)
 	}
@@ -96,7 +99,7 @@ func TestRenderAWGQuickConf_PerVersionFields(t *testing.T) {
 
 	// 3: HPK present.
 	m3 := v3Material(t)
-	c3 := renderAWGQuickConf("1.2.3.4", 51820, "PRIV", "PUB", "10.8.0.2/32", &preset, &m3, model.AWGVersion3)
+	c3 := renderAWGQuickConf("1.2.3.4", 51820, "PRIV", "PUB", "10.8.0.2/32", &preset, &m3, model.AWGVersion3, "")
 	if !strings.Contains(c3, "HeaderProtectionKey = ") {
 		t.Errorf("3.0 client conf must carry HPK:\n%s", c3)
 	}
