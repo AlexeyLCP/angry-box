@@ -4,6 +4,16 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.31] — 2026-08-27
+
+### Feature — LucX-port: naive/mieru/TrustTunnel, AWG 3.1, vpn://, Clash
+
+Standalone NaiveProxy + Mieru + TrustTunnel inbounds (TLS, per-user creds, share URIs). Subscription: Amnezia `vpn://`, Clash Meta, HTML page. AWG PSK, live AWG speed, AWG outbound (`awgo-N`), docker/toolza import.
+
+amnezia-box pin `922fc605` (hoaxisr AWG 3.1 + mtproxy + TrustTunnel `with_trusttunnel`). AWG version `3.1` (RandomTrailers). Kernel src `amneziawg-linux-kernel-module v3.1.20260827`.
+
+**Pins:** `ABX_REF`/`singBoxVersion`=`922fc605`, `amneziaWGGoVersion`=`ae4523c`. Tarball `sing-box-922fc605-amnezia-linux-amd64.tar.gz` on release `v0.1.0`.
+
 ## [v0.8.30] — 2026-08-08
 
 ### Fix — double plus on Add buttons (SVG + "+ Add …" text)
