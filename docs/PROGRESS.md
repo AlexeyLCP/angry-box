@@ -2455,5 +2455,13 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 - **AWG 3.1:** версия `"3.1"` (HPK как 3.0 + `RandomTrailers`). Kernel src `v3.1.20260827`.
 - **Пин:** `singBoxVersion`/`ABX_REF`=`922fc605`, checksum `4272d04d…`. Tarball `deps/sing-box-922fc605-amnezia-linux-amd64.tar.gz`.
 
+**Проверено на тестовом стенде (n1, 2026-08-27):** Debian 12, kernel 6.1.0-52, amneziawg module + tools `v3.1.20260812`.
+- `sing-box version` = `922fc605`, теги `with_trusttunnel,with_mtproxy,with_awg` ✓.
+- `sing-box check` — trusttunnel inbound/outbound + mtproxy + awg endpoint (random_trailers + HPK) + naive + mieru ✓.
+- **TrustTunnel live:** socks→trusttunnel→direct, egress через туннель ✓.
+- **Mieru live:** socks→mieru(TCP)→direct ✓. (Naive outbound не в сборке — тег `with_naive_outbound`; inbound конфиг-валиден, клиент = внешнее приложение.)
+- **AWG 3.1 kernel E2E:** сервер awg0 (`RandomTrailers = on` + HPK/CPM/RAT) + клиент в netns (awg1), handshake + ping + `curl --interface` → egress IP ноды ✓.
+- **Баг, найденный живым тестом:** amneziawg-tools 3.1 принимают bool только как `on/off` (`true` → `Configuration parsing error`). Kernel-рендер `RandomTrailers`/`DisableCookies` исправлен на `on` (`awg_server.go`, `clientconfig.go`, `web/users.go`).
+
 ---
 

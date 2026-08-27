@@ -88,7 +88,7 @@ func TestWriteAWG3ConfLines_RandomTrailers(t *testing.T) {
 		RandomTrailers:      true,
 	})
 	out := b.String()
-	if !strings.Contains(out, "RandomTrailers = true\n") {
+	if !strings.Contains(out, "RandomTrailers = on\n") {
 		t.Errorf("RandomTrailers missing\ngot:\n%s", out)
 	}
 	if strings.Contains(out, "DisableCookies") {

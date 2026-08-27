@@ -456,10 +456,10 @@ func renderAWGQuickConf(host string, port int, clientPriv, serverPub, address st
 				b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", material.RekeyAfterTime))
 			}
 			if material.RandomTrailers {
-				b.WriteString("RandomTrailers = true\n")
+				b.WriteString("RandomTrailers = on\n")
 			}
 			if material.DisableCookies {
-				b.WriteString("DisableCookies = true\n")
+				b.WriteString("DisableCookies = on\n")
 			}
 		}
 	}

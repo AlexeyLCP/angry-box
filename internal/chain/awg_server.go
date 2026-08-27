@@ -272,10 +272,10 @@ func writeAWG3ConfLines(b *strings.Builder, m *AWGObfsMaterial) {
 		b.WriteString(fmt.Sprintf("RekeyAfterTime = %s\n", m.RekeyAfterTime))
 	}
 	if m.RandomTrailers {
-		b.WriteString("RandomTrailers = true\n")
+		b.WriteString("RandomTrailers = on\n")
 	}
 	if m.DisableCookies {
-		b.WriteString("DisableCookies = true\n")
+		b.WriteString("DisableCookies = on\n")
 	}
 }
 
