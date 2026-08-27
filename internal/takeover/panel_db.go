@@ -1,21 +1,17 @@
 package takeover
 
 import (
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"os"
 	"strings"
-
-	_ "modernc.org/sqlite"
 )
 
-// panel_db.go — parses a 3x-ui/lucx-ui panel SQLite DB (pulled over SSH into
-// the orchestrator; weak nodes never run the parser). Both panels share the
-// schema: table `inbounds` (protocol/port/settings/stream_settings JSON),
-// table `client_traffics` (per-email usage), table `settings` (key/value —
-// the xrayTemplateConfig blob carries the routing rules).
+// panel_db.go — types + JSON-shape helpers for parsing a 3x-ui/lucx-ui panel
+// SQLite DB (pulled over SSH into the orchestrator; weak nodes never run the
+// parser). The SQLite-backed ParsePanelDB itself lives in panel_db_sqlite.go
+// (build tag !nosqlite) with a stub in panel_db_stub.go, because
+// modernc.org/sqlite (via modernc.org/libc) does not compile for the 32-bit
+// MIPS router targets.
 
 // PanelInbound is one row of the panel's `inbounds` table.
 type PanelInbound struct {
@@ -43,69 +39,6 @@ type PanelDB struct {
 	Inbounds    []PanelInbound
 	Traffics    map[string]PanelClientTraffic // keyed by email
 	RoutingJSON string                        // xrayTemplateConfig (routing.rules live inside)
-}
-
-// ParsePanelDB parses the raw SQLite bytes. The bytes are written to a temp
-// file (modernc.org/sqlite is file-backed) and removed afterwards.
-func ParsePanelDB(data []byte) (*PanelDB, error) {
-	tmp, err := os.CreateTemp("", "ab-panel-*.db")
-	if err != nil {
-		return nil, fmt.Errorf("panel db: temp file: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return nil, fmt.Errorf("panel db: write temp: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return nil, fmt.Errorf("panel db: close temp: %w", err)
-	}
-
-	db, err := sql.Open("sqlite", tmp.Name())
-	if err != nil {
-		return nil, fmt.Errorf("panel db: open: %w", err)
-	}
-	defer db.Close()
-
-	out := &PanelDB{Traffics: map[string]PanelClientTraffic{}}
-
-	rows, err := db.Query(`SELECT id, remark, port, protocol, enable, settings, stream_settings FROM inbounds`)
-	if err != nil {
-		return nil, fmt.Errorf("panel db: inbounds: %w", err)
-	}
-	for rows.Next() {
-		var pi PanelInbound
-		var remark, settings, stream sql.NullString
-		var enable sql.NullBool
-		if err := rows.Scan(&pi.ID, &remark, &pi.Port, &pi.Protocol, &enable, &settings, &stream); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("panel db: scan inbound: %w", err)
-		}
-		pi.Remark = remark.String
-		pi.Enable = enable.Bool
-		pi.Settings = settings.String
-		pi.StreamSettings = stream.String
-		out.Inbounds = append(out.Inbounds, pi)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("panel db: inbounds rows: %w", err)
-	}
-
-	if trows, err := db.Query(`SELECT email, up, down, total, expiry_time, last_sub_fetch FROM client_traffics`); err == nil {
-		for trows.Next() {
-			var ct PanelClientTraffic
-			if err := trows.Scan(&ct.Email, &ct.Up, &ct.Down, &ct.Total, &ct.ExpiryTime, &ct.LastSubFetch); err == nil && ct.Email != "" {
-				out.Traffics[ct.Email] = ct
-			}
-		}
-		trows.Close()
-	} // client_traffics missing = usage simply not imported
-
-	if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'xrayTemplateConfig'`).Scan(&out.RoutingJSON); err != nil {
-		out.RoutingJSON = "" // no template configured — nothing to import
-	}
-	return out, nil
 }
 
 // ─── settings/stream JSON shapes (the lucx-ui/3x-ui conventions) ─────────────

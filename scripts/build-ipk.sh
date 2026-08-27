@@ -48,8 +48,11 @@ BIN="$WORK/angry-box"
 echo "==> go build $VERSION for linux/$GOARCH $GOMIPS ($FLAVOR)"
 MIPSFLAGS=""
 [ -n "$GOMIPS" ] && MIPSFLAGS="GOMIPS=$GOMIPS"
+# -tags nosqlite: the panel-import SQLite parser (modernc.org/sqlite) does not
+# compile for the 32-bit MIPS router targets (and is heavy for router flash on
+# all of them), so it is stubbed out in every router .ipk build.
 env GOOS=linux GOARCH="$GOARCH" $MIPSFLAGS CGO_ENABLED=0 \
-  go build -trimpath \
+  go build -trimpath -tags nosqlite \
   -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
   -o "$BIN" ./cmd/angry-box
 

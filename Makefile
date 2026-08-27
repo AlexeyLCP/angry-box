@@ -213,9 +213,11 @@ build-linux-armv7:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath $(LDFLAGS) -o dist/angry-box-linux-armv7 $(CMD_DIR)
 
 # Keenetic MIPS (mipsel) — GOMIPS=softfloat for Keenetic soft-float targets.
+# -tags nosqlite: modernc.org/sqlite (panel-import parser) has no 32-bit MIPS
+# support (modernc.org/libc), so the panel DB parser is stubbed out on mips.
 .PHONY: build-keenetic-mipsel
 build-keenetic-mipsel:
-	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath $(LDFLAGS) -o dist/angry-box-keenetic-mipsel $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath -tags nosqlite $(LDFLAGS) -o dist/angry-box-keenetic-mipsel $(CMD_DIR)
 
 # Windows amd64 (for operators running the orchestrator on Windows).
 .PHONY: build-windows-amd64

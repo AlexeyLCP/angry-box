@@ -57,7 +57,9 @@ semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 **Обновление:** обычный деплой новой версии. Миграций данных нет — новые поля
 добавочные. Для живого использования утилит нужен стенд: собрать и опубликовать
 caddy-бинарник (`scripts/build-caddy.sh`) и вписать его sha256 в
-`caddyChecksums` (пустой пин закрыто фейлится).
+`caddyChecksums` (пустой пин закрыто фейлится). Импорт панелей недоступен в
+MIPS-сборках для роутеров (парсер SQLite не собирается под 32-битный MIPS —
+билд-тег `nosqlite`), на VPS/десктопе работает.
 
 ⚡️ Приятного использования!
 
@@ -114,7 +116,9 @@ in one click.
 **Upgrade:** deploy the new version as usual. No data migrations — the new
 fields are additive. Live use of the utilities needs a staging node: build and
 publish the caddy binary (`scripts/build-caddy.sh`) and pin its sha256 in
-`caddyChecksums` (an empty pin fails closed).
+`caddyChecksums` (an empty pin fails closed). Panel import is unavailable in
+the MIPS router builds (the SQLite parser does not compile for 32-bit MIPS —
+`nosqlite` build tag); it works on VPS/desktop.
 
 ⚡️ Enjoy!
 
