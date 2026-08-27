@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/i18n"
@@ -110,6 +111,36 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 						if settings.DefaultRealitySNI != "" { value={ settings.DefaultRealitySNI } } else { value="www.cloudflare.com" }
 						placeholder="www.cloudflare.com" />
 					<p class="hint">{ i18n.T(ctx, "SNI domain for REALITY/TUIC inbounds when no preset specifies one") }</p>
+				</div>
+
+				<div class="pt-4 mt-2" style="border-top: 1px solid var(--bd)">
+					<h4 class="sect-title mb-1">{ i18n.T(ctx, "Telegram bot") }</h4>
+					<p class="text-xs mb-3" style="color: var(--mut)">{ i18n.T(ctx, "Bot restart note") }</p>
+					<div class="grid gap-3 md:grid-cols-2">
+						<div>
+							<label class="flex items-center gap-2 cursor-pointer">
+								<input type="checkbox" name="bot_enabled" class="cb"
+									if settings.TelegramBot != nil && settings.TelegramBot.Enabled { checked } />
+								<span class="lbl mb-0">{ i18n.T(ctx, "Bot enabled") }</span>
+							</label>
+						</div>
+						<div>
+							<label class="lbl">{ i18n.T(ctx, "Bot token") }</label>
+							<input type="password" name="bot_token" class="inp font-mono" autocomplete="new-password"
+								if settings.TelegramBot != nil && settings.TelegramBot.Token != "" { value={ settings.TelegramBot.Token } } />
+						</div>
+						<div>
+							<label class="lbl">{ i18n.T(ctx, "Bot admin IDs") }</label>
+							<input type="text" name="bot_admin_ids" class="inp font-mono"
+								placeholder="123456789, 987654321"
+								if settings.TelegramBot != nil { value={ botAdminIDsStr(settings.TelegramBot) } } />
+						</div>
+						<div>
+							<label class="lbl">{ i18n.T(ctx, "Bot notify chat") }</label>
+							<input type="text" name="bot_notify_chat" class="inp font-mono" placeholder="-1001234567890"
+								if settings.TelegramBot != nil && settings.TelegramBot.NotifyChatID != 0 { value={ fmt.Sprintf("%d", settings.TelegramBot.NotifyChatID) } } />
+						</div>
+					</div>
 				</div>
 
 				<div class="pt-2">
@@ -359,6 +390,17 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 // autoRelocateCooldownVal returns the configured auto-relocate cooldown in
 // hours for pre-filling the settings form ("" when not configured — the
 // placeholder shows the default 6).
+func botAdminIDsStr(cfg *model.TelegramBotConfig) string {
+	if cfg == nil || len(cfg.AdminIDs) == 0 {
+		return ""
+	}
+	parts := make([]string, len(cfg.AdminIDs))
+	for i, id := range cfg.AdminIDs {
+		parts[i] = fmt.Sprintf("%d", id)
+	}
+	return strings.Join(parts, ", ")
+}
+
 func autoRelocateCooldownVal(settings *model.PanelSettings) string {
 	if settings == nil || settings.AutoRelocate == nil || settings.AutoRelocate.CooldownHours == 0 {
 		return ""

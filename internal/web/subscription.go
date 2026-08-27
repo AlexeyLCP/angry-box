@@ -36,6 +36,28 @@ import (
 	"github.com/alexeylcp/angry-box/web/templates"
 )
 
+// setSubInfoHeaders emits the subscription metadata headers client apps read:
+// Profile-Title (shown as the subscription name) and Subscription-Userinfo
+// (upload/download/total/expiry — v2rayNG/Hiddify/SFA render usage + expiry
+// from it). Traffic: AWG byte counters (the only per-user stats we collect —
+// sing-box has no xray-style per-user counters); quota: DataLimit (0 =
+// unlimited); expire: ExpiresAt unix (0 = no expiry).
+func setSubInfoHeaders(w http.ResponseWriter, u *model.User) {
+	w.Header().Set("Profile-Title", u.Name)
+	up, down := u.AWGTxBytes, u.AWGRxBytes
+	if u.UsedTraffic > 0 && up+down == 0 {
+		// P0b poller stats without an AWG split — attribute to download.
+		down = u.UsedTraffic
+	}
+	expire := int64(0)
+	if !u.ExpiresAt.IsZero() {
+		expire = u.ExpiresAt.Unix()
+	}
+	total := u.DataLimit
+	w.Header().Set("Subscription-Userinfo",
+		fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", up, down, total, expire))
+}
+
 // handleSubscription serves a user's config blob by subscription token.
 // Public (no auth): registered directly on the mux without s.auth.
 func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +114,10 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 			format = defaultSubFormatByUA(r.UserAgent())
 		}
 	}
+	// Client-app metadata headers (the 3x-ui convention): subscription apps
+	// (v2rayNG / Hiddify / SFA...) surface the profile title and the usage /
+	// expiry counters in their own UI from Subscription-Userinfo.
+	setSubInfoHeaders(w, u)
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	switch format {
 	case "vpn":
@@ -107,6 +133,15 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 		body := buildClashYAML(u.Name, links)
 		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="clash.yaml"`)
+		w.Write([]byte(body))
+	case "singbox", "sing-box", "sfa", "sfi":
+		body, err := buildUserSingboxJSON(u, links)
+		if err != nil || body == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="config.json"`)
 		w.Write([]byte(body))
 	case "html":
 		settings, _ := st.GetSettings()
@@ -201,12 +236,12 @@ func (s *Server) collectUserLinks(u *model.User, st *chain.Store) []string {
 	nodes, _ := st.ListNodeInfos()
 	ensureStandaloneAWGMaterial(st, nodes)
 	for _, node := range nodes {
-		for _, ib := range node.Inbounds {
+		for i, ib := range node.Inbounds {
 			if chain.IsChainSourcedInbound(&ib) {
 				continue // chain-entry materialization — served via the chain link above
 			}
 			if ib.Protocol == "naive" || ib.Protocol == "mieru" || ib.Protocol == "trusttunnel" || contains(ib.ForUsers, u.ID) {
-				links = append(links, buildStandaloneLink(node.Addr, ib, u))
+				links = append(links, buildStandaloneLinkFor(node, i, u))
 			}
 		}
 	}

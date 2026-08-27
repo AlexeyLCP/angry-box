@@ -4,6 +4,53 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.8.32] — 2026-08-27
+
+### Feature — node "spinal cord": utilities, subscriptions, fleet bot, panel relay, panel import
+
+Per-node installable **utilities** managed only by the orchestrator (a head
+with no web UI — the "spinal cord"): `caddy` (layer4 SNI router owning 80/443,
+default route → Reality), `acme.sh` (HTTP-01 SAN cert), `fakesite`, and
+`sub` (pushed subscription statics). Caddy mode remaps inbounds off owned
+ports, fronts TLS-terminating protocols on SNI subdomains with the acme cert,
+and gates naive/trusttunnel behind the cert utilities. Store `Revision` stamps
+every pushed artifact — last config wins.
+
+**Subscriptions:** per-user `/sub/<token>` statics pushed to every node on
+apply (revoked users disappear); `Subscription-Userinfo`/`Profile-Title`
+headers; new `?format=singbox` (full client config with a urltest group).
+
+**Fleet bot** (`internal/bot/`, telego, long-polling — works behind NAT): one
+bot per fleet in the orchestrator; `/start <code>` user binding, `/status`,
+`/config`; admin `/nodes /users /online /link`; cron loop enforces
+`start_on_first_use` deadlines + expiry warnings + brute-force lockout alerts.
+Online badge in the users table; bulk user creation.
+
+**Panel relay:** `ssh -R` from the orchestrator through a caddy node publishes
+the panel at `panel.<domain>` for orchestrators behind NAT (per-node opt-in).
+
+**Panel takeover:** detect + import 3x-ui / lucx-ui — the SQLite DB is pulled
+over SSH and parsed locally (`modernc.org/sqlite`); vless+reality / naive /
+mieru / trusttunnel / mtproto inbounds, users (deduped by tgId/email) and
+routing rules convert into angry-box entities; DB always backed up, panel
+service stopped, nothing deleted.
+
+**Also:** per-node manual routing + geo rule-sets + visualizer (§53).
+TWP (Telegram Web Proxy) is design-only — `docs/TWP-SPIKE.md` (go/no-go gate
+before any fork work).
+
+**Not yet live-tested (needs a staging node):** caddy binary install
+(`scripts/build-caddy.sh` + publish asset + pin `caddyChecksums` — empty pin
+fails closed), acme issue, relay under load, real panel import.
+
+**Deps:** `github.com/mymmrac/telego`, `modernc.org/sqlite`.
+
+**Files:** `internal/chain/{utilities,utilitydeps,utility_install}.go`,
+`internal/bot/`, `internal/web/{utilities,subpush,botctl,relay,panelimport,sub_singbox}.go`,
+`internal/takeover/{panel_db,panel_import}.go`, `internal/ssh/client.go`
+(RemoteForward/DownloadFile), `web/templates/utilities.templ`,
+`scripts/build-caddy.sh`, `docs/TWP-SPIKE.md`.
+
 ## [v0.8.31] — 2026-08-27
 
 ### Feature — LucX-port: naive/mieru/TrustTunnel, AWG 3.1, vpn://, Clash

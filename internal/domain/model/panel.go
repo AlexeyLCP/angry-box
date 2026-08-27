@@ -7,12 +7,20 @@ import (
 
 // User represents a proxy user with protocol preferences and optional expiry.
 type User struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
 	Telegram  string    `json:"telegram,omitempty"`
-	Email     string    `json:"email,omitempty"`
-	ExpiresAt time.Time `json:"expires_at,omitempty"`
-	Active    bool      `json:"active"`
+	// TelegramID is the numeric Telegram user ID, bound through the fleet bot's
+	// one-time link code (Telegram above is the free-text @username and cannot
+	// be used to message the user). 0 = not bound to the bot.
+	TelegramID int64     `json:"telegram_id,omitempty"`
+	// TelegramBindCode is the short-lived one-time code an admin issues via the
+	// fleet bot (/link): the user sends /start <code> and the bot stamps their
+	// TelegramID. Empty = no pending bind.
+	TelegramBindCode string `json:"telegram_bind_code,omitempty"`
+	Email      string    `json:"email,omitempty"`
+	ExpiresAt  time.Time `json:"expires_at,omitempty"`
+	Active     bool      `json:"active"`
 
 	// Protocol preferences — which protocols this user gets configs for.
 	Protocols []string `json:"protocols,omitempty"`
@@ -41,23 +49,23 @@ type User struct {
 	TUICPassword string `json:"tuic_password,omitempty"`
 	// Hysteria2Password is the per-user Hysteria2 password (the inbound's users
 	// array carries password-based auth, no separate UUID).
-	Hysteria2Password string `json:"hysteria2_password,omitempty"`
-	NaiveUsername     string `json:"naive_username,omitempty"`
-	NaivePassword     string `json:"naive_password,omitempty"`
-	MieruUsername          string `json:"mieru_username,omitempty"`
-	MieruPassword          string `json:"mieru_password,omitempty"`
-	TrustTunnelUsername    string `json:"trusttunnel_username,omitempty"`
-	TrustTunnelPassword    string `json:"trusttunnel_password,omitempty"`
+	Hysteria2Password   string `json:"hysteria2_password,omitempty"`
+	NaiveUsername       string `json:"naive_username,omitempty"`
+	NaivePassword       string `json:"naive_password,omitempty"`
+	MieruUsername       string `json:"mieru_username,omitempty"`
+	MieruPassword       string `json:"mieru_password,omitempty"`
+	TrustTunnelUsername string `json:"trusttunnel_username,omitempty"`
+	TrustTunnelPassword string `json:"trusttunnel_password,omitempty"`
 	// AWG per-user peer credentials. AWGPrivateKey is the client's WireGuard
 	// private key (rendered into the per-user awg-quick .conf). AWGPublicKey is
 	// the corresponding public key — it goes into the server endpoint's Peers[]
 	// so the server accepts this user's handshakes. AWGAddress is the user's
 	// unique tunnel IP (e.g. "10.8.0.3/32"); it is both the peer's AllowedIPs
 	// on the server and the source_ip_cidr used by per-client route rules.
-	AWGPrivateKey    string `json:"awg_private_key,omitempty"`
-	AWGPublicKey     string `json:"awg_public_key,omitempty"`
-	AWGAddress       string `json:"awg_address,omitempty"`
-	AWGPresharedKey  string `json:"awg_preshared_key,omitempty"`
+	AWGPrivateKey   string `json:"awg_private_key,omitempty"`
+	AWGPublicKey    string `json:"awg_public_key,omitempty"`
+	AWGAddress      string `json:"awg_address,omitempty"`
+	AWGPresharedKey string `json:"awg_preshared_key,omitempty"`
 
 	// Per-user AWG traffic counters (cumulative bytes, folded from the kernel's
 	// per-peer `awg show transfer` by the background metrics loop — v0.7).
@@ -96,17 +104,21 @@ type User struct {
 	// use, or never (Marzneshin model). SubscriptionToken backs the public
 	// /sub/{token} endpoint. Status is the derived lifecycle state, computed
 	// by ComputeStatus() at save + list time.
-	SubscriptionToken string `json:"subscription_token,omitempty"` // url-safe secret in /sub/{token}
-	ExpireStrategy    string `json:"expire_strategy,omitempty"`    // "fixed_date"|"start_on_first_use"|"never"
-	UsageDuration     int64  `json:"usage_duration,omitempty"`      // seconds, when start_on_first_use
-	ActivationDeadline time.Time `json:"activation_deadline,omitempty"` // outer bound to first connect (start_on_first_use)
-	DataLimit          int64  `json:"data_limit,omitempty"`          // bytes, 0 = unlimited (P0b-2 enforces)
-	DataLimitResetStrategy string `json:"data_limit_reset_strategy,omitempty"` // no_reset|day|week|month
-	UsedTraffic        int64  `json:"used_traffic,omitempty"`        // populated by P0b-2 poller (zero this slice)
-	LifetimeUsedTraffic int64 `json:"lifetime_used_traffic,omitempty"` // populated by P0b-2 poller
+	SubscriptionToken      string    `json:"subscription_token,omitempty"`        // url-safe secret in /sub/{token}
+	ExpireStrategy         string    `json:"expire_strategy,omitempty"`           // "fixed_date"|"start_on_first_use"|"never"
+	UsageDuration          int64     `json:"usage_duration,omitempty"`            // seconds, when start_on_first_use
+	ActivationDeadline     time.Time `json:"activation_deadline,omitempty"`       // outer bound to first connect (start_on_first_use)
+	DataLimit              int64     `json:"data_limit,omitempty"`                // bytes, 0 = unlimited (P0b-2 enforces)
+	DataLimitResetStrategy string    `json:"data_limit_reset_strategy,omitempty"` // no_reset|day|week|month
+	UsedTraffic            int64     `json:"used_traffic,omitempty"`              // populated by P0b-2 poller (zero this slice)
+	LifetimeUsedTraffic    int64     `json:"lifetime_used_traffic,omitempty"`     // populated by P0b-2 poller
 	FirstUseAt         time.Time `json:"first_use_at,omitempty"`    // stamped on first /sub fetch (start_on_first_use)
-	Status             string `json:"status,omitempty"`            // active|disabled|limited|expired|on_hold
-	ServiceID          string `json:"service_id,omitempty"`         // link to the Service the user was created from
+	Status             string    `json:"status,omitempty"`            // active|disabled|limited|expired|on_hold
+	ServiceID          string    `json:"service_id,omitempty"`         // link to the Service the user was created from
+	// ExpiryNotifiedAt dedupes the fleet bot's expiry warnings (a user gets at
+	// most one warning per expiry window; cleared implicitly when ExpiresAt
+	// moves further into the future).
+	ExpiryNotifiedAt time.Time `json:"expiry_notified_at,omitempty"`
 }
 
 // IsExpired returns true if the user has a non-zero expiry before now.
@@ -175,6 +187,27 @@ type PanelSettings struct {
 	// when enabled globally, a node is only relocated if its own
 	// NodeInfo.AutoRelocate opt-in is set — double opt-in by design.
 	AutoRelocate *AutoRelocateConfig `json:"auto_relocate,omitempty"`
+
+	// TelegramBot configures the fleet-wide Telegram bot. There is exactly ONE
+	// bot per fleet and it runs in the orchestrator (long-polling, so it works
+	// behind NAT — nodes never run their own bots). nil/Enabled=false = bot
+	// off. See model.TelegramBotConfig.
+	TelegramBot *TelegramBotConfig `json:"telegram_bot,omitempty"`
+}
+
+// TelegramBotConfig configures the fleet-wide Telegram bot (runs in the
+// orchestrator, long-polling). The token is stored in the at-rest-encrypted
+// store (same treatment as OffsiteBackup.Passphrase).
+type TelegramBotConfig struct {
+	Enabled bool   `json:"enabled,omitempty"`
+	Token   string `json:"token,omitempty"`
+	// AdminIDs are numeric Telegram user IDs allowed to run admin commands
+	// (fleet status, applies, user management). Empty = only the user-facing
+	// commands are served.
+	AdminIDs []int64 `json:"admin_ids,omitempty"`
+	// NotifyChatID is the chat that receives operational notifications (login
+	// alerts, expiry warnings, apply failures). 0 = notifications go nowhere.
+	NotifyChatID int64 `json:"notify_chat_id,omitempty"`
 }
 
 // AutoRelocateConfig configures automatic relocation of failed nodes onto
@@ -197,13 +230,13 @@ type AutoRelocateConfig struct {
 // (UploadText). The SSH key is resolved by ID from the key registry (same
 // mechanism as node SSH). "Backup now" also uses this config.
 type OffsiteBackupConfig struct {
-	Enabled     bool      `json:"enabled,omitempty"`
-	Host        string    `json:"host,omitempty"`         // offsite SSH target, host:port
-	User        string    `json:"user,omitempty"`
-	SSHKeyID    string    `json:"ssh_key_id,omitempty"`   // registry key ID (resolved by the SSH connector)
-	RemotePath  string    `json:"remote_path,omitempty"`  // e.g. /home/backup/angry-box.abbkp
-	Passphrase  string    `json:"passphrase,omitempty"`   // never the master key; scrypt-derived
-	IntervalMin int       `json:"interval_min,omitempty"` // 0 = default 360 (6h)
+	Enabled      bool      `json:"enabled,omitempty"`
+	Host         string    `json:"host,omitempty"` // offsite SSH target, host:port
+	User         string    `json:"user,omitempty"`
+	SSHKeyID     string    `json:"ssh_key_id,omitempty"`   // registry key ID (resolved by the SSH connector)
+	RemotePath   string    `json:"remote_path,omitempty"`  // e.g. /home/backup/angry-box.abbkp
+	Passphrase   string    `json:"passphrase,omitempty"`   // never the master key; scrypt-derived
+	IntervalMin  int       `json:"interval_min,omitempty"` // 0 = default 360 (6h)
 	LastBackupAt time.Time `json:"last_backup_at,omitempty"`
 	// Retention is how many recent blobs to keep on the offsite target (rotation
 	// via ls+rm after each push). 0 = default 5. Blobs are written to
@@ -224,8 +257,8 @@ type OffsiteBackupConfig struct {
 // (Protocols, ChainNames, ChainExit, MTProxy*) at save time. Mirrors the
 // Marzneshin `Service` / Marzban `UserTemplate` pattern.
 type Service struct {
-	ID          string   `json:"id"`                    // unique, used as User.ServiceID ref
-	Name        string   `json:"name"`                  // display ("Telegram Pro")
+	ID          string   `json:"id"`   // unique, used as User.ServiceID ref
+	Name        string   `json:"name"` // display ("Telegram Pro")
 	Description string   `json:"description,omitempty"`
 	ChainNames  []string `json:"chain_names,omitempty"` // expands to User.ChainNames
 	// DefaultExitByChain pre-fills User.ChainExit per chain (chain name ->
@@ -283,7 +316,7 @@ const (
 	NodeStateDown        = "down"        // SSH ok but sing-box systemd inactive/failed (≥ DownThreshold fails)
 	NodeStateUnreachable = "unreachable" // SSH dial fails (≥ DownThreshold fails) — host/network dead, not a service crash
 	NodeStateBlocked     = "blocked"     // operator-marked DPI block — sticky, cleared only by the unblock handler
-	NodeStateUnknown      = "unknown"     // no metrics yet / fresh node / just cleared
+	NodeStateUnknown     = "unknown"     // no metrics yet / fresh node / just cleared
 )
 
 // HysteresisConfig controls how many consecutive probe failures/recoveries
@@ -314,9 +347,9 @@ type NodeMetrics struct {
 	BytesRecv   int64     `json:"bytes_recv,omitempty"`
 	LastChecked time.Time `json:"last_checked"`
 
-	StateChangedAt  time.Time `json:"state_changed_at,omitempty"`  // when the current State was entered
-	ConsecutiveFails int      `json:"consecutive_fails,omitempty"` // hysteresis: consecutive failing probes
-	ConsecutiveOKs  int       `json:"consecutive_oks,omitempty"`   // hysteresis: consecutive successful probes (recovery)
+	StateChangedAt   time.Time `json:"state_changed_at,omitempty"`  // when the current State was entered
+	ConsecutiveFails int       `json:"consecutive_fails,omitempty"` // hysteresis: consecutive failing probes
+	ConsecutiveOKs   int       `json:"consecutive_oks,omitempty"`   // hysteresis: consecutive successful probes (recovery)
 
 	OS                 string `json:"os,omitempty"`
 	SingBoxInstalled   bool   `json:"sing_box_installed,omitempty"`
@@ -394,6 +427,26 @@ type NodeInfo struct {
 	// cooldown guard (PanelSettings.AutoRelocate.CooldownHours) keys off it so
 	// a flapping VPS is not relocated repeatedly.
 	LastAutoRelocateAt time.Time `json:"last_auto_relocate_at,omitempty"`
+
+	// TLSDomain is the node's primary TLS domain (e.g. "node1.example.com")
+	// owned by the caddy utility (ACME via HTTP-01). Protocol subdomains
+	// (<inbound>.TLSDomain), the subscription path and the panel-relay
+	// subdomain all derive from it. Empty = TLS utilities are not configured
+	// on this node (inbounds render direct, as before).
+	TLSDomain string `json:"tls_domain,omitempty"`
+
+	// Utilities tracks the installable node-side components — the "spinal
+	// cord" bundle (caddy/acme/fakesite/sub). The orchestrator is the ONLY
+	// writer (install/remove/push over SSH); a node keeps no local state
+	// beyond the installed files. See model.UtilityState.
+	Utilities []*UtilityState `json:"utilities,omitempty"`
+
+	// PanelRelay is the per-node opt-in for the panel relay (Phase 4): when
+	// set AND the caddy utility is installed, the orchestrator keeps a
+	// persistent ssh -R tunnel to the node so the panel UI is reachable at
+	// https://panel.<TLSDomain> even though the orchestrator sits behind NAT.
+	// Double opt-in by design (mirrors AutoRelocate).
+	PanelRelay bool `json:"panel_relay,omitempty"`
 
 	// KernelAWG3Supported is a RUNTIME-ONLY capability flag (never persisted —
 	// json:"-") set by the deploy pre-flight (detectKernelAWG3 over SSH) and read
@@ -572,7 +625,7 @@ type NodeInbound struct {
 	// skipped for this inbound. Mirrors InboundProfile.AWG3* (the profile is
 	// the shared source; ApplyProfileMaterialToInbound copies it here for
 	// ad-hoc / takeover materialization). See InboundProfile for field docs.
-	AWG3Mode                  bool   `json:"awg3_mode,omitempty"`
+	AWG3Mode                   bool   `json:"awg3_mode,omitempty"`
 	AWG3HeaderProtectionKey    string `json:"awg3_header_protection_key,omitempty"`
 	AWG3ContentPaddingAddition string `json:"awg3_content_padding_addition,omitempty"`
 	AWG3RekeyAfterTime         string `json:"awg3_rekey_after_time,omitempty"`

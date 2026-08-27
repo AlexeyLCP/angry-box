@@ -894,6 +894,12 @@ func serveCmd() {
 	// Start the periodic encrypted offsite-backup loop (P2a). No-op until the
 	// operator enables + configures an offsite target in Settings.
 	ui.StartOffsiteBackupLoop()
+	// Start the fleet Telegram bot (P3) when configured. Long-polling from the
+	// orchestrator — works behind NAT with no webhook or public address.
+	ui.StartBotIfConfigured()
+	// Start the panel relays (P4): ssh -R tunnels through caddy nodes that
+	// opted in (NodeInfo.PanelRelay), publishing the panel for NATed setups.
+	ui.StartPanelRelays()
 	// Apply the operator's global default REALITY/TUIC SNI (if set) so
 	// ResolveServerName + the standalone singbox renderers use it as the
 	// fallback instead of the built-in const (CTO-review §2 Reality SNI drift).

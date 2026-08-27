@@ -1,0 +1,190 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
+
+// utilityTitle maps a utility name to its display title key.
+func utilityTitle(name string) string {
+	switch name {
+	case model.UtilityCaddy:
+		return "Caddy (SNI router, 80/443)"
+	case model.UtilityACME:
+		return "ACME (acme.sh certificates)"
+	case model.UtilityFakesite:
+		return "Fake site (camouflage)"
+	case model.UtilitySub:
+		return "Subscription statics"
+	}
+	return name
+}
+
+// utilityHint maps a utility name to its explanation key.
+func utilityHint(name string) string {
+	switch name {
+	case model.UtilityCaddy:
+		return "Owns ports 80/443: routes TLS by SNI to the protocol inbounds, passes everything else to Reality, serves the site and subscriptions."
+	case model.UtilityACME:
+		return "Issues the node's SAN certificate via HTTP-01 (Let's Encrypt) and reloads caddy + sing-box on renewal."
+	case model.UtilityFakesite:
+		return "A boring static page served on the primary domain so probes and visitors see a plausible website."
+	case model.UtilitySub:
+		return "Per-user subscription files pushed by the orchestrator; served at https://<domain>/sub/<token>."
+	}
+	return ""
+}
+
+templ NodeUtilitiesPanel(h *model.Host, info *model.NodeInfo, stale map[string]bool, report *chain.UtilityReport, errMsg string) {
+	<dialog id="utilities-modal" class="modal" open>
+		<div class="modal-box" style="max-width: 56rem;">
+			<h3 class="text-lg font-semibold mb-1">
+				{ i18n.T(ctx, "Node utilities") } — <span class="font-mono">{ h.ID }</span>
+			</h3>
+			<p class="hint mb-3">{ i18n.T(ctx, "Utilities hint") }</p>
+
+			if errMsg != "" {
+				<div class="alert alert-error mb-3 text-sm">{ errMsg }</div>
+			}
+			if report != nil && (len(report.Steps) > 0 || len(report.Warnings) > 0) {
+				<div class="alert alert-info mb-3 text-sm flex-col items-start">
+					for _, s := range report.Steps {
+						<div>✓ { s }</div>
+					}
+					for _, w := range report.Warnings {
+						<div style="color: var(--err)">⚠ { w }</div>
+					}
+				</div>
+			}
+
+			<form hx-post={ "/ui/nodes/" + h.ID + "/utilities/domain" } hx-target="#modal-container" hx-swap="innerHTML"
+				class="grid gap-2 md:grid-cols-[1fr_auto] items-end mb-4">
+				<div>
+					<label class="lbl" for="util-domain">{ i18n.T(ctx, "TLS domain") }</label>
+					<input id="util-domain" name="tls_domain" class="inp font-mono"
+						placeholder="node1.example.com"
+						value={ func() string { if info != nil { return info.TLSDomain }; return "" }() }/>
+					<p class="hint mt-1">{ i18n.T(ctx, "TLS domain hint") }</p>
+				</div>
+				<button type="submit" class="btn btn-sm btn-primary">{ i18n.T(ctx, "Save") }</button>
+			</form>
+
+			if info == nil || info.TLSDomain == "" {
+				<p class="hint">{ i18n.T(ctx, "Set a TLS domain to enable the utility bundle.") }</p>
+			} else {
+				<div class="overflow-x-auto mb-3">
+					<table class="tn-table">
+						<thead>
+							<tr>
+								<th>{ i18n.T(ctx, "Utility") }</th>
+								<th>{ i18n.T(ctx, "Status") }</th>
+								<th>{ i18n.T(ctx, "Version") }</th>
+								<th class="text-right">{ i18n.T(ctx, "Actions") }</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, name := range model.AllUtilities() {
+								<tr>
+									<td>
+										<div class="font-semibold text-sm">{ utilityTitle(name) }</div>
+										<div class="hint text-xs">{ i18n.T(ctx, utilityHint(name)) }</div>
+									</td>
+									<td>
+										@utilityStatusBadge(info, name, stale[name])
+									</td>
+									<td class="font-mono text-xs">
+										if u := model.FindUtility(func() []*model.UtilityState { if info != nil { return info.Utilities }; return nil }(), name); u != nil {
+											{ u.Version }
+										}
+									</td>
+									<td class="text-right whitespace-nowrap">
+										<div class="inline-flex gap-1">
+											if info == nil || !info.UtilityInstalled(name) {
+												<button type="button" class="btn btn-xs btn-primary"
+													hx-post={ "/ui/nodes/" + h.ID + "/utilities/install" }
+													hx-vals={ fmt.Sprintf(`{"name":"%s"}`, name) }
+													hx-target="#modal-container" hx-swap="innerHTML">
+													{ i18n.T(ctx, "Install") }
+												</button>
+											} else {
+												<button type="button" class="btn btn-xs btn-ghost" style="color: var(--err)"
+													hx-post={ "/ui/nodes/" + h.ID + "/utilities/" + name + "/uninstall" }
+													hx-confirm={ i18n.T(ctx, "Uninstall this utility?") }
+													hx-target="#modal-container" hx-swap="innerHTML">
+													{ i18n.T(ctx, "Uninstall") }
+												</button>
+											}
+										</div>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+
+				<div class="flex flex-wrap gap-2 items-center">
+					<button type="button" class="btn btn-sm btn-primary"
+						hx-post={ "/ui/nodes/" + h.ID + "/utilities/install" }
+						hx-vals={ `{"name":"all"}` }
+						hx-target="#modal-container" hx-swap="innerHTML">
+						{ i18n.T(ctx, "Install all") }
+					</button>
+					<button type="button" class="btn btn-sm btn-secondary"
+						hx-post={ "/ui/nodes/" + h.ID + "/utilities/cert" }
+						hx-target="#modal-container" hx-swap="innerHTML"
+						if !info.UtilityInstalled(model.UtilityCaddy) || !info.UtilityInstalled(model.UtilityACME) {
+							disabled
+						}>
+						{ i18n.T(ctx, "Issue/renew certificate") }
+					</button>
+					<button type="button" class="btn btn-sm btn-secondary"
+						hx-post={ "/ui/nodes/" + h.ID + "/utilities/sub-sync" }
+						hx-target="#modal-container" hx-swap="innerHTML"
+						if !info.UtilityInstalled(model.UtilitySub) {
+							disabled
+						}>
+						{ i18n.T(ctx, "Sync subscriptions") }
+					</button>
+					<button type="button"
+						class={ "btn btn-sm", templ.KV("btn-primary", info.PanelRelay), templ.KV("btn-secondary", !info.PanelRelay) }
+						hx-post={ "/ui/nodes/" + h.ID + "/utilities/relay" }
+						hx-target="#modal-container" hx-swap="innerHTML"
+						title={ i18n.T(ctx, "Relay hint") }
+						if !info.UtilityInstalled(model.UtilityCaddy) {
+							disabled
+						}>
+						if info.PanelRelay {
+							{ i18n.T(ctx, "Panel relay: ON") }
+						} else {
+							{ i18n.T(ctx, "Panel relay: OFF") }
+						}
+					</button>
+					if plan, err := chain.BuildCaddyPlan(info, 0); err == nil {
+						<span class="hint">{ i18n.T(ctx, "SANs: ") + strings.Join(plan.CaddySANs(), ", ") }</span>
+					}
+				</div>
+			}
+
+			<div class="flex justify-end mt-4">
+				<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
+	</dialog>
+}
+
+templ utilityStatusBadge(info *model.NodeInfo, name string, stale bool) {
+	if info != nil && info.UtilityInstalled(name) {
+		if stale {
+			<span class="st st-wa cursor-help" title="pushed artifacts lag the store — re-apply">{ i18n.T(ctx, "stale") }</span>
+		} else {
+			<span class="st st-ok">{ i18n.T(ctx, "installed") }</span>
+		}
+	} else {
+		<span class="st st-mut">{ i18n.T(ctx, "not installed") }</span>
+	}
+}

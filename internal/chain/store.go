@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/ssh"
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
+	"golang.org/x/crypto/ssh"
 )
 
 // Store provides JSON-file persistence for hosts and chains.
@@ -74,9 +74,9 @@ func (s *Store) migrateOnce() {
 	// migrations[i] brings the store from version i to i+1. Add new migrations
 	// here in order and bump currentSchemaVersion.
 	migrations := []func(*storeFile) error{
-		s.migrateMtproxyUsers,      // v0 -> v1: legacy MtproxyUser -> User (subproject B)
-		s.migrateInboundProfiles,   // v1 -> v2: standalone inbounds -> profiles; chains -> levels
-		s.migrateOrphanNodeInfos,   // v2 -> v3: drop NodeInfo/Metrics whose Host was deleted pre-v0.8.8
+		s.migrateMtproxyUsers,    // v0 -> v1: legacy MtproxyUser -> User (subproject B)
+		s.migrateInboundProfiles, // v1 -> v2: standalone inbounds -> profiles; chains -> levels
+		s.migrateOrphanNodeInfos, // v2 -> v3: drop NodeInfo/Metrics whose Host was deleted pre-v0.8.8
 	}
 	changed := false
 	for i := sf.SchemaVersion; i < len(migrations) && i < currentSchemaVersion; i++ {
@@ -246,18 +246,23 @@ type storeFile struct {
 	// introduced; the migrateOnce chain runs each missing migration in order
 	// and bumps the version on disk. New stores are written at the current
 	// schemaVersion constant. CTO-review §8 (no schema versioning finding).
-	SchemaVersion int                        `json:"schema_version,omitempty"`
-	Hosts         []*model.Host              `json:"hosts"`
-	Chains        []*model.Chain             `json:"chains"`
-	Users         []*model.User              `json:"users,omitempty"`
-	Settings      *model.PanelSettings       `json:"settings,omitempty"`
-	NodeInfos     []*model.NodeInfo          `json:"node_infos,omitempty"`
-	Metrics       []*model.NodeMetrics       `json:"metrics,omitempty"`
-	KnownHosts    []*model.KnownHost         `json:"known_hosts,omitempty"`
-	RouteRules    []*model.RouteRule         `json:"route_rules,omitempty"`
-	AuditLogs     []*model.AuditLog          `json:"audit_logs,omitempty"`
-	MtproxyUsers  []*model.MtproxyUser       `json:"mtproxy_users,omitempty"`
-	Links         []*model.ConnectionLink    `json:"links,omitempty"`
+	SchemaVersion int `json:"schema_version,omitempty"`
+	// Revision is a monotonic counter bumped by EVERY writeStore. Artifacts
+	// pushed to nodes (subscription payloads, Caddyfiles, cert configs) stamp
+	// the revision they were rendered from, so a stale node is detectable and
+	// "last config wins" needs no merge logic.
+	Revision     int64                   `json:"revision,omitempty"`
+	Hosts        []*model.Host           `json:"hosts"`
+	Chains       []*model.Chain          `json:"chains"`
+	Users        []*model.User           `json:"users,omitempty"`
+	Settings     *model.PanelSettings    `json:"settings,omitempty"`
+	NodeInfos    []*model.NodeInfo       `json:"node_infos,omitempty"`
+	Metrics      []*model.NodeMetrics    `json:"metrics,omitempty"`
+	KnownHosts   []*model.KnownHost      `json:"known_hosts,omitempty"`
+	RouteRules   []*model.RouteRule      `json:"route_rules,omitempty"`
+	AuditLogs    []*model.AuditLog       `json:"audit_logs,omitempty"`
+	MtproxyUsers []*model.MtproxyUser    `json:"mtproxy_users,omitempty"`
+	Links        []*model.ConnectionLink `json:"links,omitempty"`
 	// InboundProfiles holds the first-class, node-independent listener
 	// descriptions (v2). Which nodes a profile is deployed on is NOT stored
 	// here — it is derived from NodeInfo.Inbounds[].ProfileID (single source
@@ -271,6 +276,14 @@ type storeFile struct {
 // migration to the chain below.
 const currentSchemaVersion = 3
 
+// newStoreFile returns a fresh storeFile stamped at the current schema
+// version. ALWAYS use it instead of a bare &storeFile{} — an unstamped (v0)
+// store makes the next NewStore re-run the migration chain, which rewrites
+// the file and bumps Revision for no reason.
+func newStoreFile() *storeFile {
+	return &storeFile{SchemaVersion: currentSchemaVersion}
+}
+
 // ─── Hosts ────────────────────────────────────────────────────────────────────
 
 // SaveHost persists a host (creates or updates).
@@ -280,7 +293,7 @@ func (s *Store) SaveHost(h *model.Host) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -419,7 +432,7 @@ func (s *Store) SaveChain(chain *model.Chain) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -534,7 +547,7 @@ func (s *Store) ResolveNodes(chain *model.Chain) ([]model.ChainNode, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve node %q: %w", n.ID, err)
 		}
-		
+
 		info, _ := s.GetNodeInfo(n.ID)
 
 		// Rebuild the resolved node from the live Host (ID/Addr/User/KeyPath)
@@ -578,7 +591,7 @@ func (s *Store) SaveInboundProfile(p *model.InboundProfile) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -728,7 +741,7 @@ func (s *Store) SaveUser(u *model.User) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -878,7 +891,7 @@ func (s *Store) SaveSettings(settings *model.PanelSettings) error {
 	defer s.mu.Unlock()
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -893,7 +906,7 @@ func (s *Store) SaveNodeInfo(ni *model.NodeInfo) error {
 	defer s.mu.Unlock()
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -992,7 +1005,7 @@ func (s *Store) SaveMetrics(m *model.NodeMetrics) error {
 	defer s.mu.Unlock()
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -1074,7 +1087,7 @@ func (s *Store) SaveKnownHost(kh *model.KnownHost) error {
 	defer s.mu.Unlock()
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return err
 	}
@@ -1176,7 +1189,7 @@ func (s *Store) SaveRouteRule(r *model.RouteRule) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -1425,7 +1438,7 @@ func (s *Store) SaveLink(l *model.ConnectionLink) error {
 
 	sf, err := s.readStore()
 	if os.IsNotExist(err) {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	} else if err != nil {
 		return fmt.Errorf("store: read: %w", err)
 	}
@@ -1571,6 +1584,9 @@ func (s *Store) readStore() (*storeFile, error) {
 }
 
 func (s *Store) writeStore(sf *storeFile) error {
+	// Bump the monotonic revision on every persisted mutation so pushed node
+	// artifacts can stamp which store state they were rendered from.
+	sf.Revision++
 	data, err := json.MarshalIndent(sf, "", "  ")
 	if err != nil {
 		return fmt.Errorf("store: marshal: %w", err)
@@ -1598,4 +1614,17 @@ func (s *Store) writeStore(sf *storeFile) error {
 		return fmt.Errorf("store: write: %w", err)
 	}
 	return nil
+}
+
+// GetRevision returns the store's monotonic revision counter (bumped by every
+// persisted mutation). Pushed node artifacts stamp this value so staleness is
+// detectable ("last config wins"). 0 = store unreadable/absent.
+func (s *Store) GetRevision() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sf, err := s.readStore()
+	if err != nil {
+		return 0
+	}
+	return sf.Revision
 }

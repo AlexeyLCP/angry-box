@@ -33,15 +33,43 @@ const (
 
 // Detection is the result of probing a node for an existing VPN.
 type Detection struct {
-	Type         DetectedVPNType `json:"type"`
-	ServiceName  string          `json:"service_name,omitempty"`  // systemd unit, e.g. "xray"
-	IsActive     bool            `json:"is_active"`
-	IsEnabled    bool            `json:"is_enabled"`
-	ConfigPath   string          `json:"config_path,omitempty"`
-	ConfigContent string         `json:"-"` // raw config (not serialized to JSON API; large)
-	Other        []string        `json:"other,omitempty"` // other VPNs also present (warnings)
-	Note         string          `json:"note,omitempty"`
+	Type          DetectedVPNType `json:"type"`
+	ServiceName   string          `json:"service_name,omitempty"` // systemd unit, e.g. "xray"
+	IsActive      bool            `json:"is_active"`
+	IsEnabled     bool            `json:"is_enabled"`
+	ConfigPath    string          `json:"config_path,omitempty"`
+	ConfigContent string          `json:"-"` // raw config (not serialized to JSON API; large)
+	Other         []string        `json:"other,omitempty"` // other VPNs also present (warnings)
+	Note          string          `json:"note,omitempty"`
+	// Panel is set when a management panel (3x-ui / its lucx-ui fork) is
+	// installed on the node — a separate takeover decision from the VPN below
+	// it (import its users/inbounds/routing, wipe it, or leave it alone).
+	Panel *PanelInfo `json:"panel,omitempty"`
 }
+
+// PanelInfo describes a detected 3x-ui/lucx-ui panel installation.
+type PanelInfo struct {
+	Kind    string `json:"kind"`     // "3x-ui" | "lucx-ui"
+	DBPath  string `json:"db_path"`  // SQLite DB (the import source of truth)
+	Service string `json:"service"`  // systemd unit ("x-ui")
+	Active  bool   `json:"active"`   // service running
+}
+
+// panelDBPath is the canonical SQLite location for both 3x-ui and the lucx-ui
+// fork. panelKindMarker is written by the lucx-ui installer (install-source);
+// its presence distinguishes the fork from vanilla 3x-ui.
+const (
+	panelDBPath     = "/etc/x-ui/x-ui.db"
+	panelKindMarker = "/etc/x-ui/install-source"
+	panelUnit       = "x-ui"
+)
+
+// PanelDBPathDefault exposes the canonical panel DB path for the web layer
+// (import/wipe handlers).
+const PanelDBPathDefault = panelDBPath
+
+// PanelUnit exposes the panel systemd unit name (wipe stops it).
+const PanelUnit = panelUnit
 
 // candidate service names → VPN type. Probed via `systemctl is-active/is-enabled`.
 var candidateServices = []struct {
@@ -258,6 +286,22 @@ func DetectVPN(ctx context.Context, host model.Host, useSudo bool, connector ...
 		} else {
 			primary.Note = "No existing VPN detected. Use Install to deploy sing-box from scratch."
 		}
+	}
+
+	// Panel probe: a 3x-ui/lucx-ui install is a separate takeover decision
+	// (import users/inbounds/routing from its SQLite DB). Independent of the
+	// VPN detection above — the panel's xray is already reported via the
+	// x-ui service hit.
+	if out, _, exit, _ := client.RunWithOutput(ctx, priv("test -f "+panelDBPath+" && echo FOUND"), 15*time.Second); exit == 0 && strings.Contains(out, "FOUND") {
+		kind := "3x-ui"
+		if mk, _, mkExit, _ := client.RunWithOutput(ctx, priv("test -f "+panelKindMarker+" && echo LUCX"), 15*time.Second); mkExit == 0 && strings.Contains(mk, "LUCX") {
+			kind = "lucx-ui"
+		}
+		active := false
+		if ao, _, _, _ := client.RunWithOutput(ctx, priv("systemctl is-active "+panelUnit+" 2>/dev/null"), 15*time.Second); strings.TrimSpace(ao) == "active" {
+			active = true
+		}
+		primary.Panel = &PanelInfo{Kind: kind, DBPath: panelDBPath, Service: panelUnit, Active: active}
 	}
 	return primary, nil
 }

@@ -155,7 +155,15 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// PEM-stored keys to an empty slice on every Save Settings (data-loss:
 	// saving the language wiped all imported keys). Removed.
 
+	// Telegram bot (P3): enabled/token/admins/notify chat. The running bot is
+	// restarted after the save below picks the new config up.
+	settings.TelegramBot = telegramBotFromForm(r, settings.TelegramBot)
+
 	st.SaveSettings(settings)
+
+	if botErr := s.RestartBot(); botErr != nil {
+		log.Printf("telegram bot: %v", botErr)
+	}
 
 	if portChanged {
 		msg := fmt.Sprintf(`

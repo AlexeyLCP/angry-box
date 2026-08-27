@@ -6,7 +6,9 @@ package web
 // inbounds.
 
 import (
+	cryptoRand "crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -502,12 +504,12 @@ func (s *Server) handleUserConfig(w http.ResponseWriter, r *http.Request) {
 	nodes, _ := st.ListNodeInfos()
 	ensureStandaloneAWGMaterial(st, nodes)
 	for _, node := range nodes {
-		for _, ib := range node.Inbounds {
+		for i, ib := range node.Inbounds {
 			if chain.IsChainSourcedInbound(&ib) {
 				continue // chain-entry materialization — served via the chain link above
 			}
 			if ib.Protocol == "naive" || ib.Protocol == "mieru" || ib.Protocol == "trusttunnel" || contains(ib.ForUsers, u.ID) {
-				link := buildStandaloneLink(node.Addr, ib, u)
+				link := buildStandaloneLinkFor(node, i, u)
 				configs = append(configs, templates.UserChainConfig{
 					ChainName:   "node: " + node.ID,
 					Protocol:    ib.Protocol,
@@ -667,6 +669,35 @@ func ensureStandaloneAWGMaterial(st *chain.Store, nodes []*model.NodeInfo) {
 			_ = st.SaveNodeInfo(node)
 		}
 	}
+}
+
+// buildStandaloneLinkFor renders the client link for the index-th standalone
+// inbound of a node. On caddy-mode nodes the TLS-utility protocols
+// (naive/trusttunnel) are fronted by the SNI router, so the link points at the
+// inbound's SNI subdomain on 443 with the SNI set to that subdomain — not at
+// the raw node IP (which no longer listens publicly for them).
+func buildStandaloneLinkFor(node *model.NodeInfo, index int, u *model.User) string {
+	ib := node.Inbounds[index]
+	if hosts := chain.CaddyFrontedHosts(node); hosts != nil {
+		if host, ok := hosts[index]; ok {
+			user, pass := "", ""
+			if u != nil {
+				user, pass = u.NaiveUsername, u.NaivePassword
+				if ib.Protocol == "trusttunnel" {
+					user, pass = u.TrustTunnelUsername, u.TrustTunnelPassword
+				}
+			}
+			switch ib.Protocol {
+			case "naive":
+				return fmt.Sprintf("naive+https://%s:%s@%s:443?padding=true&sni=%s#%s",
+					url.QueryEscape(user), url.QueryEscape(pass), host, url.QueryEscape(host), ib.Protocol)
+			case "trusttunnel":
+				return fmt.Sprintf("tt://%s:%s@%s:443?security=tls&sni=%s&alpn=h2#%s",
+					url.QueryEscape(user), url.QueryEscape(pass), host, url.QueryEscape(host), ib.Protocol)
+			}
+		}
+	}
+	return buildStandaloneLink(node.Addr, ib, u)
 }
 
 func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) string {
@@ -979,6 +1010,103 @@ func (s *Server) handleGenerateMTProxySecret(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<input type="text" name="mtproxy_secret" class="input input-bordered join-item font-mono" value="%s" maxlength="32" />`, secret)
 }
+// ── Bulk user creation (seller workflow) ─────────────────────────────────────
+
+func (s *Server) handleBulkUserForm(w http.ResponseWriter, r *http.Request) {
+	chains, _ := s.store().ListChains()
+	s.render(w, r, templates.BulkUserForm(chains))
+}
+
+// handleBulkCreateUsers creates N users from one template (name prefix,
+// chains, expiry days, data limit). Names/IDs get a zero-padded ordinal + a
+// short random suffix so repeated bulk runs never collide. Every user gets the
+// full create treatment: derived protocols, per-user creds, AWG tunnel IP,
+// subscription token, audit entry + auto-apply scheduling.
+func (s *Server) handleBulkCreateUsers(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, i18n.T(r.Context(), "bad form"), http.StatusBadRequest)
+		return
+	}
+	st := s.store()
+
+	count, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("count")))
+	if count < 1 || count > 100 {
+		s.render(w, r, templates.BulkUserResult(0, "", i18n.T(r.Context(), "Count must be 1..100")))
+		return
+	}
+	prefix := strings.TrimSpace(r.FormValue("name_prefix"))
+	if prefix == "" {
+		s.render(w, r, templates.BulkUserResult(0, "", i18n.T(r.Context(), "name required")))
+		return
+	}
+	expDays, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("expires_days")))
+	dataLimitGB, _ := strconv.ParseInt(strings.TrimSpace(r.FormValue("data_limit_gb")), 10, 64)
+
+	var chainNames []string
+	for _, cn := range r.Form["chain_names"] {
+		if cn = strings.TrimSpace(cn); cn != "" {
+			chainNames = append(chainNames, cn)
+		}
+	}
+
+	var expiresAt time.Time
+	if expDays > 0 {
+		expiresAt = time.Now().AddDate(0, 0, expDays)
+	}
+
+	created := 0
+	for i := 1; i <= count; i++ {
+		suffix := bulkSuffix()
+		u := &model.User{
+			ID:         fmt.Sprintf("%s-%02d-%s", prefix, i, suffix),
+			Name:       fmt.Sprintf("%s-%02d", prefix, i),
+			Active:     true,
+			ChainNames: chainNames,
+			ExpiresAt:  expiresAt,
+			DataLimit:  dataLimitGB * 1024 * 1024 * 1024,
+			CreatedAt:  time.Now(),
+		}
+		if len(chainNames) > 0 {
+			if derived := deriveProtocolsFromChains(st, chainNames); len(derived) > 0 {
+				u.Protocols = derived
+			}
+		}
+		if len(u.Protocols) == 0 {
+			u.Protocols = []string{"awg"}
+		}
+		u.ExpireStrategy = "never"
+		if !expiresAt.IsZero() {
+			u.ExpireStrategy = "fixed_date"
+		}
+		chain.EnsureUserCreds(u)
+		if taken, err := takenAWGAddresses(st, u.ID); err == nil {
+			chain.EnsureUserAWGAddressPrefix(u, taken, userAWGPrefix(st, u.ChainNames))
+		}
+		if tok, err := chain.GenerateSubscriptionToken(); err == nil {
+			u.SubscriptionToken = tok
+		}
+		u.Status = u.ComputeStatus()
+		if err := st.SaveUser(u); err != nil {
+			continue
+		}
+		chain.WriteAudit(st, "bulk-create", "user", u.ID, chain.AuditPayload{"name": u.Name, "prefix": prefix}, "operator")
+		s.scheduleAutoApplyForUser(st, u, "bulk user create")
+		created++
+	}
+	if created == 0 {
+		s.render(w, r, templates.BulkUserResult(0, prefix, i18n.T(r.Context(), "no users were created (check chains/store)")))
+		return
+	}
+	s.render(w, r, templates.BulkUserResult(created, prefix, ""))
+}
+
+// bulkSuffix returns 4 hex chars of randomness for collision-proof bulk IDs.
+func bulkSuffix() string {
+	buf := make([]byte, 2)
+	_, _ = cryptoRand.Read(buf)
+	return hex.EncodeToString(buf)
+}
+
 // registerUserRoutes wires every user-scoped route (CRUD + config + qr + the
 // MTProxy secret generator). The legacy /ui/users GET redirects to the unified
 // /ui/clients page. The /ui/qr-image route is in qr.go. CTO-review §4.
@@ -994,6 +1122,8 @@ func (s *Server) registerUserRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/users/{id}/config", s.auth(s.handleUserConfig))
 	mux.HandleFunc("GET /ui/users/{id}/qr", s.auth(s.handleUserQR))
 	mux.HandleFunc("POST /ui/users/generate-mtproxy-secret", s.auth(s.handleGenerateMTProxySecret))
+	mux.HandleFunc("GET /ui/users/bulk", s.auth(s.handleBulkUserForm))
+	mux.HandleFunc("POST /ui/users/bulk", s.auth(s.handleBulkCreateUsers))
 }
 
 // ── P0b Slice 1 helpers: Service expansion + subscription URL host ─────────────

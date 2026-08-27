@@ -338,7 +338,15 @@ func (s *Server) handleApplyChain(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, templates.ApplyResult(name, false, report, msg))
 		return
 	}
-	s.render(w, r, templates.ApplyResult(name, true, report, ""))
+	// Keep the pushed subscription statics in lockstep with the store on every
+	// node of the chain that runs the sub utility (no-op elsewhere).
+	var subNotes []string
+	for _, n := range c.AllNodes() {
+		if note := s.maybePushSubsAfterApply(n.ID); note != "" {
+			subNotes = append(subNotes, n.ID+": "+note)
+		}
+	}
+	s.render(w, r, templates.ApplyResult(name, true, report, strings.Join(subNotes, " | ")))
 }
 
 func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +392,14 @@ func (s *Server) handleApplyNode(w http.ResponseWriter, r *http.Request) {
 			parts = append(parts, fmt.Sprintf("-%s", strings.Join(mergeReport.RemovedInbounds, ", -")))
 		}
 		resultMsg = strings.Join(parts, " | ")
+	}
+	// Subscription statics follow the config: re-push the full set so the
+	// node's /sub stays in lockstep with the store ("last config wins").
+	if note := s.maybePushSubsAfterApply(id); note != "" {
+		if resultMsg != "" {
+			resultMsg += " | "
+		}
+		resultMsg += note
 	}
 	s.render(w, r, templates.ApplyResult(id, true, report, resultMsg))
 }

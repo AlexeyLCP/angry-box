@@ -168,6 +168,19 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 // schedules background deploys on every affected node.
 func (s *Server) applyProfileAndDeploy(w http.ResponseWriter, r *http.Request, prof *model.InboundProfile, nodeIDs []string, action string) {
 	st := s.store()
+	// Utility gating: on caddy-mode nodes (TLSDomain set) TLS-terminating
+	// protocols are refused until the cert utilities are installed, and
+	// MTProxy may not squat the caddy-owned ports (chain.ValidateUtilityDeps).
+	for _, nodeID := range nodeIDs {
+		info, err := st.GetNodeInfo(nodeID)
+		if err != nil {
+			continue
+		}
+		if err := chain.ValidateUtilityDeps(info, prof.Protocol, prof.Port); err != nil {
+			http.Error(w, nodeID+": "+err.Error(), http.StatusConflict)
+			return
+		}
+	}
 	// Live QUIC capture: run it (once per profile+domain) at save time so the
 	// UI reflects the outcome immediately; the captured material is shared by
 	// every materialized inbound. Best-effort — a capture failure falls back

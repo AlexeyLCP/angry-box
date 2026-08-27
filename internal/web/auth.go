@@ -5,10 +5,38 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/alexeylcp/angry-box/internal/config"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// authLockoutNotify, when set (the fleet bot is running), receives lockout
+// alerts. Guarded by lockoutNotifyMu; one alert per IP per window so a
+// hammering attacker cannot spam the operator's chat.
+var (
+	authLockoutNotify   func(ip string)
+	lockoutNotifyMu     sync.Mutex
+	lastLockoutNotify   = map[string]time.Time{}
+	lockoutNotifyWindow = 15 * time.Minute
+)
+
+func notifyLockoutOnce(ip string) {
+	lockoutNotifyMu.Lock()
+	notify := authLockoutNotify
+	if notify != nil {
+		if last, ok := lastLockoutNotify[ip]; ok && time.Since(last) < lockoutNotifyWindow {
+			notify = nil
+		} else {
+			lastLockoutNotify[ip] = time.Now()
+		}
+	}
+	lockoutNotifyMu.Unlock()
+	if notify != nil {
+		notify(ip)
+	}
+}
 
 // BasicAuthMiddleware wraps an http.Handler with Basic Authentication.
 //
@@ -31,6 +59,7 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 				"remote_addr", r.RemoteAddr,
 				"path", r.URL.Path,
 			)
+			notifyLockoutOnce(ip)
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return
 		}

@@ -26,14 +26,15 @@ type webFakeRule struct {
 
 // webFakeSSH is a ports.SSHClient for the web harness.
 type webFakeSSH struct {
-	mu       sync.Mutex
-	rules    []webFakeRule
-	commands []string
-	uploads  []string
+	mu             sync.Mutex
+	rules          []webFakeRule
+	commands       []string
+	uploads        []string
+	uploadContents map[string]string
 }
 
 func newWebFakeSSH(rules ...webFakeRule) *webFakeSSH {
-	return &webFakeSSH{rules: rules}
+	return &webFakeSSH{rules: rules, uploadContents: map[string]string{}}
 }
 
 func (f *webFakeSSH) Run(cmd string) (string, error) {
@@ -74,11 +75,22 @@ func (f *webFakeSSH) UploadText(ctx context.Context, content, remotePath string,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uploads = append(f.uploads, remotePath)
+	if f.uploadContents == nil {
+		f.uploadContents = map[string]string{}
+	}
+	f.uploadContents[remotePath] = content
 	r := f.matchLocked("upload:" + remotePath)
 	if r != nil {
 		return r.err
 	}
 	return nil
+}
+
+// uploadedContent returns the content uploaded to remotePath ("" if none).
+func (f *webFakeSSH) uploadedContent(remotePath string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.uploadContents[remotePath]
 }
 
 func (f *webFakeSSH) Close() error { return nil }

@@ -191,6 +191,14 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 		return nil, report, fmt.Errorf("merged config: %s", strings.Join(roleErrors, "; "))
 	}
 
+	// Caddy mode: caddy owns 80/443, standalone inbounds move to loopback on
+	// remapped ports behind the SNI routes (see chain.RemapInboundPorts). nil
+	// map = legacy direct-listen mode.
+	var caddyPorts map[int]int
+	if CaddyMode(nodeInfo) {
+		caddyPorts = RemapInboundPorts(nodeInfo.Inbounds)
+	}
+
 	for i, ib := range nodeInfo.Inbounds {
 		if IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
 			// Chain-entry materialized inbound — rendered via the chain role
@@ -204,7 +212,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 		if tag == "" {
 			tag = fmt.Sprintf("sa-%d-%s", i, ib.Protocol) // legacy index-based tag (backward compat)
 		}
-		ins, eps := buildStandaloneInOut(&ib, tag, usersByInbound, nodeInfo)
+		ins, eps := buildStandaloneInOut(&ib, tag, usersByInbound, nodeInfo, i, caddyPorts)
 		inbounds = append(inbounds, ins...)
 		endpoints = append(endpoints, eps...)
 	}
@@ -228,7 +236,15 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 			if tag == "" {
 				tag = fmt.Sprintf("sa-%d-mtproxy", i)
 			}
-			if inb := buildMTProxyInbound(mtproxyInboundPort(ib.Port), tag, enabledMTProxy); inb != nil {
+			port := mtproxyInboundPort(ib.Port)
+			if caddyPorts != nil {
+				// MTProxy FakeTLS cannot sit behind the SNI router; in caddy
+				// mode it must vacate the owned TCP ports (gating blocks NEW
+				// ones, this evicts legacy stores). The evicted listener is
+				// loopback-only and effectively retired.
+				port = CaddyEvictPort(port)
+			}
+			if inb := buildMTProxyInbound(port, tag, enabledMTProxy); inb != nil {
 				inbounds = append(inbounds, inb)
 			}
 		}
@@ -675,6 +691,17 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, ro
 	}
 	var claims []claim
 
+	// Caddy mode: the utility owns the public TCP 80/443. Standalone inbounds
+	// are remapped (below) so they never collide; chain transport/entry roles
+	// that still sit on 443/80 collide with caddy itself and must fail loudly
+	// (move the chain port — rule #8). UDP-only standalone listeners (kernel
+	// AWG on UDP 443) do NOT collide with the TCP owners and are exempt.
+	caddyMode := CaddyMode(nodeInfo)
+	var caddyPorts map[int]int
+	if caddyMode {
+		caddyPorts = RemapInboundPorts(nodeInfo.Inbounds)
+	}
+
 	for _, r := range roles {
 		port := r.Node.Port
 		if r.IsEntry && r.Node.InboundRef != "" {
@@ -693,10 +720,13 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, ro
 		if r.IsEntry {
 			roleType = "user-in"
 		}
+		if caddyMode && caddyOwnedPorts[port] {
+			return fmt.Errorf("port %d conflict: caddy (utility) vs %s (%s) — the caddy utility owns 80/443 on this node; move the chain listener to another port", port, r.Chain.Name, roleType)
+		}
 		claims = append(claims, claim{port, r.Chain.Name, roleType})
 	}
 
-	for _, ib := range nodeInfo.Inbounds {
+	for i, ib := range nodeInfo.Inbounds {
 		if IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
 			// Chain-entry materialized inbound: its listen port is the chain
 			// entry port, already claimed via the role above — claiming it
@@ -713,6 +743,13 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, ro
 		port := ib.Port
 		if ib.Protocol == "mtproxy" {
 			port = mtproxyInboundPort(ib.Port)
+			if caddyMode {
+				port = CaddyEvictPort(port)
+			}
+		} else if caddyPorts != nil {
+			if p, ok := caddyPorts[i]; ok {
+				port = p
+			}
 		}
 		claims = append(claims, claim{port, "standalone", ib.Protocol})
 	}
@@ -1050,7 +1087,7 @@ func ResolveServerName(preset *ConnectionPreset) string {
 	return EffectiveDefaultSNI()
 }
 
-func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User, nodeInfo *model.NodeInfo) (inbounds, endpoints []json.RawMessage) {
+func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[string][]model.User, nodeInfo *model.NodeInfo, index int, caddyPorts map[int]int) (inbounds, endpoints []json.RawMessage) {
 	preset := GetDefaultPreset()
 	if ib.Obfuscation != "" {
 		if p, ok := GetPreset(ib.Obfuscation); ok {
@@ -1058,6 +1095,23 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		}
 	}
 	serverName := ResolveServerName(&preset)
+
+	// Caddy-mode listen: only inbounds that caddy actually FRONTS move to
+	// loopback behind the SNI router — those on caddy-owned ports (remapped)
+	// and the TLS-utility protocols (naive/trusttunnel, always SNI-routed).
+	// Everything else keeps its direct public listener so it stays reachable.
+	// nil caddyPorts = legacy direct-listen mode.
+	listen := "0.0.0.0"
+	port := ib.Port
+	if caddyPorts != nil {
+		fronted := caddyOwnedPorts[ib.Port] || TLSUtilityProtocols[ib.Protocol]
+		if fronted {
+			listen = "127.0.0.1"
+			if p, ok := caddyPorts[index]; ok {
+				port = p
+			}
+		}
+	}
 
 	switch ib.Protocol {
 	case "vless-reality":
@@ -1073,7 +1127,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			vusers = append(vusers, config.VLESSUser{Name: u.Name, UUID: u.VLESSUUID, Flow: "xtls-rprx-vision"})
 		}
 		inb := config.VLESSInbound{
-			Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Type: "vless", Tag: tag, Listen: listen, ListenPort: port,
 			Users: vusers,
 			TLS: &config.InboundTLSOptions{
 				Enabled: true, ServerName: serverName,
@@ -1114,7 +1168,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			// (AWGServerAddress), not the hardcoded 10.8.0.1/32 — otherwise the
 			// server and its peers land on different /24s (PROGRESS §39).
 			epJSON, _, err := buildAWGUserInboundMultiAddr(
-				ib.Port, tag, &preset, ib.ServerPrivKey, users,
+				port, tag, &preset, ib.ServerPrivKey, users,
 				InboundAWGObfsMaterial(ib), ib.AWGServerAddress)
 			if err == nil {
 				endpoints = append(endpoints, epJSON)
@@ -1152,8 +1206,8 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		inb := config.TUICInbound{
 			Type:              "tuic",
 			Tag:               tag,
-			Listen:            "0.0.0.0",
-			ListenPort:        ib.Port,
+			Listen:            listen,
+			ListenPort:        port,
 			Users:             []config.TUICUser{{UUID: ib.UUID, Password: ib.ServerPrivKey}},
 			CongestionControl: "bbr",
 			AuthTimeout:       "3s",
@@ -1166,7 +1220,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 
 	case "xhttp":
 		inb := config.VLESSInbound{
-			Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Type: "vless", Tag: tag, Listen: listen, ListenPort: port,
 			Users: []config.VLESSUser{{Name: "user", UUID: ib.UUID}},
 			Transport: &config.TransportOptions{
 				Type: "http", Path: "/api", Method: "POST",
@@ -1177,8 +1231,12 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		inbounds = append(inbounds, data)
 
 	case "hysteria2":
+		hListen := "::"
+		if caddyPorts != nil {
+			hListen = listen
+		}
 		inb := config.Hysteria2Inbound{
-			Type: "hysteria2", Tag: tag, Listen: "::", ListenPort: ib.Port,
+			Type: "hysteria2", Tag: tag, Listen: hListen, ListenPort: port,
 			Users:  []config.Hysteria2User{{Password: ib.UUID}},
 			UpMbps: 1000, DownMbps: 1000,
 			Obfs: &config.Hysteria2Obfs{Type: "salamander", Password: ib.ObfsPassword},
@@ -1192,17 +1250,25 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			ServerName: serverName,
 			ALPN:       []string{"h2"},
 		}
-		cert, key := ib.TLSCertificate, ib.TLSPrivateKey
-		if cert == "" || key == "" {
-			if c, k, err := GenerateSelfSignedCert(serverName); err == nil {
-				cert, key = c, k
-				ib.TLSCertificate = c
-				ib.TLSPrivateKey = k
+		if caddyPorts != nil {
+			// Caddy mode: serve the node's acme SAN cert by path (it covers
+			// this inbound's SNI subdomain). No server_name — the subdomain
+			// varies per inbound and the cert is selected by the file.
+			tls.ServerName = ""
+			tls.CertificatePath, tls.KeyPath = CertPaths(nodeInfo.TLSDomain)
+		} else {
+			cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+			if cert == "" || key == "" {
+				if c, k, err := GenerateSelfSignedCert(serverName); err == nil {
+					cert, key = c, k
+					ib.TLSCertificate = c
+					ib.TLSPrivateKey = k
+				}
 			}
-		}
-		if cert != "" && key != "" {
-			tls.Certificate = cert
-			tls.Key = key
+			if cert != "" && key != "" {
+				tls.Certificate = cert
+				tls.Key = key
+			}
 		}
 		var nusers []config.NaiveUser
 		for _, u := range usersByInbound[tag] {
@@ -1212,7 +1278,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			nusers = append(nusers, config.NaiveUser{Username: u.NaiveUsername, Password: u.NaivePassword})
 		}
 		inb := config.NaiveInbound{
-			Type: "naive", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Type: "naive", Tag: tag, Listen: listen, ListenPort: port,
 			Users: nusers, Network: "tcp", TLS: tls,
 		}
 		data, _ := json.Marshal(inb)
@@ -1224,17 +1290,22 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			ServerName: serverName,
 			ALPN:       []string{"h2"},
 		}
-		cert, key := ib.TLSCertificate, ib.TLSPrivateKey
-		if cert == "" || key == "" {
-			if c, k, err := GenerateSelfSignedCert(serverName); err == nil {
-				cert, key = c, k
-				ib.TLSCertificate = c
-				ib.TLSPrivateKey = k
+		if caddyPorts != nil {
+			tls.ServerName = ""
+			tls.CertificatePath, tls.KeyPath = CertPaths(nodeInfo.TLSDomain)
+		} else {
+			cert, key := ib.TLSCertificate, ib.TLSPrivateKey
+			if cert == "" || key == "" {
+				if c, k, err := GenerateSelfSignedCert(serverName); err == nil {
+					cert, key = c, k
+					ib.TLSCertificate = c
+					ib.TLSPrivateKey = k
+				}
 			}
-		}
-		if cert != "" && key != "" {
-			tls.Certificate = cert
-			tls.Key = key
+			if cert != "" && key != "" {
+				tls.Certificate = cert
+				tls.Key = key
+			}
 		}
 		var tusers []config.TrustTunnelUser
 		for _, u := range usersByInbound[tag] {
@@ -1244,7 +1315,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			tusers = append(tusers, config.TrustTunnelUser{Name: u.TrustTunnelUsername, Password: u.TrustTunnelPassword})
 		}
 		inb := config.TrustTunnelInbound{
-			Type: "trusttunnel", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Type: "trusttunnel", Tag: tag, Listen: listen, ListenPort: port,
 			Users: tusers, Network: "tcp", TLS: tls,
 		}
 		data, _ := json.Marshal(inb)
@@ -1263,7 +1334,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 			musers = append(musers, config.MieruUser{Name: u.MieruUsername, Password: u.MieruPassword})
 		}
 		inb := config.MieruInbound{
-			Type: "mieru", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Type: "mieru", Tag: tag, Listen: listen, ListenPort: port,
 			Users: musers, Transport: transport,
 		}
 		data, _ := json.Marshal(inb)
@@ -1280,7 +1351,7 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 
 	default:
 		inb := config.VLESSInbound{
-			Type: "vless", Tag: tag, Listen: "0.0.0.0", ListenPort: ib.Port,
+			Type: "vless", Tag: tag, Listen: listen, ListenPort: port,
 			Users:     []config.VLESSUser{{Name: "user", UUID: ib.UUID, Flow: "xtls-rprx-vision"}},
 			TLS:       &config.InboundTLSOptions{Enabled: false},
 			Transport: &config.TransportOptions{Type: "ws", Path: "/ws"},

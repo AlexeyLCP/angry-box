@@ -35,6 +35,7 @@ func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
 		if det.Note != "" {
 			b.WriteString(fmt.Sprintf(`<div class="text-sm text-base-content/60">%s</div>`, det.Note))
 		}
+		b.WriteString(panelSectionHTML(r, id, det.Panel))
 		s.render(w, r, &simpleHTML{html: b.String()})
 		return
 	}
@@ -48,7 +49,28 @@ func (s *Server) handleDetectVPN(w http.ResponseWriter, r *http.Request) {
 	}
 	b.WriteString(`<div class="py-2 text-sm">` + i18n.T(r.Context(), "Takeover will: install sing-box, convert the existing config to sing-box with the same settings, <b>disable (not delete) the old VPN</b>, and start sing-box. Old config is backed up for rollback. If sing-box fails to come up, the old VPN is restored automatically.") + `</div>`)
 	b.WriteString(fmt.Sprintf(`<div class="flex gap-2"><button class="btn btn-primary btn-sm" hx-post="/ui/nodes/%s/takeover" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="`+i18n.T(r.Context(), "Take over this server? The old VPN will be disabled.")+`">`+i18n.T(r.Context(), "Take over")+`</button> <button class="btn btn-ghost btn-sm" hx-get="/ui/nodes" hx-target="#main-content" hx-push-url="true">`+i18n.T(r.Context(), "Cancel")+`</button></div>`, id))
+	b.WriteString(panelSectionHTML(r, id, det.Panel))
 	s.renderContent(w, r, i18n.T(r.Context(), "Takeover"), &simpleHTML{html: b.String()})
+}
+
+// panelSectionHTML renders the 3x-ui/lucx-ui panel card (import / wipe / leave)
+// when a panel install was detected; empty string otherwise.
+func panelSectionHTML(r *http.Request, nodeID string, panel *takeover.PanelInfo) string {
+	if panel == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="divider-x my-3"></div>`)
+	b.WriteString(`<div class="alert alert-warning"><div>`)
+	b.WriteString(fmt.Sprintf(`<div><b>`+i18n.T(r.Context(), "Management panel detected: %s")+`</b><br>`+i18n.T(r.Context(), "DB:")+` <code>%s</code> (`+i18n.T(r.Context(), "service active:")+` %v)</div>`,
+		escHTML(panel.Kind), escHTML(panel.DBPath), panel.Active))
+	b.WriteString(`</div></div>`)
+	b.WriteString(`<div class="py-2 text-sm">` + i18n.T(r.Context(), "Panel import reads the panel's SQLite DB and brings over its users, inbounds and routing rules, then stops the panel service. The raw DB is backed up first. Wipe stops the panel without importing.") + `</div>`)
+	b.WriteString(fmt.Sprintf(`<div class="flex gap-2">`+
+		`<button class="btn btn-primary btn-sm" hx-post="/ui/nodes/%s/panel-import" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="`+i18n.T(r.Context(), "Import this panel's data? The panel service will be stopped.")+`">`+i18n.T(r.Context(), "Import panel")+`</button>`+
+		`<button class="btn btn-outline btn-sm" hx-post="/ui/nodes/%s/panel-wipe" hx-target="#main-content" hx-swap="outerHTML" hx-confirm="`+i18n.T(r.Context(), "Stop the panel without importing?")+`">`+i18n.T(r.Context(), "Wipe panel")+`</button>`+
+		`</div>`, nodeID, nodeID))
+	return b.String()
 }
 
 func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
@@ -101,4 +123,6 @@ func (s *Server) handleTakeover(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerTakeoverRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/nodes/{id}/detect-vpn", s.auth(s.handleDetectVPN))
 	mux.HandleFunc("POST /ui/nodes/{id}/takeover", s.auth(s.handleTakeover))
+	mux.HandleFunc("POST /ui/nodes/{id}/panel-import", s.auth(s.handlePanelImport))
+	mux.HandleFunc("POST /ui/nodes/{id}/panel-wipe", s.auth(s.handlePanelWipe))
 }

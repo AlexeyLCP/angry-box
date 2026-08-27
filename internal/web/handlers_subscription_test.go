@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -182,4 +183,54 @@ func firstN(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// TestSub_SingboxFormat verifies ?format=singbox returns a complete sing-box
+// client config: an awg endpoint in client mode (carrying the user's creds) +
+// a route final pointing at the proxy, + a mixed inbound.
+func TestSub_SingboxFormat(t *testing.T) {
+	ts := newTestServer(t)
+	tok := seedSubUser(t, ts)
+	w := ts.getWithUA("/sub/"+tok+"?format=singbox", "curl/8.0")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, firstN(w.Body.String(), 200))
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	body := w.Body.String()
+	for _, want := range []string{`"type": "awg"`, `"private_key"`, `"mixed"`, `"route"`, `"direct-out"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("singbox config missing %q: %s", want, firstN(body, 300))
+		}
+	}
+}
+
+// TestSub_UserinfoHeaders verifies the Profile-Title + Subscription-Userinfo
+// metadata headers (client apps render usage/expiry from them).
+func TestSub_UserinfoHeaders(t *testing.T) {
+	ts := newTestServer(t)
+	exp := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	tok := seedSubUser(t, ts, func(u *model.User) {
+		u.ExpiresAt = exp
+		u.DataLimit = 1 << 30
+		u.AWGRxBytes = 1000
+		u.AWGTxBytes = 500
+	})
+	w := ts.getWithUA("/sub/"+tok, "curl/8.0")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if got := w.Header().Get("Profile-Title"); got != "Alice" {
+		t.Errorf("Profile-Title = %q, want Alice", got)
+	}
+	info := w.Header().Get("Subscription-Userinfo")
+	for _, want := range []string{"upload=500", "download=1000", "total=1073741824"} {
+		if !strings.Contains(info, want) {
+			t.Errorf("Subscription-Userinfo missing %q: %q", want, info)
+		}
+	}
+	if !strings.Contains(info, fmt.Sprintf("expire=%d", exp.Unix())) {
+		t.Errorf("Subscription-Userinfo missing expire=%d: %q", exp.Unix(), info)
+	}
 }

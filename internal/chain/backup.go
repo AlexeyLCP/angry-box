@@ -109,7 +109,7 @@ func (s *Store) ExportStore() ([]byte, error) {
 		return nil, fmt.Errorf("export store: read: %w", err)
 	}
 	if sf == nil {
-		sf = &storeFile{}
+		sf = newStoreFile()
 	}
 	// Wrap the storeFile in an envelope so a restore can detect it. The Store
 	// nests under its own key so it does not collide with the envelope fields.

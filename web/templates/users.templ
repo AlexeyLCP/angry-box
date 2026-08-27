@@ -24,14 +24,23 @@ templ Users(users []*model.User, chains []*model.Chain) {
 	<div class="flex flex-col gap-6">
 		<div class="flex items-center justify-between flex-wrap gap-3">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Users") }</h2>
-			<button
-				class="btn btn-primary btn-sm"
-				hx-get="/ui/users/new"
-				hx-target="#modal-container"
-				hx-swap="innerHTML">
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-				{ i18n.T(ctx, "Add User") }
-			</button>
+			<div class="inline-flex gap-2">
+				<button
+					class="btn btn-outline btn-sm"
+					hx-get="/ui/users/bulk"
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					{ i18n.T(ctx, "Bulk Add") }
+				</button>
+				<button
+					class="btn btn-primary btn-sm"
+					hx-get="/ui/users/new"
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+					{ i18n.T(ctx, "Add User") }
+				</button>
+			</div>
 		</div>
 
 		<section class="tn-card tn-card-hover">
@@ -73,7 +82,12 @@ templ Users(users []*model.User, chains []*model.Chain) {
 templ UserRow(u *model.User) {
 	<tr id={"user-" + u.ID}>
 		<td>
-			<div class="font-semibold">{ u.Name }</div>
+			<div class="font-semibold">
+				{ u.Name }
+				if userOnline(u) {
+					<span class="pill" style="color: var(--ok)" title={ i18n.T(ctx, "Last AWG traffic within the online window") }>{ i18n.T(ctx, "online") }</span>
+				}
+			</div>
 			<div class="text-[11px] font-mono" style="color: var(--mut2)">{ u.ID }</div>
 		</td>
 		<td>
@@ -587,6 +601,89 @@ func userStatusBadge(u *model.User) (label, class string) {
 	default:
 		return "Inactive", "st-mut"
 	}
+}
+
+// onlineWindow is how recent the last AWG traffic observation must be for the
+// online badge. Matches the fleet bot's /online heuristic.
+const onlineWindow = 6 * time.Minute
+
+// userOnline reports whether the user's last AWG traffic observation is fresh
+// enough to count as online (granularity is bounded by the metrics interval).
+func userOnline(u *model.User) bool {
+	return u.Active && !u.AWGTrafficAt.IsZero() && time.Since(u.AWGTrafficAt) <= onlineWindow
+}
+
+// ─── Bulk user creation (seller workflow) ────────────────────────────────────
+
+// BulkUserForm is the "create N users from a template" modal.
+templ BulkUserForm(chains []*model.Chain) {
+	<dialog id="bulk-users-modal" class="modal" open>
+		<div class="modal-box" style="max-width: 42rem;">
+			<h3 class="text-lg font-semibold mb-3">{ i18n.T(ctx, "Bulk Add Users") }</h3>
+			<form hx-post="/ui/users/bulk" hx-target="#modal-container" hx-swap="innerHTML" class="grid gap-3 md:grid-cols-2">
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Count") }</label>
+					<input type="number" name="count" class="inp" value="10" min="1" max="100" required/>
+				</div>
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Name prefix") }</label>
+					<input type="text" name="name_prefix" class="inp" value="client" required/>
+				</div>
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Expires in (days)") }</label>
+					<input type="number" name="expires_days" class="inp" value="30" min="0" max="3650"/>
+					<p class="hint">{ i18n.T(ctx, "0 = no expiry") }</p>
+				</div>
+				<div>
+					<label class="lbl">{ i18n.T(ctx, "Data limit (GB)") }</label>
+					<input type="number" name="data_limit_gb" class="inp" value="0" min="0"/>
+					<p class="hint">{ i18n.T(ctx, "0 = unlimited") }</p>
+				</div>
+				<div class="md:col-span-2">
+					<span class="lbl">{ i18n.T(ctx, "Chains") }</span>
+					<div class="flex flex-col gap-1 max-h-40 overflow-y-auto p-3" style="border: 1px solid var(--bd); border-radius: 8px;">
+						for _, c := range chains {
+							<label class="flex items-center gap-2 cursor-pointer">
+								<input type="checkbox" name="chain_names" value={ c.Name } class="cb"/>
+								<span class="text-sm font-mono">{ c.Name }</span>
+							</label>
+						}
+						if len(chains) == 0 {
+							<span class="hint">{ i18n.T(ctx, "No chains yet") }</span>
+						}
+					</div>
+				</div>
+				<div class="md:col-span-2 flex justify-end gap-2">
+					<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ i18n.T(ctx, "Create") }</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
+	</dialog>
+}
+
+// BulkUserResult reports the outcome of a bulk create; HTMX swaps it into the
+// modal container, then a page refresh shows the new rows.
+templ BulkUserResult(created int, prefix string, errMsg string) {
+	<dialog id="bulk-users-modal" class="modal" open>
+		<div class="modal-box" style="max-width: 36rem;">
+			if errMsg != "" {
+				<div class="alert alert-error text-sm">{ errMsg }</div>
+			} else {
+				<div class="alert alert-success text-sm">
+					{ fmt.Sprintf(i18n.T(ctx, "%d users created (prefix %q) — refresh to see them"), created, prefix) }
+				</div>
+			}
+			<div class="flex justify-end mt-4 gap-2">
+				<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
+				if errMsg == "" {
+					<button type="button" class="btn btn-primary" onclick="location.href='/ui/users'">{ i18n.T(ctx, "Refresh") }</button>
+				}
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
+	</dialog>
 }
 
 // ─── User Created Result (post-create sub URL box) ─────────────────────────────

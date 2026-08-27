@@ -2490,3 +2490,24 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 ---
 
+## §54. «Спинной мозг» ноды: утилиты, подписки, бот, реле, импорт панелей (2026-08-27)
+
+Эпик «возможности 3x-ui без панели»: на каждой ноде рядом с sing-box ставится набор УТИЛИТ (голова без веб-интерфейса = «спинной мозг»), управляемый только оркестратором. Нода остаётся disposable-исполнителем; источник правды — стор оркестратора.
+
+**Решения:**
+- **Спинной мозг = набор утилит, не демон:** `caddy` (layer4 SNI-роутер на 80/443) + `acme.sh` + фейк-сайт + статика подписок. Никакой локальной БД/конфигов на ноде — всё рендерит и пушит оркестратор (`internal/chain/utilities*.go`).
+- **Caddy владеет 443:** SNI-роуты поддоменов на инбаунды, **дефолт — Reality** (ему серт не нужен). В caddy-режиме инбаунды на 80/443 ремапятся на внутренние 11000+ (`RemapInboundPorts`, детерминированно по срезу), слушают 127.0.0.1, TLS-терминирующие (naive/trusttunnel) берут acme-серт по пути (`CertPaths`). UDP (AWG) не ремапится. Цепочка на 443 в caddy-режиме = громкий конфликт.
+- **«Последний конфиг побеждает»:** `storeFile.Revision` (инкремент на каждый `writeStore`) штампуется в каждый пуш-артефакт; отставшая нода видна по `UtilityIsStale`.
+- **Гейтинг зависимостей** (`utilitydeps.go`): naive/trusttunnel требуют caddy+acme; mtproxy не может сидеть на 80/443 в caddy-режиме.
+- **Подписки на нодах:** `/sub/<token>` = статика (`.raw/.b64/.clash.yaml/.vpn/.html`), пуш на каждый apply (`PushNodeSubscriptions`, clean-slate = отозванные юзеры исчезают). Оркестратор-эндпоинт получил заголовки `Subscription-Userinfo`/`Profile-Title` (3x-ui-конвенция) и **`?format=singbox`** (полный клиентский конфиг с urltest-группой).
+- **Бот — один на флот, в оркестраторе** (`internal/bot/`, `mymmrac/telego`, long-polling — работает за NAT без вебхука): `/start <код>` привязка, `/status`, `/config` (ссылки с нод), админ-команды `/nodes /users /online /link`. Cron-цикл: дедлайны `start_on_first_use` + предупреждения об истечении (дедуп по `ExpiryNotifiedAt`), алерт при брутфорс-блоке IP.
+- **Реле панели** (фаза 4): `ssh -R` оркестратор→нода (`Client.RemoteForward`), caddy проксирует `panel.<домен>` на 127.0.0.1:8900 — панель доступна извне, когда оркестратор за NAT. Double opt-in (`NodeInfo.PanelRelay`). Харднинг уже был (rate-limit 10/15мин, constant-time, аудит) + алерты в бота.
+- **Импорт панелей 3x-ui/lucx-ui** (фаза T): детект по `/etc/x-ui/x-ui.db` (+маркер форка `install-source`), БД скачивается по SSH (`Client.DownloadFile`, base64) и парсится локально (`modernc.org/sqlite`, нода ничего не ставит). Маппинг: vless+reality/naive/mieru/trusttunnel/mtproto → NodeInbound; клиенты → User с дедупом по tgId/email (+merge между ключами, трафик один раз на юзера); роутинг xray-шаблона → `RouteRule` (формат §53: только direct/block, geosite/geoip/domain/ip_cidr). Неимпортируемое (vmess/trojan/ss/wg, ключи панели, прокси-правила) — в отчёт, ничего молча. Бэкап БД всегда (`<store>/panel-backups/`), сервис панели останавливается, файлы не удаляются.
+
+**Проверено:** юнит-тесты ревизии/утилит/гейтинга/caddy-рендера/пуша подписок/бота/реле/массового создания (`chain/web/bot`), парсер+конвертер панели на реальной SQLite-фикстуре (`takeover/panel_import_test.go`), полный `go test ./...` зелёный. Живой прогон утилит/caddy/acme — на тестовой ноде (см. ниже «не проверено»).
+
+**Не проверено живьём (нужен стенд):** установка caddy-бинарника (нужен `scripts/build-caddy.sh` + публикация ассета + пин `caddyChecksums`), acme-выпуск, реле под нагрузкой, живой импорт реальной панели.
+
+**Файлы:** `internal/chain/{utilities,utilitydeps,utility_install}.go` (новые), `internal/chain/{merged_config,store,awg_outbound}.go`, `internal/domain/model/panel.go` (Utilities/TLSDomain/PanelRelay/TelegramID/TelegramBindCode/ExpiryNotifiedAt), `internal/bot/` (новый), `internal/web/{utilities,subpush,botctl,relay,panelimport,sub_singbox}.go` (новые), `internal/web/{subscription,settings,users,takeover,chains,server,auth,inbounds}.go`, `internal/takeover/{detect,panel_db,panel_import}.go` (новые: `panel_db`,`panel_import`), `internal/ssh/client.go` (RemoteForward/DownloadFile), `web/templates/{utilities,users,settings,nodes}.templ` (новый: `utilities`), `scripts/build-caddy.sh` (новый), `docs/TWP-SPIKE.md` (новый), `internal/i18n/i18n.go`.
+
+

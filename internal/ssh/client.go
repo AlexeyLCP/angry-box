@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -263,6 +264,102 @@ func (c *Client) UploadText(ctx context.Context, content, remotePath string, mod
 		<-done
 		return fmt.Errorf("ssh: upload %s timed out: %w", remotePath, runCtx.Err())
 	}
+}
+
+// RemoteForward opens a remote port-forward (the ssh -R equivalent): the SSH
+// server listens on remoteAddr (e.g. "127.0.0.1:8900") and every accepted
+// connection is bridged to localAddr (e.g. "127.0.0.1:9080") on THIS machine.
+// It blocks until ctx is cancelled or the listener dies; the caller runs it in
+// a goroutine with a reconnect loop. This is how the panel relay exposes the
+// orchestrator UI through a public node when the orchestrator sits behind NAT.
+func (c *Client) RemoteForward(ctx context.Context, remoteAddr, localAddr string) error {
+	listener, err := c.client.Listen("tcp", remoteAddr)
+	if err != nil {
+		return fmt.Errorf("ssh: remote forward %s: %w", remoteAddr, err)
+	}
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
+	}()
+	for {
+		remote, err := listener.Accept()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil // normal shutdown
+			}
+			return fmt.Errorf("ssh: remote forward accept: %w", err)
+		}
+		go bridgeConn(ctx, remote, localAddr)
+	}
+}
+
+// bridgeConn copies data between the remote-forwarded connection and a fresh
+// dial to localAddr. Both directions run concurrently; the pair closes when
+// either side ends or ctx is cancelled.
+func bridgeConn(ctx context.Context, remote net.Conn, localAddr string) {
+	defer remote.Close()
+	d := net.Dialer{}
+	local, err := d.DialContext(ctx, "tcp", localAddr)
+	if err != nil {
+		return
+	}
+	defer local.Close()
+	done := make(chan struct{}, 2)
+	cp := func(dst, src net.Conn) {
+		_, _ = io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	go cp(local, remote)
+	go cp(remote, local)
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+// DownloadFile fetches a remote file's bytes (base64-piped through an SSH
+// session — binary-safe, no SFTP subsystem needed). Used to pull small files
+// like the 3x-ui/lucx-ui panel SQLite DB into the orchestrator for parsing.
+func (c *Client) DownloadFile(ctx context.Context, remotePath string) ([]byte, error) {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("ssh: session: %w", err)
+	}
+	defer session.Close()
+	runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	done := make(chan error, 1)
+	var out bytes.Buffer
+	session.Stdout = &out
+	go func() {
+		done <- session.Run(fmt.Sprintf("base64 -w0 %s 2>/dev/null || base64 %s", remotePath, remotePath))
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			return nil, fmt.Errorf("ssh: download %s: %w", remotePath, err)
+		}
+	case <-runCtx.Done():
+		_ = session.Signal(ssh.SIGKILL)
+		<-done
+		return nil, fmt.Errorf("ssh: download %s timed out: %w", remotePath, runCtx.Err())
+	}
+	raw, err := base64Decode(out.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("ssh: download %s: decode: %w", remotePath, err)
+	}
+	return raw, nil
+}
+
+// base64Decode tolerates the newline-wrapped output of busybox/base64 variants.
+func base64Decode(b []byte) ([]byte, error) {
+	clean := bytes.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == ' ' {
+			return -1
+		}
+		return r
+	}, b)
+	return base64.StdEncoding.DecodeString(string(clean))
 }
 
 // Close terminates the SSH connection.

@@ -124,6 +124,10 @@ func (s *Server) StartBackgroundMetrics(intervalMinutes int) {
 
 // Stop halts background collection.
 func (s *Server) Stop() {
+	// Tear down the fleet bot + panel relays before signalling the rest of the
+	// shutdown so their goroutines exit with the daemon.
+	s.StopBot()
+	s.StopPanelRelays()
 	select {
 	case <-s.stopCh:
 	default:
@@ -426,6 +430,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	s.registerDashboardRoutes(mux)
 	s.registerNodeRoutes(mux)
 	s.registerRoutingRoutes(mux)
+	s.registerUtilityRoutes(mux)
 	s.registerTakeoverRoutes(mux)
 	s.registerChainRoutes(mux)
 	s.registerSpiderRoutes(mux)
