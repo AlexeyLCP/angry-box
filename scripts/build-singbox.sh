@@ -17,8 +17,8 @@
 #         deps/checksums.txt  (sha256 per tarball)
 #
 # Usage:
-#   ./scripts/build-singbox.sh                              # amd64 only (default)
-#   ARCHES="amd64 arm64" ./scripts/build-singbox.sh
+#   ./scripts/build-singbox.sh                              # amd64 + arm64 (default)
+#   ARCHES="amd64" ./scripts/build-singbox.sh               # a subset
 #   ABX_REF=3c554273 ./scripts/build-singbox.sh             # pin a fork commit
 #
 # Requires: go >= 1.26 (mtg-multi needs go 1.26), git, tar, sha256sum. Run on
@@ -34,7 +34,8 @@ cd "$REPO_ROOT"
 # Default: mtproxy+fallback+trusttunnel on hoaxisr AWG 3.1 (922fc605).
 # Override via env.
 ABX_REF="${ABX_REF:-922fc605}"
-ARCHES="${ARCHES:-amd64}"
+# Nodes are amd64/arm64 only (see supportedNodeArchs) — build both by default.
+ARCHES="${ARCHES:-amd64 arm64}"
 
 BUILD_DIR="${BUILD_DIR:-/tmp/sing-box-build-angry}"
 OUT_DIR="$REPO_ROOT/deps"

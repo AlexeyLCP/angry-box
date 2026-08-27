@@ -42,20 +42,20 @@ const (
 // tarballs are published as GitHub Release assets so the download is stable
 // regardless of repo visibility (raw.githubusercontent only works on public
 // repos). Nodes download these instead of compiling Go (weak VPSes never build).
-//
-// Empty entries fall back to the GitHub raw path under deps/.
+// Only amd64/arm64 are node architectures (see supportedNodeArchs).
 var singBoxDownloadURLs = map[string]string{
 	"amd64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/sing-box-" + singBoxVersion + "-amnezia-linux-amd64.tar.gz",
-	"arm64": "",
+	"arm64": "https://github.com/AlexeyLCP/angry-box/releases/download/v0.1.0/sing-box-" + singBoxVersion + "-amnezia-linux-arm64.tar.gz",
 }
 
 // singBoxChecksums maps Go arch → sha256 of the amnezia-box tarball. Regenerate
 // via scripts/build-singbox.sh (writes deps/checksums.txt). Verified on deploy
 // (fail-closed via checksumForArch) so a truncated/modified tarball is never
-// installed as root on the fleet.
+// installed as root on the fleet. The arm64 checksum is pinned once the arm64
+// tarball is built + published (scripts/build-singbox.sh ARCHES=arm64).
 var singBoxChecksums = map[string]string{
 	"amd64": "4272d04d9956b4b4f2fff2af5e50f836e728d34d6934bdd13cec36b2637a884a",
-	"arm64": "",
+	"arm64": "fe965bee0c59b14887587e66dff08b470cdf445a4e4a0a76908ac359ac16a798",
 }
 
 // amneziaWGGoVersion is the SHORT SHA of the amneziawg-go commit pinned in
@@ -289,6 +289,17 @@ func isPatchedExtended(ver string) bool {
 		strings.Contains(lower, "with_mtproxy")
 }
 
+// supportedNodeArchs is the product contract for NODES: angry-box captures and
+// manages nodes on amd64 and arm64 only. The PANEL (orchestrator) itself
+// installs everywhere (incl. MIPS/armv7 routers — see the release targets), but
+// a node must run the patched sing-box binary we publish, and we only publish
+// amd64/arm64. Any other node arch is refused up front with a clear message
+// instead of dying later on a missing binary/checksum.
+var supportedNodeArchs = map[string]bool{
+	"amd64": true,
+	"arm64": true,
+}
+
 // checksumForArch returns the expected sha256 of the patched sing-box tarball
 // for the given Go architecture. It fails closed: a missing or empty checksum
 // yields an error rather than silently skipping verification, so a compromised
@@ -310,6 +321,14 @@ func installPatchedBinary(ctx context.Context, client ports.SSHClient, useSudo b
 		return fmt.Errorf("detect arch: %w", err)
 	}
 	goArch := archToGoArch(strings.TrimSpace(archOut))
+
+	// Product contract: nodes are amd64/arm64 only. Refuse anything else up
+	// front with a clear message (the panel itself installs everywhere, but a
+	// node must run a patched sing-box build we publish — and we only publish
+	// amd64/arm64).
+	if !supportedNodeArchs[goArch] {
+		return fmt.Errorf("angry-box manages nodes on amd64/arm64 only — this node is %q (%s)", strings.TrimSpace(archOut), goArch)
+	}
 
 	// Fail closed BEFORE downloading: if we have no pinned checksum for this
 	// arch, refuse to install rather than shipping an unverified binary that

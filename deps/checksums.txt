@@ -1,1 +1,2 @@
 4272d04d9956b4b4f2fff2af5e50f836e728d34d6934bdd13cec36b2637a884a *sing-box-922fc605-amnezia-linux-amd64.tar.gz
+fe965bee0c59b14887587e66dff08b470cdf445a4e4a0a76908ac359ac16a798 *sing-box-922fc605-amnezia-linux-arm64.tar.gz
