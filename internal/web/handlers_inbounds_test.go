@@ -62,14 +62,23 @@ func TestHandler_CreateInbound_MaterializesOnCheckedNodes(t *testing.T) {
 
 func TestHandler_CreateInbound_Validation(t *testing.T) {
 	ts := newTestServer(t)
-	// Missing name.
-	w := ts.post("/ui/inbounds", url.Values{"protocol": {"awg"}, "port": {"51840"}})
-	ts.assertStatus(w, http.StatusBadRequest)
+	st := ts.srv.store()
+	// Missing name + port now AUTO-FILL (tester UX): expect success with a
+	// generated name and a free port.
+	w := ts.post("/ui/inbounds", url.Values{"protocol": {"awg"}})
+	ts.assertStatus(w, http.StatusOK)
+	profs, _ := st.ListInboundProfiles()
+	if len(profs) != 1 {
+		t.Fatalf("auto-fill create: want 1 profile, got %d", len(profs))
+	}
+	if profs[0].Name == "" || profs[0].Port < 40000 || profs[0].Port > 59999 {
+		t.Errorf("auto-fill name/port not applied: %+v", profs[0])
+	}
 	// Frozen protocol.
 	w = ts.post("/ui/inbounds", url.Values{"name": {"x"}, "protocol": {"tuic"}, "port": {"443"}})
 	ts.assertStatus(w, http.StatusBadRequest)
 	// Bad port.
-	w = ts.post("/ui/inbounds", url.Values{"name": {"x"}, "protocol": {"awg"}, "port": {"99999"}})
+	w = ts.post("/ui/inbounds", url.Values{"name": {"y"}, "protocol": {"awg"}, "port": {"99999"}})
 	ts.assertStatus(w, http.StatusBadRequest)
 }
 

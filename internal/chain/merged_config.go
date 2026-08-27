@@ -765,10 +765,23 @@ func detectPortConflicts(nodeInfo *model.NodeInfo, nodeChains []*model.Chain, ro
 	for port, group := range byPort {
 		if len(group) > 1 {
 			parts := make([]string, len(group))
+			allUserIn := true
 			for i, c := range group {
 				parts[i] = fmt.Sprintf("%s (%s)", c.claimant, c.role)
+				if c.role != "user-in" {
+					allUserIn = false
+				}
 			}
-			return fmt.Errorf("port %d conflict: %s", port, strings.Join(parts, " vs "))
+			msg := fmt.Sprintf("port %d conflict: %s", port, strings.Join(parts, " vs "))
+			// Two chain user-entries landing on the same port almost always
+			// means several AWG entry chains on ONE node whose entry inbounds
+			// were never deployed (so both fell back to the shared default
+			// port). The kernel-AWG design hosts a single awg0 user-entry per
+			// node — point each chain at its own deployed inbound (or node).
+			if allUserIn && len(group) > 1 {
+				msg += " — several user-entry chains share this node and none of their inbounds is deployed here (both fell back to the default entry port). Deploy a distinct inbound per chain on the Inbounds page, or put the chains on different nodes; a node hosts one kernel-AWG (awg0) user-entry."
+			}
+			return fmt.Errorf("%s", msg)
 		}
 	}
 	return nil

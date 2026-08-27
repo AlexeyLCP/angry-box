@@ -9,6 +9,7 @@ package web
 // tab (obfuscation presets are inbound parameters).
 
 import (
+	cryptoRand "crypto/rand"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,6 +19,64 @@ import (
 	"github.com/alexeylcp/angry-box/internal/i18n"
 	"github.com/alexeylcp/angry-box/web/templates"
 )
+
+// autoInboundName returns a unique human-readable profile name for a protocol
+// (e.g. "awg-3") so adding an inbound needs no manual typing.
+func autoInboundName(st *chain.Store, proto string) string {
+	existing := map[string]bool{}
+	if profs, err := st.ListInboundProfiles(); err == nil {
+		for _, p := range profs {
+			existing[p.Name] = true
+		}
+	}
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("%s-%d", proto, i)
+		if !existing[name] {
+			return name
+		}
+	}
+}
+
+// autoInboundPort picks a free port in the 40000-59999 range that is not used
+// by any inbound on the selected nodes (all nodes when none selected), not a
+// reserved orchestrator/caddy port, and not taken by another profile. Returns 0
+// if the range is exhausted (caller rejects).
+func autoInboundPort(st *chain.Store, nodeIDs []string) int {
+	used := map[int]bool{
+		80: true, 443: true, 2080: true, 8080: true, 8443: true, 8900: true, 9080: true, 1080: true,
+	}
+	sel := map[string]bool{}
+	for _, id := range nodeIDs {
+		sel[id] = true
+	}
+	if infos, err := st.ListNodeInfos(); err == nil {
+		for _, info := range infos {
+			if len(nodeIDs) > 0 && !sel[info.ID] {
+				continue
+			}
+			for _, ib := range info.Inbounds {
+				used[ib.Port] = true
+			}
+		}
+	}
+	if profs, err := st.ListInboundProfiles(); err == nil {
+		for _, p := range profs {
+			used[p.Port] = true
+		}
+	}
+	var buf [2]byte
+	if _, err := cryptoRand.Read(buf[:]); err != nil {
+		return 0
+	}
+	base := (int(buf[0])<<8 | int(buf[1])) % 20000
+	for off := 0; off < 20000; off++ {
+		p := 40000 + (base+off)%20000
+		if !used[p] {
+			return p
+		}
+	}
+	return 0
+}
 
 // profileViews pairs every profile with its computed deployment state for the
 // list (placement derived from NodeInbound.ProfileID — the source of truth).
@@ -80,9 +139,7 @@ func (s *Server) handleEditInboundForm(w http.ResponseWriter, r *http.Request) {
 // (without ID) and the desired node list.
 func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
-		return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "name required"))
-	}
+	// name may be empty: create auto-generates one, update preserves the existing.
 	proto := strings.TrimSpace(r.FormValue("protocol"))
 	switch proto {
 	case "awg", "vless-reality", "mtproxy", "naive", "mieru", "trusttunnel":
@@ -96,7 +153,9 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 	if proto == "mtproxy" && port == 0 {
 		port = 443 // MTProxy's canonical FakeTLS port
 	}
-	if port < 1 || port > 65535 {
+	// port 0 = "auto-assign" (filled by the caller); only an explicit
+	// out-of-range value is rejected.
+	if port != 0 && (port < 1 || port > 65535) {
 		return nil, nil, fmt.Errorf("%s", i18n.T(r.Context(), "invalid port"))
 	}
 	var nodeIDs []string
@@ -229,6 +288,18 @@ func (s *Server) handleCreateInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.store()
+	// Auto-fill (tester UX request): an empty name/port gets a generated
+	// default so adding an inbound needs no manual typing.
+	if prof.Name == "" {
+		prof.Name = autoInboundName(st, prof.Protocol)
+	}
+	if prof.Port == 0 {
+		prof.Port = autoInboundPort(st, nodeIDs)
+		if prof.Port == 0 {
+			http.Error(w, i18n.T(r.Context(), "no free port available"), http.StatusBadRequest)
+			return
+		}
+	}
 	prof.ID = uniqueProfileID(st, slugifyProfileName(prof.Name))
 	s.applyProfileAndDeploy(w, r, prof, nodeIDs, "create")
 }
@@ -248,6 +319,14 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	// Empty name/port on edit preserves the existing values (the form normally
+	// pre-fills them; this guards a cleared field from wiping them).
+	if prof.Name == "" {
+		prof.Name = existing.Name
+	}
+	if prof.Port == 0 {
+		prof.Port = existing.Port
 	}
 	// Protocol is immutable while materializations exist — the per-node creds
 	// are protocol-specific; changing it would strand them. Recreate instead.
