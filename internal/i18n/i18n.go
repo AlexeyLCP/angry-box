@@ -847,6 +847,10 @@ var locales = map[string]map[string]string{
 		"Panel relay: OFF": "Panel relay: OFF",
 		"Relay hint": "Exposes the panel at https://panel.<domain> through this node (ssh -R) for orchestrators behind NAT",
 		"Install caddy before enabling the panel relay": "Install caddy before enabling the panel relay",
+		"TLS quick start": "TLS quick start",
+		"1) create the DNS A records below, 2) press Install all, 3) press Issue/renew certificate.": "1) create the DNS A records below, 2) press Install all, 3) press Issue/renew certificate.",
+		"DNS A records": "DNS A records",
+		"point each to": "point each to",
 		// v0.9.0 — 3x-ui/lucx-ui panel takeover (Phase T).
 		"Management panel detected: %s": "Management panel detected: %s",
 		"DB:": "DB:",
@@ -1824,6 +1828,10 @@ var locales = map[string]map[string]string{
 		"Panel relay: OFF": "Реле панели: ВЫКЛ",
 		"Relay hint": "Публикует панель на https://panel.<домен> через эту ноду (ssh -R) — для оркестраторов за NAT",
 		"Install caddy before enabling the panel relay": "Сначала установите caddy — потом включайте реле панели",
+		"TLS quick start": "Быстрый старт TLS",
+		"1) create the DNS A records below, 2) press Install all, 3) press Issue/renew certificate.": "1) создайте DNS A-записи ниже, 2) нажмите «Установить всё», 3) нажмите «Выпустить/обновить сертификат».",
+		"DNS A records": "DNS A-записи",
+		"point each to": "каждую направьте на",
 		// v0.9.0 — takeover панелей 3x-ui/lucx-ui (фаза T).
 		"Management panel detected: %s": "Найдена панель управления: %s",
 		"DB:": "БД:",

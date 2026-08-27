@@ -56,7 +56,7 @@ func ValidateUtilityDeps(info *model.NodeInfo, proto string, port int) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("protocol %q requires utilities not installed on this node: %v — install them first", proto, missing)
+		return fmt.Errorf("protocol %q needs TLS utilities on this node (%v) — open the node's Utilities and run the TLS quick start: set a domain, add the DNS A-records, Install all, then Issue/renew certificate", proto, missing)
 	}
 	return nil
 }

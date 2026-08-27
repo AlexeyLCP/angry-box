@@ -39,6 +39,28 @@ func utilityHint(name string) string {
 	return ""
 }
 
+// hostIP strips the :port from a host address for DNS guidance.
+func hostIP(addr string) string {
+	if i := strings.LastIndex(addr, ":"); i > 0 && !strings.Contains(addr[i+1:], "]") {
+		// keep IPv6 [::1] intact; only strip a trailing :port on IPv4/hostname
+		if !strings.Contains(addr, "]") {
+			return addr[:i]
+		}
+	}
+	return addr
+}
+
+// caddySANs returns the SAN list for DNS guidance (empty when no domain).
+func caddySANs(info *model.NodeInfo) []string {
+	if info == nil || info.TLSDomain == "" {
+		return nil
+	}
+	if plan, err := chain.BuildCaddyPlan(info, 0); err == nil {
+		return plan.CaddySANs()
+	}
+	return nil
+}
+
 templ NodeUtilitiesPanel(h *model.Host, info *model.NodeInfo, stale map[string]bool, report *chain.UtilityReport, errMsg string) {
 	<dialog id="utilities-modal" class="modal" open>
 		<div class="modal-box" style="max-width: 56rem;">
@@ -76,6 +98,15 @@ templ NodeUtilitiesPanel(h *model.Host, info *model.NodeInfo, stale map[string]b
 			if info == nil || info.TLSDomain == "" {
 				<p class="hint">{ i18n.T(ctx, "Set a TLS domain to enable the utility bundle.") }</p>
 			} else {
+				<div class="alert alert-info text-sm mb-3 flex-col items-start gap-1">
+					<div><b>{ i18n.T(ctx, "TLS quick start") }:</b> { i18n.T(ctx, "1) create the DNS A records below, 2) press Install all, 3) press Issue/renew certificate.") }</div>
+					<div class="mt-1"><b>{ i18n.T(ctx, "DNS A records") }</b> { i18n.T(ctx, "point each to") } <code>{ hostIP(h.Addr) }</code>:</div>
+					<div class="font-mono text-xs" style="color: var(--mut)">
+						for _, san := range caddySANs(info) {
+							<div>A&nbsp;&nbsp;{ san }</div>
+						}
+					</div>
+				</div>
 				<div class="overflow-x-auto mb-3">
 					<table class="tn-table">
 						<thead>
