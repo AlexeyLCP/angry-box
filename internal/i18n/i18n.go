@@ -743,7 +743,7 @@ var locales = map[string]map[string]string{
 		"Mieru": "Mieru",
 		"TrustTunnel": "TrustTunnel",
 		"Mieru transport": "Mieru transport",
-		// v0.8.32 — per-node manual routing (route rules + geo rule-sets).
+		// v0.9.0 — per-node manual routing (route rules + geo rule-sets).
 		"Routing": "Routing",
 		"Routing panel hint": "Manual rules are evaluated ABOVE the system cascade (first match wins). Geo matching uses rule-set files pushed to the node at deploy time. Changes trigger a re-deploy.",
 		"Manual rules": "Manual rules",
@@ -773,7 +773,7 @@ var locales = map[string]map[string]string{
 		"Routing summary": "Routing summary",
 		"%d route(s)": "%d route(s)",
 		"Open": "Open",
-		// v0.8.32 — node utilities ("spinal cord": caddy + acme + fakesite + sub).
+		// v0.9.0 — node utilities ("spinal cord": caddy + acme + fakesite + sub).
 		"Utilities": "Utilities",
 		"Node utilities": "Node utilities",
 		"Utilities hint": "Installable node-side components. Caddy owns ports 80/443 (SNI routing + site + subscriptions), acme.sh issues the certificates, the rest are pushed artifacts. The orchestrator is the only writer.",
@@ -803,7 +803,7 @@ var locales = map[string]map[string]string{
 		"Issues the node's SAN certificate via HTTP-01 (Let's Encrypt) and reloads caddy + sing-box on renewal.": "Issues the node's SAN certificate via HTTP-01 (Let's Encrypt) and reloads caddy + sing-box on renewal.",
 		"A boring static page served on the primary domain so probes and visitors see a plausible website.": "A boring static page served on the primary domain so probes and visitors see a plausible website.",
 		"Per-user subscription files pushed by the orchestrator; served at https://<domain>/sub/<token>.": "Per-user subscription files pushed by the orchestrator; served at https://<domain>/sub/<token>.",
-		// v0.8.32 — fleet Telegram bot.
+		// v0.9.0 — fleet Telegram bot.
 		"Telegram bot": "Telegram bot",
 		"Bot enabled": "Bot enabled",
 		"Bot token": "Bot token",
@@ -828,7 +828,7 @@ var locales = map[string]map[string]string{
 		"Bot auth lockout": "Panel auth: IP %s locked out after repeated failures (possible brute-force)",
 		"Bot expiry warning user": "Your access expires %s. Contact the operator to extend.",
 		"Traffic": "Traffic",
-		// v0.8.32 — online badge + bulk user creation.
+		// v0.9.0 — online badge + bulk user creation.
 		"online": "online",
 		"Last AWG traffic within the online window": "Last AWG traffic within the online window",
 		"Bulk Add": "Bulk Add",
@@ -847,7 +847,7 @@ var locales = map[string]map[string]string{
 		"Panel relay: OFF": "Panel relay: OFF",
 		"Relay hint": "Exposes the panel at https://panel.<domain> through this node (ssh -R) for orchestrators behind NAT",
 		"Install caddy before enabling the panel relay": "Install caddy before enabling the panel relay",
-		// v0.8.32 — 3x-ui/lucx-ui panel takeover (Phase T).
+		// v0.9.0 — 3x-ui/lucx-ui panel takeover (Phase T).
 		"Management panel detected: %s": "Management panel detected: %s",
 		"DB:": "DB:",
 		"service active:": "service active:",
@@ -1721,7 +1721,7 @@ var locales = map[string]map[string]string{
 		"Mieru": "Mieru",
 		"TrustTunnel": "TrustTunnel",
 		"Mieru transport": "Транспорт Mieru",
-		// v0.8.32 — per-node manual routing.
+		// v0.9.0 — per-node manual routing.
 		"Routing": "Маршрутизация",
 		"Routing panel hint": "Ручные правила проверяются ВЫШЕ системного каскада (первое совпадение побеждает). Гео-правила используют rule-set файлы, которые пушатся на ноду при деплое. Изменения запускают редеплой.",
 		"Manual rules": "Ручные правила",
@@ -1749,7 +1749,7 @@ var locales = map[string]map[string]string{
 		"No route rules in the generated config": "В сгенерированном конфиге нет правил маршрутизации",
 		"unsupported action": "неподдерживаемое действие",
 		"Routing summary": "Сводка маршрутизации",
-		// v0.8.32 — утилиты ноды («спинной мозг»: caddy + acme + fakesite + sub).
+		// v0.9.0 — утилиты ноды («спинной мозг»: caddy + acme + fakesite + sub).
 		"Utilities": "Утилиты",
 		"Node utilities": "Утилиты ноды",
 		"Utilities hint": "Устанавливаемые компоненты ноды. Caddy владеет портами 80/443 (SNI-маршрутизация + сайт + подписки), acme.sh выпускает сертификаты, остальное — пуш-артефакты. Оркестратор — единственный писатель.",
@@ -1779,7 +1779,7 @@ var locales = map[string]map[string]string{
 		"Issues the node's SAN certificate via HTTP-01 (Let's Encrypt) and reloads caddy + sing-box on renewal.": "Выпускает SAN-сертификат ноды через HTTP-01 (Let's Encrypt) и перезагружает caddy + sing-box при продлении.",
 		"A boring static page served on the primary domain so probes and visitors see a plausible website.": "Скучная статичная страница на основном домене — зонды и посетители видят правдоподобный сайт.",
 		"Per-user subscription files pushed by the orchestrator; served at https://<domain>/sub/<token>.": "Пер-юзер файлы подписок, пушатся оркестратором; раздаются на https://<domain>/sub/<token>.",
-		// v0.8.32 — флотный Telegram-бот.
+		// v0.9.0 — флотный Telegram-бот.
 		"Telegram bot": "Telegram-бот",
 		"Bot enabled": "Бот включён",
 		"Bot token": "Токен бота",
@@ -1804,7 +1804,7 @@ var locales = map[string]map[string]string{
 		"Bot auth lockout": "Аутентификация панели: IP %s заблокирован после повторных неудач (возможен брутфорс)",
 		"Bot expiry warning user": "Ваш доступ истекает %s. Обратитесь к оператору для продления.",
 		"Traffic": "Трафик",
-		// v0.8.32 — онлайн-бейдж + массовое создание юзеров.
+		// v0.9.0 — онлайн-бейдж + массовое создание юзеров.
 		"online": "онлайн",
 		"Last AWG traffic within the online window": "Последний AWG-трафик в пределах онлайн-окна",
 		"Bulk Add": "Массовое добавление",
@@ -1823,7 +1823,7 @@ var locales = map[string]map[string]string{
 		"Panel relay: OFF": "Реле панели: ВЫКЛ",
 		"Relay hint": "Публикует панель на https://panel.<домен> через эту ноду (ssh -R) — для оркестраторов за NAT",
 		"Install caddy before enabling the panel relay": "Сначала установите caddy — потом включайте реле панели",
-		// v0.8.32 — takeover панелей 3x-ui/lucx-ui (фаза T).
+		// v0.9.0 — takeover панелей 3x-ui/lucx-ui (фаза T).
 		"Management panel detected: %s": "Найдена панель управления: %s",
 		"DB:": "БД:",
 		"service active:": "сервис активен:",

@@ -4,52 +4,119 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
-## [v0.8.32] — 2026-08-27
+## [v0.9.0] — 2026-08-27
 
-### Feature — node "spinal cord": utilities, subscriptions, fleet bot, panel relay, panel import
+### 🧠 «Спинной мозг» ноды: утилиты, подписки на нодах, флотный бот, реле панели, импорт 3x-ui/lucx-ui
 
-Per-node installable **utilities** managed only by the orchestrator (a head
-with no web UI — the "spinal cord"): `caddy` (layer4 SNI router owning 80/443,
-default route → Reality), `acme.sh` (HTTP-01 SAN cert), `fakesite`, and
-`sub` (pushed subscription statics). Caddy mode remaps inbounds off owned
-ports, fronts TLS-terminating protocols on SNI subdomains with the acme cert,
-and gates naive/trusttunnel behind the cert utilities. Store `Revision` stamps
-every pushed artifact — last config wins.
+Большой релиз, который превращает angry-box из «генератора конфигов по SSH» в
+полноценную панель нового типа: на каждой ноде рядом с sing-box теперь живёт
+набор управляемых утилит («спинной мозг» — голова без веб-интерфейса), подписки
+раздаются прямо с нод, флотом управляет Telegram-бот, а панели 3x-ui/lucx-ui
+импортируются в один клик.
 
-**Subscriptions:** per-user `/sub/<token>` statics pushed to every node on
-apply (revoked users disappear); `Subscription-Userinfo`/`Profile-Title`
-headers; new `?format=singbox` (full client config with a urltest group).
+**Что изменилось**
 
-**Fleet bot** (`internal/bot/`, telego, long-polling — works behind NAT): one
-bot per fleet in the orchestrator; `/start <code>` user binding, `/status`,
-`/config`; admin `/nodes /users /online /link`; cron loop enforces
-`start_on_first_use` deadlines + expiry warnings + brute-force lockout alerts.
-Online badge in the users table; bulk user creation.
+- **Утилиты ноды («спинной мозг»).** На ноду ставится набор компонентов,
+  которыми управляет ТОЛЬКО оркестратор (никакой локальной БД или конфигов на
+  ноде): `caddy` (layer4 SNI-роутер, владеет портами 80/443, весь не-наш трафик
+  по умолчанию уходит в Reality), `acme.sh` (SAN-сертификат через HTTP-01),
+  `fakesite` (правдоподобная страница-заглушка) и `sub` (статика подписок).
+  В «caddy-режиме» инбаунды уходят с занятых портов на внутренние,
+  TLS-протоколы (naive/trusttunnel) фронтятся SNI-поддоменом с сертификатом
+  acme, а их установка гейтится наличием caddy+acme. Каждый пуш-артефакт
+  штампуется ревизией стора — последний конфиг всегда побеждает.
+- **Подписки на нодах.** Пер-юзер `/sub/<token>` пушится статикой на каждую
+  ноду при каждом apply (отозванный юзер исчезает автоматически). Добавлены
+  заголовки `Subscription-Userinfo`/`Profile-Title` (клиенты показывают срок и
+  трафик прямо в своём UI) и новый `?format=singbox` — готовый клиентский
+  конфиг с urltest-группой.
+- **Флотный Telegram-бот.** Один бот на весь флот, живёт в оркестраторе
+  (long-polling — работает за NAT без вебхуков и публичного адреса). Привязка
+  юзера по одноразовому коду (`/start <код>`), у юзера `/status` и `/config`,
+  у админа `/nodes`, `/users`, `/online`, `/link`. Фоновый цикл следит за
+  дедлайнами `start_on_first_use`, предупреждает об истечениях и алертит при
+  брутфорсе панели. В таблице юзеров появился онлайн-бейдж, добавлено массовое
+  создание юзеров по шаблону.
+- **Реле панели.** Когда оркестратор сидит за NAT (дом, роутер), панель можно
+  опубликовать через caddy-ноду: оркестратор держит `ssh -R` туннель, нода
+  проксирует `panel.<домен>` на него. Включается на ноде отдельно (двойной
+  opt-in), при обрыве переподключается сам.
+- **Импорт панелей 3x-ui / lucx-ui.** Детект находит установленную панель,
+  скачивает её SQLite-базу по SSH и разбирает локально: инбаунды
+  (vless+reality / naive / mieru / trusttunnel / mtproto), юзеры (дедуп по
+  tgId/email) и правила маршрутизации переезжают в angry-box. База всегда
+  бэкапится, сервис панели останавливается, ничего не удаляется; всё
+  неимпортируемое честно показывается в отчёте.
+- **Ручная маршрутизация нод + визуализатор.** Таблица «что входит → куда
+  направляется» на каждой ноде, гео-правила (`.srs` пушит оркестратор), ручные
+  правила выше системных, per-user скоуп и общая сводка в паутине.
+- **TWP (Telegram Web Proxy) — пока только дизайн.** `docs/TWP-SPIKE.md`
+  описывает идею протокола, маскирующегося под Telegram Web, и go/no-go гейт:
+  порт в форк не начинается без захвата реального клиента.
 
-**Panel relay:** `ssh -R` from the orchestrator through a caddy node publishes
-the panel at `panel.<domain>` for orchestrators behind NAT (per-node opt-in).
+**Обновление:** обычный деплой новой версии. Миграций данных нет — новые поля
+добавочные. Для живого использования утилит нужен стенд: собрать и опубликовать
+caddy-бинарник (`scripts/build-caddy.sh`) и вписать его sha256 в
+`caddyChecksums` (пустой пин закрыто фейлится).
 
-**Panel takeover:** detect + import 3x-ui / lucx-ui — the SQLite DB is pulled
-over SSH and parsed locally (`modernc.org/sqlite`); vless+reality / naive /
-mieru / trusttunnel / mtproto inbounds, users (deduped by tgId/email) and
-routing rules convert into angry-box entities; DB always backed up, panel
-service stopped, nothing deleted.
+⚡️ Приятного использования!
 
-**Also:** per-node manual routing + geo rule-sets + visualizer (§53).
-TWP (Telegram Web Proxy) is design-only — `docs/TWP-SPIKE.md` (go/no-go gate
-before any fork work).
+---
 
-**Not yet live-tested (needs a staging node):** caddy binary install
-(`scripts/build-caddy.sh` + publish asset + pin `caddyChecksums` — empty pin
-fails closed), acme issue, relay under load, real panel import.
+### 🧠 Node "spinal cord": utilities, on-node subscriptions, fleet bot, panel relay, 3x-ui/lucx-ui import
 
-**Deps:** `github.com/mymmrac/telego`, `modernc.org/sqlite`.
+A big release that turns angry-box from an "SSH config generator" into a new
+kind of panel: each node now carries a set of orchestrator-managed utilities
+(the "spinal cord" — a head with no web UI), subscriptions are served straight
+from the nodes, a Telegram bot runs the fleet, and 3x-ui/lucx-ui panels import
+in one click.
 
-**Files:** `internal/chain/{utilities,utilitydeps,utility_install}.go`,
-`internal/bot/`, `internal/web/{utilities,subpush,botctl,relay,panelimport,sub_singbox}.go`,
-`internal/takeover/{panel_db,panel_import}.go`, `internal/ssh/client.go`
-(RemoteForward/DownloadFile), `web/templates/utilities.templ`,
-`scripts/build-caddy.sh`, `docs/TWP-SPIKE.md`.
+**What changed**
+
+- **Node utilities ("spinal cord").** A set of components installed on the node
+  and managed ONLY by the orchestrator (no local DB or config on the node):
+  `caddy` (a layer4 SNI router owning ports 80/443, default route → Reality),
+  `acme.sh` (SAN cert via HTTP-01), `fakesite` (a plausible placeholder site)
+  and `sub` (pushed subscription statics). In "caddy mode" inbounds move off
+  the owned ports, TLS protocols (naive/trusttunnel) are fronted on SNI
+  subdomains with the acme cert, and installing them is gated on caddy+acme.
+  Every pushed artifact is stamped with the store revision — last config wins.
+- **Subscriptions on nodes.** Per-user `/sub/<token>` is pushed as statics to
+  every node on each apply (a revoked user disappears automatically). Added the
+  `Subscription-Userinfo`/`Profile-Title` headers (clients show expiry and
+  traffic in their own UI) and a new `?format=singbox` — a ready client config
+  with a urltest group.
+- **Fleet Telegram bot.** One bot per fleet, living in the orchestrator
+  (long-polling — works behind NAT with no webhook or public address). User
+  binding via a one-time code (`/start <code>`); users get `/status` and
+  `/config`, admins get `/nodes`, `/users`, `/online`, `/link`. A background
+  loop enforces `start_on_first_use` deadlines, warns about expiries and alerts
+  on panel brute-force. The users table gained an online badge, plus bulk user
+  creation from a template.
+- **Panel relay.** When the orchestrator sits behind NAT (home, router), the
+  panel can be published through a caddy node: the orchestrator keeps an
+  `ssh -R` tunnel and the node proxies `panel.<domain>` to it. Opt-in per node
+  (double opt-in), auto-reconnects on drop.
+- **3x-ui / lucx-ui panel import.** Detection finds an installed panel, pulls
+  its SQLite DB over SSH and parses it locally: inbounds (vless+reality /
+  naive / mieru / trusttunnel / mtproto), users (deduped by tgId/email) and
+  routing rules all convert into angry-box entities. The DB is always backed up,
+  the panel service is stopped, nothing is deleted; anything not importable is
+  honestly reported.
+- **Per-node manual routing + visualizer.** A "what comes in → where it goes"
+  table on each node, geo rules (the orchestrator pushes the `.srs`), manual
+  rules above the system cascade, per-user scoping and a fleet-wide summary in
+  the spider web.
+- **TWP (Telegram Web Proxy) — design only for now.** `docs/TWP-SPIKE.md`
+  describes a protocol disguised as Telegram Web and a go/no-go gate: no fork
+  work starts without a real-client capture.
+
+**Upgrade:** deploy the new version as usual. No data migrations — the new
+fields are additive. Live use of the utilities needs a staging node: build and
+publish the caddy binary (`scripts/build-caddy.sh`) and pin its sha256 in
+`caddyChecksums` (an empty pin fails closed).
+
+⚡️ Enjoy!
 
 ## [v0.8.31] — 2026-08-27
 
