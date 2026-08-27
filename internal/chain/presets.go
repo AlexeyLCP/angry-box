@@ -506,7 +506,7 @@ func BuildRoutingSection(preset *ConnectionPreset, chainOutboundTag string) conf
 		if isGeoIP {
 			entry.URL = ruleSetBaseURL + "/" + tag + ".srs"
 		} else {
-			entry.URL = ruleSetGeoSiteURL + "/" + tag + ".srs"
+			entry.URL = ruleSetGeoSiteURL + "/geosite-" + tag + ".srs"
 		}
 		section.RuleSet = append(section.RuleSet, entry)
 	}

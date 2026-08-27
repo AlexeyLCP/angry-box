@@ -425,6 +425,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// handlers in the resource file.
 	s.registerDashboardRoutes(mux)
 	s.registerNodeRoutes(mux)
+	s.registerRoutingRoutes(mux)
 	s.registerTakeoverRoutes(mux)
 	s.registerChainRoutes(mux)
 	s.registerSpiderRoutes(mux)

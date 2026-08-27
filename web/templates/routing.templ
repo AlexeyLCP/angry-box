@@ -1,0 +1,279 @@
+package templates
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/alexeylcp/angry-box/internal/chain"
+	"github.com/alexeylcp/angry-box/internal/domain/model"
+	"github.com/alexeylcp/angry-box/internal/i18n"
+)
+
+// EffectiveRouteRow is one row of the read-only effective-route table (the
+// generated sing-box route section, flattened for humans).
+type EffectiveRouteRow struct {
+	Match  string
+	Action string
+}
+
+// ruleMatchSummary describes a stored RouteRule's matcher for the table.
+func ruleMatchSummary(r *model.RouteRule, presets []chain.RoutingPreset) string {
+	if r.MatchType == "preset" {
+		for _, p := range presets {
+			if p.ID == strings.TrimSpace(r.MatchValues) {
+				return "preset: " + p.Name
+			}
+		}
+		return "preset: " + r.MatchValues
+	}
+	return r.MatchType + ": " + strings.ReplaceAll(r.MatchValues, "\n", ", ")
+}
+
+// ruleActionSummary describes what a stored RouteRule does.
+func ruleActionSummary(r *model.RouteRule) string {
+	switch r.Action {
+	case "reject", "block":
+		return "reject"
+	case "route":
+		if r.OutboundTag != "" {
+			return "→ " + r.OutboundTag
+		}
+		return "→ direct-out"
+	case "":
+		return "→ direct-out"
+	default:
+		return r.Action
+	}
+}
+
+// RoutingSummaryRow is one node's manual rules for the fleet-wide summary.
+type RoutingSummaryRow struct {
+	NodeID string
+	Rules  []*model.RouteRule
+}
+
+templ RoutingSummary(rows []RoutingSummaryRow, presets []chain.RoutingPreset) {
+	<dialog id="routing-summary-modal" class="modal" open>
+		<div class="modal-box" style="max-width: 60rem;">
+			<h3 class="text-lg font-semibold mb-3">{ i18n.T(ctx, "Routing summary") }</h3>
+			if len(rows) == 0 {
+				<p class="hint">{ i18n.T(ctx, "No nodes registered.") }</p>
+			}
+			for _, row := range rows {
+				<div class="mb-4">
+					<div class="flex items-center justify-between mb-1">
+						<div class="font-mono text-sm font-semibold">
+							{ row.NodeID }
+							<span class="hint font-sans font-normal ml-2">{ fmt.Sprintf(i18n.T(ctx, "%d route(s)"), len(row.Rules)) }</span>
+						</div>
+						<button type="button" class="btn btn-xs btn-outline"
+							hx-get={ "/ui/nodes/" + row.NodeID + "/routing" }
+							hx-target="#modal-container" hx-swap="innerHTML">{ i18n.T(ctx, "Open") }</button>
+					</div>
+					if len(row.Rules) > 0 {
+						<div class="overflow-x-auto">
+							<table class="tn-table">
+								<thead>
+									<tr>
+										<th>{ i18n.T(ctx, "Priority") }</th>
+										<th>{ i18n.T(ctx, "Match") }</th>
+										<th>{ i18n.T(ctx, "Action") }</th>
+										<th>{ i18n.T(ctx, "Users") }</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, r := range row.Rules {
+										<tr style={ templ.KV("opacity: 0.5", !r.Enabled) }>
+											<td class="font-mono">{ strconv.Itoa(r.Priority) }</td>
+											<td>{ ruleMatchSummary(r, presets) }</td>
+											<td>{ ruleActionSummary(r) }</td>
+											<td>
+												if len(r.UserIDs) == 0 {
+													<span class="hint">{ i18n.T(ctx, "All users") }</span>
+												} else {
+													<span class="font-mono text-xs">{ fmt.Sprintf("%d user(s)", len(r.UserIDs)) }</span>
+												}
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					}
+				</div>
+			}
+			<div class="flex justify-end">
+				<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
+	</dialog>
+}
+
+templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.User, presets []chain.RoutingPreset, effective []EffectiveRouteRow) {
+	<dialog id="routing-modal" class="modal" open>
+		<div class="modal-box" style="max-width: 64rem;">
+			<h3 class="text-lg font-semibold mb-1">{ i18n.T(ctx, "Routing") } — <span class="font-mono">{ h.ID }</span></h3>
+			<p class="hint mb-3">{ i18n.T(ctx, "Routing panel hint") }</p>
+
+			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Manual rules") }</div>
+			if len(rules) == 0 {
+				<p class="hint mb-3">{ i18n.T(ctx, "No manual route rules yet") }</p>
+			} else {
+				<div class="overflow-x-auto mb-3">
+					<table class="tn-table">
+						<thead>
+							<tr>
+								<th>{ i18n.T(ctx, "Priority") }</th>
+								<th>{ i18n.T(ctx, "Match") }</th>
+								<th>{ i18n.T(ctx, "Action") }</th>
+								<th>{ i18n.T(ctx, "Users") }</th>
+								<th>{ i18n.T(ctx, "Comment") }</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, r := range rules {
+								<tr style={ templ.KV("opacity: 0.5", !r.Enabled) }>
+									<td class="font-mono">{ strconv.Itoa(r.Priority) }</td>
+									<td>{ ruleMatchSummary(r, presets) }</td>
+									<td>{ ruleActionSummary(r) }</td>
+									<td>
+										if len(r.UserIDs) == 0 {
+											<span class="hint">{ i18n.T(ctx, "All users") }</span>
+										} else {
+											<span class="font-mono text-xs">{ fmt.Sprintf("%d user(s)", len(r.UserIDs)) }</span>
+										}
+									</td>
+									<td class="text-xs" style="color: var(--mut2)">{ r.Comment }</td>
+									<td class="text-right whitespace-nowrap">
+										<div class="inline-flex gap-1">
+											<button type="button" class="btn btn-xs btn-ghost"
+												title={ i18n.T(ctx, "Enable/disable") }
+												hx-post={ "/ui/nodes/" + h.ID + "/routing/" + r.ID + "/toggle" }
+												hx-target="#modal-container" hx-swap="innerHTML">
+												if r.Enabled {
+													{ i18n.T(ctx, "On") }
+												} else {
+													{ i18n.T(ctx, "Off") }
+												}
+											</button>
+											<button type="button" class="btn btn-xs btn-ghost" style="color: var(--err)"
+												title={ i18n.T(ctx, "Delete") }
+												hx-post={ "/ui/nodes/" + h.ID + "/routing/" + r.ID + "/delete" }
+												hx-confirm={ i18n.T(ctx, "Delete this route rule?") }
+												hx-target="#modal-container" hx-swap="innerHTML">✕</button>
+										</div>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+
+			<div class="divider-x my-2"></div>
+			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Add rule") }</div>
+			<form hx-post={ "/ui/nodes/" + h.ID + "/routing" } hx-target="#modal-container" hx-swap="innerHTML"
+				class="grid gap-3 md:grid-cols-2 mb-3">
+				<div>
+					<label class="lbl" for="rr-match-type">{ i18n.T(ctx, "Match type") }</label>
+					<select id="rr-match-type" name="match_type" class="sel"
+						onchange="var f=this.closest('form');var p=f.querySelector('.rr-preset');var v=f.querySelector('.rr-values');if(p){p.style.display=this.value==='preset'?'block':'none'};if(v){v.style.display=this.value==='preset'?'none':'block'}">
+						<option value="domain_suffix">{ i18n.T(ctx, "Domain suffix") }</option>
+						<option value="domain">{ i18n.T(ctx, "Full domain") }</option>
+						<option value="domain_keyword">{ i18n.T(ctx, "Domain keyword") }</option>
+						<option value="ip_cidr">{ i18n.T(ctx, "IP CIDR") }</option>
+						<option value="protocol">{ i18n.T(ctx, "Protocol") }</option>
+						<option value="geosite">GeoSite</option>
+						<option value="geoip">GeoIP</option>
+						<option value="preset">{ i18n.T(ctx, "Preset") }</option>
+					</select>
+				</div>
+				<div>
+					<label class="lbl" for="rr-action">{ i18n.T(ctx, "Action") }</label>
+					<select id="rr-action" name="action" class="sel"
+						onchange="var f=this.closest('form');var o=f.querySelector('.rr-outbound');if(o){o.style.display=this.value==='route'?'block':'none'}">
+						<option value="direct">{ i18n.T(ctx, "Direct (bypass proxy)") }</option>
+						<option value="reject">{ i18n.T(ctx, "Block (reject)") }</option>
+						<option value="route">{ i18n.T(ctx, "Via outbound tag") }</option>
+					</select>
+				</div>
+				<div class="rr-values">
+					<label class="lbl" for="rr-values">{ i18n.T(ctx, "Match values") }</label>
+					<textarea id="rr-values" name="match_values" class="ta font-mono text-xs" rows="2"
+						placeholder="example.com, cdn.example.com / 1.2.3.0/24 / ru, ir / telegram"></textarea>
+				</div>
+				<div class="rr-preset" style="display:none">
+					<label class="lbl" for="rr-preset-id">{ i18n.T(ctx, "Preset") }</label>
+					<select id="rr-preset-id" name="preset_id" class="sel">
+						for _, p := range presets {
+							<option value={ p.ID }>{ p.Name + " (" + p.Category + ")" }</option>
+						}
+					</select>
+				</div>
+				<div class="rr-outbound" style="display:none">
+					<label class="lbl" for="rr-outbound-tag">{ i18n.T(ctx, "Outbound tag") }</label>
+					<input id="rr-outbound-tag" name="outbound_tag" class="inp font-mono" placeholder="direct-out"/>
+				</div>
+				<div>
+					<label class="lbl" for="rr-priority">{ i18n.T(ctx, "Priority") }</label>
+					<input id="rr-priority" name="priority" type="number" class="inp" value="100"/>
+				</div>
+				<div class="md:col-span-2">
+					<span class="lbl">{ i18n.T(ctx, "Apply to users") }</span>
+					<div class="flex flex-col gap-1 max-h-40 overflow-y-auto p-3" style="border: 1px solid var(--bd); border-radius: 8px;">
+						<label class="flex items-center gap-2 cursor-pointer text-xs" style="color: var(--mut2)">
+							{ i18n.T(ctx, "Leave empty for all users. AWG users are matched by their tunnel IP (works through chains); other protocols by auth identity (entry node only).") }
+						</label>
+						for _, u := range users {
+							<label class="flex items-center gap-2 cursor-pointer">
+								<input type="checkbox" name="user_ids" value={ u.ID } class="cb"/>
+								<span class="text-sm font-mono">{ u.Name }</span>
+							</label>
+						}
+					</div>
+				</div>
+				<div class="md:col-span-2">
+					<label class="lbl" for="rr-comment">{ i18n.T(ctx, "Comment") }</label>
+					<input id="rr-comment" name="comment" class="inp"/>
+				</div>
+				<div class="md:col-span-2 flex justify-end">
+					<button type="submit" class="btn btn-sm btn-primary">{ i18n.T(ctx, "Add rule") }</button>
+				</div>
+			</form>
+
+			<div class="divider-x my-2"></div>
+			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Effective route table") }</div>
+			<p class="hint mb-2">{ i18n.T(ctx, "Effective route table hint") }</p>
+			if len(effective) == 0 {
+				<p class="hint">{ i18n.T(ctx, "No route rules in the generated config") }</p>
+			} else {
+				<div class="overflow-x-auto max-h-64 overflow-y-auto">
+					<table class="tn-table">
+						<thead>
+							<tr>
+								<th>{ i18n.T(ctx, "Match") }</th>
+								<th>{ i18n.T(ctx, "Action") }</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, row := range effective {
+								<tr>
+									<td class="font-mono text-xs">{ row.Match }</td>
+									<td class="font-mono text-xs">{ row.Action }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+
+			<div class="flex justify-end mt-4">
+				<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
+	</dialog>
+}

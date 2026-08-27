@@ -2465,3 +2465,28 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 ---
 
+## §53. Ручная маршрутизация нод + визуализатор (2026-08-27)
+
+Порт идеи 3x-ui-роутинга: таблица «что входит → куда направляется», ручные правила с геоданными, свои маршруты у каждой ноды + общая сводка в паутине.
+
+**Решения:**
+- Гео в форке — только через `rule_set` (матчеры `geosite`/`geoip` удалены из sing-box 1.12+, конфиг с ними не стартует). Файлы `.srs` (SagerNet sing-geosite/sing-geoip, ветки `rule-set`, имена `geosite-<name>.srs`/`geoip-<cc>.srs`) скачивает ОРКЕСТРАТОР в кэш и пушит на ноду по SSH при деплое (`/etc/sing-box/rules/<tag>.srs`, `type:"local"`) — нода не ходит на GitHub (РУ-ноды часто не достают его; удалённый скач упал бы в rollback-цикл).
+- Ручные правила ВЫШЕ системных (решение оператора побеждает; первый совпавший выигрывает). Порядок в `route`: действия (sniff/hijack) → ручные → per-client пины → каскад → catch-all.
+- Блокировка = `action:"reject"` (в 1.14 нет действия `block`).
+- **Per-user правила:** поле `RouteRule.UserIDs`. AWG-пользователи матчатся по туннельному IP (`source_ip_cidr` — работает сквозь цепочки), остальные протоколы — по `auth_user` (только входная нода). Пустой список = все пользователи.
+- Скоуп правил — только USER-FACING инбаунды (tun-in, user-in, standalone sa-*); транзитный трафик цепочек ручные правила НЕ трогают.
+
+**Генерация** (`internal/chain/routing.go`, `merged_config.go`): `ExpandManualRouteRules` (matchers: domain/domain_suffix/domain_keyword/ip_cidr/protocol/preset/geosite/geoip; действия: direct/reject/route→тег; пресет `ads` → `geosite-category-ads-all` + reject). Секция `route` эмитится всегда при наличии ручных правил (не только под `AB_ROUTE_DNS=1`); без DNS-секции `default_domain_resolver` не ставится; снифф добавляется, если у ноды нет TUN-overlay.
+
+**Деплой** (`applier_push.go`): `pushRuleSetAssets` парсит конфиг, пушит каждый локальный `.srs` (base64 через stdin, sudo-декод) ДО `sing-box check`. Покрывает и merged-, и chain-деплой (оба идут через `pushConfigLocked`). Валидация имён тегов `[A-Za-z0-9_.-]` (тег попадает в путь и в sudo-команду).
+
+**UI** (срез 2): панель на ноде (`/ui/nodes/{id}/routing`): таблица ручных правил (приоритет/матч/действие/пользователи/вкл-выкл/удаление), форма добавления (8 типов матчера + выбор из 48 пресетов + чекбоксы пользователей), **итоговая таблица маршрутов** — вся сгенерированная секция `route` (ручные + системные, 3x-ui-вид). Хендлеры: `internal/web/routing.go`.
+
+**Паутина** (срез 3): у ноды бейдж «%d правил», кнопка «Сводка маршрутизации» — общая модалка по всем нодам с переходом в панель ноды.
+
+**Проверено:** юнит-тесты раскрытия/скоупа/валидации (`routing_test.go`, 12 шт.), реальный `sing-box check` с локальным `.srs`, HTTP-тесты CRUD (`routing_ui_test.go`), **живой E2E на n1** (`e2e_routing_test.go`, тег `e2e`, `AB_E2E_ROUTING=1`): деплой → ассеты на ноде → конфиг → `systemctl is-active`, затем трафик с локальной машины через mieru: `telegram.org` → отказ (правило `geosite:telegram → reject`), `example.com` → 200, egress = IP ноды.
+
+**Файлы:** `internal/chain/routing.go` (новый), `internal/chain/{merged_config,applier_push,presets}.go`, `internal/singbox/config/types.go` (`RuleSetEntry.Path`), `internal/domain/model/panel.go` (`RouteRule.UserIDs`), `internal/web/routing.go` (новый), `web/templates/routing.templ` (новый), `web/templates/{nodes,spider}.templ`, `internal/web/{server,spider}.go`, `internal/i18n/i18n.go`.
+
+---
+

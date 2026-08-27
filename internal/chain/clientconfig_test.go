@@ -376,7 +376,7 @@ func TestBuildMergedRoute_PerClientChainExit(t *testing.T) {
 			{Name: "dave", Active: true, ChainExit: map[string]string{"pc": "entry"}},                              // no TUICUUID -> skipped
 		},
 	}
-	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain)
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain, nil)
 	if rt == nil {
 		t.Fatal("nil route")
 	}
@@ -435,7 +435,7 @@ func TestBuildMergedRoute_NoUsers_NoAuthUserRules(t *testing.T) {
 		},
 	}
 	roles := resolveChainRoles("entry", []*model.Chain{c})
-	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, nil)
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, nil, nil)
 	for _, r := range rt.Rules {
 		if len(r.AuthUser) > 0 {
 			t.Errorf("no users should yield no auth_user rules, got %+v", r)
@@ -472,7 +472,7 @@ func TestBuildMergedRoute_PerClientAWG_SourceIP(t *testing.T) {
 			{Name: "dave", Active: true, ChainExit: map[string]string{"awgpc": "entry"}},                              // no AWGAddress -> skipped
 		},
 	}
-	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain)
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, usersByChain, nil)
 	if rt == nil {
 		t.Fatal("nil route")
 	}
@@ -560,7 +560,7 @@ func TestBuildMergedRoute_PerClientAWG_MultiHopPin(t *testing.T) {
 	}
 	for i, w := range cases {
 		roles := resolveChainRoles(w.nodeID, []*model.Chain{c})
-		rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: w.nodeID}}, usersByChain)
+		rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: w.nodeID}}, usersByChain, nil)
 		if rt == nil {
 			t.Fatalf("node %s: nil route", w.nodeID)
 		}
@@ -609,7 +609,7 @@ func TestBuildMergedRoute_NoUsers_AWG_NoSourceIPRules(t *testing.T) {
 		},
 	}
 	roles := resolveChainRoles("entry", []*model.Chain{c})
-	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, nil)
+	rt := buildMergedRoute(roles, &model.NodeInfo{Host: model.Host{ID: "entry"}}, nil, nil)
 	for _, r := range rt.Rules {
 		if len(r.SourceIPCIDR) > 0 {
 			t.Errorf("no users should yield no source_ip_cidr rules, got %+v", r)

@@ -613,15 +613,23 @@ type AuditLog struct {
 
 // RouteRule is an operator-editable routing rule scoped to a node. MatchType
 // selects which field the match values populate; Action selects the route
-// action. sing-box 1.13+ uses action rules (sniff/hijack-dns/route/reject).
+// action. sing-box 1.14 uses action rules (sniff/hijack-dns/route/reject);
+// geosite/geoip matching goes through rule_set (.srs assets pushed to the node
+// at deploy time — the legacy geosite/geoip matchers were removed upstream).
+//
+// UserIDs scopes the rule to specific users (empty = all users). AWG users are
+// identified by their inner tunnel IP (source_ip_cidr — works end-to-end
+// through chains); non-AWG user-entry protocols fall back to auth_user on the
+// entry node. See internal/chain/routing.go for the expansion.
 type RouteRule struct {
 	ID          string    `json:"id"`
 	NodeID      string    `json:"node_id"`
 	Priority    int       `json:"priority"`               // lower = earlier
-	MatchType   string    `json:"match_type"`             // domain|domain_suffix|domain_keyword|ip_cidr|protocol
+	MatchType   string    `json:"match_type"`             // domain|domain_suffix|domain_keyword|ip_cidr|protocol|preset|geosite|geoip
 	MatchValues string    `json:"match_values"`           // newline- or comma-separated
-	Action      string    `json:"action"`                 // route|block|sniff|hijack-dns
+	Action      string    `json:"action"`                 // route|direct|reject|block|sniff|hijack-dns
 	OutboundTag string    `json:"outbound_tag,omitempty"` // for action=route
+	UserIDs     []string  `json:"user_ids,omitempty"`     // empty = all users
 	Comment     string    `json:"comment,omitempty"`
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`

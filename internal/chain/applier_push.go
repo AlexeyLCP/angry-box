@@ -16,15 +16,18 @@ package chain
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
+	"github.com/alexeylcp/angry-box/internal/singbox/config"
 )
 
 // createBackup makes a timestamped backup of the current config under $HOME
@@ -153,6 +156,13 @@ func pushConfigLocked(ctx context.Context, client ports.SSHClient, cfgContent st
 	// inbounds (TUIC/Hysteria2/VLESS/Trojan). Generated via openssl; best-effort.
 	ensureCertForTLSInbounds(ctx, client, cfgContent)
 
+	// 2b. Push local rule-set assets (.srs) referenced by the config — a
+	// type:"local" rule_set with a missing file fails sing-box startup. Runs
+	// BEFORE the check below.
+	if err := pushRuleSetAssets(ctx, client, cfgContent, useSudo); err != nil {
+		return "", fmt.Errorf("push rule-set assets: %w", err)
+	}
+
 	// 3. Upload via stdin cat. When useSudo, the target (/etc/sing-box/config.json)
 	// is root-owned, so we write to $HOME first and sudo cp into place (UploadText
 	// itself can't sudo the cat, and the path isn't writable as lcp).
@@ -277,4 +287,79 @@ chmod 644 /etc/sing-box/cert.pem /etc/sing-box/key.pem) \
 	} else if strings.Contains(stdout, "cert-gen skipped") {
 		slog.Info("deploy: self-signed cert generation skipped (openssl missing or cert already present)")
 	}
+}
+
+// pushRuleSetAssets pushes the LOCAL rule-set (.srs) assets referenced by the
+// config's route.rule_set entries to the node (NodeRuleSetDir). The
+// orchestrator downloads each asset from the upstream geo repos into its own
+// cache (FetchRuleSetAsset) and transfers it base64-over-stdin — the node
+// itself never talks to GitHub (RU nodes often cannot reach it, and a failed
+// remote rule_set download at sing-box startup would roll the deploy back in a
+// loop). Runs before `sing-box check` so the check sees the files.
+func pushRuleSetAssets(ctx context.Context, client ports.SSHClient, cfgContent string, useSudo bool) error {
+	var probe struct {
+		Route *struct {
+			RuleSet []config.RuleSetEntry `json:"rule_set"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal([]byte(cfgContent), &probe); err != nil || probe.Route == nil || len(probe.Route.RuleSet) == 0 {
+		return nil
+	}
+	var locals []config.RuleSetEntry
+	for _, rs := range probe.Route.RuleSet {
+		if rs.Type == "local" && rs.Path != "" {
+			locals = append(locals, rs)
+		}
+	}
+	if len(locals) == 0 {
+		return nil
+	}
+
+	sudoB := func(cmd string) string {
+		if !useSudo {
+			return cmd
+		}
+		return fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
+	}
+
+	if _, _, _, err := client.RunWithOutput(ctx, sudoB("mkdir -p "+NodeRuleSetDir), 30*time.Second); err != nil {
+		return fmt.Errorf("mkdir %s: %w", NodeRuleSetDir, err)
+	}
+
+	for _, rs := range locals {
+		// Defense in depth: the path lands inside a sudo shell command. The tag
+		// was validated by ruleSetTagValid at expansion time; re-check the shape.
+		base := filepath.Base(rs.Path)
+		if !strings.HasPrefix(rs.Path, NodeRuleSetDir+"/") || !ruleSetTagValid(strings.TrimSuffix(base, ".srs")) || !strings.HasSuffix(base, ".srs") {
+			return fmt.Errorf("refusing suspicious rule_set path %q", rs.Path)
+		}
+		tag := strings.TrimSuffix(base, ".srs")
+		kind, name := ruleSetKindNameFromTag(tag)
+		localPath, err := FetchRuleSetAsset(kind, name)
+		if err != nil {
+			return fmt.Errorf("fetch %s: %w", tag, err)
+		}
+		raw, err := os.ReadFile(localPath)
+		if err != nil {
+			return fmt.Errorf("read cached %s: %w", tag, err)
+		}
+		tmp := fmt.Sprintf("/tmp/angry-ruleset-%d.srs", time.Now().UnixNano())
+		if err := client.UploadText(ctx, base64.StdEncoding.EncodeToString(raw), tmp, 0o644); err != nil {
+			return fmt.Errorf("upload %s: %w", tag, err)
+		}
+		cmd := fmt.Sprintf("base64 -d %s > %s && chmod 644 %s && rm -f %s", tmp, rs.Path, rs.Path, tmp)
+		if _, stderr, _, err := client.RunWithOutput(ctx, sudoB(cmd), 60*time.Second); err != nil {
+			return fmt.Errorf("install %s: %s: %w", tag, strings.TrimSpace(stderr), err)
+		}
+	}
+	return nil
+}
+
+// ruleSetKindNameFromTag reverses RuleSetTag: "geoip-ru" → (geoip, "ru"),
+// anything else → (geosite, tag).
+func ruleSetKindNameFromTag(tag string) (kind, name string) {
+	if strings.HasPrefix(tag, "geoip-") {
+		return ruleSetKindGeoIP, strings.TrimPrefix(tag, "geoip-")
+	}
+	return ruleSetKindGeoSite, tag
 }

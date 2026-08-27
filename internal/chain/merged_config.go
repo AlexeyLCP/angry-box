@@ -67,6 +67,13 @@ type MergedNodeConfigParams struct {
 	UsersByInbound map[string][]model.User
 	// MtproxyUsers drives the node-level MTProxy inbound (one inbound per user).
 	MtproxyUsers []*model.User
+	// RouteRules are the node's manual (operator) routing rules, priority-
+	// sorted. Empty = no manual routing. Expanded into sing-box route rules
+	// above the structural cascade (routing.go).
+	RouteRules []*model.RouteRule
+	// AllUsers resolves RouteRule.UserIDs to identities (AWG inner IP /
+	// auth_user). Only needed when RouteRules is non-empty.
+	AllUsers []model.User
 }
 
 // NewMergedNodeConfigParams builds a MergedNodeConfigParams from the store,
@@ -77,13 +84,37 @@ type MergedNodeConfigParams struct {
 // ListMTProxyUsersForNode trio (CTO-review §4: the 5-param assembly was a
 // 7-arg-smell because of this repeated derivation).
 func NewMergedNodeConfigParams(store *Store, nodeInfo *model.NodeInfo, chains []*model.Chain) MergedNodeConfigParams {
+	rules, err := store.ListRouteRulesForNode(nodeInfo.ID)
+	if err != nil {
+		rules = nil // a store read failure must not break the deploy; manual rules just drop out
+	}
+	var allUsers []model.User
+	if len(rules) > 0 {
+		if us, err := store.ListUsers(); err == nil {
+			for _, u := range us {
+				if u != nil {
+					allUsers = append(allUsers, *u)
+				}
+			}
+		}
+	}
 	return MergedNodeConfigParams{
 		NodeInfo:       nodeInfo,
 		NodeChains:     chains,
 		UsersByChain:   usersByChainMap(store, chains),
 		UsersByInbound: usersByInboundMap(store, nodeInfo.Inbounds),
 		MtproxyUsers:   store.ListMTProxyUsersForNode(nodeInfo.ID),
+		RouteRules:     rules,
+		AllUsers:       allUsers,
 	}
+}
+
+// RenderMergedNodeConfigStore renders a node's merged config with FULL store
+// plumbing (multi-user inbounds + manual route rules) — the deploy-equivalent
+// preview/hash path. Use RenderMergedNodeConfig only for tests/throwaway
+// renders that must not touch the store.
+func RenderMergedNodeConfigStore(store *Store, nodeInfo *model.NodeInfo, nodeChains []*model.Chain) (*config.SingboxConfig, *MergeReport, error) {
+	return buildMergedNodeConfig(NewMergedNodeConfigParams(store, nodeInfo, nodeChains))
 }
 
 // RenderMergedNodeConfig is the exported variant of buildMergedNodeConfig for
@@ -276,6 +307,15 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 	if len(endpoints) > 0 {
 		cfg.Endpoints = endpoints
 	}
+	// Manual (operator) route rules (routing.go): expanded regardless of
+	// AB_ROUTE_DNS — a node with operator-defined rules needs a route section.
+	var manualEx ManualRouteExpansion
+	if len(p.RouteRules) > 0 {
+		scope := manualRuleInboundScope(roles, nodeInfo, nodeChains, len(awgOverlayRoute) > 0)
+		manualEx = ExpandManualRouteRules(p.RouteRules, scope, p.AllUsers)
+		report.Warnings = append(report.Warnings, manualEx.Warnings...)
+	}
+
 	if os.Getenv("AB_ROUTE_DNS") == "1" && len(roles) > 0 {
 		// Route: chain user/transport inbounds -> the chain's strategy outbound;
 		// standalone inbounds -> direct-out (their OutboundTag or direct-out).
@@ -283,7 +323,7 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 		// for this chain, emit an auth_user rule steering that user's traffic to the
 		// chosen exit's outbound (direct-out if the exit is THIS node, the
 		// inter-node outbound if it is the next hop). Requires AB_ROUTE_DNS=1.
-		cfg.Route = buildMergedRoute(roles, nodeInfo, usersByChain)
+		cfg.Route = buildMergedRoute(roles, nodeInfo, usersByChain, manualEx.Rules)
 		// DNS: a chain-detoured resolver + a direct resolver, with the chain's
 		// direct-domain rules routed direct.
 		chainOutTag := "direct-out"
@@ -303,6 +343,20 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 		// can carry the DNS query that would learn that IP.
 		dns.Final = "dns-direct"
 		cfg.DNS = dns
+	} else if len(manualEx.Rules) > 0 {
+		// Manual (operator) route rules without AB_ROUTE_DNS: the node still needs
+		// a route section. No DNS section is emitted, so no dns-server tag may be
+		// referenced (default_domain_resolver stays empty).
+		cfg.Route = buildMergedRoute(roles, nodeInfo, usersByChain, manualEx.Rules)
+		cfg.Route.DefaultDomainResolver = ""
+	}
+	if cfg.Route != nil && len(manualEx.RuleSets) > 0 {
+		cfg.Route.RuleSet = append(cfg.Route.RuleSet, manualEx.RuleSets...)
+	}
+	// Domain/rule_set matching needs sniffing. The AWG TUN overlay already leads
+	// with a sniff action rule; a node without the overlay gets its own.
+	if cfg.Route != nil && len(manualEx.Rules) > 0 && len(awgOverlayRoute) == 0 {
+		cfg.Route.Rules = append([]config.RouteRuleEntry{{Action: "sniff"}}, cfg.Route.Rules...)
 	}
 	// Kernel-AWG nodes need the TUN-overlay route rules (sniff/hijack-dns/
 	// tun-in→forward/balancer/direct) regardless of AB_ROUTE_DNS — without them
@@ -364,8 +418,13 @@ func buildMergedNodeConfig(p MergedNodeConfigParams) (*config.SingboxConfig, *Me
 // take precedence. A user without the protocol's per-user cred (auth identity
 // for TUIC/VLESS, AWGAddress for AWG) is skipped — they fall back to the
 // chain's default route.
-func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain map[string][]model.User) *config.RoutingSection {
+func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain map[string][]model.User, manualRules []config.RouteRuleEntry) *config.RoutingSection {
 	var rules []config.RouteRuleEntry
+
+	// Manual (operator) rules FIRST — above the per-client pins and the
+	// structural cascade (operator decision wins; first-match-wins, 2026-08-27).
+	// They arrive priority-sorted from ExpandManualRouteRules.
+	rules = append(rules, manualRules...)
 
 	// Per-client rules first (highest precedence for the matched user). Emitted
 	// on every node the user's traffic traverses: on the entry for the user-in
@@ -491,6 +550,41 @@ func buildMergedRoute(roles []chainRole, nodeInfo *model.NodeInfo, usersByChain 
 		AutoDetectInterface:   true,
 		DefaultDomainResolver: "dns-direct",
 	}
+}
+
+// manualRuleInboundScope returns the USER-FACING inbound tags of a node — the
+// inbound scope of manual route rules. Inter-node TRANSIT inbounds are
+// deliberately excluded: a domain/block rule matching transit traffic would
+// break the cascade (first-match-wins). Scope = tun-in (AWG TUN overlay),
+// non-AWG chain user-in tags, and the standalone sa-* tags.
+func manualRuleInboundScope(roles []chainRole, nodeInfo *model.NodeInfo, nodeChains []*model.Chain, hasOverlay bool) []string {
+	var tags []string
+	seen := map[string]bool{}
+	add := func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			tags = append(tags, t)
+		}
+	}
+	if hasOverlay {
+		add(tunInboundTag)
+	}
+	for _, role := range roles {
+		if role.IsEntry && role.Chain.UserProtocol != model.UserProtocolAWG {
+			add(chainUserInboundTag(role.Chain, role.Node.ID))
+		}
+	}
+	for i, ib := range nodeInfo.Inbounds {
+		if IsChainSourcedInbound(&ib) || IsChainEntryInbound(nodeChains, nodeInfo.ID, &ib) {
+			continue
+		}
+		tag := ib.Tag
+		if tag == "" {
+			tag = fmt.Sprintf("sa-%d-%s", i, ib.Protocol)
+		}
+		add(tag)
+	}
+	return tags
 }
 
 // resolveChainRoles maps a nodeID to its role(s) across all chains that

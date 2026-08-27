@@ -120,12 +120,16 @@ type RouteRuleEntry struct {
 	Action        string   `json:"action,omitempty"` // sniff | hijack-dns | route | reject | ...
 }
 
-// RuleSetEntry represents an external rule set (SRS).
+// RuleSetEntry represents an external rule set (SRS). Type "remote" downloads
+// from URL at sing-box startup; type "local" reads Path on disk (angry-box
+// pushes the .srs files over SSH at deploy time — reliable on RU nodes where
+// GitHub raw is unreachable).
 type RuleSetEntry struct {
 	Tag            string `json:"tag"`
-	Type           string `json:"type"`
-	Format         string `json:"format"`
-	URL            string `json:"url"`
+	Type           string `json:"type"`   // remote|local
+	Format         string `json:"format"` // binary|source
+	URL            string `json:"url,omitempty"`
+	Path           string `json:"path,omitempty"`
 	DownloadDetour string `json:"download_detour,omitempty"`
 	UpdateInterval string `json:"update_interval,omitempty"`
 }

@@ -31,7 +31,19 @@ func (s *Server) spiderView(st *chain.Store) templ.Component {
 	infos, _ := st.ListNodeInfos()
 	links, _ := st.ListLinks()
 	metrics, _ := st.ListMetrics()
-	return templates.SpiderWeb(hosts, chains, infos, mergeSyntheticLevelEdges(chains, links), metrics)
+	ruleCounts := make(map[string]int, len(hosts))
+	for _, h := range hosts {
+		if rules, err := st.ListRouteRulesForNode(h.ID); err == nil {
+			enabled := 0
+			for _, r := range rules {
+				if r.Enabled {
+					enabled++
+				}
+			}
+			ruleCounts[h.ID] = enabled
+		}
+	}
+	return templates.SpiderWeb(hosts, chains, infos, mergeSyntheticLevelEdges(chains, links), metrics, ruleCounts)
 }
 
 // synthEdgePrefix marks display-only edges derived from chain levels (they

@@ -13,11 +13,18 @@ import (
 // graph edges (ConnectionLink), persistent node positions, and native SVG
 // pan/zoom. Links are the source of truth for topology; Chain.Nodes is the
 // materialized deploy path kept in sync by the handlers.
-templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo, links []*model.ConnectionLink, metrics []*model.NodeMetrics) {
+templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeInfo, links []*model.ConnectionLink, metrics []*model.NodeMetrics, ruleCounts map[string]int) {
 	<div class="flex flex-col gap-6">
 		<div class="flex items-center justify-between flex-wrap gap-3">
 			<h2 class="text-2xl font-semibold">{ i18n.T(ctx, "Spider Web") }</h2>
 			<div class="flex gap-2">
+				<button
+					class="btn btn-outline btn-sm"
+					hx-get="/ui/routing/summary"
+					hx-target="#modal-container"
+					hx-swap="innerHTML">
+					{ i18n.T(ctx, "Routing summary") }
+				</button>
 				<button
 					class="btn btn-outline btn-sm"
 					hx-get="/ui/spider"
@@ -80,8 +87,8 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 							}
 
 							<!-- Nodes -->
-							for _, sn := range spiderNodes(hosts, infos, chains, metrics) {
-								@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y, sn.State)
+						for _, sn := range spiderNodes(hosts, infos, chains, metrics, ruleCounts) {
+							@spiderNode(sn.ID, sn.Country, chains, sn.X, sn.Y, sn.State, sn.RuleCount)
 							}
 						</g>
 					</svg>
@@ -215,6 +222,7 @@ templ SpiderWeb(hosts []*model.Host, chains []*model.Chain, infos []*model.NodeI
 				<div id="spider-apply-result" class="mt-2"></div>
 			</section>
 		}
+		<div id="modal-container"></div>
 	</div>
 }
 
@@ -231,7 +239,7 @@ func chainNodeList(nodes []model.ChainNode) string {
 }
 
 // spiderNode renders a single node circle on the SVG canvas
-templ spiderNode(id string, country string, chains []*model.Chain, x, y float64, state string) {
+templ spiderNode(id string, country string, chains []*model.Chain, x, y float64, state string, ruleCount int) {
 	<g class="spider-node cursor-pointer" data-node-id={ id }>
 		<circle class="node-inner"
 			cx={ fmt.Sprintf("%.0f", x) }
@@ -274,6 +282,14 @@ templ spiderNode(id string, country string, chains []*model.Chain, x, y float64,
 				text-anchor="middle"
 				class="text-[9px]"
 				fill="oklch(var(--bc) / 0.5)">{ fmt.Sprintf(i18n.T(ctx, "%d chain(s)"), spiderChainCount(id, chains)) }</text>
+		}
+		if ruleCount > 0 {
+			<text class="route-count-label"
+				x={ fmt.Sprintf("%.0f", x) }
+				y={ fmt.Sprintf("%.0f", y + 24) }
+				text-anchor="middle"
+				class="text-[9px]"
+				fill="oklch(var(--wa) / 0.9)">{ fmt.Sprintf(i18n.T(ctx, "%d route(s)"), ruleCount) }</text>
 		}
 	</g>
 }
@@ -328,10 +344,11 @@ type spiderLinkData struct {
 }
 
 type spiderNodeData struct {
-	ID      string
-	Country string
-	State   string
-	X, Y    float64
+	ID        string
+	Country   string
+	State     string
+	X, Y      float64
+	RuleCount int
 }
 
 // spiderGraphLinks builds the edge list for rendering from ConnectionLink (the
@@ -360,7 +377,7 @@ func nodePosFor(id string, hosts []*model.Host, infos []*model.NodeInfo) (float6
 	return nodePosition(idxOf(id, hosts), len(hosts))
 }
 
-func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain, metrics []*model.NodeMetrics) []spiderNodeData {
+func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.Chain, metrics []*model.NodeMetrics, ruleCounts map[string]int) []spiderNodeData {
 	var nodes []spiderNodeData
 	for i, h := range hosts {
 		x, y := nodePosFor(h.ID, hosts, infos)
@@ -380,7 +397,7 @@ func spiderNodes(hosts []*model.Host, infos []*model.NodeInfo, chains []*model.C
 				break
 			}
 		}
-		nodes = append(nodes, spiderNodeData{ID: h.ID, Country: country, State: state, X: x, Y: y})
+		nodes = append(nodes, spiderNodeData{ID: h.ID, Country: country, State: state, X: x, Y: y, RuleCount: ruleCounts[h.ID]})
 	}
 	_ = chains
 	return nodes
