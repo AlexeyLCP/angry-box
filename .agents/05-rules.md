@@ -67,3 +67,12 @@ Do not tell the user a task is done if the code does not compile.
 
 ### 10. Documentation Updates
 If you add a new core feature (e.g., a new protocol, a new routing strategy), document it in the relevant task artifact or implementation plan so the user is aware of how it integrates with the rest of the system.
+
+### 11. Changelog Style (lucx-ui)
+Every release gets a `CHANGELOG.md` entry written in the **lucx-ui style** (same as the sibling project `lucx-ui` `RELEASE-NOTES-*`). The release workflow extracts the `## [vX.Y.Z]` section as the GitHub release body, so the header MUST stay `## [vX.Y.Z] — date`. Style:
+- Catchy `### <emoji> Title` line (RU first), short 1–2 sentence intro saying WHY the release exists.
+- `**Что изменилось**` — bullet list, each item starts with a **bold lead phrase** then explains the change AND the reasoning/trade-off in plain language (like lucx-ui: "MTU по умолчанию: 1320 → 1420 …").
+- `**Обновление:**` — how to upgrade + what migrations/none + what to do on a staging node.
+- Friendly closing line with emoji (e.g. `⚡️ Приятного использования!`).
+- Then `---` and the full **English** mirror (`### <emoji> Title`, `**What changed**`, `**Upgrade:**`, `⚡️ Enjoy!`).
+- Never a dry feature dump; write for the operator, explain the "why".

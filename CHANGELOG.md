@@ -4,6 +4,75 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.9.1] — 2026-08-27
+
+###  Ноды только amd64/arm64, автозаполнение инбаундов и «TLS quick start»
+
+Небольшой релиз по мотивам живого прогона и QA: уточнили контракт архитектур,
+сняли две боли оператора (ручной подбор порта/имени и непонятный порядок
+настройки TLS) и сделали ошибки говорящими.
+
+**Что изменилось**
+
+- **Ноды захватываются только на amd64 и arm64.** Панель (пульт) по-прежнему
+  ставится везде — включая MIPS/armv7 роутеры (сборки `.ipk` с `-tags nosqlite`),
+  — но sing-box на ноду мы публикуем лишь под amd64/arm64, поэтому захват ноды
+  другой архитектуры теперь честно отказывается с понятным сообщением, а не
+  падает позже на отсутствии бинарника. Arm64-тарбол собран, опубликован в
+  релиз и зашит в контрольные суммы.
+- **Автозаполнение при добавлении инбаунда.** Пустое имя и порт больше не
+  ошибка: имя генерируется (`awg-1`, `awg-2`…), порт подбирается свободным из
+  40000–59999 (с учётом занятых на ноде и зарезервированных). При
+  редактировании пустые поля сохраняют старые значения — случайный пробел не
+  сотрёт настроенное.
+- **«TLS quick start» в утилитах ноды.** Оператору больше не надо угадывать
+  порядок: панель показывает «1) создай DNS A-записи, 2) Установить всё,
+  3) Выпусти сертификат» и готовый список A-записей (`<домен>`, `panel.`,
+  `naive.`, `trusttunnel.`…), каждую — на IP ноды.
+- **Говорящие ошибки.** Гейтинг naive/trusttunnel теперь ведёт к действию
+  («открой Utilities → TLS quick start»), а конфликт двух AWG-цепочек на одной
+  ноде объясняет, что нода держит один kernel-AWG (awg0) user-entry и каждой
+  цепочке нужен свой инбаунд или своя нода.
+
+**Обновление:** обычный деплой новой версии. Миграций нет. Чтобы arm64-ноды
+заработали у уже установленных панелей, обновите панель до v0.9.1.
+
+⚡️ Приятного использования!
+
+---
+
+### 🧭 Nodes amd64/arm64 only, inbound auto-fill, and a TLS quick start
+
+A small release driven by a live run and QA: we pinned the architecture
+contract, removed two operator pain points (manual port/name picking and the
+opaque TLS setup order), and made the errors talk.
+
+**What changed**
+
+- **Nodes are captured on amd64 and arm64 only.** The panel (control console)
+  still installs everywhere — including MIPS/armv7 routers (`.ipk` builds with
+  `-tags nosqlite`) — but we publish the node sing-box only for amd64/arm64, so
+  capturing any other arch now refuses up front with a clear message instead of
+  failing later on a missing binary. The arm64 tarball is built, published to
+  the release, and pinned in the checksums.
+- **Auto-fill when adding an inbound.** An empty name/port is no longer an
+  error: the name is generated (`awg-1`, `awg-2`…) and the port is picked free
+  from 40000–59999 (respecting used and reserved ports). On edit, empty fields
+  keep the existing values — a stray space won't wipe a configured inbound.
+- **"TLS quick start" in the node utilities.** The operator no longer has to
+  guess the order: the panel shows "1) create the DNS A-records, 2) Install
+  all, 3) Issue/renew certificate" plus the exact A-record list (`<domain>`,
+  `panel.`, `naive.`, `trusttunnel.`…), each pointing at the node IP.
+- **Talking errors.** The naive/trusttunnel gate now points at the action
+  ("open Utilities → TLS quick start"), and a two-AWG-chain port conflict on one
+  node explains that a node hosts a single kernel-AWG (awg0) user-entry, so each
+  chain needs its own inbound or its own node.
+
+**Upgrade:** deploy the new version as usual. No migrations. For already
+installed panels to capture arm64 nodes, update the panel to v0.9.1.
+
+⚡️ Enjoy!
+
 ## [v0.9.0] — 2026-08-27
 
 ### 🧠 «Спинной мозг» ноды: утилиты, подписки на нодах, флотный бот, реле панели, импорт 3x-ui/lucx-ui
