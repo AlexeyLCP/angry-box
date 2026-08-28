@@ -1108,6 +1108,9 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		}
 	}
 	serverName := ResolveServerName(&preset)
+	if ib.ServerName != "" {
+		serverName = ib.ServerName
+	}
 
 	// Caddy-mode listen: only inbounds that caddy actually FRONTS move to
 	// loopback behind the SNI router — those on caddy-owned ports (remapped)
@@ -1169,8 +1172,8 @@ func buildStandaloneInOut(ib *model.NodeInbound, tag string, usersByInbound map[
 		// RenderNodeAWGConfs). Slice 2 adds a kernel-render path now that the
 		// amnezia-box kernel module has native HPK (PR #192, 2026-07-30).
 		// AWG 3.0 (AGENTS #5 revision). When the node's kernel module + tools
-		// support header protection (KernelAWG3Supported, runtime-only field
-		// probed at deploy), the v3 inbound renders via the kernel awg-quick +
+		// support header protection (KernelAWG3Supported, probed at deploy),
+		// the v3 inbound renders via the kernel awg-quick +
 		// sing-box-TUN-overlay path — RenderNodeAWGConfs emits awg0.conf with
 		// HPK/CPM/RAT, and awgTUNOverlayNeeded enables the overlay — so NO
 		// userspace endpoint is emitted here. Only fall back to the userspace

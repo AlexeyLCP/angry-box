@@ -91,6 +91,32 @@ func TestHandler_RouteRuleCRUD(t *testing.T) {
 		t.Errorf("panel must list the rule values")
 	}
 
+	firstID := rules[0].ID
+	w = ts.post("/ui/nodes/n1/routing", url.Values{
+		"rule_id": {firstID}, "match_type": {"domain_suffix"},
+		"match_values": {"edited.example"}, "action": {"reject"}, "priority": {"5"},
+	})
+	ts.assertStatus(w, http.StatusOK)
+	rules, _ = st.ListRouteRulesForNode("n1")
+	var edited *model.RouteRule
+	for _, r := range rules {
+		if r.ID == firstID {
+			edited = r
+		}
+	}
+	if edited == nil {
+		t.Fatal("edited rule vanished")
+	}
+	if edited.MatchValues != "edited.example" || edited.Action != "reject" || edited.Priority != 5 {
+		t.Errorf("edited rule = %+v", edited)
+	}
+
+	w = ts.get("/ui/nodes/n1/routing/" + firstID + "/edit")
+	ts.assertStatus(w, http.StatusOK)
+	if !strings.Contains(w.Body.String(), "edited.example") {
+		t.Error("edit form must prefill match values")
+	}
+
 	// Delete all rules.
 	for _, r := range rules2 {
 		w = ts.post("/ui/nodes/n1/routing/"+r.ID+"/delete", url.Values{})

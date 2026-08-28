@@ -204,14 +204,14 @@ templ NodeUtilitiesPanel(h *model.Host, info *model.NodeInfo, stale map[string]b
 				<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">{ i18n.T(ctx, "Close") }</button>
 			</div>
 		</div>
-		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
+		<form method="dialog" class="modal-backdrop"><button>{ i18n.T(ctx, "Close") }</button></form>
 	</dialog>
 }
 
 templ utilityStatusBadge(info *model.NodeInfo, name string, stale bool) {
 	if info != nil && info.UtilityInstalled(name) {
 		if stale {
-			<span class="st st-wa cursor-help" title="pushed artifacts lag the store — re-apply">{ i18n.T(ctx, "stale") }</span>
+			<span class="st st-wa cursor-help" title={ i18n.T(ctx, "stale hint") }>{ i18n.T(ctx, "stale") }</span>
 		} else {
 			<span class="st st-ok">{ i18n.T(ctx, "installed") }</span>
 		}

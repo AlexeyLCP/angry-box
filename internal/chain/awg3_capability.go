@@ -26,8 +26,8 @@ import (
 //
 // When false, an AWGVersion=="3" inbound falls back to the userspace sing-box
 // `type:"awg"` endpoint (the v0.8.10 path) — rendering still works, just without
-// the kernel/TUN-overlay stability. The flag is set on the per-deploy NodeInfo
-// copy and read by the render branches; it is never persisted.
+// the kernel/TUN-overlay stability. The flag is stamped on the NodeInfo used
+// for this render and persisted so the status-page hash matches the last apply.
 //
 // Best-effort: a probe error (modinfo/awg missing, SSH hiccup) is treated as
 // "not supported" (false) rather than failing the whole deploy — the userspace
@@ -76,11 +76,21 @@ func detectKernelAWG3(ctx context.Context, client ports.SSHClient) bool {
 // render via the kernel awg-quick path (true) vs the userspace sing-box
 // `type:"awg"` endpoint fallback (false). It is the single gate the render
 // branches (buildStandaloneInOut, buildChainRoleInOut, awgTUNOverlayNeeded,
-// RenderNodeAWGConfs) read, all keyed off the runtime-only NodeInfo flag
-// stamped by the deploy pre-flight (detectKernelAWG3). nil-safe for the dry-run
-// / preview render paths that pass a nodeInfo without a deploy context.
+// RenderNodeAWGConfs) read, keyed off NodeInfo.KernelAWG3Supported (probed at
+// deploy, persisted). nil-safe for dry-run / preview paths without a probe.
 func kernelAWG3EnabledFor(nodeInfo *model.NodeInfo) bool {
 	return nodeInfo != nil && nodeInfo.KernelAWG3Supported
+}
+
+func persistKernelAWG3(store *Store, nodeID string, supported bool) {
+	info, err := store.GetNodeInfo(nodeID)
+	if err != nil || info == nil || info.KernelAWG3Supported == supported {
+		return
+	}
+	info.KernelAWG3Supported = supported
+	if err := store.SaveNodeInfo(info); err != nil {
+		log.Printf("awg3-kernel: persist flag for %s: %v", nodeID, err)
+	}
 }
 
 // awgKernelVersionSupportsHPK parses an amnezia-box kernel module version

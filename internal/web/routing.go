@@ -21,6 +21,7 @@ import (
 func (s *Server) registerRoutingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ui/routing/summary", s.auth(s.handleRoutingSummary))
 	mux.HandleFunc("GET /ui/nodes/{id}/routing", s.auth(s.handleNodeRoutingForm))
+	mux.HandleFunc("GET /ui/nodes/{id}/routing/{rid}/edit", s.auth(s.handleEditRouteRuleForm))
 	mux.HandleFunc("POST /ui/nodes/{id}/routing", s.auth(s.handleAddRouteRule))
 	mux.HandleFunc("POST /ui/nodes/{id}/routing/{rid}/delete", s.auth(s.handleDeleteRouteRule))
 	mux.HandleFunc("POST /ui/nodes/{id}/routing/{rid}/toggle", s.auth(s.handleToggleRouteRule))
@@ -34,7 +35,11 @@ func (s *Server) handleRoutingSummary(w http.ResponseWriter, r *http.Request) {
 	var rows []templates.RoutingSummaryRow
 	for _, h := range hosts {
 		rules, _ := st.ListRouteRulesForNode(h.ID)
-		rows = append(rows, templates.RoutingSummaryRow{NodeID: h.ID, Rules: rules})
+		country := ""
+		if info, err := st.GetNodeInfo(h.ID); err == nil && info != nil {
+			country = info.Country
+		}
+		rows = append(rows, templates.RoutingSummaryRow{NodeID: h.ID, Addr: h.Addr, Country: country, Rules: rules})
 	}
 	s.render(w, r, templates.RoutingSummary(rows, chain.GetRoutingPresets("")))
 }
@@ -42,11 +47,12 @@ func (s *Server) handleRoutingSummary(w http.ResponseWriter, r *http.Request) {
 // routeRuleView is everything the routing panel renders for one node.
 type routeRuleView struct {
 	Host      *model.Host
+	Country   string
 	Rules     []*model.RouteRule
 	Users     []*model.User
 	Presets   []chain.RoutingPreset
 	Effective []templates.EffectiveRouteRow
-	Warnings  []string
+	Edit      *model.RouteRule
 }
 
 func (s *Server) routingView(nodeID string) (*routeRuleView, error) {
@@ -69,6 +75,7 @@ func (s *Server) routingView(nodeID string) (*routeRuleView, error) {
 	// and flatten its route section into human rows.
 	info, _ := st.GetNodeInfo(nodeID)
 	if info != nil {
+		v.Country = info.Country
 		chainsForNode, _ := st.GetChainsForNode(nodeID)
 		if cfg, _, err := chain.RenderMergedNodeConfigStore(st, info, chainsForNode); err == nil && cfg.Route != nil {
 			for _, r := range cfg.Route.Rules {
@@ -131,7 +138,28 @@ func (s *Server) handleNodeRoutingForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, i18n.T(r.Context(), "node not found"), http.StatusNotFound)
 		return
 	}
-	s.render(w, r, templates.NodeRoutingPanel(v.Host, v.Rules, v.Users, v.Presets, v.Effective))
+	s.renderRoutingPanel(w, r, v)
+}
+
+func (s *Server) handleEditRouteRuleForm(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	rid := r.PathValue("rid")
+	v, err := s.routingView(id)
+	if err != nil {
+		http.Error(w, i18n.T(r.Context(), "node not found"), http.StatusNotFound)
+		return
+	}
+	for _, rule := range v.Rules {
+		if rule.ID == rid {
+			v.Edit = rule
+			break
+		}
+	}
+	if v.Edit == nil {
+		http.Error(w, i18n.T(r.Context(), "not found"), http.StatusNotFound)
+		return
+	}
+	s.renderRoutingPanel(w, r, v)
 }
 
 func (s *Server) handleAddRouteRule(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +185,7 @@ func (s *Server) handleAddRouteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prio, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("priority")))
+	st := s.store()
 
 	rule := &model.RouteRule{
 		NodeID:      id,
@@ -169,9 +198,25 @@ func (s *Server) handleAddRouteRule(w http.ResponseWriter, r *http.Request) {
 		Comment:     strings.TrimSpace(r.FormValue("comment")),
 		Enabled:     true,
 	}
-	// Fail fast on garbage input (unknown preset, empty values, bad geo name)
-	// so the operator sees the reason instead of a deploy warning later.
-	st := s.store()
+	auditOp := "create"
+	if rid := strings.TrimSpace(r.FormValue("rule_id")); rid != "" {
+		existing, _ := st.ListRouteRulesForNode(id)
+		var found *model.RouteRule
+		for _, ex := range existing {
+			if ex.ID == rid {
+				found = ex
+				break
+			}
+		}
+		if found == nil {
+			http.Error(w, i18n.T(ctx, "not found"), http.StatusNotFound)
+			return
+		}
+		rule.ID = found.ID
+		rule.CreatedAt = found.CreatedAt
+		rule.Enabled = found.Enabled
+		auditOp = "update"
+	}
 	users, _ := st.ListUsers()
 	if warns := chain.ValidateRouteRule(rule, derefUsers(users)); len(warns) > 0 {
 		http.Error(w, strings.Join(warns, "; "), http.StatusBadRequest)
@@ -182,8 +227,8 @@ func (s *Server) handleAddRouteRule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	chain.WriteAudit(st, "create", "route_rule", rule.ID, chain.AuditPayload{"node": id, "match": matchType, "action": action}, "operator")
-	chain.ScheduleAutoApply(id, "route-rule-add")
+	chain.WriteAudit(st, auditOp, "route_rule", rule.ID, chain.AuditPayload{"node": id, "match": matchType, "action": action}, "operator")
+	chain.ScheduleAutoApply(id, "route-rule-"+auditOp)
 	s.rerenderRoutingPanel(w, r, id)
 }
 
@@ -233,7 +278,14 @@ func (s *Server) rerenderRoutingPanel(w http.ResponseWriter, r *http.Request, no
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, r, templates.NodeRoutingPanel(v.Host, v.Rules, v.Users, v.Presets, v.Effective))
+	s.renderRoutingPanel(w, r, v)
+}
+
+func (s *Server) renderRoutingPanel(w http.ResponseWriter, r *http.Request, v *routeRuleView) {
+	s.render(w, r, templates.NodeRoutingPanel(templates.NodeRoutingData{
+		Host: v.Host, Country: v.Country, Rules: v.Rules, Users: v.Users,
+		Presets: v.Presets, Effective: v.Effective, Edit: v.Edit,
+	}))
 }
 
 func cleanIDs(ids []string) []string {

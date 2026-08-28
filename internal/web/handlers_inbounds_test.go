@@ -60,6 +60,28 @@ func TestHandler_CreateInbound_MaterializesOnCheckedNodes(t *testing.T) {
 	ts.assertContains(w, "n1")
 }
 
+func TestHandler_CreateInbound_VLESSServerName(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	w := ts.post("/ui/inbounds", url.Values{
+		"name": {"vless1"}, "protocol": {"vless-reality"}, "port": {"443"},
+		"server_name": {"www.microsoft.com:443"}, "node_ids": {"n1"},
+	})
+	ts.assertStatus(w, http.StatusOK)
+	st := ts.srv.store()
+	profs, _ := st.ListInboundProfiles()
+	if len(profs) != 1 || profs[0].ServerName != "www.microsoft.com" {
+		t.Fatalf("ServerName = %+v", profs)
+	}
+	ib := st.ProfileInboundOn("n1", profs[0].ID)
+	if ib == nil || ib.ServerName != "www.microsoft.com" {
+		t.Fatalf("materialized ServerName = %+v", ib)
+	}
+	if ib.ServerPubKey == "" || ib.ShortID == "" {
+		t.Fatalf("reality creds missing: %+v", ib)
+	}
+}
+
 func TestHandler_CreateInbound_Validation(t *testing.T) {
 	ts := newTestServer(t)
 	st := ts.srv.store()

@@ -280,16 +280,93 @@ function wizardShowStep(form, n) {
 function wizardNext() { wizardShowStep(document.querySelector('dialog#user-modal form'), wizardCurrentStep(document.querySelector('dialog#user-modal form')) + 1); }
 function wizardPrev() { wizardShowStep(document.querySelector('dialog#user-modal form'), wizardCurrentStep(document.querySelector('dialog#user-modal form')) - 1); }
 
-// copySubURL selects + copies the input identified by data-target and swaps the
-// button label to the data-copied string for a moment (used by UserCreatedResult).
+function copyText(text, btn) {
+    function done() {
+        if (!btn) return;
+        var orig = btn.textContent;
+        btn.textContent = btn.getAttribute('data-copied') || 'Copied';
+        setTimeout(function(){ btn.textContent = orig; }, 1500);
+    }
+    function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        done();
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else {
+        fallback();
+    }
+}
+
 function copySubURL(btn) {
     var el = document.getElementById(btn.getAttribute('data-target'));
     if (!el) return;
     el.select();
-    try { document.execCommand('copy'); } catch (e) {}
-    var orig = btn.textContent;
-    btn.textContent = btn.getAttribute('data-copied') || 'Copied';
-    setTimeout(function(){ btn.textContent = orig; }, 1500);
+    copyText(el.value, btn);
+}
+
+function copyUserSub(btn) {
+    copyText(location.origin + '/sub/' + btn.getAttribute('data-token'), btn);
+}
+
+function copyUserConfig(btn) {
+    var block = btn.closest('.tn-card');
+    if (!block) return;
+    var ta = block.querySelector('textarea');
+    if (!ta) return;
+    copyText(ta.value, btn);
+}
+
+function rrMatchChanged(sel) {
+    var f = sel.closest('form');
+    if (!f) return;
+    var preset = sel.value === 'preset';
+    var geo = sel.value === 'geosite' || sel.value === 'geoip';
+    var p = f.querySelector('.rr-preset');
+    var v = f.querySelector('.rr-values');
+    var g = f.querySelector('.rr-geo');
+    if (p) p.style.display = preset ? 'block' : 'none';
+    if (v) v.style.display = preset ? 'none' : 'block';
+    if (g) g.style.display = geo ? 'flex' : 'none';
+    var chips = f.querySelectorAll('[data-geo-kind]');
+    for (var i = 0; i < chips.length; i++) {
+        chips[i].style.display = chips[i].getAttribute('data-geo-kind') === sel.value ? '' : 'none';
+    }
+}
+
+function rrActionChanged(sel) {
+    var o = sel.closest('form').querySelector('.rr-outbound');
+    if (o) o.style.display = sel.value === 'route' ? 'block' : 'none';
+}
+
+function ibProtoChanged(sel) {
+    var f = sel.closest('form');
+    if (!f) return;
+    var v = sel.value;
+    function show(cls, on) {
+        var el = f.querySelector(cls);
+        if (el) el.style.display = on ? 'block' : 'none';
+    }
+    show('.awg-capture-section', v === 'awg');
+    show('.mieru-section', v === 'mieru');
+    show('.dest-section', v === 'vless-reality' || v === 'mtproxy');
+    show('.vless-section', v === 'vless-reality');
+    show('.tls-need-section', v === 'naive' || v === 'trusttunnel');
+    show('.mtproxy-section', v === 'mtproxy');
+}
+
+function rrChip(btn) {
+    var ta = btn.closest('form').querySelector('#rr-values');
+    if (!ta) return;
+    var val = btn.getAttribute('data-val');
+    ta.value = ta.value.trim() ? ta.value.replace(/[,\s]+$/, '') + ', ' + val : val;
 }
 
 // addNodeOpenCapture generates a fresh node id and opens the capture wizard in
@@ -313,7 +390,7 @@ function addNodeOpenCapture() {
 // URI/share links get .txt so the OS doesn't mis-handle them. Sanitized in JS
 // so user/chain names with spaces or slashes don't break the download.
 function downloadUserConfig(btn) {
-    var block = btn.closest('.border.border-base-300.rounded-lg');
+    var block = btn.closest('.tn-card');
     if (!block) { return; }
     var ta = block.querySelector('textarea');
     if (!ta) { return; }

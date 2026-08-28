@@ -17,7 +17,32 @@ type EffectiveRouteRow struct {
 	Action string
 }
 
-// ruleMatchSummary describes a stored RouteRule's matcher for the table.
+// NodeRoutingData is the per-node routing modal.
+type NodeRoutingData struct {
+	Host      *model.Host
+	Country   string
+	Rules     []*model.RouteRule
+	Users     []*model.User
+	Presets   []chain.RoutingPreset
+	Effective []EffectiveRouteRow
+	Edit      *model.RouteRule
+}
+
+func hostCaption(id, addr, country string) string {
+	var b strings.Builder
+	if country != "" {
+		b.WriteString(country)
+		b.WriteString(" · ")
+	}
+	b.WriteString(id)
+	if addr != "" {
+		b.WriteString(" (")
+		b.WriteString(addr)
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
 func ruleMatchSummary(r *model.RouteRule, presets []chain.RoutingPreset) string {
 	if r.MatchType == "preset" {
 		for _, p := range presets {
@@ -30,7 +55,6 @@ func ruleMatchSummary(r *model.RouteRule, presets []chain.RoutingPreset) string 
 	return r.MatchType + ": " + strings.ReplaceAll(r.MatchValues, "\n", ", ")
 }
 
-// ruleActionSummary describes what a stored RouteRule does.
 func ruleActionSummary(r *model.RouteRule) string {
 	switch r.Action {
 	case "reject", "block":
@@ -47,11 +71,15 @@ func ruleActionSummary(r *model.RouteRule) string {
 	}
 }
 
-// RoutingSummaryRow is one node's manual rules for the fleet-wide summary.
 type RoutingSummaryRow struct {
-	NodeID string
-	Rules  []*model.RouteRule
+	NodeID  string
+	Addr    string
+	Country string
+	Rules   []*model.RouteRule
 }
+
+var geoSiteChips = []string{"telegram", "google", "facebook", "youtube", "netflix", "openai", "category-ads-all", "geolocation-cn", "cn", "apple", "microsoft"}
+var geoIPChips = []string{"ru", "cn", "ir", "private", "cloudflare", "telegram"}
 
 templ RoutingSummary(rows []RoutingSummaryRow, presets []chain.RoutingPreset) {
 	<dialog id="routing-summary-modal" class="modal" open>
@@ -64,7 +92,7 @@ templ RoutingSummary(rows []RoutingSummaryRow, presets []chain.RoutingPreset) {
 				<div class="mb-4">
 					<div class="flex items-center justify-between mb-1">
 						<div class="font-mono text-sm font-semibold">
-							{ row.NodeID }
+							{ hostCaption(row.NodeID, row.Addr, row.Country) }
 							<span class="hint font-sans font-normal ml-2">{ fmt.Sprintf(i18n.T(ctx, "%d route(s)"), len(row.Rules)) }</span>
 						</div>
 						<button type="button" class="btn btn-xs btn-outline"
@@ -111,14 +139,14 @@ templ RoutingSummary(rows []RoutingSummaryRow, presets []chain.RoutingPreset) {
 	</dialog>
 }
 
-templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.User, presets []chain.RoutingPreset, effective []EffectiveRouteRow) {
+templ NodeRoutingPanel(d NodeRoutingData) {
 	<dialog id="routing-modal" class="modal" open>
-		<div class="modal-box" style="max-width: 64rem;">
-			<h3 class="text-lg font-semibold mb-1">{ i18n.T(ctx, "Routing") } — <span class="font-mono">{ h.ID }</span></h3>
+		<div class="modal-box" style="max-width: 56rem;">
+			<h3 class="text-lg font-semibold mb-1">{ i18n.T(ctx, "Routing") } — <span class="font-mono">{ hostCaption(d.Host.ID, d.Host.Addr, d.Country) }</span></h3>
 			<p class="hint mb-3">{ i18n.T(ctx, "Routing panel hint") }</p>
 
 			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Manual rules") }</div>
-			if len(rules) == 0 {
+			if len(d.Rules) == 0 {
 				<p class="hint mb-3">{ i18n.T(ctx, "No manual route rules yet") }</p>
 			} else {
 				<div class="overflow-x-auto mb-3">
@@ -134,10 +162,10 @@ templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.U
 							</tr>
 						</thead>
 						<tbody>
-							for _, r := range rules {
+							for _, r := range d.Rules {
 								<tr style={ templ.KV("opacity: 0.5", !r.Enabled) }>
 									<td class="font-mono">{ strconv.Itoa(r.Priority) }</td>
-									<td>{ ruleMatchSummary(r, presets) }</td>
+									<td>{ ruleMatchSummary(r, d.Presets) }</td>
 									<td>{ ruleActionSummary(r) }</td>
 									<td>
 										if len(r.UserIDs) == 0 {
@@ -151,7 +179,7 @@ templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.U
 										<div class="inline-flex gap-1">
 											<button type="button" class="btn btn-xs btn-ghost"
 												title={ i18n.T(ctx, "Enable/disable") }
-												hx-post={ "/ui/nodes/" + h.ID + "/routing/" + r.ID + "/toggle" }
+												hx-post={ "/ui/nodes/" + d.Host.ID + "/routing/" + r.ID + "/toggle" }
 												hx-target="#modal-container" hx-swap="innerHTML">
 												if r.Enabled {
 													{ i18n.T(ctx, "On") }
@@ -159,9 +187,13 @@ templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.U
 													{ i18n.T(ctx, "Off") }
 												}
 											</button>
+											<button type="button" class="btn btn-xs btn-ghost"
+												title={ i18n.T(ctx, "Edit") }
+												hx-get={ "/ui/nodes/" + d.Host.ID + "/routing/" + r.ID + "/edit" }
+												hx-target="#modal-container" hx-swap="innerHTML">{ i18n.T(ctx, "Edit") }</button>
 											<button type="button" class="btn btn-xs btn-ghost" style="color: var(--err)"
 												title={ i18n.T(ctx, "Delete") }
-												hx-post={ "/ui/nodes/" + h.ID + "/routing/" + r.ID + "/delete" }
+												hx-post={ "/ui/nodes/" + d.Host.ID + "/routing/" + r.ID + "/delete" }
 												hx-confirm={ i18n.T(ctx, "Delete this route rule?") }
 												hx-target="#modal-container" hx-swap="innerHTML">✕</button>
 										</div>
@@ -174,80 +206,115 @@ templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.U
 			}
 
 			<div class="divider-x my-2"></div>
-			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Add rule") }</div>
-			<form hx-post={ "/ui/nodes/" + h.ID + "/routing" } hx-target="#modal-container" hx-swap="innerHTML"
-				class="grid gap-3 md:grid-cols-2 mb-3">
-				<div>
-					<label class="lbl" for="rr-match-type">{ i18n.T(ctx, "Match type") }</label>
-					<select id="rr-match-type" name="match_type" class="sel"
-						onchange="var f=this.closest('form');var p=f.querySelector('.rr-preset');var v=f.querySelector('.rr-values');if(p){p.style.display=this.value==='preset'?'block':'none'};if(v){v.style.display=this.value==='preset'?'none':'block'}">
-						<option value="domain_suffix">{ i18n.T(ctx, "Domain suffix") }</option>
-						<option value="domain">{ i18n.T(ctx, "Full domain") }</option>
-						<option value="domain_keyword">{ i18n.T(ctx, "Domain keyword") }</option>
-						<option value="ip_cidr">{ i18n.T(ctx, "IP CIDR") }</option>
-						<option value="protocol">{ i18n.T(ctx, "Protocol") }</option>
-						<option value="geosite">GeoSite</option>
-						<option value="geoip">GeoIP</option>
-						<option value="preset">{ i18n.T(ctx, "Preset") }</option>
-					</select>
+			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">
+				if d.Edit != nil {
+					{ i18n.T(ctx, "Edit rule") }
+				} else {
+					{ i18n.T(ctx, "Add rule") }
+				}
+			</div>
+			<form hx-post={ "/ui/nodes/" + d.Host.ID + "/routing" } hx-target="#modal-container" hx-swap="innerHTML"
+				class="flex flex-col gap-3 mb-3">
+				if d.Edit != nil {
+					<input type="hidden" name="rule_id" value={ d.Edit.ID }/>
+				}
+				<div class="grid gap-3 md:grid-cols-2">
+					<div>
+						<label class="lbl" for="rr-match-type">{ i18n.T(ctx, "Match type") }</label>
+						<select id="rr-match-type" name="match_type" class="sel" onchange="rrMatchChanged(this)">
+							<option value="domain_suffix" selected?={ d.Edit == nil || d.Edit.MatchType == "domain_suffix" }>{ i18n.T(ctx, "Domain suffix") }</option>
+							<option value="domain" selected?={ d.Edit != nil && d.Edit.MatchType == "domain" }>{ i18n.T(ctx, "Full domain") }</option>
+							<option value="domain_keyword" selected?={ d.Edit != nil && d.Edit.MatchType == "domain_keyword" }>{ i18n.T(ctx, "Domain keyword") }</option>
+							<option value="ip_cidr" selected?={ d.Edit != nil && d.Edit.MatchType == "ip_cidr" }>{ i18n.T(ctx, "IP CIDR") }</option>
+							<option value="protocol" selected?={ d.Edit != nil && d.Edit.MatchType == "protocol" }>{ i18n.T(ctx, "Protocol") }</option>
+							<option value="geosite" selected?={ d.Edit != nil && d.Edit.MatchType == "geosite" }>GeoSite</option>
+							<option value="geoip" selected?={ d.Edit != nil && d.Edit.MatchType == "geoip" }>GeoIP</option>
+							<option value="preset" selected?={ d.Edit != nil && d.Edit.MatchType == "preset" }>{ i18n.T(ctx, "Preset") }</option>
+						</select>
+					</div>
+					<div>
+						<label class="lbl" for="rr-action">{ i18n.T(ctx, "Action") }</label>
+						<select id="rr-action" name="action" class="sel" onchange="rrActionChanged(this)">
+							<option value="direct" selected?={ d.Edit == nil || d.Edit.Action == "direct" || d.Edit.Action == "" }>{ i18n.T(ctx, "Direct (bypass proxy)") }</option>
+							<option value="reject" selected?={ d.Edit != nil && (d.Edit.Action == "reject" || d.Edit.Action == "block") }>{ i18n.T(ctx, "Block (reject)") }</option>
+							<option value="route" selected?={ d.Edit != nil && d.Edit.Action == "route" }>{ i18n.T(ctx, "Via outbound tag") }</option>
+						</select>
+					</div>
 				</div>
-				<div>
-					<label class="lbl" for="rr-action">{ i18n.T(ctx, "Action") }</label>
-					<select id="rr-action" name="action" class="sel"
-						onchange="var f=this.closest('form');var o=f.querySelector('.rr-outbound');if(o){o.style.display=this.value==='route'?'block':'none'}">
-						<option value="direct">{ i18n.T(ctx, "Direct (bypass proxy)") }</option>
-						<option value="reject">{ i18n.T(ctx, "Block (reject)") }</option>
-						<option value="route">{ i18n.T(ctx, "Via outbound tag") }</option>
-					</select>
-				</div>
-				<div class="rr-values">
+				<div class="rr-values" style={ templ.KV("display:none", d.Edit != nil && d.Edit.MatchType == "preset") }>
 					<label class="lbl" for="rr-values">{ i18n.T(ctx, "Match values") }</label>
 					<textarea id="rr-values" name="match_values" class="ta font-mono text-xs" rows="2"
-						placeholder="example.com, cdn.example.com / 1.2.3.0/24 / ru, ir / telegram"></textarea>
+						placeholder="example.com, cdn.example.com / 1.2.3.0/24 / ru, telegram">{ editValues(d.Edit) }</textarea>
+					<div class="rr-geo flex flex-wrap gap-1 mt-1" style={ templ.KV("display:none", d.Edit == nil || (d.Edit.MatchType != "geosite" && d.Edit.MatchType != "geoip")) }>
+						<span class="rr-geo-site contents" data-geo-kind="geosite" style={ templ.KV("display:none", d.Edit == nil || d.Edit.MatchType != "geosite") }>
+							for _, chip := range geoSiteChips {
+								<button type="button" class="btn btn-xs btn-ghost" data-val={ chip } onclick="rrChip(this)">{ chip }</button>
+							}
+						</span>
+						<span class="rr-geo-ip contents" data-geo-kind="geoip" style={ templ.KV("display:none", d.Edit == nil || d.Edit.MatchType != "geoip") }>
+							for _, chip := range geoIPChips {
+								<button type="button" class="btn btn-xs btn-ghost" data-val={ chip } onclick="rrChip(this)">{ chip }</button>
+							}
+						</span>
+					</div>
+					<p class="hint mt-1">{ i18n.T(ctx, "Geo source hint") }</p>
 				</div>
-				<div class="rr-preset" style="display:none">
+				<div class="rr-preset" style={ templ.KV("display:none", d.Edit == nil || d.Edit.MatchType != "preset") }>
 					<label class="lbl" for="rr-preset-id">{ i18n.T(ctx, "Preset") }</label>
 					<select id="rr-preset-id" name="preset_id" class="sel">
-						for _, p := range presets {
-							<option value={ p.ID }>{ p.Name + " (" + p.Category + ")" }</option>
+						for _, p := range d.Presets {
+							<option value={ p.ID } selected?={ d.Edit != nil && d.Edit.MatchType == "preset" && d.Edit.MatchValues == p.ID }>{ p.Name + " (" + p.Category + ")" }</option>
 						}
 					</select>
 				</div>
-				<div class="rr-outbound" style="display:none">
+				<div class="rr-outbound" style={ templ.KV("display:none", d.Edit == nil || d.Edit.Action != "route") }>
 					<label class="lbl" for="rr-outbound-tag">{ i18n.T(ctx, "Outbound tag") }</label>
-					<input id="rr-outbound-tag" name="outbound_tag" class="inp font-mono" placeholder="direct-out"/>
+					<input id="rr-outbound-tag" name="outbound_tag" class="inp font-mono" placeholder="direct-out"
+						if d.Edit != nil { value={ d.Edit.OutboundTag } }/>
 				</div>
-				<div>
-					<label class="lbl" for="rr-priority">{ i18n.T(ctx, "Priority") }</label>
-					<input id="rr-priority" name="priority" type="number" class="inp" value="100"/>
+				<div class="grid gap-3 md:grid-cols-2">
+					<div>
+						<label class="lbl" for="rr-priority">{ i18n.T(ctx, "Priority") }</label>
+						if d.Edit != nil {
+							<input id="rr-priority" name="priority" type="number" class="inp" value={ strconv.Itoa(d.Edit.Priority) }/>
+						} else {
+							<input id="rr-priority" name="priority" type="number" class="inp" value="100"/>
+						}
+					</div>
+					<div>
+						<label class="lbl" for="rr-comment">{ i18n.T(ctx, "Comment") }</label>
+						<input id="rr-comment" name="comment" class="inp" if d.Edit != nil { value={ d.Edit.Comment } }/>
+					</div>
 				</div>
-				<div class="md:col-span-2">
-					<span class="lbl">{ i18n.T(ctx, "Apply to users") }</span>
-					<div class="flex flex-col gap-1 max-h-40 overflow-y-auto p-3" style="border: 1px solid var(--bd); border-radius: 8px;">
-						<label class="flex items-center gap-2 cursor-pointer text-xs" style="color: var(--mut2)">
-							{ i18n.T(ctx, "Leave empty for all users. AWG users are matched by their tunnel IP (works through chains); other protocols by auth identity (entry node only).") }
-						</label>
-						for _, u := range users {
+				<details>
+					<summary class="text-xs cursor-pointer" style="color: var(--mut)">{ i18n.T(ctx, "Apply to users") }</summary>
+					<div class="flex flex-col gap-1 max-h-32 overflow-y-auto p-2 mt-1" style="border: 1px solid var(--bd); border-radius: 8px;">
+						<p class="hint">{ i18n.T(ctx, "Leave empty for all users. AWG users are matched by their tunnel IP (works through chains); other protocols by auth identity (entry node only).") }</p>
+						for _, u := range d.Users {
 							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" name="user_ids" value={ u.ID } class="cb"/>
+								<input type="checkbox" name="user_ids" value={ u.ID } class="cb"
+									checked?={ d.Edit != nil && containsProtocol(d.Edit.UserIDs, u.ID) }/>
 								<span class="text-sm font-mono">{ u.Name }</span>
 							</label>
 						}
 					</div>
-				</div>
-				<div class="md:col-span-2">
-					<label class="lbl" for="rr-comment">{ i18n.T(ctx, "Comment") }</label>
-					<input id="rr-comment" name="comment" class="inp"/>
-				</div>
-				<div class="md:col-span-2 flex justify-end">
-					<button type="submit" class="btn btn-sm btn-primary">{ i18n.T(ctx, "Add rule") }</button>
+				</details>
+				<div class="flex justify-end gap-2">
+					if d.Edit != nil {
+						<button type="button" class="btn btn-sm btn-ghost"
+							hx-get={ "/ui/nodes/" + d.Host.ID + "/routing" }
+							hx-target="#modal-container" hx-swap="innerHTML">{ i18n.T(ctx, "Cancel edit") }</button>
+						<button type="submit" class="btn btn-sm btn-primary">{ i18n.T(ctx, "Save rule") }</button>
+					} else {
+						<button type="submit" class="btn btn-sm btn-primary">{ i18n.T(ctx, "Add rule") }</button>
+					}
 				</div>
 			</form>
 
 			<div class="divider-x my-2"></div>
 			<div class="text-[11px] font-semibold uppercase tracking-wider mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Effective route table") }</div>
 			<p class="hint mb-2">{ i18n.T(ctx, "Effective route table hint") }</p>
-			if len(effective) == 0 {
+			if len(d.Effective) == 0 {
 				<p class="hint">{ i18n.T(ctx, "No route rules in the generated config") }</p>
 			} else {
 				<div class="overflow-x-auto max-h-64 overflow-y-auto">
@@ -259,7 +326,7 @@ templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.U
 							</tr>
 						</thead>
 						<tbody>
-							for _, row := range effective {
+							for _, row := range d.Effective {
 								<tr>
 									<td class="font-mono text-xs">{ row.Match }</td>
 									<td class="font-mono text-xs">{ row.Action }</td>
@@ -276,4 +343,11 @@ templ NodeRoutingPanel(h *model.Host, rules []*model.RouteRule, users []*model.U
 		</div>
 		<form method="dialog" class="modal-backdrop"><button>Close</button></form>
 	</dialog>
+}
+
+func editValues(r *model.RouteRule) string {
+	if r == nil {
+		return ""
+	}
+	return r.MatchValues
 }

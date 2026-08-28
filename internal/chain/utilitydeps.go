@@ -12,9 +12,9 @@ import (
 // and ValidateUtilityDeps refuses the action until the node has it (the UI
 // then offers to install the missing utilities).
 
-// protocolUtilityDeps lists the utilities an inbound protocol requires when
-// the node runs in caddy mode (TLSDomain set). Protocols absent from the map
-// work with or without utilities.
+// protocolUtilityDeps lists the utilities an inbound protocol requires.
+// Protocols in this map also need TLSDomain (they cannot run on a bare IP).
+// Protocols absent from the map keep legacy direct-port behaviour.
 var protocolUtilityDeps = map[string][]string{
 	// TLS-terminating protocols need the cert machinery + the router that
 	// fronts them on 443.
@@ -29,9 +29,9 @@ func RequiredUtilitiesForProtocol(proto string) []string {
 }
 
 // ValidateUtilityDeps checks that the node satisfies the utility requirements
-// of a new inbound/feature. It only applies when the node is in caddy mode
-// (TLSDomain non-empty) — a utility-less node keeps its legacy direct-port
-// behaviour untouched.
+// of a new inbound/feature. TLS-terminating protocols (naive/trusttunnel)
+// always need a TLSDomain + caddy/acme — they do not work on a bare IP.
+// Other protocols keep legacy direct-port behaviour when TLSDomain is empty.
 //
 // Two failure classes (rule #6, no silent failures):
 //   - missing utilities → "install X, Y first" (UI shows an install action);
@@ -39,13 +39,17 @@ func RequiredUtilitiesForProtocol(proto string) []string {
 //     owning 443 with FakeTLS and cannot sit behind the SNI router) → a clear
 //     refusal.
 func ValidateUtilityDeps(info *model.NodeInfo, proto string, port int) error {
-	if info == nil || info.TLSDomain == "" {
-		return nil // not caddy mode — legacy direct behaviour
+	req := RequiredUtilitiesForProtocol(proto)
+	if len(req) > 0 {
+		if info == nil || info.TLSDomain == "" {
+			return fmt.Errorf("protocol %q needs a TLS domain on this node — open Utilities, set a domain, add DNS A-records, then Install all and Issue/renew certificate", proto)
+		}
+	} else if info == nil || info.TLSDomain == "" {
+		return nil
 	}
 	if proto == "mtproxy" && caddyOwnedPorts[port] {
 		return fmt.Errorf("MTProxy cannot share port %d with the caddy utility on this node — pick a free port (e.g. 8443) or remove the caddy utility", port)
 	}
-	req := RequiredUtilitiesForProtocol(proto)
 	if len(req) == 0 {
 		return nil
 	}
@@ -65,11 +69,15 @@ func ValidateUtilityDeps(info *model.NodeInfo, proto string, port int) error {
 // feature on a caddy-mode node (empty = satisfied or not caddy mode). Used by
 // the UI to render the "install missing utilities" action.
 func MissingUtilities(info *model.NodeInfo, proto string) []string {
-	if info == nil || info.TLSDomain == "" {
+	req := RequiredUtilitiesForProtocol(proto)
+	if len(req) == 0 {
 		return nil
 	}
+	if info == nil {
+		return append([]string(nil), req...)
+	}
 	var missing []string
-	for _, name := range RequiredUtilitiesForProtocol(proto) {
+	for _, name := range req {
 		if !info.UtilityInstalled(name) {
 			missing = append(missing, name)
 		}

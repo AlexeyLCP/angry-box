@@ -118,7 +118,11 @@ templ InboundRow(v InboundProfileView) {
 				</button>
 				<button class="btn-icon" title={ i18n.T(ctx, "Delete") } aria-label={ i18n.T(ctx, "Delete") } style="color: var(--er)"
 					hx-delete={ "/ui/inbounds/" + v.Profile.ID }
-					hx-confirm={ i18n.T(ctx, "Delete this inbound profile? It will be removed from all nodes.") }
+					if len(v.ChainRefs) > 0 {
+						hx-confirm={ i18n.T(ctx, "Unbind this inbound from its chain first, then delete.") }
+					} else {
+						hx-confirm={ i18n.T(ctx, "Delete this inbound profile? It will be removed from all nodes.") }
+					}
 					hx-target="closest tr"
 					hx-swap="outerHTML">
 					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
@@ -158,7 +162,7 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 					<div>
 						<label class="lbl" for="ibf-proto">{ i18n.T(ctx, "Protocol") }</label>
 						<select id="ibf-proto" name="protocol" class="sel" disabled?={ prof != nil }
-							onchange="var f=this.closest('form');var s=f.querySelector('.awg-capture-section');if(s){s.style.display=this.value==='awg'?'block':'none'};var m=f.querySelector('.mieru-section');if(m){m.style.display=this.value==='mieru'?'block':'none'}">
+							onchange="ibProtoChanged(this)">
 							<option value="awg" selected?={ prof == nil || prof.Protocol == "awg" }>AmneziaWG</option>
 							<option value="vless-reality" selected?={ prof != nil && prof.Protocol == "vless-reality" }>VLESS + REALITY</option>
 							<option value="mtproxy" selected?={ prof != nil && prof.Protocol == "mtproxy" }>MTProxy / Telemt</option>
@@ -175,10 +179,12 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 					<div>
 						<label class="lbl" for="ibf-port">{ i18n.T(ctx, "Port") }</label>
 						<input id="ibf-port" type="number" name="port" class="inp" min="1" max="65535"
+							placeholder="auto"
 							if prof != nil {
 								value={ fmt.Sprintf("%d", prof.Port) }
 							}
 						/>
+						<p class="hint">{ i18n.T(ctx, "Leave empty to auto-assign a free port") }</p>
 					</div>
 					<div>
 						<label class="lbl" for="ibf-preset">{ i18n.T(ctx, "Obfuscation preset") }</label>
@@ -306,6 +312,63 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 					</div>
 				</div>
 
+				<div class="dest-section" style={ templ.KV("display:none", prof == nil || (prof.Protocol != "vless-reality" && prof.Protocol != "mtproxy")) }>
+					<div class="divider-x my-1"></div>
+					<label class="lbl" for="ibf-sni">{ i18n.T(ctx, "Dest / SNI") }</label>
+					<input id="ibf-sni" type="text" name="server_name" class="inp font-mono"
+						placeholder="www.microsoft.com"
+						if prof != nil { value={ prof.ServerName } }/>
+					<p class="hint">{ i18n.T(ctx, "Reality dest hint") }</p>
+				</div>
+
+				<div class="vless-section" style={ templ.KV("display:none", prof == nil || prof.Protocol != "vless-reality") }>
+					if prof != nil {
+						if pub, sid := profileRealityCreds(nodes, prof.ID); pub != "" {
+							<div class="grid gap-3 md:grid-cols-2 mt-2">
+								<div>
+									<label class="lbl">{ i18n.T(ctx, "Public key") }</label>
+									<div class="code mono text-xs" style="overflow-wrap:anywhere">{ pub }</div>
+								</div>
+								<div>
+									<label class="lbl">{ i18n.T(ctx, "Short ID") }</label>
+									<div class="code mono text-xs">{ sid }</div>
+								</div>
+							</div>
+							<p class="hint">{ i18n.T(ctx, "Reality keys hint") }</p>
+						} else {
+							<p class="hint">{ i18n.T(ctx, "Reality keys after deploy") }</p>
+						}
+					} else {
+						<p class="hint">{ i18n.T(ctx, "Reality keys after deploy") }</p>
+					}
+				</div>
+
+				<div class="tls-need-section" style={ templ.KV("display:none", prof == nil || (prof.Protocol != "naive" && prof.Protocol != "trusttunnel")) }>
+					<div class="divider-x my-1"></div>
+					<p class="hint">{ i18n.T(ctx, "TLS protocol needs domain") }</p>
+					<div class="flex flex-col gap-1 mt-2">
+						for _, n := range nodes {
+							<div class="text-xs font-mono">
+								if n.Country != "" {
+									<span class="pill">{ n.Country }</span>
+								}
+								{ n.ID }
+								if n.TLSDomain != "" {
+									<span style="color: var(--ok)"> — { n.TLSDomain }</span>
+								} else {
+									<span style="color: var(--wa)"> — { i18n.T(ctx, "no TLS domain") }</span>
+								}
+							</div>
+						}
+					</div>
+				</div>
+
+				<div class="mtproxy-section" style={ templ.KV("display:none", prof == nil || prof.Protocol != "mtproxy") }>
+					<div class="divider-x my-1"></div>
+					<label class="lbl" for="ibf-sni-mt">{ i18n.T(ctx, "FakeTLS domain") }</label>
+					<p class="hint">{ i18n.T(ctx, "FakeTLS hint") }</p>
+				</div>
+
 				<div class="mieru-section" style={ templ.KV("display:none", prof == nil || prof.Protocol != "mieru") }>
 					<div class="divider-x my-1"></div>
 					<label class="lbl" for="ibf-mieru-tr">{ i18n.T(ctx, "Mieru transport") }</label>
@@ -328,6 +391,9 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 									<input type="checkbox" name="node_ids" value={ n.ID } class="cb"
 										checked?={ deployed[n.ID] }
 									/>
+									if n.Country != "" {
+										<span class="pill">{ n.Country }</span>
+									}
 									<span class="text-sm font-medium">{ n.ID }</span>
 									<span class="text-xs font-mono" style="color: var(--mut2)">{ n.Addr }</span>
 								</label>
@@ -344,4 +410,15 @@ templ InboundForm(prof *model.InboundProfile, deployed map[string]bool, nodes []
 		</div>
 		<form method="dialog" class="modal-backdrop"><button>{ i18n.T(ctx, "Close") }</button></form>
 	</dialog>
+}
+
+func profileRealityCreds(nodes []*model.NodeInfo, profileID string) (pub, sid string) {
+	for _, n := range nodes {
+		for _, ib := range n.Inbounds {
+			if ib.ProfileID == profileID && ib.ServerPubKey != "" {
+				return ib.ServerPubKey, ib.ShortID
+			}
+		}
+	}
+	return "", ""
 }

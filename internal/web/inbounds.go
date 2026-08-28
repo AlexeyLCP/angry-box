@@ -11,6 +11,7 @@ package web
 import (
 	cryptoRand "crypto/rand"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -220,7 +221,17 @@ func inboundFromForm(r *http.Request) (*model.InboundProfile, []string, error) {
 		}
 		p.MieruTransport = t
 	}
+	if dest := strings.TrimSpace(r.FormValue("server_name")); dest != "" {
+		p.ServerName = destHost(dest)
+	}
 	return p, nodeIDs, nil
+}
+
+func destHost(s string) string {
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		return h
+	}
+	return s
 }
 
 // applyProfileAndDeploy saves the profile, applies the node diff, and
@@ -233,7 +244,8 @@ func (s *Server) applyProfileAndDeploy(w http.ResponseWriter, r *http.Request, p
 	for _, nodeID := range nodeIDs {
 		info, err := st.GetNodeInfo(nodeID)
 		if err != nil {
-			continue
+			http.Error(w, nodeID+": "+err.Error(), http.StatusNotFound)
+			return
 		}
 		if err := chain.ValidateUtilityDeps(info, prof.Protocol, prof.Port); err != nil {
 			http.Error(w, nodeID+": "+err.Error(), http.StatusConflict)

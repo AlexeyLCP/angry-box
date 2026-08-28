@@ -143,7 +143,7 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		status := `<span class="badge badge-success badge-sm">` + i18n.T(r.Context(), "applied") + `</span>`
 		if row.HasPending {
-			status = `<span class="badge badge-warning badge-sm">` + i18n.T(r.Context(), "pending") + `</span>`
+			status = `<span class="badge badge-warning badge-sm" title="` + escHTML(i18n.T(r.Context(), "Pending means Apply, not Check")) + `">` + i18n.T(r.Context(), "pending") + `</span>`
 		}
 		last := i18n.T(r.Context(), "never")
 		if !row.LastDeployedAt.IsZero() {

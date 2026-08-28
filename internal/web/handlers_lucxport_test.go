@@ -34,7 +34,7 @@ func TestHandler_CreateInbound_NaiveMieru(t *testing.T) {
 	w := ts.post("/ui/inbounds", url.Values{
 		"name": {"naive1"}, "protocol": {"naive"}, "port": {"443"}, "node_ids": {"n1"},
 	})
-	ts.assertStatus(w, http.StatusOK)
+	ts.assertStatus(w, http.StatusConflict)
 	w = ts.post("/ui/inbounds", url.Values{
 		"name": {"mieru1"}, "protocol": {"mieru"}, "port": {"8964"}, "mieru_transport": {"UDP"}, "node_ids": {"n1"},
 	})
@@ -42,25 +42,57 @@ func TestHandler_CreateInbound_NaiveMieru(t *testing.T) {
 	w = ts.post("/ui/inbounds", url.Values{
 		"name": {"tt1"}, "protocol": {"trusttunnel"}, "port": {"8443"}, "node_ids": {"n1"},
 	})
-	ts.assertStatus(w, http.StatusOK)
+	ts.assertStatus(w, http.StatusConflict)
 	st := ts.srv.store()
 	profs, _ := st.ListInboundProfiles()
 	got := map[string]string{}
 	for _, p := range profs {
 		got[p.Protocol] = p.MieruTransport
 	}
-	if _, ok := got["naive"]; !ok {
-		t.Fatal("naive profile missing")
+	if _, ok := got["naive"]; ok {
+		t.Fatal("naive without TLS domain must not be created")
 	}
 	if got["mieru"] != "UDP" {
 		t.Fatalf("mieru transport = %q", got["mieru"])
 	}
-	if _, ok := got["trusttunnel"]; !ok {
-		t.Fatal("trusttunnel profile missing")
+	if _, ok := got["trusttunnel"]; ok {
+		t.Fatal("trusttunnel without TLS domain must not be created")
 	}
 	ib := st.ProfileInboundOn("n1", profs[0].ID)
 	if ib == nil {
 		t.Fatal("no materialized inbound")
+	}
+}
+
+func TestHandler_CreateInbound_NaiveWithTLSDomain(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n1", "1.1.1.1:22")
+	st := ts.srv.store()
+	info, err := st.GetNodeInfo("n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info.TLSDomain = "n.example.com"
+	info.Utilities = []*model.UtilityState{
+		{Name: model.UtilityCaddy, Installed: true},
+		{Name: model.UtilityACME, Installed: true},
+	}
+	if err := st.SaveNodeInfo(info); err != nil {
+		t.Fatal(err)
+	}
+	w := ts.post("/ui/inbounds", url.Values{
+		"name": {"naive1"}, "protocol": {"naive"}, "port": {"443"}, "node_ids": {"n1"},
+	})
+	ts.assertStatus(w, http.StatusOK)
+	profs, _ := st.ListInboundProfiles()
+	found := false
+	for _, p := range profs {
+		if p.Protocol == "naive" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("naive with TLS domain must be created")
 	}
 }
 

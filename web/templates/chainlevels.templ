@@ -34,6 +34,7 @@ type ChainLevelsFormData struct {
 	NodeProfiles  map[string][]ChainProfileOption // nodeID → profiles deployed there
 	Presets       []string                        // obfuscation presets (transit) — names only (legacy)
 	PresetGroups  []chain.PresetGroup             // grouped presets (robust/stealth/xhttp/reality) with Jc for the dropdown
+	Countries     map[string]string               // nodeID → country code (RU/NL/…)
 }
 
 // levelNodeChecked reports whether nodeID sits on level li of the chain.
@@ -222,6 +223,9 @@ templ ChainLevelRow(index int, d ChainLevelsFormData, isEntry bool) {
 								onchange="var w=this.closest('div').querySelector('.inboundref-wrap');if(w){w.style.display=this.checked?'block':'none'}"
 							}
 						/>
+						if d.Countries[h.ID] != "" {
+							<span class="pill">{ d.Countries[h.ID] }</span>
+						}
 						<span class="font-mono text-sm">{ h.ID }</span>
 						<span class="text-xs" style="color: var(--mut2)">({ h.Addr })</span>
 					</label>

@@ -52,12 +52,22 @@ func TestBuildClientURI_TUIC_Imported(t *testing.T) {
 
 // TestBuildClientURI_VLESSReality verifies the vless-reality share link.
 func TestBuildClientURI_VLESSReality(t *testing.T) {
-	link := buildClientURI("vless-reality", "1.2.3.4", 443, "uuid-v", "", "pubkey", "sid", "vless", &model.User{}, "", false)
+	u := &model.User{Name: "alice"}
+	link := buildClientURI("vless-reality", "1.2.3.4", 443, "uuid-v", "", "ab+cd/ef=", "sid", "vless", u, "", false)
 	if !strings.HasPrefix(link, "vless://uuid-v@1.2.3.4:443") {
 		t.Errorf("got %q, want vless:// prefix", link)
 	}
 	if !strings.Contains(link, "security=reality") {
 		t.Errorf("got %q, want security=reality", link)
+	}
+	if strings.Contains(link, "pbk=ab+cd") {
+		t.Errorf("got %q, pbk must be query-escaped (+ → %%2B)", link)
+	}
+	if !strings.Contains(link, "pbk=ab%2Bcd%2Fef%3D") {
+		t.Errorf("got %q, want escaped pbk", link)
+	}
+	if !strings.Contains(link, "#alice") {
+		t.Errorf("got %q, want #alice remark", link)
 	}
 }
 
@@ -162,6 +172,35 @@ func TestBuildConnectionLink_NoNodes(t *testing.T) {
 
 // TestBuildConnectionLink_AWG verifies a chain link builds an awg-quick .conf
 // for AWG (per-user peer; the .conf carries the server pub + entry endpoint).
+func TestBuildConnectionLink_VLESSUsesInboundAndUser(t *testing.T) {
+	ts := newTestServer(t)
+	ts.createNode("n0", "1.2.3.4:22")
+	ts.createDeployedProfile("p-vless", "vless-reality", 25086, "n0")
+	st := ts.srv.store()
+	ib := st.ProfileInboundOn("n0", "p-vless")
+	if ib == nil {
+		t.Fatal("expected materialized vless inbound")
+	}
+	c := &model.Chain{
+		Name:         "ru-nl",
+		UserProtocol: model.UserProtocolVLESSReality,
+		Levels: []model.ChainLevel{{
+			Nodes: []model.ChainNode{{ID: "n0", Addr: "1.2.3.4:22", InboundRef: "p-vless"}},
+		}},
+	}
+	u := &model.User{Name: "alice", VLESSUUID: "alice-uuid"}
+	link := buildConnectionLink(st, c, u)
+	if !strings.Contains(link, "vless://alice-uuid@1.2.3.4:25086") {
+		t.Errorf("got %q, want user uuid + inbound port", link)
+	}
+	if !strings.Contains(link, "pbk=") || strings.Contains(link, "pbk=&") {
+		t.Errorf("got %q, want reality public key from inbound", link)
+	}
+	if !strings.Contains(link, "#alice") {
+		t.Errorf("got %q, want #alice", link)
+	}
+}
+
 func TestBuildConnectionLink_AWG(t *testing.T) {
 	c := &model.Chain{
 		Name:              "c1",
@@ -223,6 +262,17 @@ func TestBuildStandaloneLink_VLESS(t *testing.T) {
 }
 
 // TestDefaultFakeTLSDomain_Set verifies the Obfuscation field is honoured.
+func TestApplySNI(t *testing.T) {
+	in := "vless://u@1.2.3.4:443?sni=www.microsoft.com&security=reality#x"
+	got := applySNI(in, "yahoo.com")
+	if !strings.Contains(got, "sni=yahoo.com") {
+		t.Errorf("got %q", got)
+	}
+	if applySNI(in, "") != in {
+		t.Error("empty sni must be a no-op")
+	}
+}
+
 func TestDefaultFakeTLSDomain_Set(t *testing.T) {
 	ib := model.NodeInbound{Obfuscation: "telegram.org"}
 	if got := defaultFakeTLSDomain(ib); got != "telegram.org" {
@@ -234,6 +284,13 @@ func TestDefaultFakeTLSDomain_Set(t *testing.T) {
 func TestDefaultFakeTLSDomain_Default(t *testing.T) {
 	if got := defaultFakeTLSDomain(model.NodeInbound{}); got != "disk.yandex.ru" {
 		t.Errorf("got %q, want disk.yandex.ru", got)
+	}
+}
+
+func TestDefaultFakeTLSDomain_ServerName(t *testing.T) {
+	ib := model.NodeInbound{ServerName: "cdn.example.com", Obfuscation: "ignored.ru"}
+	if got := defaultFakeTLSDomain(ib); got != "cdn.example.com" {
+		t.Errorf("got %q, want cdn.example.com", got)
 	}
 }
 

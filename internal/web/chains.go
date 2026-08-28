@@ -27,6 +27,16 @@ func (s *Server) handleChains(w http.ResponseWriter, r *http.Request) {
 // the entry level's per-node inbound select only offers what is actually
 // materialized there ("inbounds first, chains second"; no auto-deploy from
 // the chain form).
+func hostCountries(st *chain.Store, hosts []*model.Host) map[string]string {
+	out := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		if info, err := st.GetNodeInfo(h.ID); err == nil && info != nil && info.Country != "" {
+			out[h.ID] = info.Country
+		}
+	}
+	return out
+}
+
 func buildNodeProfiles(st *chain.Store, hosts []*model.Host) map[string][]templates.ChainProfileOption {
 	profs, _ := st.ListInboundProfiles()
 	out := map[string][]templates.ChainProfileOption{}
@@ -48,6 +58,7 @@ func (s *Server) handleNewChainForm(w http.ResponseWriter, r *http.Request) {
 		NodeProfiles: buildNodeProfiles(st, hosts),
 		Presets:      chain.ListPresets(),
 		PresetGroups: chain.GroupPresets(chain.ListPresetsDetailed()),
+		Countries:    hostCountries(st, hosts),
 	}))
 }
 
@@ -60,7 +71,7 @@ func (s *Server) handleChainLevelRow(w http.ResponseWriter, r *http.Request) {
 	}
 	st := s.store()
 	hosts, _ := st.ListHosts()
-	s.render(w, r, templates.ChainLevelRow(i, templates.ChainLevelsFormData{Hosts: hosts}, false))
+	s.render(w, r, templates.ChainLevelRow(i, templates.ChainLevelsFormData{Hosts: hosts, Countries: hostCountries(st, hosts)}, false))
 }
 
 // parseLevelsForm reads the levels editor wire format (level_<i>_nodes[],
@@ -255,6 +266,7 @@ func (s *Server) handleEditChainForm(w http.ResponseWriter, r *http.Request) {
 		NodeProfiles: buildNodeProfiles(st, hosts),
 		Presets:      chain.ListPresets(),
 		PresetGroups: chain.GroupPresets(chain.ListPresetsDetailed()),
+		Countries:    hostCountries(st, hosts),
 	}))
 }
 

@@ -3,6 +3,7 @@ package chain
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -199,8 +200,25 @@ func TestAWGToolsVersionSupportsHPK(t *testing.T) {
 	}
 }
 
-// TestKernelAWG3EnabledFor gates the render branches off the runtime-only
-// NodeInfo flag. nil-safe for the dry-run / preview render path.
+func TestPersistKernelAWG3(t *testing.T) {
+	st := NewStore(filepath.Join(t.TempDir(), "store.json"))
+	if err := st.SaveNodeInfo(&model.NodeInfo{Host: model.Host{ID: "n1"}}); err != nil {
+		t.Fatal(err)
+	}
+	persistKernelAWG3(st, "n1", true)
+	got, err := st.GetNodeInfo("n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.KernelAWG3Supported {
+		t.Fatal("flag not persisted")
+	}
+	persistKernelAWG3(st, "n1", true)
+	persistKernelAWG3(st, "missing", true)
+}
+
+// TestKernelAWG3EnabledFor gates the render branches off the NodeInfo flag.
+// nil-safe for the dry-run / preview render path.
 func TestKernelAWG3EnabledFor(t *testing.T) {
 	if kernelAWG3EnabledFor(nil) {
 		t.Error("kernelAWG3EnabledFor(nil) = true, want false")

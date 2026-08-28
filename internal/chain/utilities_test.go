@@ -139,9 +139,14 @@ func TestRenderCaddyfile(t *testing.T) {
 }
 
 func TestValidateUtilityDeps(t *testing.T) {
-	// Not caddy mode — everything allowed.
-	if err := ValidateUtilityDeps(&model.NodeInfo{}, "naive", 443); err != nil {
-		t.Fatalf("non-caddy node must pass: %v", err)
+	if err := ValidateUtilityDeps(&model.NodeInfo{}, "naive", 443); err == nil {
+		t.Fatal("naive without TLS domain must be refused")
+	}
+	if err := ValidateUtilityDeps(&model.NodeInfo{}, "trusttunnel", 443); err == nil {
+		t.Fatal("trusttunnel without TLS domain must be refused")
+	}
+	if err := ValidateUtilityDeps(&model.NodeInfo{}, "awg", 51820); err != nil {
+		t.Fatalf("awg without domain must pass: %v", err)
 	}
 
 	caddy := &model.NodeInfo{
@@ -176,8 +181,8 @@ func TestMissingUtilities(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("MissingUtilities = %v, want caddy+acme", got)
 	}
-	if got := MissingUtilities(&model.NodeInfo{}, "trusttunnel"); got != nil {
-		t.Fatalf("non-caddy node must report nothing: %v", got)
+	if got := MissingUtilities(&model.NodeInfo{}, "trusttunnel"); len(got) != 2 {
+		t.Fatalf("trusttunnel without utilities must report caddy+acme, got %v", got)
 	}
 }
 

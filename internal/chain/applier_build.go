@@ -200,6 +200,7 @@ func (a *Applier) ApplyChain(ctx context.Context, store *Store, chain *model.Cha
 		// false = userspace fallback). Done here so the render loop below can
 		// stamp nodeInfo.KernelAWG3Supported before buildMergedNodeConfig.
 		kernelAWG3ByNode[node.ID] = detectKernelAWG3(ctx, client)
+		persistKernelAWG3(store, node.ID, kernelAWG3ByNode[node.ID])
 		client.Close()
 	}
 
@@ -1802,8 +1803,6 @@ func (a *Applier) applyMergedNodeLocked(
 	// capability on it BEFORE the merged-config render. Keeping detection on the
 	// shared connection preserves the connection-collapse invariant (one Connect
 	// per merged deploy, CTO-review §8 — the previous separate probe doubled it).
-	// info is the per-deploy NodeInfo copy, so the runtime-only flag never
-	// reaches the JSON store.
 	resolved := resolveHostKey(store, &info.Host)
 	if resolved.KeyPath == "" {
 		log.Printf("ssh: no key configured for node %s and no default key set", info.ID)
@@ -1817,6 +1816,9 @@ func (a *Applier) applyMergedNodeLocked(
 	}
 	defer client.Close()
 	info.KernelAWG3Supported = detectKernelAWG3(ctx, client)
+	if err := store.SaveNodeInfo(info); err != nil {
+		log.Printf("awg3-kernel: persist flag for %s: %v", info.ID, err)
+	}
 
 	// buildMergedNodeConfig derives the per-chain/standalone user maps and the
 	// node's MTProxy users from the store via NewMergedNodeConfigParams. Rendered

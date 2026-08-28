@@ -136,6 +136,18 @@ templ UserRow(u *model.User) {
 		</td>
 		<td class="text-right whitespace-nowrap">
 			<div class="inline-flex gap-1 items-center">
+				if u.SubscriptionToken != "" {
+					<button
+						class="btn-icon"
+						type="button"
+						title={ i18n.T(ctx, "Subscription URL") }
+						aria-label={ i18n.T(ctx, "Subscription URL") }
+						onclick="copyUserSub(this)"
+						data-token={ u.SubscriptionToken }
+						data-copied={ i18n.T(ctx, "Copied") }>
+						<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" /></svg>
+					</button>
+				}
 				<button
 					class="btn-icon"
 					title={ i18n.T(ctx, "Config") }
@@ -193,6 +205,15 @@ templ UserForm(u *model.User, chains []*model.Chain, subHost string) {
 			</h3>
 
 			if u != nil {
+				if u.SubscriptionToken != "" {
+					<div class="mb-4">
+						<div class="text-xs mb-1" style="color: var(--mut)">{ i18n.T(ctx, "Subscription URL") }</div>
+						<div class="join w-full">
+							<input type="text" class="inp join-item font-mono w-full" value={ subHost + "/sub/" + u.SubscriptionToken } readonly id={ "sub-" + u.ID } />
+							<button type="button" class="btn btn-outline btn-sm join-item" onclick="copySubURL(this)" data-target={ "sub-" + u.ID } data-copied={ i18n.T(ctx, "Copied") }>{ i18n.T(ctx, "Copy") }</button>
+						</div>
+					</div>
+				}
 				<form
 					hx-post={"/ui/users/" + u.ID + "/edit"}
 					hx-target={"#user-" + u.ID}
@@ -423,17 +444,10 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 								<span class="pill">{ cfg.Protocol }</span>
 							</div>
 							<div class="text-xs mb-2" style="color: var(--mut)">{ cfg.Description }</div>
-							<div class="relative">
-								<textarea
-									rows="2"
-									readonly
-									class="ta w-full text-xs font-mono resize-none">{ cfg.ConfigLink }</textarea>
-								<button
-									class="btn btn-xs btn-ghost absolute top-1 right-1"
-									onclick="var ta=this.parentElement.querySelector('textarea'); ta.select(); navigator.clipboard.writeText(ta.value);">
-									{ i18n.T(ctx, "Copy") }
-								</button>
-							</div>
+							<textarea
+								rows="3"
+								readonly
+								class="ta w-full text-xs font-mono resize-none">{ cfg.ConfigLink }</textarea>
 							if cfg.Protocol == "awg" {
 								<div class="flex gap-1 mt-2">
 									<span class="text-xs" style="color: var(--mut2)">{ i18n.T(ctx, "AWG version") }:</span>
@@ -443,7 +457,14 @@ templ UserConfigView(u *model.User, configs []UserChainConfig) {
 									<button type="button" class="btn btn-xs btn-ghost" hx-get={ "/ui/users/" + u.ID + "/config?awg_version=3.1" } hx-target="#modal-container" hx-swap="innerHTML">3.1</button>
 								</div>
 							}
-							<div class="flex justify-end mt-2">
+							<div class="flex justify-end gap-2 mt-2">
+								<button
+									type="button"
+									class="btn btn-xs btn-outline"
+									onclick="copyUserConfig(this)"
+									data-copied={ i18n.T(ctx, "Copied") }>
+									{ i18n.T(ctx, "Copy") }
+								</button>
 								<button
 									type="button"
 									class="btn btn-xs btn-outline"

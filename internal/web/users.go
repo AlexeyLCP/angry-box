@@ -619,11 +619,27 @@ func buildConnectionLink(st *chain.Store, c *model.Chain, u *model.User, clampVe
 	}
 
 	ip := strings.Split(entry.Addr, ":")[0]
-	// Per-user TUIC creds take precedence over the chain-wide shared creds so
-	// each user's share link authenticates as that user (per-client routing).
-	// Fall back to chain-wide when the user has no per-user identity (legacy).
+	port := 8443
 	uuid := c.TUICEntryUserUUID
 	password := c.TUICEntryUserPassword
+	pubKey := c.AWGEntryServerPub
+	shortID := ""
+	sni := ""
+	if st != nil && entry.InboundRef != "" {
+		if ib := st.ProfileInboundOn(entry.ID, entry.InboundRef); ib != nil {
+			if ib.Port != 0 {
+				port = ib.Port
+			}
+			if ib.UUID != "" {
+				uuid = ib.UUID
+			}
+			if ib.ServerPubKey != "" {
+				pubKey = ib.ServerPubKey
+			}
+			shortID = ib.ShortID
+			sni = ib.ServerName
+		}
+	}
 	if u != nil {
 		if u.TUICUUID != "" {
 			uuid = u.TUICUUID
@@ -631,8 +647,11 @@ func buildConnectionLink(st *chain.Store, c *model.Chain, u *model.User, clampVe
 		if u.TUICPassword != "" {
 			password = u.TUICPassword
 		}
+		if u.VLESSUUID != "" && (proto == "vless-reality" || proto == "vless-reality-xhttp" || proto == "xhttp") {
+			uuid = u.VLESSUUID
+		}
 	}
-	return buildClientURI(proto, ip, 8443, uuid, password, c.AWGEntryServerPub, "", c.Name, u, "", false)
+	return applySNI(buildClientURI(proto, ip, port, uuid, password, pubKey, shortID, c.Name, u, "", false), sni)
 }
 
 
@@ -733,12 +752,36 @@ func buildStandaloneLink(addr string, ib model.NodeInbound, u *model.User) strin
 	// client link must carry insecure=1 only in that case; the per-node obfs
 	// password travels via ib.ObfsPassword.
 	insecure := ib.Protocol == "hysteria2" && ib.TLSCertificate != ""
-	return buildClientURI(ib.Protocol, ip, ib.Port, ib.UUID, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u, ib.ObfsPassword, insecure)
+	uuid := ib.UUID
+	if u != nil && u.VLESSUUID != "" && (ib.Protocol == "vless-reality" || ib.Protocol == "vless-reality-xhttp") {
+		uuid = u.VLESSUUID
+	}
+	return applySNI(buildClientURI(ib.Protocol, ip, ib.Port, uuid, ib.ServerPrivKey, ib.ServerPubKey, ib.ShortID, ib.Protocol, u, ib.ObfsPassword, insecure), ib.ServerName)
+}
+
+func applySNI(link, sni string) string {
+	if sni == "" || link == "" || strings.HasPrefix(link, "#") {
+		return link
+	}
+	u, err := url.Parse(link)
+	if err != nil || u.RawQuery == "" {
+		return link
+	}
+	q := u.Query()
+	if q.Get("sni") == "" {
+		return link
+	}
+	q.Set("sni", sni)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // defaultFakeTLSDomain returns the MTProxy FakeTLS domain for an inbound (the
 // Obfuscation field if set, else the canonical "disk.yandex.ru").
 func defaultFakeTLSDomain(ib model.NodeInbound) string {
+	if ib.ServerName != "" {
+		return ib.ServerName
+	}
 	if ib.Obfuscation != "" {
 		return ib.Obfuscation
 	}
@@ -905,8 +948,19 @@ func buildClientURI(proto, ip string, port int, uuid, privKey, pubKey, shortID, 
 		if preset := chain.GetDefaultPreset(); preset.Reality != nil && len(preset.Reality.ServerNames) > 0 {
 			serverName = preset.Reality.ServerNames[0]
 		}
-		return fmt.Sprintf("vless://%s@%s:%d?type=tcp&security=reality&pbk=%s&sni=%s&sid=%s&fp=chrome&flow=xtls-rprx-vision",
-			uuid, ip, port, pubKey, serverName, shortID)
+		frag := name
+		if u != nil && u.Name != "" {
+			frag = u.Name
+		}
+		q := url.Values{}
+		q.Set("type", "tcp")
+		q.Set("security", "reality")
+		q.Set("pbk", pubKey)
+		q.Set("sni", serverName)
+		q.Set("sid", shortID)
+		q.Set("fp", "chrome")
+		q.Set("flow", "xtls-rprx-vision")
+		return fmt.Sprintf("vless://%s@%s:%d?%s#%s", uuid, ip, port, q.Encode(), url.QueryEscape(frag))
 	case "vless-reality-xhttp":
 		// Combined REALITY + XHTTP max obfuscation share-link. Values are
 		// percent-encoded (per protocol_presets.generate_vless_reality_xhttp_share_link),

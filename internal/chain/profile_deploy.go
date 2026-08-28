@@ -144,6 +144,10 @@ func ApplyProfileToNodes(st *Store, prof *model.InboundProfile, desired []string
 				ib.MieruTransport = prof.MieruTransport
 				changed = true
 			}
+			if ib.ServerName != prof.ServerName {
+				ib.ServerName = prof.ServerName
+				changed = true
+			}
 			if ib.Protocol == string(model.UserProtocolAWG) {
 				before := ib.AWGCPSI1 + ib.AWGH1
 				preset := ResolveStandaloneAWGPreset(ib)
@@ -222,6 +226,7 @@ func buildProfileInbound(prof *model.InboundProfile, ni *model.NodeInfo) (model.
 		Protocol:    prof.Protocol,
 		Port:        prof.Port,
 		Obfuscation: prof.Obfuscation,
+		ServerName:  prof.ServerName,
 		Source:      "standalone",
 		Tag:         prof.ID,
 		ProfileID:   prof.ID,

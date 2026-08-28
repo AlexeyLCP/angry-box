@@ -103,7 +103,19 @@ func enableAWGService(ctx context.Context, client ports.SSHClient, service strin
 	}
 	cmd := sudoB("systemctl daemon-reload && systemctl enable " + service +
 		" && systemctl reset-failed " + service + " ; systemctl restart " + service)
-	if _, _, _, err := client.RunWithOutput(ctx, cmd, 60*time.Second); err != nil {
+	if _, stderr, _, err := client.RunWithOutput(ctx, cmd, 60*time.Second); err != nil {
+		journal, _, _, _ := client.RunWithOutput(ctx,
+			sudoB("journalctl -u "+service+" -n 30 --no-pager 2>/dev/null"), 30*time.Second)
+		tail := strings.TrimSpace(journal)
+		if tail == "" {
+			tail = strings.TrimSpace(stderr)
+		}
+		if len(tail) > 1200 {
+			tail = tail[len(tail)-1200:]
+		}
+		if tail != "" {
+			return fmt.Errorf("enable/restart %s: %w: %s", service, err, tail)
+		}
 		return fmt.Errorf("enable/restart %s: %w", service, err)
 	}
 	if err := probeServiceUp(ctx, client, service, useSudo); err != nil {

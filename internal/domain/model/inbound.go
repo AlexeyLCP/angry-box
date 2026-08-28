@@ -92,6 +92,10 @@ type InboundProfile struct {
 	// MieruTransport is "TCP" or "UDP" (fork validation). Empty = TCP.
 	MieruTransport string `json:"mieru_transport,omitempty"`
 
+	// ServerName is the protocol dest: Reality SNI/handshake for vless-reality,
+	// FakeTLS domain for mtproxy. Empty = preset / global default.
+	ServerName string `json:"server_name,omitempty"`
+
 	CreatedAt          time.Time `json:"created_at"`
 }
 
