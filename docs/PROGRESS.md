@@ -2510,4 +2510,14 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Файлы:** `internal/chain/{utilities,utilitydeps,utility_install}.go` (новые), `internal/chain/{merged_config,store,awg_outbound}.go`, `internal/domain/model/panel.go` (Utilities/TLSDomain/PanelRelay/TelegramID/TelegramBindCode/ExpiryNotifiedAt), `internal/bot/` (новый), `internal/web/{utilities,subpush,botctl,relay,panelimport,sub_singbox}.go` (новые), `internal/web/{subscription,settings,users,takeover,chains,server,auth,inbounds}.go`, `internal/takeover/{detect,panel_db,panel_import}.go` (новые: `panel_db`,`panel_import`), `internal/ssh/client.go` (RemoteForward/DownloadFile), `web/templates/{utilities,users,settings,nodes}.templ` (новый: `utilities`), `scripts/build-caddy.sh` (новый), `docs/TWP-SPIKE.md` (новый), `internal/i18n/i18n.go`.
 
+---
+
+## §55. v0.9.2 — QA: клиентские URI, Dest/SNI, TLS-гейт, persist KernelAWG3, edit маршрутов (2026-08-28)
+
+Рассинхрон store↔клиент↔статус после живого прогона. Клиентский URI брал порт 8443 и chain-wide UUID; naive сохранялся без TLS-домена; KernelAWG3Supported был `json:"-"` → статус «ожидает» после успешного Apply.
+
+**Сделано:** URI с инбаунда/юзера + percent-encode pbk + Dest/SNI; naive/trusttunnel 409 без домена; флаг AWG3 пишется в store; CRUD маршрутов + edit; journalctl в ошибке awg-quick. E2E `TestE2EAWG3_KernelConf` PASS на n1.
+
+**Файлы:** `internal/web/{users,inbounds,routing,chains,misc}.go`, `internal/chain/{applier_build,awg3_capability,awg_push,merged_config,profile_deploy,utilitydeps}.go`, `internal/domain/model/{inbound,panel}.go`, `web/templates/{inbounds,routing,users,chainlevels,utilities}.templ`, `web/static/js/app.js`, `internal/i18n/i18n.go`.
+
 

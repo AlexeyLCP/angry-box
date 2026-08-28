@@ -4,6 +4,42 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.9.2] — 2026-08-28
+
+### 🔧 Клиентские ссылки, Dest/SNI и статус деплоя больше не врут
+
+Живой прогон показал рассинхрон: панель хранит одно, а клиенту отдаёт другое (порт 8443 вместо инбаунда, общий UUID вместо пользовательского), а после успешного Apply статус залипает в «ожидает». Этот патч закрывает дыры.
+
+**Что изменилось**
+
+- **Клиентский URI берёт порт, ключи и UUID с инбаунда и пользователя.** VLESS-ссылка больше не хардкодит `:8443` и chain-wide UUID; `pbk` percent-encoded (`+` больше не превращается в пробел); Dest/SNI с профиля попадает и в ссылку, и в рендер Reality/FakeTLS.
+- **NaiveProxy и TrustTunnel без TLS-домена создать нельзя.** Гейт больше не ждёт «уже включённый caddy-режим»: на голом IP профиль отказывается сразу, с подсказкой открыть Utilities → TLS quick start.
+- **KernelAWG3Supported пишется в store.** Флаг больше не runtime-only (`json:"-"`): после Apply хэш статуса совпадает с последним деплоем, страница не врёт «ожидает». Перепроверяется на каждом Apply.
+- **Правила маршрутизации можно редактировать.** Не только создать/удалить — форма префилла, POST с `rule_id` обновляет, страна/адрес ноды видны в сводке.
+- **Журнал awg-quick при фейле enable.** Ошибка `enable/restart` несёт хвост `journalctl`, а не голое exit status.
+
+**Обновление:** обычный деплой новой версии. Миграций нет. Флаг KernelAWG3 появится в store после следующего Apply ноды.
+
+⚡️ Приятного использования!
+
+---
+
+### 🔧 Client links, Dest/SNI, and deploy status no longer lie
+
+A live run showed the panel storing one thing and handing the client another (port 8443 instead of the inbound, a shared UUID instead of the user's), and a successful Apply leaving status stuck on "pending". This patch closes those holes.
+
+**What changed**
+
+- **Client URIs take port, keys, and UUID from the inbound and the user.** The VLESS link no longer hardcodes `:8443` and a chain-wide UUID; `pbk` is percent-encoded (`+` no longer becomes a space); the profile Dest/SNI lands in both the share link and the Reality/FakeTLS render.
+- **NaiveProxy and TrustTunnel cannot be created without a TLS domain.** The gate no longer waits for "caddy mode already on": a bare-IP node is refused up front, with a pointer to Utilities → TLS quick start.
+- **KernelAWG3Supported is persisted.** The flag is no longer runtime-only (`json:"-"`): after Apply the status hash matches the last deploy, so the page does not lie "pending". Re-probed on every Apply.
+- **Route rules can be edited.** Not just create/delete — the form prefills, POST with `rule_id` updates, and the summary shows the node's country/address.
+- **awg-quick journal on enable failure.** An `enable/restart` error carries the `journalctl` tail, not a bare exit status.
+
+**Upgrade:** deploy the new version as usual. No migrations. The KernelAWG3 flag appears in the store after the next node Apply.
+
+⚡️ Enjoy!
+
 ## [v0.9.1] — 2026-08-27
 
 ###  Ноды только amd64/arm64, автозаполнение инбаундов и «TLS quick start»
