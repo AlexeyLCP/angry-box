@@ -2520,4 +2520,14 @@ AGENTS «Product Focus: scope is frozen — do NOT expand». NaiveProxy + Mieru 
 
 **Файлы:** `internal/web/{users,inbounds,routing,chains,misc}.go`, `internal/chain/{applier_build,awg3_capability,awg_push,merged_config,profile_deploy,utilitydeps}.go`, `internal/domain/model/{inbound,panel}.go`, `web/templates/{inbounds,routing,users,chainlevels,utilities}.templ`, `web/static/js/app.js`, `internal/i18n/i18n.go`.
 
+---
+
+## §56. v0.9.3 — адверсариальное ревью панели (2026-08-30)
+
+`GET /api/status` без auth сливал флот. Реле = все клиенты 127.0.0.1. Первый SSH-ключ auto-trust. Стор plaintext без `.key`.
+
+**Сделано:** auth на `/api/status`; XFF только с loopback; NDM режет proxy; TOFU untrusted до модалки; `EnsureStoreKey` на serve; `QuotePOSIX` на SSH-путях; AWG sha256; acme/install.sh fail-closed; HTMX/DaisyUI локально; `/sub` no-store; backup POST; bind-код 128 бит+TTL; импорт без auto-Telegram.
+
+**Файлы:** `cmd/angry-box/main.go`, `internal/{web,ssh,chain,bot,config,takeover,backend/singbox}/*`, `web/templates/{base,nodes,settings}.templ`, `web/static/{js/htmx.min.js,js/theme.js,css/daisyui.min.css}`, `scripts/install.sh`, `.github/workflows/release.yml`.
+
 

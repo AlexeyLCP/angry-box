@@ -4,6 +4,48 @@ All notable changes to Angry-box are documented here. Versions follow a light
 semver: patch (0.x.Y) for fixes/hardening within the v0.2 product focus, minor
 (0.Y.0) for new protocols/features. The format is based on Keep a Changelog.
 
+## [v0.9.3] — 2026-08-30
+
+### 🛡️ Панель больше не отдаёт флот без пароля
+
+Адверсариальное ревью: `GET /api/status` без auth сливал SSH-пароли и транзитные ключи, реле схлопывало всех в 127.0.0.1, первый SSH-ключ принимался молча. Этот релиз закрывает поверхность, а не маскирует симптомы.
+
+**Что изменилось**
+
+- **`/api/status` только с Basic Auth.** Раньше любой, кто достал порт панели (реле, `--listen 0.0.0.0`), забирал hosts+chains целиком.
+- **Реле больше не loopback.** X-Forwarded-For принимается только с 127.0.0.1; NDM-хук режет proxied-запросы. Брутфорс не лочит оператора вместе с атакующим.
+- **Первый SSH-ключ — в модалку, не в trust.** TOFU пишет untrusted; без подтверждения в UI деплой не идёт. Смена ключа как и раньше.
+- **Стор на `serve` всегда AES-256-GCM.** Нет `.key` — генерируется 0600. World-readable ключ — отказ. Тесты без `EnsureStoreKey` остаются plaintext.
+- **SSH-пути в кавычках.** `UploadText`/`DownloadFile`/бэкап/rollback больше не интерполируют путь в shell.
+- **Supply chain fail-closed.** AWG-тарбол с sha256; acme.sh без пина не ставится; `install.sh` сверяет `checksums-sha256.txt` (или `ANGRY_BOX_SHA256`). Unsigned `git clone` tools вырезан.
+- **Клики и кэш.** `frame-ancestors 'none'`; HTMX/DaisyUI с диска, без CDN; `/sub` — `private, no-store`; экспорт стора только POST.
+- **Бот и импорт.** Bind-код 128 бит + TTL 10 мин; импорт 3x-ui не автобиндит Telegram.
+
+**Обновление:** обычный деплой новой версии. Миграций нет. После `serve` рядом со store появится `<store>.key` — копируйте его вместе со стором. Первый захват новой ноды спросит fingerprint. acme.sh на ноде: задайте `ANGRY_ACME_CHECKSUM` или дождитесь пина в следующем релизе.
+
+⚡️ Приятного использования!
+
+---
+
+### 🛡️ The panel no longer dumps the fleet unauthenticated
+
+Adversarial review: unauthenticated `GET /api/status` leaked SSH passwords and transit keys, the panel relay collapsed every client to 127.0.0.1, and the first SSH host key was auto-trusted. This release closes the surface.
+
+**What changed**
+
+- **`/api/status` requires Basic Auth.** Anyone who could hit the panel port (relay, `--listen 0.0.0.0`) used to get hosts+chains wholesale.
+- **Relay is no longer loopback.** X-Forwarded-For is trusted only from 127.0.0.1; the NDM hook rejects proxied requests. Brute-force no longer locks the operator with the attacker.
+- **First SSH key goes to the modal, not to trust.** TOFU stores untrusted; deploy waits for UI confirmation. Key-change behavior unchanged.
+- **`serve` always AES-256-GCM-encrypts the store.** Missing `.key` is generated 0600. A world-readable key is refused. Tests without `EnsureStoreKey` stay plaintext.
+- **SSH paths are quoted.** `UploadText`/`DownloadFile`/backup/rollback no longer interpolate the path into a shell.
+- **Supply chain fail-closed.** AWG tarball sha256-pinned; acme.sh without a pin refuses; `install.sh` checks `checksums-sha256.txt` (or `ANGRY_BOX_SHA256`). Unsigned `git clone` of tools is gone.
+- **Clickjacking and caches.** `frame-ancestors 'none'`; HTMX/DaisyUI self-hosted; `/sub` is `private, no-store`; store export is POST-only.
+- **Bot and import.** Bind codes are 128-bit with a 10-minute TTL; 3x-ui import does not auto-bind Telegram.
+
+**Upgrade:** deploy the new version as usual. No migrations. After `serve`, a `<store>.key` appears next to the store — copy it with the store. Capturing a new node will ask for the fingerprint. acme.sh on a node: set `ANGRY_ACME_CHECKSUM` or wait for a pin in a later release.
+
+⚡️ Enjoy!
+
 ## [v0.9.2] — 2026-08-28
 
 ### 🔧 Клиентские ссылки, Dest/SNI и статус деплоя больше не врут
