@@ -28,6 +28,7 @@ import (
 
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
 	"github.com/alexeylcp/angry-box/internal/singbox/config"
+	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
 // createBackup makes a timestamped backup of the current config under $HOME
@@ -35,6 +36,21 @@ import (
 // PRESERVED (never destroyed by rollback) so a second recovery attempt is
 // always possible. Returns ("", nil) when there is no existing config (first
 // deploy); callers must tolerate that (rollback becomes a no-op restore).
+func safeSystemdUnit(s string) bool {
+	if s == "" || len(s) > 256 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-' || r == '_' || r == '.' || r == '@' || r == ':':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func createBackup(client ports.SSHClient, file string) (string, error) {
 	// Name the backup after the source file's basename so multiple files backed
 	// up in the same second (a multi-file AWG push: awg0.conf + awg-exit-n1.conf
@@ -43,17 +59,23 @@ func createBackup(client ports.SSHClient, file string) (string, error) {
 	// is identical to the old hardcoded behavior. For AWG confs each gets its own
 	// "<basename>.bak" inside the timestamped dir.
 	bakName := filepath.Base(file) + ".bak"
+	qFile, err := sshclient.QuotePOSIX(file)
+	if err != nil {
+		return "", err
+	}
+	qBak, err := sshclient.QuotePOSIX(bakName)
+	if err != nil {
+		return "", err
+	}
 	cmd := `set -e
 HOME_DIR="${HOME:-/tmp}"
 BAK_DIR="$HOME_DIR/sing-box-orch-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BAK_DIR"
-if [ -f "` + file + `" ]; then
-	cp -p "` + file + `" "$BAK_DIR/` + bakName + `"
-	echo "$BAK_DIR/` + bakName + `"
+if [ -f ` + qFile + ` ]; then
+	cp -p ` + qFile + ` "$BAK_DIR"/` + qBak + `
+	echo "$BAK_DIR"/` + qBak + `
 else
-	# No prior config — record an empty backup path so the caller knows rollback
-	# is unavailable, but still return the marker dir for consistency.
-	echo "$BAK_DIR/` + bakName + `"
+	echo "$BAK_DIR"/` + qBak + `
 fi`
 	out, err := client.Run(cmd)
 	return strings.TrimSpace(out), err
@@ -66,12 +88,23 @@ func performRollback(client ports.SSHClient, file, backupPath, serviceName strin
 	if backupPath == "" {
 		return fmt.Errorf("no backup path provided")
 	}
+	qBak, err := sshclient.QuotePOSIX(backupPath)
+	if err != nil {
+		return err
+	}
+	qFile, err := sshclient.QuotePOSIX(file)
+	if err != nil {
+		return err
+	}
+	if !safeSystemdUnit(serviceName) {
+		return fmt.Errorf("rollback: unsafe service name %q", serviceName)
+	}
 	cmd := fmt.Sprintf(`test -f %s && cp %s %s; systemctl restart %s; sleep 2; systemctl is-active --quiet %s || true`,
-		backupPath, backupPath, file, serviceName, serviceName)
+		qBak, qBak, qFile, serviceName, serviceName)
 	if useSudo {
 		cmd = fmt.Sprintf("sudo bash -c '%s'", strings.ReplaceAll(cmd, "'", `'\''`))
 	}
-	_, err := client.Run(cmd)
+	_, err = client.Run(cmd)
 	if err != nil {
 		slog.Error("deploy: rollback FAILED",
 			"file", file, "backup", backupPath, "service", serviceName, "err", err)
@@ -84,7 +117,11 @@ func performRollback(client ports.SSHClient, file, backupPath, serviceName strin
 
 // cleanupBackups keeps only the last 5 backups.
 func cleanupBackups(client ports.SSHClient, file string) {
-	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, file))
+	qFile, err := sshclient.QuotePOSIX(file)
+	if err != nil {
+		return
+	}
+	client.Run(fmt.Sprintf(`ls -t %s.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true`, qFile))
 }
 
 // pushConfig writes the config to the remote host with the reliable deploy

@@ -851,6 +851,11 @@ func serveCmd() {
 	// just point them at the right copy.
 	warnLegacyStore(storePath)
 
+	if err := chain.EnsureStoreKey(storePath); err != nil {
+		fmt.Fprintf(os.Stderr, "error: store encryption key: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Single-instance: refuse a second `serve` against the same store. Two
 	// daemons on one store diverge the fleet (the tester's split-brain root
 	// cause). The lock auto-releases on exit/crash.
@@ -911,7 +916,7 @@ func serveCmd() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
 	})
 
-	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /api/status", web.BasicAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s := chain.NewStore(storePath)
 		hosts, _ := s.ListHosts()
 		chains, _ := s.ListChains()
@@ -921,7 +926,7 @@ func serveCmd() {
 			"hosts":  hosts,
 			"chains": chains,
 		})
-	})
+	}), cfg))
 
 	scheme := "http"
 	useTLS := *tlsCert != "" && *tlsKey != ""
@@ -954,7 +959,7 @@ func serveCmd() {
 	// cookie SameSite attributes, so cross-origin POSTs from a malicious page
 	// can otherwise be submitted in an admin's session (e.g. the historical
 	// /ui/settings "auth_enabled" toggle that opened the whole panel).
-	handler := web.CSRSMiddleware(mux)
+	handler := web.SecurityHeadersMiddleware(web.CSRSMiddleware(mux))
 	srv := &http.Server{
 		Addr: *listen,
 		Handler: handler,

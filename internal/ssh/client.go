@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -34,11 +35,22 @@ type HostKeyManager interface {
 	GetKnownHost(addr string) (*model.KnownHost, error)
 }
 
-var globalManager HostKeyManager
+var (
+	globalManager HostKeyManager
+	managerMu     sync.Mutex
+)
 
 // SetHostKeyManager sets the global host key manager.
 func SetHostKeyManager(m HostKeyManager) {
+	managerMu.Lock()
+	defer managerMu.Unlock()
 	globalManager = m
+}
+
+func currentHostKeyManager() HostKeyManager {
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	return globalManager
 }
 
 // KeyResolver is used to retrieve SSH private keys from the database by ID.
@@ -102,22 +114,19 @@ func Connect(addr, user, keyPath string) (*Client, error) {
 		authMethod = ssh.PublicKeys(signer)
 	}
 
+	mgr := currentHostKeyManager()
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
 			authMethod,
 		},
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-			if globalManager != nil {
-				// Use hostname from SSH (the actual host/IP we connected to), not the
-				// full addr which may include port. For known_hosts matching, we also
-				// try the original addr (without port) as fallback.
-				return globalManager.CheckHostKey(hostname, key)
+			if mgr != nil {
+				return mgr.CheckHostKey(hostname, key)
 			}
-			// Fallback: if no manager configured, refuse connection
 			return fmt.Errorf("ssh host key verification failed: no HostKeyManager configured")
 		},
-		Timeout:         15 * time.Second,
+		Timeout: 15 * time.Second,
 	}
 
 	// Ensure addr has a port; default to 22.
@@ -221,10 +230,11 @@ func (c *Client) UploadText(ctx context.Context, content, remotePath string, mod
 	}
 	defer session.Close()
 
-	// We pipe content to cat's stdin; the command itself only sets the path
-	// and mode, never the content, so the content is not subject to shell
-	// expansion.
-	cmd := fmt.Sprintf("cat > %s && chmod %o %s", remotePath, mode, remotePath)
+	q, err := QuotePOSIX(remotePath)
+	if err != nil {
+		return fmt.Errorf("ssh: upload path: %w", err)
+	}
+	cmd := fmt.Sprintf("cat > %s && chmod %o %s", q, mode, q)
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("ssh: stdin pipe: %w", err)
@@ -332,7 +342,12 @@ func (c *Client) DownloadFile(ctx context.Context, remotePath string) ([]byte, e
 	var out bytes.Buffer
 	session.Stdout = &out
 	go func() {
-		done <- session.Run(fmt.Sprintf("base64 -w0 %s 2>/dev/null || base64 %s", remotePath, remotePath))
+		q, qerr := QuotePOSIX(remotePath)
+		if qerr != nil {
+			done <- qerr
+			return
+		}
+		done <- session.Run(fmt.Sprintf("base64 -w0 %s 2>/dev/null || base64 %s", q, q))
 	}()
 	select {
 	case err := <-done:
@@ -421,8 +436,11 @@ func InstallPublicKey(addr, user, password, privKeyPath string) error {
 	pubKeyStr := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
 	pubKeyStr = strings.TrimSpace(pubKeyStr)
 
-	// Add to remote authorized_keys
-	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "%s" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`, pubKeyStr)
+	qpub, err := QuotePOSIX(pubKeyStr)
+	if err != nil {
+		return fmt.Errorf("install pub key: %w", err)
+	}
+	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo %s >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`, qpub)
 	_, err = client.Run(cmd)
 	if err != nil {
 		return fmt.Errorf("install pub key: %w", err)

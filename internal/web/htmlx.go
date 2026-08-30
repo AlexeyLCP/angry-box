@@ -20,6 +20,14 @@ func escHTML(s string) string {
 	return html.EscapeString(s)
 }
 
+func alertError(msg string) *simpleHTML {
+	return &simpleHTML{html: `<div class="alert alert-error"><span>` + escHTML(msg) + `</span></div>`}
+}
+
+func alertSuccess(msg string) *simpleHTML {
+	return &simpleHTML{html: `<div class="alert alert-success"><span>` + escHTML(msg) + `</span></div>`}
+}
+
 // shortHex returns s if its length is within n bytes, else s truncated to n
 // bytes followed by an ellipsis. Used to preview long hex strings (e.g. AWG
 // CPS I1-I5 packets) inline without overflowing the UI. Byte-based truncation

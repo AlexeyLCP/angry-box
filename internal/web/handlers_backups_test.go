@@ -28,7 +28,7 @@ func addStoredNode(t *testing.T, ts *testServer, id, addr string) {
 func TestHandler_ExportStoreBackup(t *testing.T) {
 	ts := newTestServer(t)
 	addStoredNode(t, ts, "n1", "1.1.1.1:22")
-	w := ts.get("/ui/backup/store")
+	w := ts.post("/ui/backup/store", url.Values{})
 	ts.assertStatus(w, http.StatusOK)
 	if ct := w.Header().Get("Content-Type"); ct != "application/octet-stream" {
 		t.Errorf("Content-Type: got %q want application/octet-stream", ct)
@@ -48,7 +48,7 @@ func TestHandler_ExportNodeBackup(t *testing.T) {
 	ts := newTestServer(t)
 	addStoredNode(t, ts, "n1", "1.1.1.1:22")
 
-	w := ts.get("/ui/backup/nodes/n1")
+	w := ts.post("/ui/backup/nodes/n1", url.Values{})
 	ts.assertStatus(w, http.StatusOK)
 	if cd := w.Header().Get("Content-Disposition"); cd == "" || !strings.Contains(cd, "angry-box-node-n1.json") {
 		t.Errorf("Content-Disposition: got %q, want angry-box-node-n1.json attachment", cd)
@@ -58,7 +58,7 @@ func TestHandler_ExportNodeBackup(t *testing.T) {
 	}
 
 	// Unknown ID → 404.
-	w2 := ts.get("/ui/backup/nodes/ghost")
+	w2 := ts.post("/ui/backup/nodes/ghost", url.Values{})
 	ts.assertStatus(w2, http.StatusNotFound)
 }
 
@@ -70,7 +70,7 @@ func TestHandler_ImportBackup_NodeRoundtrip(t *testing.T) {
 	addStoredNode(t, src, "n1", "1.1.1.1:22")
 	src.srv.store().SaveChain(&model.Chain{Name: "c1", Nodes: []model.ChainNode{{ID: "n1"}}})
 
-	w := src.get("/ui/backup/nodes/n1")
+	w := src.post("/ui/backup/nodes/n1", url.Values{})
 	ts2 := newTestServer(t)
 	ts2.srv.store().SaveChain(&model.Chain{Name: "c1", Nodes: []model.ChainNode{{ID: "n1"}}})
 	w2 := ts2.post("/ui/backup/import", url.Values{"backup_json": {w.Body.String()}})
@@ -88,7 +88,7 @@ func TestHandler_ImportBackup_StoreRoundtrip(t *testing.T) {
 	addStoredNode(t, src, "n1", "1.1.1.1:22")
 	addStoredNode(t, src, "n2", "2.2.2.2:22")
 
-	w := src.get("/ui/backup/store")
+	w := src.post("/ui/backup/store", url.Values{})
 	ts2 := newTestServer(t)
 	w2 := ts2.post("/ui/backup/import", url.Values{"backup_json": {w.Body.String()}})
 	ts2.assertStatus(w2, http.StatusOK)
@@ -106,7 +106,7 @@ func TestHandler_ImportBackup_StoreRoundtrip(t *testing.T) {
 func TestHandler_ImportBackup_RefusesNonEmptyStore(t *testing.T) {
 	src := newTestServer(t)
 	addStoredNode(t, src, "n1", "1.1.1.1:22")
-	payload := src.get("/ui/backup/store").Body.String()
+	payload := src.post("/ui/backup/store", url.Values{}).Body.String()
 
 	dst := newTestServer(t)
 	addStoredNode(t, dst, "existing", "9.9.9.9:22") // non-empty target
@@ -143,7 +143,7 @@ func TestHandler_ImportBackup_EmptyPayload(t *testing.T) {
 func TestHandler_ImportBackup_ForceOverwritesStore(t *testing.T) {
 	src := newTestServer(t)
 	addStoredNode(t, src, "n1", "1.1.1.1:22")
-	payload := src.get("/ui/backup/store").Body.String()
+	payload := src.post("/ui/backup/store", url.Values{}).Body.String()
 
 	dst := newTestServer(t)
 	addStoredNode(t, dst, "existing", "9.9.9.9:22")

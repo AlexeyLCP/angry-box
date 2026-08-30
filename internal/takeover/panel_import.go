@@ -63,9 +63,6 @@ func ConvertPanelImport(nodeID string, db *PanelDB) *PanelImportResult {
 			if a, ok := users["email:"+email]; ok {
 				if tgKey != "" {
 					users[tgKey] = a
-					if a.u.TelegramID == 0 {
-						a.u.TelegramID = c.TgID
-					}
 				}
 				return a
 			}
@@ -78,10 +75,12 @@ func ConvertPanelImport(nodeID string, db *PanelDB) *PanelImportResult {
 			name = fmt.Sprintf("tg-%d", c.TgID)
 		}
 		u := &model.User{
-			Name:       name,
-			Active:     c.Enable,
-			TelegramID: c.TgID,
-			CreatedAt:  time.Now(),
+			Name:      name,
+			Active:    c.Enable,
+			CreatedAt: time.Now(),
+		}
+		if c.TgID != 0 {
+			res.note("user %q: telegram id %d not auto-bound — issue /link", name, c.TgID)
 		}
 		if c.ExpiryTime > 0 {
 			u.ExpiresAt = time.UnixMilli(c.ExpiryTime)

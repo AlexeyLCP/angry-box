@@ -18,12 +18,8 @@ package chain
 //     root-attacker on the orchestrator host (who can read the key file +
 //     memory); that requires process isolation / HSM, out of scope.
 //
-// The key file is NOT generated automatically — the operator must explicitly
-// create it (e.g. `head -c 32 /dev/urandom > /var/lib/angry-box/store.json.key
-// && chmod 600 store.json.key && chown angry-box:angry-box store.json.key`),
-// then restart the service. The next writeStore encrypts the store. This
-// makes opt-in explicit and avoids surprising operators who rely on the
-// store being human-readable for debugging.
+// serve calls EnsureStoreKey so a daemon never writes plaintext. Tests that
+// construct NewStore without EnsureStoreKey stay in legacy plaintext mode.
 
 import (
 	"crypto/aes"
@@ -31,8 +27,10 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // encMagic is the 6-byte header prepended to an encrypted store.json so
@@ -53,13 +51,23 @@ func masterKeyPath(storePath string) string {
 }
 
 // loadMasterKey reads the 32-byte master key from keyPath. Returns nil key
-// and nil error if the file does not exist (legacy plaintext mode). Returns
-// an error if the file exists but is not 32 bytes.
+// and nil error if the file does not exist (legacy plaintext mode for tests).
+// Returns an error if the file exists but is not 32 bytes, or (Unix) is
+// group/world-readable.
 func loadMasterKey(keyPath string) ([]byte, error) {
-	data, err := os.ReadFile(keyPath)
+	info, err := os.Stat(keyPath)
 	if os.IsNotExist(err) {
-		return nil, nil // legacy plaintext mode
+		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("store: stat master key: %w", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			return nil, fmt.Errorf("store: master key %s has mode %o; require 0600", keyPath, perm)
+		}
+	}
+	data, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("store: read master key: %w", err)
 	}
@@ -67,6 +75,19 @@ func loadMasterKey(keyPath string) ([]byte, error) {
 		return nil, ErrShortMasterKey
 	}
 	return data, nil
+}
+
+// EnsureStoreKey creates a 0600 master key next to the store if none exists.
+// Called from serve so a daemon never writes a plaintext store. Tests that
+// use NewStore without this helper stay in plaintext mode.
+func EnsureStoreKey(storePath string) error {
+	kp := masterKeyPath(storePath)
+	if _, err := os.Stat(kp); os.IsNotExist(err) {
+		log.Printf("store: generating master key at %s (mode 0600)", kp)
+		return GenerateMasterKey(kp)
+	}
+	_, err := loadMasterKey(kp)
+	return err
 }
 
 // encryptStore encrypts data with AES-256-GCM and prepends encMagic so

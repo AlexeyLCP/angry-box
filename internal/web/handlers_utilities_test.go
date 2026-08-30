@@ -75,6 +75,7 @@ func utilityInstallRules() []webFakeRule {
 		{substring: "/opt/angry-box/caddy/caddy version", out: "NOT_INSTALLED"},
 		{substring: "uname -m", out: "x86_64\n"},
 		{substring: "acme.sh && echo OK", out: "MISSING"},
+		{substring: "ab-acme-install", out: ""},
 		{substring: "caddy validate", out: ""},
 		{substring: "is-active", out: "active"},
 	}
@@ -83,6 +84,8 @@ func utilityInstallRules() []webFakeRule {
 func TestHandler_Utilities_InstallAll(t *testing.T) {
 	t.Setenv("ANGRY_CADDY_CHECKSUM", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	t.Setenv("ANGRY_CADDY_URL", "https://example.com/caddy.tar.gz")
+	t.Setenv("ANGRY_ACME_CHECKSUM", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	t.Setenv("ANGRY_ACME_URL", "https://example.com/acme.tar.gz")
 	ts, ssh := utilityTestServer(t, utilityInstallRules()...)
 	st := ts.srv.store()
 

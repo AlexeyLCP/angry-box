@@ -10,30 +10,16 @@ templ Base(title string, content templ.Component) {
 	<!DOCTYPE html>
 	<html lang={ i18n.Lang(ctx) } data-theme="sand">
 	<head>
-		<script>
-			// Pre-paint theme application (prevents FOUC). Migrate the old
-			// Tokyo Night localStorage values to the new theme names so an
-			// existing user keeps a sensible theme.
-			(function(){
-				var t = localStorage.getItem('angrybox-theme') || 'sand';
-				var legacy = { 'tokyonight':'graphite','tokyonight-day':'sand','tokyonight-storm':'graphite','dark':'graphite','light':'sand' };
-				if (legacy[t]) t = legacy[t];
-				var valid = ['sand','slate','graphite','night'];
-				if (valid.indexOf(t) < 0) t = 'sand';
-				document.documentElement.setAttribute('data-theme', t);
-			})();
-		</script>
+		<script src="/static/js/theme.js"></script>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<meta name="theme-color" content="#f6f2ea">
 		<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg" />
 		<title>{ title } | Angry-BOX</title>
 
-		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 		<link href="/static/css/fonts.css" rel="stylesheet" />
-		<link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet" type="text/css" />
-		<script src="https://cdn.tailwindcss.com"></script>
-		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+		<link href="/static/css/daisyui.min.css" rel="stylesheet" type="text/css" />
+		<script src="/static/js/htmx.min.js"></script>
 
 		<style>
 			html, body { overflow-x: hidden; max-width: 100vw; }

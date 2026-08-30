@@ -179,8 +179,7 @@ func Load(path string) (*Config, error) {
 
 		log.Println("=========================================================")
 		log.Println("WARNING: No admin password found in config.")
-		log.Printf("Generated random password for '%s': %s\n", cfg.AuthUsername, randomPass)
-		log.Printf("Also written to: %s (delete after saving)\n", passFile)
+		log.Printf("Generated random password for '%s' — written to %s (mode 0600; delete after saving).\n", cfg.AuthUsername, passFile)
 		log.Println("Please save this password or change it in Settings -> Auth.")
 		log.Println("=========================================================")
 	}

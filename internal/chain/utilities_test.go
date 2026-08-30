@@ -7,6 +7,17 @@ import (
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
 
+func TestValidTLSDomain(t *testing.T) {
+	if !ValidTLSDomain("example.com") || !ValidTLSDomain("panel.example.com") {
+		t.Fatal("good domains rejected")
+	}
+	for _, bad := range []string{"", "localhost", "../../tmp", "evil.com;id", "a b.com", "example.com/x"} {
+		if ValidTLSDomain(bad) {
+			t.Fatalf("%q must be invalid", bad)
+		}
+	}
+}
+
 func TestRemapInboundPorts(t *testing.T) {
 	inbounds := []model.NodeInbound{
 		{Protocol: "vless-reality", Port: 443}, // owned -> remap

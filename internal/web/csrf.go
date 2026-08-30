@@ -102,12 +102,7 @@ func equalOrigin(headerValue, panelHost string) bool {
 	if err != nil || u.Host == "" {
 		return false
 	}
-	// Reject https-origin requests against an http panel and vice versa.
-	// The panel listens on plain http; an https Origin would indicate a
-	// different origin (e.g. a TLS-terminating reverse proxy in front of a
-	// differently-named public host). Be conservative and require matching
-	// scheme == http when the panel itself is http.
-	if u.Scheme != "" && u.Scheme != "http" {
+	if u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
 	return strings.ToLower(u.Host) == panelHost

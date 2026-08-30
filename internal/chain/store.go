@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -1113,20 +1114,19 @@ func (s *Store) CheckHostKey(addr string, remoteKey ssh.PublicKey) error {
 
 	kh, err := s.GetKnownHost(addr)
 	if err != nil {
-		// TOFU: save automatically as trusted.
 		newKH := &model.KnownHost{
 			Addr:        addr,
 			Fingerprint: fingerprint,
 			FirstSeen:   timeNow(),
-			Trusted:     true,
+			Trusted:     false,
 		}
 		if err := s.SaveKnownHost(newKH); err != nil {
-			// TOFU trust-on-first-use: the host is accepted this run, but if the
-			// known-hosts table can't be persisted the next connection will
-			// re-trigger TOFU. Log so the operator sees the state isn't sticky.
 			log.Printf("store: TOFU save known-host failed for %s: %v", addr, err)
 		}
-		return nil // trust on first use
+		return &sshclient.HostKeyError{
+			RemoteFingerprint: fingerprint,
+			Changed:           false,
+		}
 	}
 
 	if kh.Fingerprint != fingerprint {
@@ -1169,7 +1169,10 @@ func (s *Store) ResolveKey(keyID string) (string, bool) {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			fileName := strings.TrimPrefix(keyID, "system-")
-			path := home + "/.ssh/" + fileName
+			if fileName == "" || fileName != filepath.Base(fileName) || strings.Contains(fileName, "..") {
+				return "", false
+			}
+			path := filepath.Join(home, ".ssh", fileName)
 			data, err := os.ReadFile(path)
 			if err == nil {
 				return string(data), true

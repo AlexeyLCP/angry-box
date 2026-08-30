@@ -724,21 +724,26 @@ func TestGetKnownHost_NotFound(t *testing.T) {
 
 func TestCheckHostKey_TOFU(t *testing.T) {
 	s := tempStore(t)
-	// Use a real ed25519 key for fingerprint
 	pubKey := testPubKey(t)
 
 	err := s.CheckHostKey("new-host", pubKey)
-	if err != nil {
-		t.Fatalf("TOFU should succeed: %v", err)
+	if err == nil {
+		t.Fatal("first-seen host key must not auto-trust")
+	}
+	hkErr, ok := err.(*sshclient.HostKeyError)
+	if !ok {
+		t.Fatalf("expected *HostKeyError, got %T", err)
+	}
+	if hkErr.Changed {
+		t.Error("first seen is untrusted, not changed")
 	}
 
-	// Verify it was saved
 	kh, err := s.GetKnownHost("new-host")
 	if err != nil {
 		t.Fatalf("should be saved after TOFU: %v", err)
 	}
-	if !kh.Trusted {
-		t.Error("TOFU key should be trusted")
+	if kh.Trusted {
+		t.Error("TOFU key must stay untrusted until the operator confirms")
 	}
 }
 
@@ -746,8 +751,7 @@ func TestCheckHostKey_Changed(t *testing.T) {
 	s := tempStore(t)
 	pub1 := testPubKey(t)
 
-	// First use — TOFU
-	s.CheckHostKey("host-x", pub1)
+	s.SaveKnownHost(&model.KnownHost{Addr: "host-x", Fingerprint: ssh.FingerprintSHA256(pub1), Trusted: true})
 
 	// Second use with different key — should reject
 	// Generate a different key by using a different seed
@@ -773,6 +777,16 @@ func TestCheckHostKey_Untrusted(t *testing.T) {
 	err := s.CheckHostKey("untrusted-host", pub)
 	if err == nil {
 		t.Fatal("expected HostKeyError for untrusted key")
+	}
+}
+
+func TestResolveKey_RejectsTraversal(t *testing.T) {
+	s := tempStore(t)
+	if data, ok := s.ResolveKey("system-../store.json.key"); ok || data != "" {
+		t.Fatal("traversal key id must not resolve")
+	}
+	if data, ok := s.ResolveKey(`system-..\..\etc\passwd`); ok || data != "" {
+		t.Fatal("windows traversal key id must not resolve")
 	}
 }
 

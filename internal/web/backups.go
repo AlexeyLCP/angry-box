@@ -29,8 +29,8 @@ import (
 // registerBackupRoutes wires the backup export/import endpoints. All under
 // s.auth (CSRF middleware applies to the POST).
 func (s *Server) registerBackupRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /ui/backup/store", s.auth(s.handleExportStoreBackup))
-	mux.HandleFunc("GET /ui/backup/nodes/{id}", s.auth(s.handleExportNodeBackup))
+	mux.HandleFunc("POST /ui/backup/store", s.auth(s.handleExportStoreBackup))
+	mux.HandleFunc("POST /ui/backup/nodes/{id}", s.auth(s.handleExportNodeBackup))
 	mux.HandleFunc("POST /ui/backup/import", s.auth(s.handleImportBackup))
 	mux.HandleFunc("POST /ui/backup/offsite/now", s.auth(s.handleBackupNow))
 	mux.HandleFunc("POST /ui/backup/offsite/save", s.auth(s.handleSaveOffsite))
@@ -39,6 +39,21 @@ func (s *Server) registerBackupRoutes(mux *http.ServeMux) {
 // handleBackupNow triggers one encrypted offsite backup push immediately (P2a).
 // Uses the saved OffsiteBackupConfig; refuses 400 if not configured. Swaps an
 // alert (success/error) back into the settings Backups card via HTMX.
+func validOffsitePath(p string) bool {
+	if p == "" || !strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
+		return false
+	}
+	for _, r := range p {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '/' || r == '.' || r == '_' || r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) handleBackupNow(w http.ResponseWriter, r *http.Request) {
 	st := s.store()
 	settings, err := st.GetSettings()
@@ -50,11 +65,11 @@ func (s *Server) handleBackupNow(w http.ResponseWriter, r *http.Request) {
 	cfg := settings.OffsiteBackup
 	if perr := chain.PushOffsiteBackup(r.Context(), st, cfg, s.SSHConnector()); perr != nil {
 		chain.WriteAudit(st, "backup", "offsite", "", chain.AuditPayload{"target": cfg.Host, "error": perr.Error()}, "operator")
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Backup failed") + `: ` + perr.Error() + `</span></div>`})
+		s.render(w, r, alertError(i18n.T(r.Context(), "Backup failed")+": "+perr.Error()))
 		return
 	}
 	chain.WriteAudit(st, "backup", "offsite", "", chain.AuditPayload{"target": cfg.Host, "path": cfg.RemotePath, "success": true}, "operator")
-	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Backup sent to offsite target") + `: ` + cfg.Host + `</span></div>`})
+	s.render(w, r, alertSuccess(i18n.T(r.Context(), "Backup sent to offsite target")+": "+cfg.Host))
 }
 
 // handleExportStoreBackup streams the entire panel as a plaintext JSON backup
@@ -134,7 +149,7 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		}
 		plain, err := chain.DecryptBackup(data, pass)
 		if err != nil {
-			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "import failed") + `: ` + err.Error() + `</span></div>`})
+			s.render(w, r, alertError(i18n.T(r.Context(), "import failed")+": "+err.Error()))
 			return
 		}
 		data = plain
@@ -142,14 +157,14 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 
 	format, err := chain.DetectBackupFormat(data)
 	if err != nil {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid backup JSON") + `: ` + err.Error() + `</span></div>`})
+		s.render(w, r, alertError(i18n.T(r.Context(), "Invalid backup JSON")+": "+err.Error()))
 		return
 	}
 
 	switch format {
 	case chain.BackupFormatStore:
 		if err := s.store().ImportStore(data, force); err != nil {
-			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "import failed") + `: ` + err.Error() + `</span></div>`})
+			s.render(w, r, alertError(i18n.T(r.Context(), "import failed")+": "+err.Error()))
 			return
 		}
 		// A store import replaces the whole panel; reload the page so the UI
@@ -159,20 +174,16 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	case chain.BackupFormatNode:
 		var b chain.NodeBackup
 		if err := json.Unmarshal(data, &b); err != nil {
-			s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "Invalid backup JSON") + `: ` + err.Error() + `</span></div>`})
+			s.render(w, r, alertError(i18n.T(r.Context(), "Invalid backup JSON")+": "+err.Error()))
 			return
 		}
 		if err := s.store().ImportNode(&b, force); err != nil {
-			// ImportNode returns a wrapped error when chains were skipped (the
-			// node itself was restored). Surface it as a warning, not a failure.
 			msg := err.Error()
-			alert := "alert-error"
-			text := i18n.T(r.Context(), "import failed")
 			if strings.Contains(msg, "skipped missing chains") {
-				alert = "alert-warning"
-				text = i18n.T(r.Context(), "Node imported")
+				s.render(w, r, alertSuccess(i18n.T(r.Context(), "Node imported")+": "+msg))
+				return
 			}
-			s.render(w, r, &simpleHTML{html: `<div class="alert ` + alert + `"><span>` + text + `: ` + msg + `</span></div>`})
+			s.render(w, r, alertError(i18n.T(r.Context(), "import failed")+": "+msg))
 			return
 		}
 		w.Header().Set("HX-Refresh", "true")
@@ -216,6 +227,10 @@ func (s *Server) handleSaveOffsite(w http.ResponseWriter, r *http.Request) {
 		ob.User = strings.TrimSpace(r.FormValue("offsite_user"))
 		ob.SSHKeyID = strings.TrimSpace(r.FormValue("offsite_ssh_key_id"))
 		ob.RemotePath = strings.TrimSpace(r.FormValue("offsite_remote_path"))
+		if ob.RemotePath != "" && !validOffsitePath(ob.RemotePath) {
+			s.render(w, r, alertError(i18n.T(r.Context(), "invalid offsite path")))
+			return
+		}
 		// Empty passphrase = keep current (so a routine save does not wipe it).
 		if pp := strings.TrimSpace(r.FormValue("offsite_passphrase")); pp != "" {
 			ob.Passphrase = pp
@@ -227,14 +242,19 @@ func (s *Server) handleSaveOffsite(w http.ResponseWriter, r *http.Request) {
 			ob.Retention, _ = strconv.Atoi(rv)
 		}
 		if sv := strings.TrimSpace(r.FormValue("offsite_scrypt_n")); sv != "" {
-			ob.ScryptN, _ = strconv.Atoi(sv)
+			n, _ := strconv.Atoi(sv)
+			if err := chain.ValidateScryptParams(n, chain.BackupScryptR, chain.BackupScryptP); err != nil {
+				s.render(w, r, alertError(err.Error()))
+				return
+			}
+			ob.ScryptN = n
 		}
 		settings.OffsiteBackup = ob
 	}
 
 	if err := st.SaveSettings(settings); err != nil {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "save: %v") + `: ` + err.Error() + `</span></div>`})
+		s.render(w, r, alertError(i18n.T(r.Context(), "save: %v")+": "+err.Error()))
 		return
 	}
-	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Offsite backup settings saved") + `</span></div>`})
+	s.render(w, r, alertSuccess(i18n.T(r.Context(), "Offsite backup settings saved")))
 }

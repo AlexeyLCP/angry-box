@@ -22,8 +22,8 @@ The `Store` (`internal/chain/store.go`) uses a `sync.Mutex` and writes to a JSON
 ### 3. SSH TOFU (Trust On First Use)
 Remote connections use SSH. 
 - Host keys are verified via `CheckHostKey`.
-- If a key changes, the deploy fails, and the user must explicitly approve the new fingerprint via the UI (`HostKeyWarning` modal).
-- Do not bypass this security mechanism.
+- First-seen keys are stored **untrusted** and the connection is refused until the operator confirms the fingerprint in the UI (`HostKeyWarning` modal). Same modal for a later key change.
+- Do not auto-trust. Do not bypass this security mechanism.
 
 ### 4. Config Generation Separation
 - `internal/singbox/config/types.go`: The base sing-box config structures + standalone generation — including `AwgEndpointOptions` (carries jc/jmin/jmax/s1-s4/h1-h4/i1-i5 flat + AWG3 HeaderProtectionKey/ContentPaddingAddition/RekeyAfterTime, see #5).

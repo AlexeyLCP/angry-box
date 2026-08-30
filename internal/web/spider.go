@@ -117,12 +117,12 @@ func (s *Server) handleCreateSpiderLink(w http.ResponseWriter, r *http.Request) 
 	// Resolve hosts (validates both ends exist).
 	fromHost, err := st.GetHost(fromNode)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), fromNode), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), escHTML(fromNode)), http.StatusBadRequest)
 		return
 	}
 	toHost, err := st.GetHost(toNode)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), toNode), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf(i18n.T(r.Context(), "host %q not found"), escHTML(toNode)), http.StatusBadRequest)
 		return
 	}
 

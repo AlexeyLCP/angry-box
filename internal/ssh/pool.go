@@ -218,14 +218,19 @@ func (p *Pool) entryUsable(e *poolEntry, addr, resolvedKey string) bool {
 // manager, we wrap at the manager level for the duration of this dial: install
 // a forwarding manager that records the fingerprint then delegates to the real
 // one. This avoids changing the inner connector's signature.
+// ponytail: one capture-dial at a time. The global HostKeyManager wrap is not
+// safe to overlap; serialize if first-dials ever contend.
+var dialCaptureMu sync.Mutex
+
 func (p *Pool) dialWithFingerprintCapture(addr, user, keyPath string, fpOut *string) (ports.SSHClient, error) {
-	// Capture the fingerprint by wrapping the global host-key manager for this
-	// dial only. If no manager is wired, dial straight through (fpOut stays "").
-	if p.hostKey != nil {
-		prev := globalManager
-		globalManager = &fingerprintCapturingManager{delegate: prev, addr: hostOnly(addr), fpOut: fpOut}
-		defer func() { globalManager = prev }()
+	if p.hostKey == nil {
+		return p.inner.Connect(addr, user, keyPath)
 	}
+	dialCaptureMu.Lock()
+	defer dialCaptureMu.Unlock()
+	prev := currentHostKeyManager()
+	SetHostKeyManager(&fingerprintCapturingManager{delegate: prev, addr: hostOnly(addr), fpOut: fpOut})
+	defer SetHostKeyManager(prev)
 	return p.inner.Connect(addr, user, keyPath)
 }
 
@@ -344,7 +349,7 @@ func (m *fingerprintCapturingManager) CheckHostKey(addr string, remoteKey ssh.Pu
 	if m.delegate != nil {
 		return m.delegate.CheckHostKey(addr, remoteKey)
 	}
-	return nil
+	return fmt.Errorf("ssh: no host-key manager")
 }
 
 func (m *fingerprintCapturingManager) GetKnownHost(addr string) (*model.KnownHost, error) {

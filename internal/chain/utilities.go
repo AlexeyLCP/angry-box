@@ -2,10 +2,18 @@ package chain
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 )
+
+var tlsDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+func ValidTLSDomain(d string) bool {
+	d = strings.ToLower(strings.TrimSpace(d))
+	return d != "" && len(d) <= 253 && tlsDomainRe.MatchString(d)
+}
 
 // ─── Node utilities ("spinal cord") ──────────────────────────────────────────
 // The node-side utility bundle: caddy (layer4 SNI router owning 80/443) +
@@ -205,6 +213,9 @@ func CaddyFrontedHosts(info *model.NodeInfo) map[int]string {
 // (acme.sh --install-cert targets; sing-box TLS inbounds reference the same
 // files so one cert serves both layers).
 func CertPaths(domain string) (cert, key string) {
+	if !ValidTLSDomain(domain) {
+		return "", ""
+	}
 	return CertRoot + "/" + domain + "/fullchain.pem", CertRoot + "/" + domain + "/key.pem"
 }
 
@@ -218,8 +229,8 @@ func CertPaths(domain string) (cert, key string) {
 //     + panel.<domain> relay reverse-proxy.
 //   - internal HTTP listener — acme-challenge file_server, redirect otherwise.
 func RenderCaddyfile(p CaddyPlan) (string, error) {
-	if strings.TrimSpace(p.Domain) == "" {
-		return "", fmt.Errorf("caddyfile: empty domain")
+	if !ValidTLSDomain(p.Domain) {
+		return "", fmt.Errorf("caddyfile: invalid domain")
 	}
 	cert, key := CertPaths(p.Domain)
 	var b strings.Builder

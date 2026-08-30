@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/chain"
@@ -167,22 +168,32 @@ func (b *Bot) handleStart(ctx context.Context, chatID, from int64, code string) 
 		b.send(ctx, chatID, fmt.Sprintf(b.t("Bot start hint"), from))
 		return
 	}
+	if !bindAllowed(from) {
+		b.send(ctx, chatID, b.t("Bot code not found"))
+		return
+	}
 	users, _ := b.store.ListUsers()
 	for _, u := range users {
-		if u.TelegramBindCode != "" && strings.EqualFold(u.TelegramBindCode, code) {
-			u.TelegramID = from
-			u.TelegramBindCode = ""
-			if err := b.store.SaveUser(u); err != nil {
-				b.send(ctx, chatID, "error: "+err.Error())
-				return
-			}
-			chain.WriteAudit(b.store, "telegram-bind", "user", u.ID, chain.AuditPayload{
-				"telegram_id": from,
-			}, "bot")
-			b.send(ctx, chatID, fmt.Sprintf(b.t("Bot bound"), u.Name))
+		if u.TelegramBindCode == "" || !strings.EqualFold(u.TelegramBindCode, code) {
+			continue
+		}
+		if u.TelegramBindCodeAt.IsZero() || time.Since(u.TelegramBindCodeAt) > bindCodeTTL {
+			continue
+		}
+		u.TelegramID = from
+		u.TelegramBindCode = ""
+		u.TelegramBindCodeAt = time.Time{}
+		if err := b.store.SaveUser(u); err != nil {
+			b.send(ctx, chatID, "error: "+err.Error())
 			return
 		}
+		chain.WriteAudit(b.store, "telegram-bind", "user", u.ID, chain.AuditPayload{
+			"telegram_id": from,
+		}, "bot")
+		b.send(ctx, chatID, fmt.Sprintf(b.t("Bot bound"), u.Name))
+		return
 	}
+	bindRecordFail(from)
 	b.send(ctx, chatID, b.t("Bot code not found"))
 }
 
@@ -250,7 +261,12 @@ func (b *Bot) handleLink(ctx context.Context, chatID int64, arg string) {
 		return
 	}
 	code := bindCode()
+	if code == "" {
+		b.send(ctx, chatID, "error: bind code")
+		return
+	}
 	target.TelegramBindCode = code
+	target.TelegramBindCodeAt = time.Now()
 	if err := b.store.SaveUser(target); err != nil {
 		b.send(ctx, chatID, "error: "+err.Error())
 		return
@@ -359,9 +375,39 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+const bindCodeTTL = 10 * time.Minute
+
+var (
+	bindFailMu sync.Mutex
+	bindFails  = map[int64][]time.Time{}
+)
+
+func bindAllowed(from int64) bool {
+	bindFailMu.Lock()
+	defer bindFailMu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-15 * time.Minute)
+	keep := bindFails[from][:0]
+	for _, t := range bindFails[from] {
+		if t.After(cutoff) {
+			keep = append(keep, t)
+		}
+	}
+	bindFails[from] = keep
+	return len(keep) < 5
+}
+
+func bindRecordFail(from int64) {
+	bindFailMu.Lock()
+	defer bindFailMu.Unlock()
+	bindFails[from] = append(bindFails[from], time.Now())
+}
+
 func bindCode() string {
-	buf := make([]byte, 4)
-	_, _ = rand.Read(buf)
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
 	return hex.EncodeToString(buf)
 }
 

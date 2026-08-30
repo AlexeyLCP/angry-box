@@ -58,6 +58,10 @@ var singBoxChecksums = map[string]string{
 	"arm64": "fe965bee0c59b14887587e66dff08b470cdf445a4e4a0a76908ac359ac16a798",
 }
 
+// awgSrcChecksum is sha256 of deps/amneziawg-src.tar.gz. Override with
+// ANGRY_AWG_CHECKSUM. Empty/invalid refuses the DKMS path (fail-closed).
+const awgSrcChecksum = "7454be3dbb0a58fbc0a0e6422ab78e2e282b232533fa1d4f270d2d0451d5a193"
+
 // amneziaWGGoVersion is the SHORT SHA of the amneziawg-go commit pinned in
 	// the amnezia-box fork's go.mod (hoaxisr/amneziawg-go/v3 @ ae4523c, module
 	// path /v3, AWG 3.1). It is NOT a separate deploy artifact anymore —
@@ -590,6 +594,20 @@ func awgToolsMajorAtLeast3(line string) bool {
 // contains a single quote (the shell-escape character that would break out of
 // the curl argument in installAWGModule). Defense against operator-supplied
 // ANGRY_AWG_TARBALL_URL being used for SSH command injection (CodeRabbit M1).
+func validSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func validateTarballURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -641,6 +659,13 @@ func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, 
 	if err := validateTarballURL(awgTarballURL); err != nil {
 		return fmt.Errorf("amneziawg install: %w", err)
 	}
+	awgSum := os.Getenv("ANGRY_AWG_CHECKSUM")
+	if awgSum == "" {
+		awgSum = awgSrcChecksum
+	}
+	if !validSHA256Hex(awgSum) {
+		return fmt.Errorf("amneziawg: no pinned sha256 for kernel source — set ANGRY_AWG_CHECKSUM")
+	}
 
 	// Pass the URL to the remote shell via an exported env var inside the
 	// script instead of string interpolation into a curl argument. The URL has
@@ -650,6 +675,7 @@ func (b *Backend) installAWGModule(ctx context.Context, client ports.SSHClient, 
 	// crafted URL could break out of the quotes (CodeRabbit M1).
 	cmd := sudoBash(useSudo, fmt.Sprintf(`set -e
 export AB_AWG_URL='%s'
+export AB_AWG_SUM='%s'
 export DEBIAN_FRONTEND=noninteractive
 
 # ─── Amnezia PPA key + sources BEFORE any apt-get update ───────────────────
@@ -777,6 +803,7 @@ apt-get install -y -qq amneziawg || echo "[awg] PPA install failed (continuing t
 		echo "[awg] module lacks AWG3 HPK — building bundled AWG3 source via DKMS..."
 		rm -rf /tmp/awg-src && mkdir -p /tmp/awg-src
 		curl -fsSL "$AB_AWG_URL" -o /tmp/awg-src.tar.gz
+		echo "$AB_AWG_SUM  /tmp/awg-src.tar.gz" | sha256sum -c -
 		tar -xzf /tmp/awg-src.tar.gz -C /tmp/awg-src --strip-components=1
 		# Upstream stamps PACKAGE_VERSION/WIREGUARD_VERSION=1.0.0 into every build,
 		# so modinfo would report 1.0.0 even for an AWG3 build (lucx-ui c3001499
@@ -801,16 +828,10 @@ apt-get install -y -qq amneziawg || echo "[awg] PPA install failed (continuing t
 	TOOLS_MAJOR="$(awg version 2>/dev/null | grep -oE '[0-9]+' | head -1)"
 	TOOLS_MAJOR="${TOOLS_MAJOR:-0}"
 	if [ "$TOOLS_MAJOR" -lt 3 ]; then
-		echo "[awg] tools v$TOOLS_MAJOR lack HPK — building amneziawg-tools from master..."
-		rm -rf /tmp/awg-tools
-		if git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-tools.git /tmp/awg-tools 2>/dev/null; then
-			( cd /tmp/awg-tools/src && make && make install ) || echo "[awg] WARNING: amneziawg-tools build failed (continuing)"
-		else
-			echo "[awg] WARNING: could not clone amneziawg-tools (offline?)"
-		fi
-		rm -rf /tmp/awg-tools
+		echo "[awg] tools v$TOOLS_MAJOR lack HPK — unsigned git clone of amneziawg-tools is disabled"
+		echo "[awg] WARNING: install amneziawg-tools >= v3 from a pinned package, or set ANGRY_AWG_TOOLS_CHECKSUM"
 	fi
-`, awgTarballURL))
+`, awgTarballURL, awgSum))
 	if _, stderr, exit, err := client.RunWithOutput(ctx, cmd, 15*time.Minute); err != nil {
 		return fmt.Errorf("amneziawg install failed (exit %d): %s %s", exit, err, stderr)
 	}

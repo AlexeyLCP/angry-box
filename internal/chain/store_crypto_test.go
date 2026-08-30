@@ -56,6 +56,22 @@ func TestDecryptStore_PlaintextNoMagic(t *testing.T) {
 	}
 }
 
+func TestEnsureStoreKey_CreatesAndEncrypts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.json")
+	if err := EnsureStoreKey(path); err != nil {
+		t.Fatal(err)
+	}
+	st := NewStore(path)
+	if err := st.SaveHost(&model.Host{ID: "h1", Addr: "1.1.1.1:22"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !isEncrypted(data) {
+		t.Fatal("serve-path store must be encrypted after EnsureStoreKey")
+	}
+}
+
 func TestStore_NoKey_PlaintextMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "store.json")

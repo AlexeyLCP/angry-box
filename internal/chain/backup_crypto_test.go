@@ -6,6 +6,7 @@ package chain
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"strings"
 	"testing"
 
@@ -47,6 +48,17 @@ func TestDecryptBackup_WrongPassphrase(t *testing.T) {
 }
 
 // TestDecryptBackup_BadMagic — non-ABBKP1 data is rejected with ErrBackupBlob.
+func TestDecryptBackup_RejectsHugeN(t *testing.T) {
+	blob := make([]byte, len(backupBlobMagic)+backupSaltLen+8+backupNonceLen+16)
+	copy(blob, backupBlobMagic)
+	binary.BigEndian.PutUint32(blob[len(backupBlobMagic)+backupSaltLen:], 1<<30)
+	binary.BigEndian.PutUint16(blob[len(backupBlobMagic)+backupSaltLen+4:], 8)
+	binary.BigEndian.PutUint16(blob[len(backupBlobMagic)+backupSaltLen+6:], 1)
+	if _, err := DecryptBackup(blob, "x"); err == nil {
+		t.Fatal("huge scrypt N must be rejected before key derivation")
+	}
+}
+
 func TestDecryptBackup_BadMagic(t *testing.T) {
 	if _, err := DecryptBackup([]byte("ABENC1someotherdata"), "x"); err != ErrBackupBlob {
 		t.Fatalf("expected ErrBackupBlob, got %v", err)

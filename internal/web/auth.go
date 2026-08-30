@@ -5,12 +5,25 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/alexeylcp/angry-box/internal/config"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// bcryptDummyHash is compared when the username is unknown so the cost of a
+// miss matches a wrong password (no username oracle).
+var bcryptDummyHash = mustDummyBcrypt()
+
+func mustDummyBcrypt() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("x"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
 
 // authLockoutNotify, when set (the fleet bot is running), receives lockout
 // alerts. Guarded by lockoutNotifyMu; one alert per IP per window so a
@@ -83,6 +96,7 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 		// distinguish a wrong username from a wrong password (CTO-review L4).
 		// The password is already compared via bcrypt (constant-time internally).
 		if subtle.ConstantTimeCompare([]byte(user), []byte(cfg.AuthUsername)) != 1 {
+			_ = bcrypt.CompareHashAndPassword(bcryptDummyHash, []byte(pass))
 			defaultAuthLimiter.recordFailure(ip)
 			slog.Warn("auth: unknown user",
 				"remote_addr", r.RemoteAddr,
@@ -93,7 +107,6 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 			return
 		}
 
-		// Compare password against the hash
 		err := bcrypt.CompareHashAndPassword([]byte(cfg.AuthPasswordHash), []byte(pass))
 		if err != nil {
 			defaultAuthLimiter.recordFailure(ip)
@@ -118,9 +131,37 @@ func BasicAuthMiddleware(next http.Handler, cfg *config.Config) http.HandlerFunc
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if isLoopbackHost(host) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			return xri
+		}
 	}
 	return host
+}
+
+func isLoopbackHost(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isLoopbackRemote(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return isLoopbackHost(host)
+}
+
+func forwardedByProxy(r *http.Request) bool {
+	return r.Header.Get("X-Forwarded-For") != "" ||
+		r.Header.Get("X-Real-IP") != "" ||
+		r.Header.Get("X-Forwarded-Proto") != ""
 }
 
 func unauthorized(w http.ResponseWriter) {

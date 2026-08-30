@@ -109,7 +109,7 @@ jobs:
           # .ipk packages keep their build-opkg.sh naming — copy as-is.
           cp dist/*.ipk release/
           # Checksums over everything that gets uploaded.
-          ( cd release && sha256sum *.tar.gz *.zip *.ipk > checksums-sha256.txt )
+          ( cd release && sha256sum *.tar.gz *.zip *.ipk > checksums-sha256.txt && cp checksums-sha256.txt SHA256SUMS )
 
       - name: Extract this release's changelog section
         # CHANGELOG.md holds the whole history; a GitHub release body should
@@ -147,5 +147,6 @@ jobs:
             release/angry-box-*.zip
             release/*.ipk
             release/checksums-sha256.txt
+            release/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

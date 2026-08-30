@@ -256,7 +256,7 @@ func TestPerformRollback_RestoresAndRestarts(t *testing.T) {
 	if err := performRollback(client, "/etc/sing-box/config.json", "/tmp/bak/config.json.bak", "sing-box", false); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
-	if !client.SawCommand("cp /tmp/bak/config.json.bak") {
+	if !client.SawCommand("/tmp/bak/config.json.bak") {
 		t.Error("rollback did not cp the backup back")
 	}
 	if !client.SawCommand("systemctl restart sing-box") {
@@ -306,7 +306,7 @@ func TestCreateBackup_BasenamePerFile(t *testing.T) {
 				t.Fatal("no command issued")
 			}
 			cmd := cmds[0]
-			if !strings.Contains(cmd, "$BAK_DIR/"+tc.wantBak) {
+			if !strings.Contains(cmd, tc.wantBak) {
 				t.Errorf("backup command does not use basename %q:\n%s", tc.wantBak, cmd)
 			}
 			if strings.Contains(cmd, "$BAK_DIR/config.json.bak") && tc.wantBak != "config.json.bak" {

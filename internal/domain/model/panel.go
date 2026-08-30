@@ -17,7 +17,8 @@ type User struct {
 	// TelegramBindCode is the short-lived one-time code an admin issues via the
 	// fleet bot (/link): the user sends /start <code> and the bot stamps their
 	// TelegramID. Empty = no pending bind.
-	TelegramBindCode string `json:"telegram_bind_code,omitempty"`
+	TelegramBindCode   string    `json:"telegram_bind_code,omitempty"`
+	TelegramBindCodeAt time.Time `json:"telegram_bind_code_at,omitempty"`
 	Email      string    `json:"email,omitempty"`
 	ExpiresAt  time.Time `json:"expires_at,omitempty"`
 	Active     bool      `json:"active"`

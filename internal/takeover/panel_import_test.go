@@ -127,7 +127,7 @@ func TestConvertPanelImport(t *testing.T) {
 	var alice, bob, tgUser *int
 	for i, u := range imp.Users {
 		switch {
-		case u.TelegramID == 111:
+		case u.Name == "alice":
 			alice = &i
 		case u.Name == "bob":
 			bob = &i

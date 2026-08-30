@@ -64,6 +64,13 @@ func TestEscHTML_MatchesHTMLEscapeString(t *testing.T) {
 	}
 }
 
+func TestAlertError_Escapes(t *testing.T) {
+	a := alertError(`fail <script>x</script>`)
+	if strings.Contains(a.html, "<script>") {
+		t.Fatalf("unescaped: %s", a.html)
+	}
+}
+
 func TestEscHTML_EmptyIsSafe(t *testing.T) {
 	if got := escHTML(""); got != "" {
 		t.Fatalf("empty input must stay empty, got %q", got)

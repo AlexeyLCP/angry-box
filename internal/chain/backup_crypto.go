@@ -46,6 +46,11 @@ const (
 	backupScryptN = 1 << 16 // 65536
 	backupScryptR = 8
 	backupScryptP = 1
+	backupScryptNMax = 1 << 20
+	backupScryptRMax = 8
+	backupScryptPMax = 1
+	BackupScryptR    = backupScryptR
+	BackupScryptP    = backupScryptP
 	backupKeyLen  = 32 // AES-256
 	backupSaltLen = 16
 	backupNonceLen = 12 // GCM standard
@@ -82,6 +87,9 @@ func EncryptBackupWithParams(plaintext []byte, passphrase string, N, r, p int) (
 	}
 	if p <= 0 {
 		p = backupScryptP
+	}
+	if err := ValidateScryptParams(N, r, p); err != nil {
+		return nil, err
 	}
 	salt := make([]byte, backupSaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -137,6 +145,9 @@ func DecryptBackup(blob []byte, passphrase string) ([]byte, error) {
 	nonce := rest[:backupNonceLen]
 	ct := rest[backupNonceLen:]
 
+	if err := ValidateScryptParams(int(N), int(r), int(p)); err != nil {
+		return nil, err
+	}
 	key, err := deriveBackupKey(passphrase, salt, int(N), int(r), int(p))
 	if err != nil {
 		return nil, err
@@ -158,6 +169,19 @@ func DecryptBackup(blob []byte, passphrase string) ([]byte, error) {
 
 // deriveBackupKey derives a 32-byte AES-256 key from a passphrase + salt via
 // scrypt. Wraps scrypt.Key with the package's chosen params.
+func ValidateScryptParams(N, r, p int) error {
+	if N < 2 || N > backupScryptNMax || N&(N-1) != 0 {
+		return fmt.Errorf("backup: scrypt N out of range")
+	}
+	if r < 1 || r > backupScryptRMax {
+		return fmt.Errorf("backup: scrypt r out of range")
+	}
+	if p < 1 || p > backupScryptPMax {
+		return fmt.Errorf("backup: scrypt p out of range")
+	}
+	return nil
+}
+
 func deriveBackupKey(passphrase string, salt []byte, N, r, p int) ([]byte, error) {
 	return scrypt.Key([]byte(passphrase), salt, N, r, p, backupKeyLen)
 }

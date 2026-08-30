@@ -8,7 +8,6 @@ package web
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -30,10 +29,8 @@ func (s *Server) registerUtilityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ui/nodes/{id}/utilities/{name}/uninstall", s.auth(s.handleUninstallUtility))
 }
 
-var tlsDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
-
 func validTLSDomain(d string) bool {
-	return d != "" && len(d) <= 253 && tlsDomainRe.MatchString(d)
+	return chain.ValidTLSDomain(d)
 }
 
 // utilityStaleMap computes per-utility staleness for the panel badge.

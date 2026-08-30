@@ -1165,9 +1165,9 @@ func bulkSuffix() string {
 // MTProxy secret generator). The legacy /ui/users GET redirects to the unified
 // /ui/clients page. The /ui/qr-image route is in qr.go. CTO-review §4.
 func (s *Server) registerUserRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /ui/users", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /ui/users", s.auth(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/clients", http.StatusMovedPermanently)
-	})
+	}))
 	mux.HandleFunc("POST /ui/users", s.auth(s.handleCreateUser))
 	mux.HandleFunc("GET /ui/users/new", s.auth(s.handleNewUserForm))
 	mux.HandleFunc("GET /ui/users/{id}/edit", s.auth(s.handleEditUserForm))
@@ -1188,14 +1188,20 @@ func (s *Server) registerUserRoutes(mux *http.ServeMux) {
 // otherwise http — kept simple here (the /sub/{token} endpoint itself is
 // scheme-agnostic; this is only the displayed copy string).
 func subURLHost(r *http.Request) string {
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
+	host := r.Host
+	scheme := "http"
+	if isLoopbackRemote(r) {
+		if h := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); h != "" {
+			host = h
+		}
+		if r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
 	}
 	if host == "" {
 		host = "localhost:9080"
 	}
-	return "http://" + host
+	return scheme + "://" + host
 }
 
 // userAWGPrefix returns the "10.8.X" prefix of the entry inbound subnet for

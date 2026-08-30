@@ -98,18 +98,30 @@ func TestCSRF_NoEvidenceRejectedFailClosed(t *testing.T) {
 	}
 }
 
-func TestCSRF_HTTPSOriginAgainstHTTPPanelRejected(t *testing.T) {
-	// The panel serves plain http; an https Origin against it is suspicious
-	// (e.g. a TLS proxy fronting a different public host) and must be rejected.
+func TestCSRF_HTTPSOriginSameHostPasses(t *testing.T) {
+	// Panel relay / TLS terminator: Origin is https, Host is the public name.
+	req := httptest.NewRequest(http.MethodPost, "http://panel.example.com/ui/settings", nil)
+	req.Host = "panel.example.com"
+	req.Header.Set("Origin", "https://panel.example.com")
+	rr := httptest.NewRecorder()
+	ok := newCSRFTestHandler()
+	CSRSMiddleware(ok).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("https Origin matching Host must pass, got %d", rr.Code)
+	}
+}
+
+func TestCSRF_HTTPSOriginDifferentHostRejected(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "http://panel:9080/ui/settings", nil)
 	req.Host = "panel:9080"
-	req.Header.Set("Origin", "https://panel:9080")
+	req.Header.Set("Origin", "https://evil.example.com")
 	rr := httptest.NewRecorder()
 	ok := newCSRFTestHandler()
 	CSRSMiddleware(ok).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusForbidden {
-		t.Fatalf("https-origin against http panel must be rejected, got %d", rr.Code)
+		t.Fatalf("https Origin with different host must be rejected, got %d", rr.Code)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/alexeylcp/angry-box/internal/domain/model"
 	"github.com/alexeylcp/angry-box/internal/domain/ports"
+	sshclient "github.com/alexeylcp/angry-box/internal/ssh"
 )
 
 // ─── Utility installation over SSH ───────────────────────────────────────────
@@ -91,7 +92,7 @@ func InstallCaddy(ctx context.Context, client ports.SSHClient, useSudo bool, rep
 	if envSum := os.Getenv("ANGRY_CADDY_CHECKSUM"); envSum != "" {
 		checksum = envSum
 	}
-	if checksum == "" {
+	if !validSHA256Hex(checksum) {
 		return fmt.Errorf("caddy: no pinned sha256 for arch %s — publish the release asset (scripts/build-caddy.sh) and pin caddyChecksums, or set ANGRY_CADDY_CHECKSUM", goArch)
 	}
 	dlURL := caddyDownloadURLs[goArch]
@@ -196,6 +197,9 @@ func PushSubStatic(ctx context.Context, client ports.SSHClient, useSudo bool, na
 // BootstrapCert ensures a cert/key pair exists at the node's cert paths so
 // caddy can start BEFORE acme issues the real one. No-op when files exist.
 func BootstrapCert(ctx context.Context, client ports.SSHClient, useSudo bool, domain string, rep *UtilityReport) error {
+	if !ValidTLSDomain(domain) {
+		return fmt.Errorf("bootstrap cert: invalid domain %q", domain)
+	}
 	cert, key := CertPaths(domain)
 	script := fmt.Sprintf(`set -e
 if [ -f %s ] && [ -f %s ]; then exit 0; fi
@@ -248,11 +252,29 @@ func InstallAcme(ctx context.Context, client ports.SSHClient, useSudo bool, rep 
 		rep.add("acme.sh already installed")
 		return nil
 	}
-	script := `set -e
-if ! curl -fsSL https://get.acme.sh -o /tmp/ab-get-acme.sh; then echo 'ERROR: get.acme.sh download failed' >&2; exit 1; fi
-sh /tmp/ab-get-acme.sh --nocron >/dev/null 2>&1 || sh /tmp/ab-get-acme.sh >/dev/null 2>&1
-rm -f /tmp/ab-get-acme.sh
-test -x ` + AcmeBin
+	sum := os.Getenv("ANGRY_ACME_CHECKSUM")
+	dlURL := os.Getenv("ANGRY_ACME_URL")
+	if dlURL == "" {
+		dlURL = "https://github.com/acmesh-official/acme.sh/archive/refs/tags/3.1.1.tar.gz"
+	}
+	if err := utilValidateURL(dlURL); err != nil {
+		return fmt.Errorf("acme.sh: %w", err)
+	}
+	if !validSHA256Hex(sum) {
+		return fmt.Errorf("acme.sh: no pinned sha256 — set ANGRY_ACME_CHECKSUM (refusing unsigned installer)")
+	}
+	script := fmt.Sprintf(`set -e
+mkdir -p /tmp/ab-acme-install
+cd /tmp/ab-acme-install
+if ! curl -fsSL --connect-timeout 15 '%s' -o acme.tar.gz; then echo 'ERROR: acme.sh download failed' >&2; exit 1; fi
+echo '%s  acme.tar.gz' | sha256sum -c -
+tar -xzf acme.tar.gz
+INST=$(find /tmp/ab-acme-install -maxdepth 2 -name acme.sh -type f | head -1)
+if [ -z "$INST" ]; then echo 'ERROR: acme.sh not in archive' >&2; exit 1; fi
+sh "$INST" --install --nocron >/dev/null 2>&1 || sh "$INST" --install >/dev/null 2>&1
+rm -rf /tmp/ab-acme-install
+test -x %s
+`, dlURL, sum, AcmeBin)
 	if _, stderr, exit, err := client.RunWithOutput(ctx, utilSudoBash(useSudo, script), 5*time.Minute); err != nil {
 		return fmt.Errorf("acme.sh install: %s (exit %d) %s", err, exit, stderr)
 	}
@@ -271,12 +293,15 @@ test -x ` + AcmeBin
 // with a reload hook for BOTH caddy and sing-box (path-based TLS inbounds pick
 // the rotated cert up on reload).
 func IssueNodeCert(ctx context.Context, client ports.SSHClient, useSudo bool, domain string, sans []string, rep *UtilityReport) error {
+	if !ValidTLSDomain(domain) {
+		return fmt.Errorf("acme: invalid domain %q", domain)
+	}
 	if len(sans) == 0 {
 		sans = []string{domain, "panel." + domain}
 	}
 	var dflags strings.Builder
 	for _, d := range sans {
-		if strings.ContainsAny(d, "'\"`$\\;|&") {
+		if !ValidTLSDomain(d) {
 			return fmt.Errorf("acme: unsafe domain %q", d)
 		}
 		fmt.Fprintf(&dflags, " -d %s", d)
@@ -341,7 +366,15 @@ func utilUploadPriv(ctx context.Context, client ports.SSHClient, useSudo bool, c
 	if err := client.UploadText(ctx, content, tmp, mode); err != nil {
 		return err
 	}
-	mv := fmt.Sprintf("cp %s %s && chmod %o %s && rm -f %s", tmp, remotePath, mode, remotePath, tmp)
+	qTmp, err := sshclient.QuotePOSIX(tmp)
+	if err != nil {
+		return err
+	}
+	qRemote, err := sshclient.QuotePOSIX(remotePath)
+	if err != nil {
+		return err
+	}
+	mv := fmt.Sprintf("cp %s %s && chmod %o %s && rm -f %s", qTmp, qRemote, mode, qRemote, qTmp)
 	if _, stderr, exit, err := client.RunWithOutput(ctx, utilSudoBash(useSudo, mv), 30*time.Second); err != nil {
 		return fmt.Errorf("%s (exit %d) %s", err, exit, stderr)
 	}
@@ -373,6 +406,20 @@ func utilValidateURL(raw string) error {
 		return fmt.Errorf("caddy URL must not contain shell metacharacters")
 	}
 	return nil
+}
+
+func validSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func firstLine(s string) string {

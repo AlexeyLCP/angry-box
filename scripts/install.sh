@@ -261,6 +261,47 @@ install_binary() {
         exit 1
     fi
 
+    echo "==> Verifying archive checksum..."
+    if [ -n "${ANGRY_BOX_SHA256:-}" ]; then
+        echo "${ANGRY_BOX_SHA256}  $ARCHIVE" > "$TMPDIR/expect.sha256"
+        (cd "$TMPDIR" && sha256sum -c expect.sha256) || {
+            echo "ERROR: checksum mismatch (ANGRY_BOX_SHA256)"
+            rm -rf "$TMPDIR"
+            exit 1
+        }
+    else
+        SUMS_URL="${BASE_URL}/${TAG}/checksums-sha256.txt"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL "$SUMS_URL" -o "$TMPDIR/SHA256SUMS" || curl -fsSL "${BASE_URL}/${TAG}/SHA256SUMS" -o "$TMPDIR/SHA256SUMS" || {
+                echo "ERROR: refusing unsigned archive (no checksums-sha256.txt at $SUMS_URL)."
+                echo "Set ANGRY_BOX_SHA256=<hex> to override."
+                rm -rf "$TMPDIR"
+                exit 1
+            }
+        else
+            wget -q "$SUMS_URL" -O "$TMPDIR/SHA256SUMS" || wget -q "${BASE_URL}/${TAG}/SHA256SUMS" -O "$TMPDIR/SHA256SUMS" || {
+                echo "ERROR: refusing unsigned archive (no checksums-sha256.txt)."
+                rm -rf "$TMPDIR"
+                exit 1
+            }
+        fi
+        GREP_LINE=$(grep " ${ARCHIVE}\$" "$TMPDIR/SHA256SUMS" || true)
+        if [ -z "$GREP_LINE" ]; then
+            GREP_LINE=$(grep " \*${ARCHIVE}\$" "$TMPDIR/SHA256SUMS" || true)
+        fi
+        if [ -z "$GREP_LINE" ]; then
+            echo "ERROR: $ARCHIVE not listed in checksums-sha256.txt"
+            rm -rf "$TMPDIR"
+            exit 1
+        fi
+        echo "$GREP_LINE" > "$TMPDIR/expect.sha256"
+        (cd "$TMPDIR" && sha256sum -c expect.sha256) || {
+            echo "ERROR: checksum mismatch"
+            rm -rf "$TMPDIR"
+            exit 1
+        }
+    fi
+
     tar xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
 
     # The tarball contains a subdirectory (e.g. angry-box-X.Y.Z-linux-amd64/)

@@ -348,7 +348,7 @@ func (s *Server) startAutoRelocate(nodeID string, spare *model.NodeInfo) {
 // future use is triggering a re-probe when a WAN event suggests an outage.
 func (s *Server) handleNDMHook(w http.ResponseWriter, r *http.Request) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil || (host != "127.0.0.1" && host != "::1") {
+	if err != nil || (host != "127.0.0.1" && host != "::1") || forwardedByProxy(r) {
 		http.Error(w, "loopback only", http.StatusForbidden)
 		return
 	}

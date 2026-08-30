@@ -42,8 +42,17 @@ import (
 // from it). Traffic: AWG byte counters (the only per-user stats we collect —
 // sing-box has no xray-style per-user counters); quota: DataLimit (0 =
 // unlimited); expire: ExpiresAt unix (0 = no expiry).
+func headerSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == 0 {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 func setSubInfoHeaders(w http.ResponseWriter, u *model.User) {
-	w.Header().Set("Profile-Title", u.Name)
+	w.Header().Set("Profile-Title", headerSafe(u.Name))
 	up, down := u.AWGTxBytes, u.AWGRxBytes
 	if u.UsedTraffic > 0 && up+down == 0 {
 		// P0b poller stats without an AWG split — attribute to download.
@@ -118,7 +127,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	// (v2rayNG / Hiddify / SFA...) surface the profile title and the usage /
 	// expiry counters in their own UI from Subscription-Userinfo.
 	setSubInfoHeaders(w, u)
-	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Cache-Control", "private, no-store")
 	switch format {
 	case "vpn":
 		body := strings.Join(vpnLinksFrom(links), "\n")

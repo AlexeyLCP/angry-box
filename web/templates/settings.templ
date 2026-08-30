@@ -241,7 +241,9 @@ templ Settings(settings *model.PanelSettings, hosts []*model.Host, chains []*mod
 			<h3 class="sect-title mb-1">{ i18n.T(ctx, "Backups") }</h3>
 			<p class="text-xs mb-3" style="color: var(--mut)">{ i18n.T(ctx, "Export the whole panel (hosts, chains, transit keys, users, settings) as a portable JSON backup, or import one to restore/migrate.") }</p>
 			<div class="flex gap-2 flex-wrap">
-				<a class="btn btn-outline btn-sm" href="/ui/backup/store" download>{ i18n.T(ctx, "Export panel") }</a>
+				<form method="post" action="/ui/backup/store">
+					<button type="submit" class="btn btn-outline btn-sm">{ i18n.T(ctx, "Export panel") }</button>
+				</form>
 				<button type="button" class="btn btn-ghost btn-sm"
 					onclick="var f=document.getElementById('import-backup-form');if(f){f.style.display=f.style.display==='none'?'block':'none';}">
 					{ i18n.T(ctx, "Import backup") }

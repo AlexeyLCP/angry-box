@@ -33,8 +33,8 @@ func TestHumanBytes(t *testing.T) {
 
 func TestBindCodeShape(t *testing.T) {
 	a, b := bindCode(), bindCode()
-	if len(a) != 8 || len(b) != 8 {
-		t.Fatalf("bind code must be 8 hex chars: %q / %q", a, b)
+	if len(a) != 32 || len(b) != 32 {
+		t.Fatalf("bind code must be 32 hex chars: %q / %q", a, b)
 	}
 	if a == b {
 		t.Fatal("bind codes must be random")

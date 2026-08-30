@@ -116,7 +116,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			// Save config to default location
 			if err := s.cfg.SavePath(); err != nil {
 				log.Printf("failed to save config: %v", err)
-				s.render(w, r, &simpleHTML{html: fmt.Sprintf(`<div class="alert alert-error"><span>`+i18n.T(r.Context(), "Settings saved, but config write failed: %v")+`</span></div>`, err)})
+				s.render(w, r, alertError(fmt.Sprintf(i18n.T(r.Context(), "Settings saved, but config write failed: %v"), err)))
 				return
 			}
 		}
@@ -473,7 +473,7 @@ func (s *Server) handleSaveAutoRelocate(w http.ResponseWriter, r *http.Request) 
 	}
 	settings.AutoRelocate = ar
 	if err := st.SaveSettings(settings); err != nil {
-		s.render(w, r, &simpleHTML{html: `<div class="alert alert-error"><span>` + i18n.T(r.Context(), "save: %v") + `: ` + err.Error() + `</span></div>`})
+		s.render(w, r, alertError(i18n.T(r.Context(), "save: %v")+": "+err.Error()))
 		return
 	}
 	s.render(w, r, &simpleHTML{html: `<div class="alert alert-success"><span>` + i18n.T(r.Context(), "Auto-relocate settings saved") + `</span></div>`})
